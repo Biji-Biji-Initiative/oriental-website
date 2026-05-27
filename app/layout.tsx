@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Fraunces } from "next/font/google";
 import localFont from "next/font/local";
 import { connection } from "next/server";
 import { SiteNav } from "@/components/site/SiteNav";
@@ -22,12 +21,10 @@ const poppins = localFont({
   ],
 });
 
-const fraunces = Fraunces({
+const fraunces = localFont({
   variable: "--font-fraunces",
-  subsets: ["latin"],
-  weight: ["300"],
-  style: ["italic"],
   display: "swap",
+  src: [{ path: "../public/assets/fonts/Fraunces-Italic-Light.ttf", weight: "300", style: "italic" }],
 });
 
 export const metadata: Metadata = {
