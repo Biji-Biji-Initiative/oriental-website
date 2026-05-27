@@ -1,0 +1,17 @@
+---
+description: Oriental Website agent onboarding — read AGENTS.md first
+alwaysApply: true
+---
+
+# Oriental Website
+
+The canonical agent guide is **`AGENTS.md`** at the repo root (also included via `CLAUDE.md`).
+
+Before editing:
+
+1. Read `AGENTS.md` for repo map, drift notes (Convex vs handover Postgres), and change locations.
+2. For Next.js 16 APIs, consult `node_modules/next/dist/docs/` — not training-data defaults.
+3. Voice behavior: `lib/voice/profile.ts` + `lib/voice/realtime-events.ts` with tests in `tests/`.
+4. Run `pnpm lint`, `pnpm typecheck`, and `pnpm test` when touching API, voice, or schemas.
+
+Do not commit secrets or run destructive git without explicit user request.

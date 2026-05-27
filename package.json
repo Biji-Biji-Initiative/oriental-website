@@ -14,7 +14,8 @@
     "test:e2e": "playwright test",
     "convex:codegen": "convex codegen",
     "convex:deploy": "convex deploy",
-    "check-secrets": "tsx scripts/check-secrets.ts"
+    "check-secrets": "tsx scripts/check-secrets.ts",
+    "local:ngrok": "tsx scripts/local-ngrok.ts"
   },
   "dependencies": {
     "@aws-sdk/client-sesv2": "^3.1054.0",

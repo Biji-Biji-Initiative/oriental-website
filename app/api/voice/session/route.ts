@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const secret = await createRealtimeClientSecret(hashIp(ip, "openai-safety"));
+    const secret = await createRealtimeClientSecret(hashIp(ip, "openai-safety"), parsed.data.intent);
     return noStoreJson({ ok: true, ...secret });
   } catch (error) {
     const message = error instanceof Error ? error.message : "openai_unavailable";

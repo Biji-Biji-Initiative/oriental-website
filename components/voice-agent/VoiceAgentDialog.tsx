@@ -13,13 +13,16 @@ import { tourTopics } from "@/lib/content";
 import { leadFormSchema } from "@/lib/schemas";
 import { getSegment, type SegmentId, segmentOptions } from "@/lib/segments";
 import { cn } from "@/lib/utils";
-
-type Captured = {
-  name: string;
-  email: string;
-  org: string;
-  message: string;
-};
+import { serializeRealtimeCommand } from "@/lib/voice/client-events";
+import {
+  type CapturedLead,
+  emptyCapturedLead,
+  type RealtimeClientCommand,
+  type RealtimeServerEvent,
+  reduceRealtimeServerEvent,
+  type VoiceRuntimeState,
+} from "@/lib/voice/realtime-events";
+import { useRealtimeVoiceSession, type VoiceCloseReason } from "./useRealtimeVoiceSession";
 
 type VoiceAgentDialogProps = {
   open: boolean;
@@ -29,34 +32,135 @@ type VoiceAgentDialogProps = {
   turnstileSiteKey?: string;
 };
 
-const emptyCaptured: Captured = { name: "", email: "", org: "", message: "" };
-
 export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstileSiteKey }: VoiceAgentDialogProps) {
   const [segment, setSegment] = useState<SegmentId>(intent ?? "other");
   const [mode, setMode] = useState<"voice" | "form">(prefill?.mode ?? "voice");
-  const [captured, setCaptured] = useState<Captured>({ ...emptyCaptured, email: prefill?.email ?? "" });
-  const [status, setStatus] = useState<"idle" | "connecting" | "listening" | "submitted">("idle");
+  const [captured, setCaptured] = useState<CapturedLead>({ ...emptyCapturedLead, email: prefill?.email ?? "" });
+  const [status, setStatus] = useState<"idle" | "submitted">("idle");
   const [transcript, setTranscript] = useState<Array<{ role: "assistant" | "user"; text: string }>>([]);
   const turnstile = useTurnstile("oriental-intake", turnstileSiteKey);
-  const connectionRef = useRef<RTCPeerConnection | null>(null);
-  const localStreamRef = useRef<MediaStream | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const stateRef = useRef<VoiceRuntimeState>({ segment, captured, transcript });
 
-  const teardownVoice = useCallback(() => {
-    connectionRef.current?.close();
-    connectionRef.current = null;
-    localStreamRef.current?.getTracks().forEach((track) => {
-      track.stop();
-    });
-    localStreamRef.current = null;
+  const handleVoiceClose = useCallback((reason: VoiceCloseReason) => {
+    if (reason === "error") {
+      setMode("form");
+      toast.error("Voice unavailable - switched to form.");
+    }
+    if (reason === "idle_timeout") toast.message("Voice paused after inactivity. The form is still ready.");
+    if (reason === "max_duration") toast.message("Voice paused after three minutes. The form is still ready.");
   }, []);
+
+  const submit = useCallback(
+    async (source: "form" | "voice" = "form", override?: VoiceRuntimeState): Promise<Record<string, unknown>> => {
+      const leadState = override ?? stateRef.current;
+      const parsed = leadFormSchema.safeParse(leadState.captured);
+      if (!parsed.success) {
+        toast.error("Add name, email, organisation, and a short brief.");
+        setMode("form");
+        return { ok: false, error: "invalid_lead", details: parsed.error.flatten() };
+      }
+      let turnstileToken = "";
+      try {
+        turnstileToken = await turnstile.execute();
+      } catch {
+        toast.error("Could not verify this browser. Try again in a moment.");
+        return { ok: false, error: "turnstile_unavailable" };
+      }
+      const response = await fetch("/api/leads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source,
+          segment: leadState.segment,
+          form: parsed.data,
+          transcript: leadState.transcript,
+          turnstileToken,
+          utm: {},
+        }),
+      }).catch(() => null);
+      if (!response?.ok) {
+        toast.error("Could not send this yet. Your form is still here.");
+        return { ok: false, error: "lead_submission_failed" };
+      }
+      const routedTo = getSegment(leadState.segment).routedTo;
+      setStatus("submitted");
+      toast.success(`Sent to ${routedTo.name}.`);
+      return { ok: true, submitted: true, segment: leadState.segment, routedTo };
+    },
+    [turnstile],
+  );
+
+  const submitVoiceCommand = useCallback(
+    async (
+      channel: RTCDataChannel,
+      command: Extract<RealtimeClientCommand, { type: "submit_voice" }>,
+      leadState: VoiceRuntimeState,
+    ) => {
+      const output = await submit("voice", leadState);
+      sendRealtimeCommand(channel, { type: "function_result", callId: command.callId, createResponse: true, output });
+    },
+    [submit],
+  );
+
+  const handleRealtimeEvent = useCallback(
+    (serverEvent: RealtimeServerEvent, channel: RTCDataChannel) => {
+      const reduced = reduceRealtimeServerEvent(serverEvent, stateRef.current);
+      const previousErrorCount = stateRef.current.errors?.length ?? 0;
+      stateRef.current = reduced.state;
+      setSegment(reduced.state.segment);
+      setCaptured(reduced.state.captured);
+      setTranscript(reduced.state.transcript);
+      if ((reduced.state.errors?.length ?? 0) > previousErrorCount) {
+        toast.error("Voice session reported an error. The form is still available.");
+      }
+      for (const command of reduced.commands) {
+        if (command.type === "function_result") sendRealtimeCommand(channel, command);
+        if (command.type === "submit_voice") void submitVoiceCommand(channel, command, reduced.state);
+      }
+    },
+    [submitVoiceCommand],
+  );
+
+  const { connectVoice, connectionStatus, teardownVoice } = useRealtimeVoiceSession({
+    audioRef,
+    getTurnstileToken: turnstile.execute,
+    onClose: handleVoiceClose,
+    onEvent: handleRealtimeEvent,
+    segment,
+  });
 
   useEffect(() => {
     if (!open) return;
     setSegment(intent ?? "other");
     setMode(prefill?.mode ?? "voice");
-    setCaptured((current) => ({ ...current, email: prefill?.email ?? current.email }));
+    setCaptured({ ...emptyCapturedLead, email: prefill?.email ?? "" });
+    setTranscript([]);
+    setStatus("idle");
+    stateRef.current = {
+      segment: intent ?? "other",
+      captured: { ...emptyCapturedLead, email: prefill?.email ?? "" },
+      transcript: [],
+      handledCallIds: [],
+    };
   }, [intent, open, prefill]);
+
+  useEffect(() => {
+    stateRef.current = {
+      ...stateRef.current,
+      segment,
+      captured,
+      transcript,
+    };
+  }, [captured, segment, transcript]);
+
+  useEffect(() => {
+    if (status === "submitted") teardownVoice("manual");
+  }, [status, teardownVoice]);
+
+  useEffect(() => {
+    if (connectionStatus === "listening") toast.success("Voice is live.");
+  }, [connectionStatus]);
 
   useEffect(() => {
     if (!open) return;
@@ -69,104 +173,6 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
 
   const selectedSegment = getSegment(segment);
   const ready = leadFormSchema.safeParse(captured).success;
-
-  async function submit(source: "form" | "voice" = "form") {
-    const parsed = leadFormSchema.safeParse(captured);
-    if (!parsed.success) {
-      toast.error("Add name, email, organisation, and a short brief.");
-      setMode("form");
-      return;
-    }
-    let turnstileToken = "";
-    try {
-      turnstileToken = await turnstile.execute();
-    } catch {
-      toast.error("Could not verify this browser. Try again in a moment.");
-      return;
-    }
-    const response = await fetch("/api/leads", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        source,
-        segment,
-        form: parsed.data,
-        transcript,
-        turnstileToken,
-        utm: {},
-      }),
-    }).catch(() => null);
-    if (!response?.ok) {
-      toast.error("Could not send this yet. Your form is still here.");
-      return;
-    }
-    setStatus("submitted");
-    toast.success(`Sent to ${selectedSegment.routedTo.name}.`);
-  }
-
-  async function connectVoice() {
-    setStatus("connecting");
-    try {
-      const turnstileToken = await turnstile.execute();
-      const session = await fetch("/api/voice/session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ intent: segment, turnstileToken }),
-      }).then((response) => response.json());
-
-      if (!session.ok) throw new Error(session.error ?? "voice_unavailable");
-
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      localStreamRef.current = stream;
-      const peer = new RTCPeerConnection();
-      connectionRef.current = peer;
-      stream.getTracks().forEach((track) => {
-        peer.addTrack(track, stream);
-      });
-      peer.ontrack = (event) => {
-        const [remoteStream] = event.streams;
-        if (audioRef.current && remoteStream) {
-          audioRef.current.srcObject = remoteStream;
-        }
-      };
-      const channel = peer.createDataChannel("oai-events");
-      channel.onmessage = (event) => {
-        try {
-          reduceRealtimeEvent(
-            JSON.parse(event.data),
-            setCaptured,
-            setSegment,
-            setTranscript,
-            () => submit("voice"),
-            captured,
-          );
-        } catch {
-          // Non-JSON data channel messages are ignored.
-        }
-      };
-      const offer = await peer.createOffer();
-      await peer.setLocalDescription(offer);
-      const sdpResponse = await fetch("https://api.openai.com/v1/realtime/calls", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${session.client_secret.value}`,
-          "Content-Type": "application/sdp",
-        },
-        body: offer.sdp,
-      });
-      if (!sdpResponse.ok) throw new Error("webrtc_failed");
-      await peer.setRemoteDescription({ type: "answer", sdp: await sdpResponse.text() });
-      setStatus("listening");
-      toast.success("Voice is live.");
-    } catch {
-      teardownVoice();
-      setMode("form");
-      setStatus("idle");
-      toast.error("Voice unavailable — switched to form.");
-    }
-  }
-
-  useEffect(() => teardownVoice, [teardownVoice]);
 
   const capturedRows = useMemo(
     () => [
@@ -250,11 +256,15 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
                     </div>
                     <button
                       className="mt-8 rounded-full bg-white px-6 py-3 text-sm font-semibold text-mk-off-black transition hover:bg-mk-horizon disabled:cursor-not-allowed disabled:opacity-55"
-                      disabled={!turnstile.ready || status === "connecting"}
+                      disabled={!turnstile.ready || connectionStatus !== "idle"}
                       onClick={connectVoice}
                       type="button"
                     >
-                      {status === "connecting" ? "Connecting..." : status === "listening" ? "Listening" : "Start voice"}
+                      {connectionStatus === "connecting"
+                        ? "Connecting..."
+                        : connectionStatus === "listening"
+                          ? "Listening"
+                          : "Start voice"}
                     </button>
                     {/* biome-ignore lint/a11y/useMediaCaption: Live WebRTC audio has no static caption asset; captured text appears in the transcript state. */}
                     <audio autoPlay ref={audioRef} />
@@ -303,12 +313,12 @@ function LeadForm({
   onSubmit,
   ready,
 }: {
-  captured: Captured;
-  onChange: (captured: Captured) => void;
+  captured: CapturedLead;
+  onChange: (captured: CapturedLead) => void;
   onSubmit: () => void;
   ready: boolean;
 }) {
-  const field = (key: keyof Captured, value: string) => onChange({ ...captured, [key]: value });
+  const field = (key: keyof CapturedLead, value: string) => onChange({ ...captured, [key]: value });
   return (
     <form
       className="mx-auto grid max-w-2xl gap-5"
@@ -354,38 +364,11 @@ function LeadForm({
   );
 }
 
-function reduceRealtimeEvent(
-  event: {
-    type?: string;
-    name?: string;
-    arguments?: string;
-    response?: { output?: Array<{ content?: Array<{ transcript?: string; text?: string }> }> };
-  },
-  setCaptured: React.Dispatch<React.SetStateAction<Captured>>,
-  setSegment: React.Dispatch<React.SetStateAction<SegmentId>>,
-  setTranscript: React.Dispatch<React.SetStateAction<Array<{ role: "assistant" | "user"; text: string }>>>,
-  submitVoice: () => void,
-  captured: Captured,
+function sendRealtimeCommand(
+  channel: RTCDataChannel,
+  command: Extract<RealtimeClientCommand, { type: "function_result" }>,
 ) {
-  if (event.type === "response.output_audio_transcript.delta" && typeof event.arguments === "string") {
-    setTranscript((rows) => [...rows, { role: "assistant", text: event.arguments ?? "" }]);
+  for (const event of serializeRealtimeCommand(command)) {
+    channel.send(JSON.stringify(event));
   }
-  if (event.type !== "response.done") return;
-  const output = event.response?.output ?? [];
-  for (const item of output) {
-    for (const content of item.content ?? []) {
-      const text = content.transcript ?? content.text;
-      if (text) setTranscript((rows) => [...rows, { role: "assistant", text }]);
-    }
-  }
-  if (!event.name || !event.arguments) return;
-  const args = JSON.parse(event.arguments) as Record<string, string>;
-  if (event.name === "set_partner_type" && args.segment) setSegment(args.segment as SegmentId);
-  if (event.name === "capture_field" && args.key && args.value) {
-    const key = args.key;
-    if (key === "name" || key === "email" || key === "org" || key === "message") {
-      setCaptured((current) => ({ ...current, [key]: args.value ?? "" }));
-    }
-  }
-  if (event.name === "route_to_team" && captured.email && captured.name) submitVoice();
 }

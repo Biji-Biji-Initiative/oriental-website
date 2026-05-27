@@ -3,6 +3,8 @@
 This folder is the **complete handover** from design / prototype phase to the
 production build (**Next.js 16 · React 19 · Tailwind v4 · shadcn/ui native**).
 
+**Coding agents** should start at [`../AGENTS.md`](../AGENTS.md) for the live repo map, commands, and implementation drift notes, then use the docs below for product intent.
+
 Start here. Each document below is self-contained — read in order on first pass,
 then use as reference.
 
