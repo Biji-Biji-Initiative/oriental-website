@@ -26,17 +26,18 @@ type VoiceAgentDialogProps = {
   onOpenChange: (open: boolean) => void;
   intent?: SegmentId;
   prefill?: { email?: string; mode?: "voice" | "form" };
+  turnstileSiteKey?: string;
 };
 
 const emptyCaptured: Captured = { name: "", email: "", org: "", message: "" };
 
-export function VoiceAgentDialog({ open, onOpenChange, intent, prefill }: VoiceAgentDialogProps) {
+export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstileSiteKey }: VoiceAgentDialogProps) {
   const [segment, setSegment] = useState<SegmentId>(intent ?? "other");
   const [mode, setMode] = useState<"voice" | "form">(prefill?.mode ?? "voice");
   const [captured, setCaptured] = useState<Captured>({ ...emptyCaptured, email: prefill?.email ?? "" });
   const [status, setStatus] = useState<"idle" | "connecting" | "listening" | "submitted">("idle");
   const [transcript, setTranscript] = useState<Array<{ role: "assistant" | "user"; text: string }>>([]);
-  const turnstile = useTurnstile("oriental-intake");
+  const turnstile = useTurnstile("oriental-intake", turnstileSiteKey);
   const connectionRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);

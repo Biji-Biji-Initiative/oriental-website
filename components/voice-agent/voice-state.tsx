@@ -9,11 +9,18 @@ type VoiceMode = "voice" | "form";
 type VoiceContextValue = {
   open: (intent?: SegmentId, prefill?: { email?: string; mode?: VoiceMode }) => void;
   close: () => void;
+  turnstileSiteKey?: string;
 };
 
 const VoiceContext = createContext<VoiceContextValue | null>(null);
 
-export function VoiceProvider({ children }: { children: React.ReactNode }) {
+export function VoiceProvider({
+  children,
+  turnstileSiteKey,
+}: {
+  children: React.ReactNode;
+  turnstileSiteKey?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [intent, setIntent] = useState<SegmentId | undefined>();
   const [prefill, setPrefill] = useState<{ email?: string; mode?: VoiceMode } | undefined>();
@@ -26,12 +33,18 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
 
   const close = useCallback(() => setOpen(false), []);
 
-  const value = useMemo(() => ({ open: openVoice, close }), [openVoice, close]);
+  const value = useMemo(() => ({ open: openVoice, close, turnstileSiteKey }), [openVoice, close, turnstileSiteKey]);
 
   return (
     <VoiceContext.Provider value={value}>
       {children}
-      <VoiceAgentDialog intent={intent} onOpenChange={setOpen} open={open} prefill={prefill} />
+      <VoiceAgentDialog
+        intent={intent}
+        onOpenChange={setOpen}
+        open={open}
+        prefill={prefill}
+        turnstileSiteKey={turnstileSiteKey}
+      />
     </VoiceContext.Provider>
   );
 }

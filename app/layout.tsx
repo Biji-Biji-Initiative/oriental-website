@@ -54,10 +54,12 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const turnstileSiteKey = process.env.TURNSTILE_SITE_KEY || process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+
   return (
     <html lang="en" className={`${poppins.variable} ${fraunces.variable} scroll-smooth antialiased`}>
       <body className="min-h-svh bg-mk-paper text-mk-off-black">
-        <VoiceProvider>
+        <VoiceProvider turnstileSiteKey={turnstileSiteKey}>
           <SiteNav />
           {children}
           <VoiceRail />

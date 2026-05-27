@@ -63,8 +63,7 @@ function localDevelopmentToken() {
   return host === "localhost" || host === "127.0.0.1" || host === "::1" ? "local-dev" : null;
 }
 
-export function useTurnstile(action: string) {
-  const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+export function useTurnstile(action: string, siteKey?: string) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const widgetIdRef = useRef<TurnstileWidgetId | null>(null);
   const pendingRef = useRef<{

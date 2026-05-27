@@ -10,7 +10,7 @@ const emailPattern = /^\S+@\S+\.\S+$/;
 
 export function HeroEmailCapture() {
   const voice = useVoice();
-  const turnstile = useTurnstile("oriental-newsletter");
+  const turnstile = useTurnstile("oriental-newsletter", voice.turnstileSiteKey);
   const [email, setEmail] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
