@@ -1,244 +1,248 @@
 # 02 — Technical Specification
 
-The production build. **Next.js 16 · React 19 · Tailwind v4 · shadcn/ui.**
-
----
+Runtime truth for the production build:
+**Next.js 16 · React 19 · Tailwind v4 · shadcn/ui · Convex · OpenAI Realtime 2**.
 
 ## 1. Stack
 
 | Layer | Choice | Notes |
 |---|---|---|
-| Framework | **Next.js 16** (App Router, Turbopack) | RSC by default; client components for the voice modal, orb, tweak controls. |
-| React | **19.x** | `use()`, `useActionState`, Server Actions. |
-| Styling | **Tailwind v4** | `@theme` block in `app/globals.css` holds the Mereka token names. Native CSS layers; no `tailwind.config.js`. |
-| UI primitives | **shadcn/ui (Radix-backed)** | Dialog, Tabs, Card, Input, Textarea, Label, Button, Toast. |
-| Fonts | `next/font/local` (Poppins, self-hosted) + `next/font/google` (Fraunces) | Inter only if needed for tertiary copy. |
-| 3D | `three` + `@react-three/fiber` + `@react-three/drei` | The Mereka orb scene. |
-| Voice | **OpenAI Realtime API** via ephemeral tokens, WebRTC client. | See [`05-VOICE-AGENT-SPEC.md`](./05-VOICE-AGENT-SPEC.md). |
-| Database | **Postgres** (Supabase or Neon, TBD by infra) | One `leads` + one `lead_events` table. |
-| ORM | **Drizzle** | Type-safe, plays nicely with edge runtimes. |
-| Email | **AWS SES** (`@aws-sdk/client-sesv2`) | Transactional. |
-| Slack | Incoming webhook | `#partner-intake`. |
-| Bot / abuse protection | **Cloudflare Turnstile** | Invisible token required on every intake POST. See [`11-INFRASTRUCTURE.md`](./11-INFRASTRUCTURE.md). |
-| Rate limiting | **Redis** (self-hosted in Coolify) + a small sliding-window helper | Per-IP, on top of Turnstile. |
-| Edge / DNS / CDN | **Cloudflare** | DNS for `oriental.mereka.io`, proxied (orange-cloud), TLS, caching, WAF. |
-| Secrets | **Infisical** at `secrets.mereka.io` (self-hosted) | All env vars resolved at deploy time via Infisical → Coolify. Nothing checked in. |
-| Hosting | **Coolify** (Mereka infra) | Single Docker service, Next.js standalone output. |
-| Observability | **Sentry** (errors) + Coolify container logs + Cloudflare Analytics | No Vercel-specific tooling. |
+| Framework | Next.js 16 App Router | Node runtime on Coolify; no Vercel edge assumptions. |
+| React | React 19 | Server components by default; small client islands for interactive surfaces. |
+| Styling | Tailwind CSS 4 | Tokens and component classes in `app/globals.css`. |
+| UI primitives | shadcn/ui | Dialog, Tabs, Input, Textarea, Label, Button, Sonner. |
+| Fonts | `next/font/local` | Self-hosted Poppins and Fraunces files in `public/assets/fonts/`. |
+| Brand assets | Local public assets | Source notes in `docs/ASSET-SOURCES.md`. |
+| Voice | OpenAI Realtime 2 | `gpt-realtime-2`, WebRTC, ephemeral client secrets. |
+| Data | Convex | `convex/schema.ts`, `convex/leads.ts`, `lib/server/convex.ts`. |
+| Email | SMTP or AWS SESv2 | SMTP preferred when configured; SESv2 fallback by region. |
+| Slack | Incoming webhook | Optional mirror when `SLACK_WEBHOOK_URL` exists. |
+| Abuse protection | Cloudflare Turnstile | Verified server-side on all intake POST routes. |
+| Rate limiting | In-memory per process | Single-instance launch guard. Replace before horizontal scale. |
+| DNS / TLS / WAF | Cloudflare | In front of Coolify origin. |
+| Secrets | Infisical + Coolify env | Project `6bfac905-9bb1-449e-8be8-f25f9634802b`, folder `/deploy/oriental-website`. |
+| Hosting | Coolify | Docker standalone Next.js app. |
+| Observability | Coolify logs + route responses | Sentry/metrics are future work unless added by a later PR. |
 
-## 2. Repository layout
+There is no React Three Fiber runtime in the current app. The public orb is the
+SVG `MiniOrb`.
+
+## 2. Repository Layout
 
 ```
-oriental-microsite/
-├── app/
-│   ├── (site)/
-│   │   ├── page.tsx                 // RSC — composes <Hero>, <Vision>, …
-│   │   ├── layout.tsx               // <html>, fonts, <ThemeScript>, <Toaster>
-│   │   └── opengraph-image.tsx      // Generated OG card
-│   ├── api/
-│   │   ├── leads/route.ts           // POST → write lead + email + slack
-│   │   ├── voice/session/route.ts   // POST → mint OpenAI Realtime ephemeral token
-│   │   └── newsletter/route.ts      // POST → hero email capture
-│   ├── globals.css                  // @theme tokens, base layer, no utilities config
-│   └── robots.ts / sitemap.ts
-├── components/
-│   ├── sections/                    // Hero, Vision, Ecosystem, Facilities, Partners, Timeline, Closing, Footer
-│   ├── voice-agent/                 // Modal, VoiceMode, FormMode, CapturedRail, Submitted
-│   ├── orb/                         // OrbCanvas (R3F), MiniOrb (SVG)
-│   ├── nav/
-│   └── ui/                          // shadcn-generated primitives
-├── lib/
-│   ├── db.ts                        // drizzle client
-│   ├── schema.ts                    // leads, lead_events
-│   ├── segments.ts                  // SEGMENTS map — see voice-agent spec
-│   ├── email.ts                     // SES helpers
-│   ├── slack.ts                     // webhook helper
-│   ├── ratelimit.ts                 // upstash bindings
-│   └── analytics.ts
-├── public/
-│   ├── assets/                      // photos, fonts, OG image (copied from prototype)
-│   └── favicon.svg
-├── drizzle/                         // migrations
-├── .env.local.example
-├── biome.json or eslint.config.js   // pick one
-└── package.json
+app/
+  layout.tsx              # metadata, fonts, VoiceProvider, SiteNav, VoiceRail
+  page.tsx                # home page section composition + JSON-LD
+  globals.css             # Tailwind v4 tokens + component chrome
+  api/
+    health/route.ts
+    leads/route.ts
+    newsletter/route.ts
+    voice/session/route.ts
+components/
+  site/                   # homepage sections, grids, nav, timeline, rail
+  voice-agent/            # dialog, WebRTC hook, state, hero email capture
+  security/               # Turnstile hook
+  orb/                    # MiniOrb SVG
+  ui/                     # shadcn primitives
+convex/
+  schema.ts
+  leads.ts
+  _generated/
+lib/
+  content.ts
+  schemas.ts
+  segments.ts
+  voice/
+  server/
+tests/
+  *.test.ts
+  e2e/
+public/assets/
 ```
 
-## 3. Rendering model
+Use `AGENTS.md` for the most compact "where to change what" map.
 
-Everything runs in the **Node runtime** — we are on Coolify, not Vercel, so there is
-no edge runtime split. The benefit of Cloudflare's edge is gained via the
-orange-cloud proxy in front of the origin (caching, TLS termination, WAF), not
-via per-route runtime targeting.
+## 3. Rendering Model
+
+Everything runs in the Node runtime. `app/layout.tsx` calls `connection()` so
+the current root is dynamic and reads `TURNSTILE_SITE_KEY` at request time.
 
 | Route | Behaviour |
 |---|---|
-| `/` (the microsite) | **RSC**, statically rendered at build time. Cloudflare caches the HTML response aggressively. |
-| `/api/leads` | Validates Turnstile token → rate-limits → writes lead → sends SES email → posts Slack. |
-| `/api/voice/session` | Validates Turnstile token → rate-limits → mints OpenAI Realtime ephemeral token. |
-| `/api/newsletter` | Validates Turnstile token → rate-limits → writes `source='hero-email'` lead. |
+| `/` | RSC home page plus client islands for nav, timeline, voice, Turnstile, and hero email. |
+| `/api/leads` | Validate payload → Turnstile → rate-limit → route/persist lead → notify owner/Slack. |
+| `/api/newsletter` | Validate payload → Turnstile → rate-limit → persist `source="hero-email"` lead. |
+| `/api/voice/session` | Validate payload → Turnstile → rate-limit → mint OpenAI Realtime client secret. |
+| `/api/health` | Lightweight app liveness response; no upstream dependency ping. |
 
-Client components: `VoiceAgentDialog`, `OrbCanvas`, `MiniOrb`, `HeroEmailCapture`,
-`NavScrollState`, `TimelineHoverState`, `TurnstileWidget`. Everything else stays server.
+Do not document aggressive HTML caching while the root layout is dynamic.
 
-## 4. Tailwind v4 setup
+## 4. Tailwind v4 Setup
 
-In `app/globals.css`:
+All theme variables live in `app/globals.css`:
 
 ```css
 @import "tailwindcss";
 
 @theme {
-  /* Mereka tokens — names match assets/mereka.css in prototype */
   --color-mk-anchor-blue: #1f3f7c;
-  --color-mk-strategy-teal: #2d6a7a;
   --color-mk-horizon: #c9d5ec;
   --color-mk-off-black: #100d18;
-  --color-mk-cream: #f6f4ef;
-  --color-mk-line: rgba(16, 13, 24, 0.08);
-
+  --color-mk-paper: #f6f4ef;
   --font-sans: "Poppins", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Fraunces", ui-serif, Georgia, serif;
-
-  --radius-pill: 999px;
-  --radius-card: 18px;
-
-  --shadow-card: 0 1px 0 rgba(16,13,24,0.06), 0 12px 32px -16px rgba(16,13,24,0.18);
+  --max-width-wrap: 1320px;
 }
-
-/* prototype's data-attribute palette swap survives as-is */
-[data-accent="horizon"] { --color-mk-anchor-blue: #4a6db0; }
-[data-accent="mono"]    { --color-mk-anchor-blue: #100d18; }
 ```
 
-Component code uses `bg-mk-anchor-blue`, `text-mk-off-black`, `font-serif`,
-`rounded-card`, etc.
+Prototype-parity component classes use stable prefixes such as `.eco-*`,
+`.facilities-*`, `.partner-*`, `.timeline*`, `.site-nav__*`, and
+`.footer-brand*`.
 
-## 5. Environment variables
+## 5. Environment Variables
 
-**No `.env.local` is committed or shipped.** All values are resolved from
-Infisical (`secrets.mereka.io`) at deploy time — see
-[`11-INFRASTRUCTURE.md`](./11-INFRASTRUCTURE.md) for the full flow. Below is the
-**variable contract** the app expects at runtime — engineering creates these
-keys inside the Infisical project, not in a file.
+Production secrets live in Infisical:
 
-```
-# Database
-DATABASE_URL
+- host: `https://secrets.mereka.io/api`
+- project ID: `6bfac905-9bb1-449e-8be8-f25f9634802b`
+- folder: `/deploy/oriental-website`
+- envs: `dev`, `staging`, `prod`
 
-# OpenAI Realtime
-OPENAI_API_KEY
-OPENAI_REALTIME_MODEL                # default: gpt-4o-realtime-preview
+Use Universal Auth machine credentials only. Do not use interactive
+`infisical login`.
 
-# AWS SES
-AWS_REGION                           # ap-southeast-1
-AWS_ACCESS_KEY_ID
-AWS_SECRET_ACCESS_KEY
-SES_FROM_ADDRESS                     # oriental@mereka.io
-SES_REPLY_TO                         # team@mereka.io
-
-# Slack
-SLACK_WEBHOOK_URL
-
-# Redis (self-hosted, same Coolify project)
-REDIS_URL
-
-# Cloudflare Turnstile
-TURNSTILE_SITE_KEY                   # public, exposed to client as NEXT_PUBLIC_*
-TURNSTILE_SECRET_KEY                 # server-only
-
-# Infisical bootstrap (used by the Coolify deploy hook, NOT by the app itself)
-INFISICAL_PROJECT_ID
-INFISICAL_ENVIRONMENT                # prod | staging | dev
-INFISICAL_CLIENT_ID
-INFISICAL_CLIENT_SECRET
-
-# Routing overrides — owner email per segment
-OWNER_TENANCY                        # chewi@mereka.io
-OWNER_EDUCATION                      # lala@mereka.io
-OWNER_PROGRAMME                      # jey@mereka.io
-OWNER_TECHNOLOGY                     # gurpreet@mereka.io
-OWNER_AI                             # gurpreet@mereka.io
-OWNER_CULTURAL                       # avi@mereka.io
-OWNER_COMMUNITY                      # ambika@mereka.io
-OWNER_OTHER                          # nadia@mereka.io
+```bash
+source ~/.config/infisical/universal-auth.env
+export INFISICAL_API_URL
+export INFISICAL_TOKEN=$(infisical login --method=universal-auth \
+  --client-id="$INFISICAL_UA_CLIENT_ID" \
+  --client-secret="$INFISICAL_UA_CLIENT_SECRET" \
+  --silent --plain 2>/dev/null)
+infisical export --env=prod --path=/deploy/oriental-website \
+  --projectId=6bfac905-9bb1-449e-8be8-f25f9634802b --format=dotenv
 ```
 
-The only public key is `NEXT_PUBLIC_TURNSTILE_SITE_KEY`. Everything else is
-server-side and must not leak into the client bundle. CI fails the build if a
-`NEXT_PUBLIC_*` variable is added without explicit review.
+Runtime contract:
 
-## 6. Performance budget
+```dotenv
+NEXT_PUBLIC_CONVEX_URL=
+CONVEX_URL=
+CONVEX_INGEST_SECRET=
+OPENAI_API_KEY=
+OPENAI_REALTIME_MODEL=gpt-realtime-2
+OPENAI_REALTIME_VOICE=marin
+TURNSTILE_SITE_KEY=
+TURNSTILE_SECRET_KEY=
+IP_HASH_SECRET=
+AWS_REGION=
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+SES_FROM_ADDRESS=
+SES_REPLY_TO=
+SMTP_HOST=
+SMTP_PORT=
+SMTP_USER=
+SMTP_PASSWORD=
+SLACK_WEBHOOK_URL=
+OWNER_TENANCY=
+OWNER_EDUCATION=
+OWNER_PROGRAMME=
+OWNER_TECHNOLOGY=
+OWNER_AI=
+OWNER_CULTURAL=
+OWNER_COMMUNITY=
+OWNER_OTHER=
+```
 
-| Metric | Budget |
+Deploy-only:
+
+```dotenv
+CONVEX_DEPLOY_KEY=
+```
+
+Local `.env.local` is for developer convenience only and must never be
+committed.
+
+## 6. Voice Runtime
+
+Session minting:
+
+1. Client obtains a Turnstile token.
+2. Client requests microphone permission.
+3. Client calls `POST /api/voice/session`.
+4. Server calls `POST /v1/realtime/client_secrets`.
+5. Client posts SDP offer to `POST /v1/realtime/calls`.
+6. Realtime data-channel events are reduced by `lib/voice/realtime-events.ts`.
+
+Defaults:
+
+- model: `OPENAI_REALTIME_MODEL ?? "gpt-realtime-2"`
+- voice: `OPENAI_REALTIME_VOICE ?? "marin"`
+- idle timeout: `45s` client timer
+- max session: `180s` client timer
+- tools: `set_partner_type`, `capture_field`, `summarise_lead`,
+  `route_to_team`, `wait_for_user`
+
+## 7. Build, Test, Deploy
+
+Commands:
+
+```bash
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+pnpm test:e2e
+pnpm check-secrets
+pnpm convex:codegen
+CONVEX_DEPLOY_KEY='prod:...' pnpm exec convex deploy
+```
+
+CI currently runs the `verify` workflow on PRs. Coolify builds the Docker
+standalone app and serves the generated Next.js server.
+
+No Drizzle migrations or `DATABASE_URL` are part of the launch runtime.
+
+## 8. Performance And SEO
+
+Budgets:
+
+| Metric | Target |
 |---|---|
-| LCP (mid-tier mobile, 4G) | ≤ 2.5s |
+| LCP mobile 4G | ≤ 2.5s |
 | CLS | < 0.05 |
 | INP | < 200ms |
-| Total JS on first paint | < 90 KB gzipped (R3F lazy-loaded on voice-open) |
-| Hero photo | `priority` + `fetchPriority="high"`, AVIF first |
+| Lighthouse accessibility | ≥ 95 |
 
-The three.js orb scene is **dynamic-imported** inside the voice modal — it must
-never enter the initial bundle.
+SEO:
 
-```ts
-const OrbCanvas = dynamic(() => import('@/components/orb/OrbCanvas'), { ssr: false });
-```
+- canonical: `https://oriental.mereka.io/`
+- `app/sitemap.ts` lists `/`
+- `app/robots.ts` allows indexing
+- JSON-LD includes Mereka `Organization` and Oriental Building `Place`
+- OG/Twitter images use `/assets/og-image.svg`
+- favicon metadata uses canonical Mereka favicon PNGs under
+  `/assets/brand/mereka/`
 
-## 7. SEO
+## 9. Launch Implementation Notes
 
-- Title: `Oriental · A future we build together`
-- Description: existing copy in `index.html`
-- `app/opengraph-image.tsx` renders the OG card from the same SVG used in prototype.
-- `robots.ts` allows all. `sitemap.ts` lists `/` only.
-- Canonical: `https://oriental.mereka.io/`
-- JSON-LD `Organization` block for Mereka + `Place` block for the building
-  (coordinates: 3.1473°N, 101.6979°E — verify before launch).
+Already implemented in source:
 
-## 8. Build & CI
+- Next.js 16 + Tailwind v4 + shadcn primitives
+- prototype-parity homepage structure
+- official Biji-biji/Mereka assets and CIMB partner marks
+- Convex lead persistence path
+- Turnstile verification
+- in-memory rate limits
+- OpenAI Realtime 2 WebRTC path
+- focused Vitest and Playwright coverage
 
-- **GitHub Actions** runs lint + tests on every PR.
-- **Coolify** has a webhook deploy: merge to `main` → Coolify pulls, builds the
-  Docker image, hydrates env from Infisical, runs migrations, switches traffic.
-  See [`11-INFRASTRUCTURE.md`](./11-INFRASTRUCTURE.md) §Deploy pipeline.
-- **Preview environments** — one per long-lived branch via a second Coolify
-  service pointing at `oriental-preview.mereka.io`. PR previews are not
-  automatic; spin one up on request.
-- **Drizzle migrations** run via `pnpm db:migrate` from the Coolify pre-deploy
-  hook (NOT in `postinstall`).
-- **Tests:**
-  - Unit (lib/) — **Vitest**.
-  - Integration (Route Handlers) — Vitest with mocked Turnstile / SES / Slack.
-  - E2E (single happy path) — **Playwright** against the preview URL.
-- **Lint** — **Biome** (formatter + linter) OR ESLint flat config — pick one early.
-- **Docker image** — multi-stage build off `node:22-alpine`, final stage runs
-  `node server.js` from Next.js `output: 'standalone'`. Image size target < 220 MB.
+Open before public launch:
 
-## 9. Migration tasks from prototype
-
-In rough order. Tasks fanning out into pull requests:
-
-1. **Scaffold** Next.js 16 + Tailwind v4 + shadcn init + Biome.
-2. **Copy `public/assets/`** verbatim from prototype.
-3. **Port styles.css → component styles + globals.css `@theme`** —
-   see [`03-DESIGN-SPEC.md`](./03-DESIGN-SPEC.md).
-4. **Port sections** to RSC components. One PR per section keeps reviews small:
-   Nav, Hero, Vision, Ecosystem, Facilities, Partners, Timeline, Closing, Footer.
-5. **Port VoiceAgent** as a client component using shadcn `Dialog` + `Tabs`.
-6. **Port Orb** to R3F (`<Canvas>` + `<OrbMesh>` + `<Particles>`).
-7. **Wire `/api/leads`** — Drizzle + SES + Slack. Stub voice transcript with empty string.
-8. **Wire `/api/newsletter`** — same table, `source='hero-email'`.
-9. **Wire `/api/voice/session`** — OpenAI ephemeral token mint.
-10. **Wire WebRTC client** + tool-call handlers — see voice spec.
-11. **Rate limit** all three routes.
-12. **E2E test** the happy path.
-13. **PDPA / privacy notice** copy and link.
-14. **Cloudflare DNS** — `oriental.mereka.io` A/AAAA → Coolify origin, orange-cloud on.
-    Configure Turnstile widget + WAF rules. See [`11-INFRASTRUCTURE.md`](./11-INFRASTRUCTURE.md).
-15. **Infisical project** — create `oriental-microsite` project with `prod`, `staging`, `dev`
-    environments and populate the variable contract above.
-16. **Coolify service** — create the service, wire to GitHub repo, attach the Infisical
-    machine identity, set up the deploy webhook.
-17. **Soft launch** with internal Mereka team submitting test leads.
-
-See [`09-LAUNCH-CHECKLIST.md`](./09-LAUNCH-CHECKLIST.md) for QA gates.
+- PDPA/privacy notice and footer/modal links
+- photography rights
+- legal/brand approval for partner logo usage
+- live Realtime conversation proof against staging/prod
+- Convex deploy proof and owner-notification proof
+- replacement shared rate limiter if scaling beyond one app instance

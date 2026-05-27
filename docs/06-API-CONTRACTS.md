@@ -1,109 +1,180 @@
 # 06 — API Contracts
 
-Every Route Handler the production app exposes. Use this to:
+Every public Route Handler exposed by the production app. Source code and
+`lib/schemas.ts` are authoritative; update this doc in the same PR whenever a
+request or response shape changes.
 
-- Build the server side without guessing payload shapes.
-- Mock these in front-end tests.
-- Document for future internal consumers (the Mereka-admin app).
-
-All routes are **Node runtime**, on Coolify. All POST routes require a
-**Cloudflare Turnstile token** in the body, validated server-side before any
-side effect.
-
-Shared response envelope:
+All routes run in the **Node.js runtime** on Coolify and return `Cache-Control:
+no-store`.
 
 ```ts
-type Ok<T>  = { ok: true } & T;
-type Err    = { ok: false; error: string; details?: unknown };
-type Reply  = Ok<unknown> | Err;
+type Ok<T> = { ok: true } & T;
+type Err = { ok: false; error: string; details?: unknown };
 ```
 
-`error` values are stable, human-readable, and **safe to surface** in toasts.
+`error` values are stable enough for client branching. User-facing copy should
+still come from the UI layer.
 
----
+## Shared Validation
 
-## `POST /api/leads`
-
-**Purpose.** Persist a partner enquiry and notify the routed owner.
-
-### Request
-
-```http
-POST /api/leads
-Content-Type: application/json
-```
+POST bodies are parsed with Zod schemas in `lib/schemas.ts`.
 
 ```ts
-type LeadRequest = {
-  source: 'voice' | 'form';
-  segment: 'tenancy'|'education'|'programme'|'technology'|'ai'|'cultural'|'community'|'other';
-  form: {
-    name:    string;   // 1..120
-    email:   string;   // RFC 5322-ish, /^\S+@\S+\.\S+$/
-    org:     string;   // 0..200
-    message: string;   // 0..2000
-  };
-  transcript?: Array<{ role: 'user' | 'assistant'; text: string }>;
-  utm?: Record<string, string>;
-  turnstileToken: string;
+type Segment =
+  | "tenancy"
+  | "education"
+  | "programme"
+  | "technology"
+  | "ai"
+  | "cultural"
+  | "community"
+  | "other";
+
+type LeadForm = {
+  name: string;    // trim, 2..120
+  email: string;   // trim, email, max 180
+  org: string;     // trim, 2..180
+  message: string; // trim, 8..2500
 };
 ```
 
-### Response (200)
+Turnstile is verified server-side for every intake POST. In local development,
+when `TURNSTILE_SECRET_KEY` is absent, loopback hosts can use the
+`local-dev` token emitted by `useTurnstile()`.
+
+## `POST /api/leads`
+
+Purpose: persist a voice/form partner enquiry and notify the routed owner.
+
+### Request
 
 ```ts
-type LeadResponse = { ok: true; id: string };
+type LeadRequest = {
+  source: "voice" | "form";
+  segment?: Segment; // defaults to "other"
+  form: LeadForm;
+  transcript?: Array<{
+    role?: "user" | "assistant" | "system"; // defaults to "user"
+    text: string; // 1..4000
+  }>;
+  turnstileToken?: string;
+  utm?: Record<string, string>;
+};
+```
+
+### Response `200`
+
+```ts
+type LeadResponse = {
+  ok: true;
+  id: string;
+  persisted: boolean;
+  notifications: {
+    email: { ok: boolean; transport?: "smtp" | "sesv2"; skipped?: boolean; reason?: string; error?: string };
+    slack: { ok: boolean; skipped?: boolean; reason?: string; error?: string };
+  };
+};
+```
+
+`persisted: false` is possible in local development when Convex is not
+configured. Production `pnpm check-secrets` requires Convex secrets.
+
+### Errors
+
+| HTTP | `error` | Cause |
+|---|---|---|
+| 400 | `invalid_payload` | Zod validation failed. |
+| 403 | `turnstile_failed` | Cloudflare verify rejected the token. |
+| 429 | `rate_limited` | More than 12 lead attempts per IP per hour. |
+| 500 | `routing_unconfigured` | Production owner email missing for the resolved segment. |
+
+### Side Effects
+
+1. `routeLead()` resolves owner metadata from `lib/segments.ts` and `OWNER_*`.
+2. `persistLead()` inserts into Convex `leads` and `leadEvents` when configured.
+3. Owner notification is attempted through SMTP when SMTP env exists, otherwise
+   SESv2 when `AWS_REGION` is set.
+4. Slack notification is attempted when `SLACK_WEBHOOK_URL` exists.
+
+Notification failures are represented in the `notifications` object and do not
+turn a successfully accepted lead into an error response.
+
+## `POST /api/newsletter`
+
+Purpose: capture the hero email form as a lightweight lead.
+
+### Request
+
+```ts
+type NewsletterRequest = {
+  email: string; // trim, email, max 180
+  turnstileToken?: string;
+  utm?: Record<string, string>;
+};
+```
+
+### Response `200`
+
+```ts
+type NewsletterResponse = {
+  ok: true;
+  id: string;
+  persisted: boolean;
+};
 ```
 
 ### Errors
 
 | HTTP | `error` | Cause |
 |---|---|---|
-| 400 | `invalid_payload` | zod validation failed |
-| 403 | `turnstile_failed` | Cloudflare verify rejected the token |
-| 429 | `rate_limited` | > 10 submissions / IP / hour |
-| 502 | `ses_failed` | Email send failed (lead still saved; retry queued) |
-| 500 | `internal` | Unhandled — Sentry will capture |
+| 400 | `invalid_payload` | Zod validation failed. |
+| 403 | `turnstile_failed` | Cloudflare verify rejected the token. |
+| 429 | `rate_limited` | More than 20 newsletter attempts per IP per hour. |
 
-### Side effects (in order)
+### Side Effects
 
-1. Insert into `leads`.
-2. Insert into `lead_events` with `kind='created'`.
-3. SES email to `OWNER_<SEGMENT>` (BCC `team@mereka.io`).
-4. Slack webhook to `#partner-intake`.
-5. (Future) write transcript JSON to S3, patch `transcript_url` on the row.
+Newsletter writes use the same Convex mutation as full leads:
 
-If any of (3)–(5) fail, the row is **still committed**. The failure is logged
-and a retry is queued.
+```ts
+{
+  source: "hero-email",
+  segment: "other",
+  form: {
+    name: "Newsletter subscriber",
+    email,
+    org: "Unknown",
+    message: "Keep me posted about Oriental Building."
+  },
+  transcript: []
+}
+```
 
----
+No owner email or Slack notification is sent for newsletter-only leads.
 
 ## `POST /api/voice/session`
 
-**Purpose.** Mint an OpenAI Realtime ephemeral token so the browser can open a
-WebRTC session without ever holding `OPENAI_API_KEY`.
+Purpose: mint a short-lived OpenAI Realtime client secret so the browser can
+open a WebRTC session without receiving `OPENAI_API_KEY`.
 
 ### Request
 
 ```ts
 type VoiceSessionRequest = {
-  turnstileToken: string;
-  intent?: 'tenancy' | 'education' | ... | 'other';  // optional pre-pick
+  turnstileToken?: string;
+  intent?: Segment;
+  utm?: Record<string, string>;
 };
 ```
 
-### Response (200)
-
-Mirrors the shape returned by OpenAI's `realtime/sessions` endpoint, scoped to
-what the client needs:
+### Response `200`
 
 ```ts
 type VoiceSessionResponse = {
   ok: true;
   client_secret: { value: string; expires_at: number };
   session_id: string;
-  model: string;
-  voice: string;
+  model: string; // default "gpt-realtime-2"
+  voice: string; // default "marin"
 };
 ```
 
@@ -111,127 +182,75 @@ type VoiceSessionResponse = {
 
 | HTTP | `error` | Cause |
 |---|---|---|
-| 403 | `turnstile_failed` | — |
-| 429 | `rate_limited` | > 3 sessions / IP / day |
-| 502 | `openai_unavailable` | Upstream timeout / 5xx |
-| 500 | `internal` | — |
+| 400 | `invalid_payload` | Zod validation failed. |
+| 403 | `turnstile_failed` | Cloudflare verify rejected the token. |
+| 429 | `voice_limit_reached` | More than 3 minted sessions per IP per day. |
+| 503 | `openai_unconfigured` | `OPENAI_API_KEY` missing. |
+| 502 | `openai_<status>` | OpenAI client-secret request failed. |
+| 502 | `openai_invalid_secret` | OpenAI response did not contain a usable secret. |
 
-### Constraints
+Invalid payloads and failed Turnstile checks do **not** spend the strict
+3-per-day voice session quota. The quota is checked after Turnstile and before
+the OpenAI client-secret request.
 
-- Server-side session length cap: **180 seconds** (configured in the request
-  to OpenAI).
-- The route does **not** log the user's intent against IP — it's used only to
-  seed the system prompt for that session.
+### OpenAI Realtime Contract
 
----
+Server request:
 
-## `POST /api/newsletter`
+- `POST https://api.openai.com/v1/realtime/client_secrets`
+- `session.type = "realtime"`
+- `session.model = OPENAI_REALTIME_MODEL ?? "gpt-realtime-2"`
+- `session.output_modalities = ["audio"]`
+- `session.audio.input.turn_detection` from `VOICE_SESSION_DEFAULTS`
+- `session.audio.input.transcription.model = "whisper-1"`
+- `session.audio.output.voice = OPENAI_REALTIME_VOICE ?? "marin"`
+- tools from `VOICE_TOOLS`, including `wait_for_user`
 
-**Purpose.** The hero email-capture surface. Lightweight — just save an
-email + UTM under `source='hero-email'` in the same `leads` table.
+Browser WebRTC exchange:
 
-### Request
+- `POST https://api.openai.com/v1/realtime/calls`
+- `Authorization: Bearer <client_secret.value>`
+- body is SDP offer, response body is SDP answer
 
-```ts
-type NewsletterRequest = {
-  email: string;
-  utm?: Record<string, string>;
-  turnstileToken: string;
-};
-```
+Client-enforced caps live in `VOICE_SESSION_DEFAULTS`:
 
-### Response (200)
-
-```ts
-type NewsletterResponse = { ok: true };
-```
-
-### Errors
-
-| HTTP | `error` |
-|---|---|
-| 400 | `invalid_email` |
-| 403 | `turnstile_failed` |
-| 429 | `rate_limited` |
-| 500 | `internal` |
-
-### Side effects
-
-1. Insert into `leads` with `segment='other'`, `routed_to='Nadia'`,
-   `source='hero-email'`, `name=null`, `org=null`, `message=null`.
-2. No email or Slack notification — these are *cold* leads, batched into a
-   weekly digest sent to `team@mereka.io` (deferred; see roadmap).
-
----
+- idle timeout: 45 seconds
+- max voice duration: 180 seconds
 
 ## `GET /api/health`
 
-**Purpose.** Coolify health-check.
+Purpose: Coolify/container health check.
 
-### Response (200)
+### Response `200`
 
 ```json
-{ "ok": true, "version": "<git-sha>", "uptime_s": 12345 }
+{ "ok": true, "service": "oriental-website", "ts": "2026-05-27T00:00:00.000Z" }
 ```
 
-Returns **503** if the DB ping fails. Used by Coolify to determine whether to
-swap traffic on a new deploy.
+The route does not ping Convex or OpenAI. It proves the Next server can respond.
 
----
+## Cross-Cutting Concerns
 
-## Cross-cutting concerns
+### Rate Limiting
 
-### Idempotency
+Current runtime uses an in-memory per-process helper in `lib/server/security.ts`.
+This is sufficient for a single Coolify instance. Before horizontal scaling,
+replace it with Redis/KV or another shared limiter.
 
-Not required for v1. The form prevents double-submit client-side; voice
-submission happens on `route_to_team` which is single-shot.
-
-### Rate limiting
-
-Implemented via a small sliding-window helper on top of Redis (self-hosted
-in the same Coolify project). Key = `ratelimit:{route}:{ip}`.
-
-| Route | Limit |
+| Route | Current limit |
 |---|---|
-| `/api/leads` | 10 / hour / IP |
-| `/api/voice/session` | 3 / day / IP |
-| `/api/newsletter` | 5 / hour / IP |
+| `/api/leads` | 12 / hour / IP |
+| `/api/newsletter` | 20 / hour / IP |
+| `/api/voice/session` | 3 minted sessions / day / IP |
 
-429 responses include a `Retry-After` header.
+429 responses currently do not include `Retry-After`.
 
 ### CORS
 
-All routes are same-origin only — no CORS headers emitted. If the Mereka-admin
-app ever needs read access, it goes through a separate authenticated route,
-not these.
+All routes are same-origin only. No CORS headers are emitted.
 
-### Input validation
+### Observability
 
-All payloads parsed through **zod**. Schemas live in `lib/schemas.ts` so the
-client and server share them. Validation errors return `400 invalid_payload`
-with `details` containing the zod issue list (safe to surface to dev tools,
-**not** to user-facing copy).
-
-### Logging
-
-Every Route Handler logs one structured line per request:
-
-```json
-{
-  "route": "/api/leads",
-  "status": 200,
-  "duration_ms": 142,
-  "ip_hash": "...",
-  "turnstile": "ok",
-  "ratelimit": "ok",
-  "segment": "education",
-  "source": "form"
-}
-```
-
-IP is **hashed** (not stored raw) for analytics + abuse triage.
-
-### Error reporting
-
-All thrown errors propagate to Sentry with the request's `route`, `status`,
-and `segment` (when known) attached as tags.
+Current observability is application return values plus Coolify/container logs.
+Sentry, Prometheus counters, structured request logs, and PagerDuty alerts are
+future work unless a later PR adds them.

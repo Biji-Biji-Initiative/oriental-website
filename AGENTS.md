@@ -28,7 +28,7 @@ Production microsite for **Oriental Building** partner intake at `oriental.merek
 | Notify | AWS SES + Slack webhook (`lib/server/notifications.ts`, `lib/server/smtp.ts`) |
 | Deploy | Docker `output: "standalone"` on Coolify; secrets from Infisical (not in git) |
 
-**Product intent** lives in `docs/` (PRD, design, voice spec, API contracts). **Runtime truth** is this repo — when docs mention Postgres/Drizzle/Redis, treat that as handover drift; production uses **Convex** and **in-memory** rate limiting unless a PR explicitly migrates storage.
+**Product intent** lives in `docs/` (PRD, design, voice spec, API contracts). **Runtime truth** is this repo — older handover material may mention Postgres/Drizzle/Redis, but launch production uses **Convex** and **in-memory** rate limiting unless a PR explicitly migrates storage.
 
 ---
 
@@ -91,7 +91,7 @@ docs/                     # handover specs — reference, not auto-synced to cod
 | Lead payload validation | `lib/schemas.ts` |
 | Owner email env mapping | `lib/server/notifications.ts` + `OWNER_*` in `.env.local.example` |
 | Convex tables / ingest | `convex/schema.ts`, `convex/leads.ts` |
-| API error shapes | Match `docs/06-API-CONTRACTS.md`; implement in route handlers |
+| API error shapes | Source route handlers and `lib/schemas.ts`; update `docs/06-API-CONTRACTS.md` in the same PR |
 | Styles / tokens | `app/globals.css` (`@theme`), component Tailwind classes |
 | SEO / metadata | `app/layout.tsx`, `app/sitemap.ts`, `app/robots.ts` |
 
@@ -166,10 +166,11 @@ Read in order on first pass, then cherry-pick:
 | [`docs/02-TECHNICAL-SPEC.md`](docs/02-TECHNICAL-SPEC.md) | Intended stack (check drift vs Convex) |
 | [`docs/05-VOICE-AGENT-SPEC.md`](docs/05-VOICE-AGENT-SPEC.md) | Voice UX, tools, conversation flow |
 | [`docs/06-API-CONTRACTS.md`](docs/06-API-CONTRACTS.md) | Route payloads and error codes |
-| [`docs/07-DATA-MODEL.md`](docs/07-DATA-MODEL.md) | Lead fields (conceptual; schema in `convex/schema.ts`) |
-| [`docs/08-COMPONENT-MAP.md`](docs/08-COMPONENT-MAP.md) | Prototype → component mapping |
+| [`docs/07-DATA-MODEL.md`](docs/07-DATA-MODEL.md) | Lead fields (Convex schema in `convex/schema.ts`) |
+| [`docs/08-COMPONENT-MAP.md`](docs/08-COMPONENT-MAP.md) | Current production component map |
 | [`docs/09-LAUNCH-CHECKLIST.md`](docs/09-LAUNCH-CHECKLIST.md) | Pre-launch gates |
 | [`docs/11-INFRASTRUCTURE.md`](docs/11-INFRASTRUCTURE.md) | Coolify, Cloudflare, Infisical |
+| [`docs/ASSET-SOURCES.md`](docs/ASSET-SOURCES.md) | Logo and favicon provenance |
 | [`README.md`](README.md) | Human quickstart, env list, standalone run |
 
 ---

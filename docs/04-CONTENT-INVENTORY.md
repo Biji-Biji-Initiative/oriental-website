@@ -177,8 +177,13 @@ public web use before launch — track in [`10-ROADMAP.md`](./10-ROADMAP.md).
 | `exterior_render_*.png` | Reserve / unused (potential press kit) |
 | `oriental hsots.png` | Reserve (rename — has typo, will not ship) |
 | `mereka-white.png`, `mereka-symbol-white.png` | Brand marks |
-| `og-image.svg`, `favicon.svg` | Browser chrome |
-| `fonts/Poppins-*.woff2` | Self-hosted Poppins |
+| `brand/biji-biji/biji-biji-logo-*.svg` | Footer Biji-biji primary mark, black/white variants |
+| `brand/biji-biji/biji-biji-elaborated-logo-*.svg` | Stored Biji-biji elaborated mark variants |
+| `brand/cimb/cimb-symbol.svg` | Footer CIMB square symbol |
+| `brand/cimb/cimb-logo-elaborated.svg` | Stored CIMB full logo |
+| `brand/mereka/favicon-*.png` | Browser favicon set from canonical Mereka brand assets |
+| `og-image.svg`, `favicon.svg` | Legacy browser chrome / OG fallback |
+| `fonts/Poppins-*.ttf`, `fonts/Fraunces-*.ttf` | Self-hosted fonts |
 
 ## External links
 

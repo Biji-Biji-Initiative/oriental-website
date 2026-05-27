@@ -8,11 +8,6 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   const ip = requestIp(request);
-  const limit = checkRateLimit(`voice:${hashIp(ip)}`, 3, 24 * 60 * 60 * 1000);
-  if (!limit.ok) {
-    return noStoreJson({ ok: false, error: "voice_limit_reached" }, { status: 429 });
-  }
-
   const raw = await request.json().catch(() => null);
   const parsed = voiceSessionRequestSchema.safeParse(raw);
   if (!parsed.success) {
@@ -22,6 +17,11 @@ export async function POST(request: NextRequest) {
   const turnstileOk = await verifyTurnstile(parsed.data.turnstileToken, ip);
   if (!turnstileOk) {
     return noStoreJson({ ok: false, error: "turnstile_failed" }, { status: 403 });
+  }
+
+  const limit = checkRateLimit(`voice:${hashIp(ip)}`, 3, 24 * 60 * 60 * 1000);
+  if (!limit.ok) {
+    return noStoreJson({ ok: false, error: "voice_limit_reached" }, { status: 429 });
   }
 
   try {

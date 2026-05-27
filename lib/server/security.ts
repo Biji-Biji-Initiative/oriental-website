@@ -56,6 +56,11 @@ export function checkRateLimit(key: string, limit: number, windowMs: number) {
   return { ok: true, remaining: limit - current.count };
 }
 
+export function resetRateLimitBucketsForTest() {
+  if (process.env.NODE_ENV !== "test") return;
+  buckets.clear();
+}
+
 export function noStoreJson(data: unknown, init: ResponseInit = {}) {
   const headers = new Headers(init.headers);
   headers.set("Cache-Control", "no-store");

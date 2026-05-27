@@ -32,6 +32,14 @@ export const metadata: Metadata = {
   title: siteMeta.title,
   description: siteMeta.description,
   alternates: { canonical: "/" },
+  icons: {
+    icon: [
+      { url: "/assets/brand/mereka/favicon-16x16.png", sizes: "16x16", type: "image/png" },
+      { url: "/assets/brand/mereka/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+      { url: "/assets/brand/mereka/favicon-256x256.png", sizes: "256x256", type: "image/png" },
+    ],
+    apple: [{ url: "/assets/brand/mereka/favicon-256x256.png", sizes: "256x256", type: "image/png" }],
+  },
   openGraph: {
     title: siteMeta.title,
     description: siteMeta.description,

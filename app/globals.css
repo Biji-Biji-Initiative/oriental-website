@@ -110,7 +110,27 @@
   }
 
   .footer-tag {
-    @apply text-xs font-medium uppercase tracking-[0.16em] text-white/42;
+    @apply text-xs font-semibold tracking-[0.16em] text-white/42 uppercase;
+  }
+
+  .footer-brand-list {
+    @apply mt-4 space-y-3;
+  }
+
+  .footer-brand-card {
+    @apply flex items-center gap-3 rounded-xl border border-white/8 bg-white/[0.035] p-3 text-white/68;
+  }
+
+  .footer-brand-mark {
+    @apply grid size-11 shrink-0 place-items-center rounded-lg border border-white/10 bg-white/[0.06];
+  }
+
+  .footer-brand-name {
+    @apply block text-sm font-semibold text-white/82;
+  }
+
+  .footer-brand-detail {
+    @apply mt-0.5 block text-sm leading-5 text-white/52;
   }
 
   .facilities-lede {
@@ -211,7 +231,7 @@
   }
 
   .facilities-space__img-num {
-    @apply relative z-10 self-end rounded-tr-lg bg-mk-off-black/55 px-[18px] py-3.5 text-[13px] font-extrabold tracking-[0.28em] text-white uppercase backdrop-blur-sm;
+    @apply absolute bottom-0 left-0 z-10 rounded-tr-lg bg-mk-off-black/55 px-[18px] py-3.5 text-[13px] font-extrabold tracking-[0.28em] text-white uppercase backdrop-blur-sm;
   }
 
   .facilities-space__body {

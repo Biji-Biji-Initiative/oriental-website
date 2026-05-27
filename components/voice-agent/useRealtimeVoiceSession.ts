@@ -73,6 +73,8 @@ export function useRealtimeVoiceSession({
     setConnectionStatus("connecting");
     try {
       const turnstileToken = await getTurnstileToken();
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      localStreamRef.current = stream;
       const session = await fetch("/api/voice/session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -81,8 +83,6 @@ export function useRealtimeVoiceSession({
 
       if (!session.ok) throw new Error(session.error ?? "voice_unavailable");
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      localStreamRef.current = stream;
       const peer = new RTCPeerConnection();
       connectionRef.current = peer;
       stream.getTracks().forEach((track) => {

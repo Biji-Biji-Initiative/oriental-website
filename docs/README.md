@@ -21,11 +21,12 @@ then use as reference.
 | 04 | [`04-CONTENT-INVENTORY.md`](./04-CONTENT-INVENTORY.md) | Content, PM | Every string, every asset, every link |
 | 05 | [`05-VOICE-AGENT-SPEC.md`](./05-VOICE-AGENT-SPEC.md) | Eng, AI | OpenAI Realtime wiring, tools, prompt, fallbacks |
 | 06 | [`06-API-CONTRACTS.md`](./06-API-CONTRACTS.md) | Eng | Route Handlers, request/response shapes, errors |
-| 07 | [`07-DATA-MODEL.md`](./07-DATA-MODEL.md) | Eng | Postgres schema, indexes, lead lifecycle |
-| 08 | [`08-COMPONENT-MAP.md`](./08-COMPONENT-MAP.md) | Eng | Prototype DOM → shadcn primitive mapping |
+| 07 | [`07-DATA-MODEL.md`](./07-DATA-MODEL.md) | Eng | Convex schema, lead persistence, lead lifecycle |
+| 08 | [`08-COMPONENT-MAP.md`](./08-COMPONENT-MAP.md) | Eng | Production component map after prototype parity pass |
 | 09 | [`09-LAUNCH-CHECKLIST.md`](./09-LAUNCH-CHECKLIST.md) | QA, Eng, PM | Pre-launch gates and post-launch monitoring |
 | 10 | [`10-ROADMAP.md`](./10-ROADMAP.md) | PM | What's deferred, sequencing, dependencies |
 | 11 | [`11-INFRASTRUCTURE.md`](./11-INFRASTRUCTURE.md) | Eng, DevOps | Coolify + Cloudflare + Infisical — deploy, secrets, DNS, monitoring |
+| ASSETS | [`ASSET-SOURCES.md`](./ASSET-SOURCES.md) | Eng, Brand | Runtime logo/favicon provenance and approval notes |
 
 ## Source of truth
 
@@ -43,9 +44,9 @@ disagree on intent, this doc wins.
 - **Bot / abuse protection** — Cloudflare Turnstile on every intake POST (mandatory, server-verified).
 - **Secrets** — Infisical at `secrets.mereka.io`. Nothing in `.env` files, nothing in code. Coolify pulls at deploy time via a machine identity.
 - **Voice** — OpenAI Realtime API via ephemeral tokens, WebRTC client.
-- **Database** — Postgres (Supabase or Neon, TBD). Single `leads` + `lead_events`.
-- **Email** — AWS SES (transactional). Slack mirror to `#partner-intake`.
-- **3D** — `three` + `@react-three/fiber` + `@react-three/drei`.
+- **Database** — Convex for launch lead and lead-event persistence.
+- **Email** — AWS SES/SMTP fallback (transactional). Slack mirror to `#partner-intake` when configured.
+- **3D** — Not installed in the current runtime; `MiniOrb` is SVG. Prototype R3F notes are reference-only.
 - **No auth** on the public site. Internal CRM is a separate workstream.
 
 ## Open stakeholder questions
@@ -54,10 +55,9 @@ Tracked in [`10-ROADMAP.md`](./10-ROADMAP.md) §Blockers. Highest-priority:
 
 1. Final canonical bios for **Chewi, Lala, Jey, Gurpreet, AVI, Ambika, Nadia**
    (name spelling, official title, headshot).
-2. Official **Biji-biji** and **CIMB** SVG logos for the footer partner row.
-3. **Privacy notice** copy and PDPA compliance review.
-4. Confirmed **opening date** in 2027 (currently approximate).
-5. Lead **routing escalation policy** when the named owner is OOO.
+2. **Privacy notice** copy and PDPA compliance review.
+3. Confirmed **opening date** in 2027 (currently approximate).
+4. Lead **routing escalation policy** when the named owner is OOO.
 
 ---
 

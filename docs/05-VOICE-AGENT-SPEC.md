@@ -135,20 +135,20 @@ a captured email.
 
 | Parameter | Value |
 |---|---|
-| Model | `gpt-4o-realtime-preview` (or successor) |
-| Voice | `alloy` (default — confirm w/ brand) |
-| Input audio | 16kHz mono, browser-default mic |
-| Session length cap | **180 seconds** server-side, refusing to mint a new token if same IP exceeds 3 sessions / day |
-| Server VAD | `server_vad`, `silence_duration_ms: 700` |
-| Modalities | `["audio","text"]` |
+| Model | `gpt-realtime-2` by default via `OPENAI_REALTIME_MODEL` |
+| Voice | `marin` by default via `OPENAI_REALTIME_VOICE` |
+| Input audio | Browser-default mic, captured locally before token minting |
+| Session length cap | **180 seconds** client-side runtime cap; `/api/voice/session` also refuses to mint a new token if the same IP exceeds 3 sessions / day in the current in-memory limiter |
+| Server VAD | `server_vad`, `threshold: 0.5`, `prefix_padding_ms: 300`, `silence_duration_ms: 700`, `create_response: true`, `interrupt_response: true` |
+| Modalities | Audio output with text events and tool-call events on the data channel |
 
 ## 7. Auth & token mint
 
 The browser **never** holds the long-lived `OPENAI_API_KEY`. Flow:
 
 1. Client POSTs `/api/voice/session` with a Turnstile token.
-2. Route Handler verifies Turnstile + rate-limits + asks OpenAI for an
-   ephemeral session token.
+2. Route Handler verifies Turnstile, applies the voice rate limit, and asks
+   OpenAI for an ephemeral client secret.
 3. Returns `{ client_secret, expires_at, model, voice }`.
 4. Client opens a WebRTC peer connection using the ephemeral token.
 5. Mic audio is streamed up; assistant audio is streamed down to an
@@ -165,7 +165,7 @@ See [`06-API-CONTRACTS.md`](./06-API-CONTRACTS.md) §`/api/voice/session`.
 | Mic permission denied | Auto-switch to Form mode. Show toast: "Microphone unavailable — switched to form." |
 | WebRTC ICE fails | Same — switch to Form mode. |
 | `/api/voice/session` returns 429 | Form mode + toast: "Voice limit reached for today. Form is open." |
-| OpenAI Realtime returns 5xx | Same. Track in Sentry. |
+| OpenAI Realtime returns 5xx | Same. Track in Coolify logs until a dedicated observability stack is added. |
 | User goes idle for 30s in voice mode | Gentle ping ("Still there?"). After another 30s, agent thanks them and ends the session. |
 
 ## 9. Privacy
@@ -173,8 +173,7 @@ See [`06-API-CONTRACTS.md`](./06-API-CONTRACTS.md) §`/api/voice/session`.
 - The microsite UI promises **"no recordings kept"**. To honour this:
   - Audio is **not** stored. OpenAI's Realtime API may transiently buffer
     audio; we do not log raw audio anywhere of ours.
-  - The **transcript** (text only) is stored against the lead row as
-    `transcript_url` pointing at a small JSON blob in S3.
+  - The **transcript** (text only) is stored with the Convex lead row.
   - The user is told this at the bottom of the hero (`hero__privacy`).
   - Privacy notice (PDPA) is linked from the voice modal footer — link target
     TBD.
@@ -201,11 +200,11 @@ Server then:
 
 1. Verifies Turnstile.
 2. Validates payload (zod).
-3. Inserts row into `leads`.
-4. Inserts row into `lead_events` (`kind: 'created'`).
-5. Sends SES email to the routed owner.
-6. Posts to Slack `#partner-intake`.
-7. Returns `{ ok: true, id: uuid }`.
+3. Inserts a row into `leads` through the Convex `leads.createLead` mutation.
+4. Inserts a row into `leadEvents` (`kind: "created"`).
+5. Attempts owner email via SMTP or SES, depending on configured secrets.
+6. Attempts Slack webhook notification when `SLACK_WEBHOOK_URL` is configured.
+7. Returns `{ ok: true, id, persisted, notifications }`.
 
 Errors surface as `{ ok: false, error: 'human_readable' }` — UI toasts and
 stays in the modal so the user can retry.

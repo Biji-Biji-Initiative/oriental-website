@@ -37,10 +37,12 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
   const [mode, setMode] = useState<"voice" | "form">(prefill?.mode ?? "voice");
   const [captured, setCaptured] = useState<CapturedLead>({ ...emptyCapturedLead, email: prefill?.email ?? "" });
   const [status, setStatus] = useState<"idle" | "submitted">("idle");
+  const [submitting, setSubmitting] = useState(false);
   const [transcript, setTranscript] = useState<Array<{ role: "assistant" | "user"; text: string }>>([]);
   const turnstile = useTurnstile("oriental-intake", turnstileSiteKey);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const stateRef = useRef<VoiceRuntimeState>({ segment, captured, transcript });
+  const submittingRef = useRef(false);
 
   const handleVoiceClose = useCallback((reason: VoiceCloseReason) => {
     if (reason === "error") {
@@ -53,40 +55,48 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
 
   const submit = useCallback(
     async (source: "form" | "voice" = "form", override?: VoiceRuntimeState): Promise<Record<string, unknown>> => {
-      const leadState = override ?? stateRef.current;
-      const parsed = leadFormSchema.safeParse(leadState.captured);
-      if (!parsed.success) {
-        toast.error("Add name, email, organisation, and a short brief.");
-        setMode("form");
-        return { ok: false, error: "invalid_lead", details: parsed.error.flatten() };
-      }
-      let turnstileToken = "";
+      if (submittingRef.current) return { ok: false, error: "submission_in_progress" };
+      submittingRef.current = true;
+      setSubmitting(true);
       try {
-        turnstileToken = await turnstile.execute();
-      } catch {
-        toast.error("Could not verify this browser. Try again in a moment.");
-        return { ok: false, error: "turnstile_unavailable" };
+        const leadState = override ?? stateRef.current;
+        const parsed = leadFormSchema.safeParse(leadState.captured);
+        if (!parsed.success) {
+          toast.error("Add name, email, organisation, and a short brief.");
+          setMode("form");
+          return { ok: false, error: "invalid_lead", details: parsed.error.flatten() };
+        }
+        let turnstileToken = "";
+        try {
+          turnstileToken = await turnstile.execute();
+        } catch {
+          toast.error("Could not verify this browser. Try again in a moment.");
+          return { ok: false, error: "turnstile_unavailable" };
+        }
+        const response = await fetch("/api/leads", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            source,
+            segment: leadState.segment,
+            form: parsed.data,
+            transcript: leadState.transcript,
+            turnstileToken,
+            utm: {},
+          }),
+        }).catch(() => null);
+        if (!response?.ok) {
+          toast.error("Could not send this yet. Your form is still here.");
+          return { ok: false, error: "lead_submission_failed" };
+        }
+        const routedTo = getSegment(leadState.segment).routedTo;
+        setStatus("submitted");
+        toast.success(`Sent to ${routedTo.name}.`);
+        return { ok: true, submitted: true, segment: leadState.segment, routedTo };
+      } finally {
+        submittingRef.current = false;
+        setSubmitting(false);
       }
-      const response = await fetch("/api/leads", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          source,
-          segment: leadState.segment,
-          form: parsed.data,
-          transcript: leadState.transcript,
-          turnstileToken,
-          utm: {},
-        }),
-      }).catch(() => null);
-      if (!response?.ok) {
-        toast.error("Could not send this yet. Your form is still here.");
-        return { ok: false, error: "lead_submission_failed" };
-      }
-      const routedTo = getSegment(leadState.segment).routedTo;
-      setStatus("submitted");
-      toast.success(`Sent to ${routedTo.name}.`);
-      return { ok: true, submitted: true, segment: leadState.segment, routedTo };
     },
     [turnstile],
   );
@@ -152,6 +162,8 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
     setCaptured({ ...emptyCapturedLead, email: prefill?.email ?? "" });
     setTranscript([]);
     setStatus("idle");
+    setSubmitting(false);
+    submittingRef.current = false;
     stateRef.current = {
       segment: intent ?? "other",
       captured: { ...emptyCapturedLead, email: prefill?.email ?? "" },
@@ -172,6 +184,10 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
   useEffect(() => {
     if (status === "submitted") teardownVoice("manual");
   }, [status, teardownVoice]);
+
+  useEffect(() => {
+    if (!open || mode !== "voice") teardownVoice("manual");
+  }, [mode, open, teardownVoice]);
 
   useEffect(() => {
     if (connectionStatus === "listening") toast.success("Voice is live.");
@@ -291,6 +307,7 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
                     onChange={setCaptured}
                     onSubmit={() => submit("form")}
                     ready={ready && turnstile.ready}
+                    submitting={submitting}
                   />
                 </TabsContent>
               </Tabs>
@@ -309,11 +326,11 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
             </dl>
             <button
               className="mt-5 w-full rounded-full bg-mk-horizon px-5 py-3 text-sm font-semibold text-mk-off-black transition hover:bg-white disabled:opacity-45"
-              disabled={!ready || !turnstile.ready}
+              disabled={!ready || !turnstile.ready || submitting}
               onClick={() => submit("form")}
               type="button"
             >
-              Send to Mereka
+              {submitting ? "Sending..." : "Send to Mereka"}
             </button>
           </aside>
         </div>
@@ -327,11 +344,13 @@ function LeadForm({
   onChange,
   onSubmit,
   ready,
+  submitting,
 }: {
   captured: CapturedLead;
   onChange: (captured: CapturedLead) => void;
   onSubmit: () => void;
   ready: boolean;
+  submitting: boolean;
 }) {
   const field = (key: keyof CapturedLead, value: string) => onChange({ ...captured, [key]: value });
   return (
@@ -370,10 +389,10 @@ function LeadForm({
       </div>
       <button
         className="rounded-full bg-white px-6 py-3 text-sm font-semibold text-mk-off-black transition hover:bg-mk-horizon disabled:opacity-45"
-        disabled={!ready}
+        disabled={!ready || submitting}
         type="submit"
       >
-        Send to Mereka
+        {submitting ? "Sending..." : "Send to Mereka"}
       </button>
     </form>
   );

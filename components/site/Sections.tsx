@@ -7,6 +7,27 @@ import { VoiceButton } from "@/components/voice-agent/VoiceButton";
 import { siteMeta } from "@/lib/content";
 import { cn } from "@/lib/utils";
 
+const footerPartners = [
+  {
+    name: "Mereka",
+    detail: "Talent development & creative education ecosystem",
+    logo: "/assets/mereka-symbol-white.png",
+    logoClassName: "size-7",
+  },
+  {
+    name: "Biji-biji Initiative",
+    detail: "Social impact & innovation",
+    logo: "/assets/brand/biji-biji/biji-biji-logo-white.svg",
+    logoClassName: "size-8",
+  },
+  {
+    name: "CIMB",
+    detail: "Strategic partner",
+    logo: "/assets/brand/cimb/cimb-symbol.svg",
+    logoClassName: "size-8",
+  },
+] as const;
+
 export function Hero() {
   return (
     <section
@@ -285,10 +306,26 @@ export function Footer() {
           </div>
           <div>
             <div className="footer-tag">An initiative by</div>
-            <ul className="mt-4 space-y-4 text-white/68">
-              <li>Mereka · Talent development & creative education ecosystem</li>
-              <li>Biji-biji Initiative · Social impact & innovation</li>
-              <li>CIMB · Strategic partner</li>
+            <ul className="footer-brand-list">
+              {footerPartners.map((partner) => (
+                <li className="footer-brand-card" key={partner.name}>
+                  <span className="footer-brand-mark">
+                    <Image
+                      alt=""
+                      aria-hidden
+                      className={cn("object-contain", partner.logoClassName)}
+                      height={40}
+                      src={partner.logo}
+                      unoptimized
+                      width={40}
+                    />
+                  </span>
+                  <span>
+                    <span className="footer-brand-name">{partner.name}</span>
+                    <span className="footer-brand-detail">{partner.detail}</span>
+                  </span>
+                </li>
+              ))}
             </ul>
           </div>
         </div>
