@@ -92,13 +92,28 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
   );
 
   const submitVoiceCommand = useCallback(
-    async (
+    (
       channel: RTCDataChannel,
       command: Extract<RealtimeClientCommand, { type: "submit_voice" }>,
       leadState: VoiceRuntimeState,
     ) => {
-      const output = await submit("voice", leadState);
-      sendRealtimeCommand(channel, { type: "function_result", callId: command.callId, createResponse: true, output });
+      submit("voice", leadState)
+        .then((output) => {
+          if (output.submitted !== true) {
+            stateRef.current = { ...stateRef.current, routeRequested: false };
+          }
+          sendRealtimeCommand(channel, {
+            type: "function_result",
+            callId: command.callId,
+            createResponse: true,
+            output,
+          });
+        })
+        .catch(() => {
+          stateRef.current = { ...stateRef.current, routeRequested: false };
+          setMode("form");
+          toast.error("Could not finish voice routing. The form is still available.");
+        });
     },
     [submit],
   );
@@ -116,7 +131,7 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
       }
       for (const command of reduced.commands) {
         if (command.type === "function_result") sendRealtimeCommand(channel, command);
-        if (command.type === "submit_voice") void submitVoiceCommand(channel, command, reduced.state);
+        if (command.type === "submit_voice") submitVoiceCommand(channel, command, reduced.state);
       }
     },
     [submitVoiceCommand],
@@ -368,6 +383,7 @@ function sendRealtimeCommand(
   channel: RTCDataChannel,
   command: Extract<RealtimeClientCommand, { type: "function_result" }>,
 ) {
+  if (channel.readyState !== "open") return;
   for (const event of serializeRealtimeCommand(command)) {
     channel.send(JSON.stringify(event));
   }
