@@ -104,18 +104,22 @@ export async function createRealtimeClientSecret(safetyIdentifier: string) {
   }
 
   const data = (await response.json()) as {
+    value?: string;
+    expires_at?: number;
+    session?: { id?: string };
     client_secret?: { value?: string; expires_at?: number };
     id?: string;
   };
-  if (!data.client_secret?.value) {
+  const value = data.client_secret?.value ?? data.value;
+  if (!value) {
     throw new Error("openai_invalid_secret");
   }
   return {
     client_secret: {
-      value: data.client_secret.value,
-      expires_at: data.client_secret.expires_at ?? 0,
+      value,
+      expires_at: data.client_secret?.expires_at ?? data.expires_at ?? 0,
     },
-    session_id: data.id ?? crypto.randomUUID(),
+    session_id: data.session?.id ?? data.id ?? crypto.randomUUID(),
     model,
     voice,
   };
