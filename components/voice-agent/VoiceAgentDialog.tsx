@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { MiniOrb } from "@/components/orb/MiniOrb";
+import { useTurnstile } from "@/components/security/useTurnstile";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,6 +36,7 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill }: VoiceA
   const [captured, setCaptured] = useState<Captured>({ ...emptyCaptured, email: prefill?.email ?? "" });
   const [status, setStatus] = useState<"idle" | "connecting" | "listening" | "submitted">("idle");
   const [transcript, setTranscript] = useState<Array<{ role: "assistant" | "user"; text: string }>>([]);
+  const turnstile = useTurnstile("oriental-intake");
   const connectionRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -74,6 +76,13 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill }: VoiceA
       setMode("form");
       return;
     }
+    let turnstileToken = "";
+    try {
+      turnstileToken = await turnstile.execute();
+    } catch {
+      toast.error("Could not verify this browser. Try again in a moment.");
+      return;
+    }
     const response = await fetch("/api/leads", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -82,7 +91,7 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill }: VoiceA
         segment,
         form: parsed.data,
         transcript,
-        turnstileToken: "local-dev",
+        turnstileToken,
         utm: {},
       }),
     }).catch(() => null);
@@ -97,10 +106,11 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill }: VoiceA
   async function connectVoice() {
     setStatus("connecting");
     try {
+      const turnstileToken = await turnstile.execute();
       const session = await fetch("/api/voice/session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ intent: segment, turnstileToken: "local-dev" }),
+        body: JSON.stringify({ intent: segment, turnstileToken }),
       }).then((response) => response.json());
 
       if (!session.ok) throw new Error(session.error ?? "voice_unavailable");
@@ -211,6 +221,7 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill }: VoiceA
                   <TabsTrigger value="voice">Voice</TabsTrigger>
                   <TabsTrigger value="form">Form</TabsTrigger>
                 </TabsList>
+                <div ref={turnstile.containerRef} />
                 <TabsContent value="voice">
                   <div className="mx-auto grid max-w-2xl place-items-center text-center">
                     <div className="relative grid size-56 place-items-center rounded-full bg-[radial-gradient(circle_at_35%_30%,#c9d5ec,#5c7db8_44%,#1f3f7c_68%,#100d18)] shadow-[0_0_90px_rgba(92,125,184,0.42)]">
@@ -237,7 +248,8 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill }: VoiceA
                       ))}
                     </div>
                     <button
-                      className="mt-8 rounded-full bg-white px-6 py-3 text-sm font-semibold text-mk-off-black transition hover:bg-mk-horizon"
+                      className="mt-8 rounded-full bg-white px-6 py-3 text-sm font-semibold text-mk-off-black transition hover:bg-mk-horizon disabled:cursor-not-allowed disabled:opacity-55"
+                      disabled={!turnstile.ready || status === "connecting"}
                       onClick={connectVoice}
                       type="button"
                     >
@@ -248,7 +260,12 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill }: VoiceA
                   </div>
                 </TabsContent>
                 <TabsContent value="form">
-                  <LeadForm captured={captured} onChange={setCaptured} onSubmit={() => submit("form")} ready={ready} />
+                  <LeadForm
+                    captured={captured}
+                    onChange={setCaptured}
+                    onSubmit={() => submit("form")}
+                    ready={ready && turnstile.ready}
+                  />
                 </TabsContent>
               </Tabs>
             )}
@@ -266,7 +283,7 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill }: VoiceA
             </dl>
             <button
               className="mt-5 w-full rounded-full bg-mk-horizon px-5 py-3 text-sm font-semibold text-mk-off-black transition hover:bg-white disabled:opacity-45"
-              disabled={!ready}
+              disabled={!ready || !turnstile.ready}
               onClick={() => submit("form")}
               type="button"
             >

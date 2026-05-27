@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTurnstile } from "@/components/security/useTurnstile";
 import { Input } from "@/components/ui/input";
 import { useVoice } from "@/components/voice-agent/voice-state";
 import { cn } from "@/lib/utils";
@@ -9,6 +10,7 @@ const emailPattern = /^\S+@\S+\.\S+$/;
 
 export function HeroEmailCapture() {
   const voice = useVoice();
+  const turnstile = useTurnstile("oriental-newsletter");
   const [email, setEmail] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
@@ -23,10 +25,18 @@ export function HeroEmailCapture() {
     }
     setBusy(true);
     setError("");
+    let turnstileToken = "";
+    try {
+      turnstileToken = await turnstile.execute();
+    } catch {
+      setBusy(false);
+      setError("Could not verify this browser. Try again or email team@mereka.io.");
+      return;
+    }
     const response = await fetch("/api/newsletter", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: value, turnstileToken: "local-dev" }),
+      body: JSON.stringify({ email: value, turnstileToken }),
     }).catch(() => null);
     setBusy(false);
     if (!response?.ok) {
@@ -79,12 +89,13 @@ export function HeroEmailCapture() {
           className={cn(
             "h-12 shrink-0 rounded-full bg-mk-anchor-blue px-5 text-sm font-semibold text-white transition hover:bg-mk-vivid-blue disabled:cursor-not-allowed disabled:opacity-55",
           )}
-          disabled={busy || !emailPattern.test(email.trim())}
+          disabled={busy || !turnstile.ready || !emailPattern.test(email.trim())}
           type="submit"
         >
           {busy ? "Saving..." : "Keep me posted →"}
         </button>
       </div>
+      <div ref={turnstile.containerRef} className="mt-2" />
       {error ? (
         <p className="px-3 pt-2 text-sm text-white" id="hero-email-error">
           {error}
