@@ -30,18 +30,42 @@ declare global {
 
 let scriptPromise: Promise<void> | null = null;
 
-function loadTurnstileScript() {
+function waitForTurnstileApi() {
+  return new Promise<void>((resolve, reject) => {
+    const deadline = Date.now() + 15_000;
+
+    function check() {
+      if (window.turnstile) {
+        resolve();
+        return;
+      }
+      if (Date.now() >= deadline) {
+        reject(new Error("turnstile_api_timeout"));
+        return;
+      }
+      window.setTimeout(check, 50);
+    }
+
+    check();
+  });
+}
+
+function loadTurnstileScript(): Promise<void> {
   if (typeof window === "undefined") return Promise.reject(new Error("turnstile_server_context"));
   if (window.turnstile) return Promise.resolve();
   if (scriptPromise) return scriptPromise;
 
-  scriptPromise = new Promise((resolve, reject) => {
+  scriptPromise = new Promise<void>((resolve, reject) => {
+    const resolveWhenReady = () => {
+      waitForTurnstileApi().then(resolve).catch(reject);
+    };
     const existing = document.querySelector<HTMLScriptElement>(
       'script[src^="https://challenges.cloudflare.com/turnstile/v0/api.js"]',
     );
     if (existing) {
-      existing.addEventListener("load", () => resolve(), { once: true });
+      existing.addEventListener("load", resolveWhenReady, { once: true });
       existing.addEventListener("error", () => reject(new Error("turnstile_script_failed")), { once: true });
+      resolveWhenReady();
       return;
     }
 
@@ -49,9 +73,12 @@ function loadTurnstileScript() {
     script.async = true;
     script.defer = true;
     script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
-    script.onload = () => resolve();
+    script.onload = resolveWhenReady;
     script.onerror = () => reject(new Error("turnstile_script_failed"));
     document.head.appendChild(script);
+  }).catch((error) => {
+    scriptPromise = null;
+    throw error;
   });
 
   return scriptPromise;
@@ -88,21 +115,25 @@ export function useTurnstile(action: string, siteKey?: string) {
     loadTurnstileScript()
       .then(() => {
         if (!mounted || !window.turnstile || !containerRef.current || widgetIdRef.current) return;
-        widgetIdRef.current = window.turnstile.render(containerRef.current, {
-          sitekey: siteKey,
-          action,
-          appearance: "interaction-only",
-          execution: "execute",
-          callback: (token) => {
-            if (!pendingRef.current) return;
-            clearTimeout(pendingRef.current.timeout);
-            pendingRef.current.resolve(token);
-            pendingRef.current = null;
-          },
-          "error-callback": () => rejectPending(new Error("turnstile_error")),
-          "expired-callback": () => rejectPending(new Error("turnstile_expired")),
-        });
-        setReady(true);
+        try {
+          widgetIdRef.current = window.turnstile.render(containerRef.current, {
+            sitekey: siteKey,
+            action,
+            appearance: "interaction-only",
+            execution: "execute",
+            callback: (token) => {
+              if (!pendingRef.current) return;
+              clearTimeout(pendingRef.current.timeout);
+              pendingRef.current.resolve(token);
+              pendingRef.current = null;
+            },
+            "error-callback": () => rejectPending(new Error("turnstile_error")),
+            "expired-callback": () => rejectPending(new Error("turnstile_expired")),
+          });
+          setReady(Boolean(widgetIdRef.current));
+        } catch {
+          setReady(false);
+        }
       })
       .catch(() => {
         setReady(false);
