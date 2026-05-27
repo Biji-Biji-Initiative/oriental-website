@@ -1,6 +1,7 @@
 import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
 import type { LeadRequest } from "@/lib/schemas";
 import { getOwnerEmail, getSegment } from "@/lib/segments";
+import { sendSmtpMail } from "@/lib/server/smtp";
 
 type RoutableLead = Omit<LeadRequest, "source"> & { source: LeadRequest["source"] | "hero-email" };
 
@@ -12,9 +13,42 @@ export type StoredLead = RoutableLead & {
 
 export async function notifyOwner(lead: StoredLead) {
   const from = process.env.SES_FROM_ADDRESS ?? process.env.SES_FROM_EMAIL;
-  if (!from || !lead.routedToEmail || !process.env.AWS_REGION) {
-    return { ok: false, skipped: true, reason: "ses_unconfigured" };
+  if (!from || !lead.routedToEmail) {
+    return { ok: false, skipped: true, reason: "email_unconfigured" };
   }
+
+  const subject = `Oriental partner lead: ${lead.form.org}`;
+  const text = [
+    `Segment: ${getSegment(lead.segment).label}`,
+    `Name: ${lead.form.name}`,
+    `Email: ${lead.form.email}`,
+    `Organisation: ${lead.form.org}`,
+    "",
+    lead.form.message,
+  ].join("\n");
+
+  const smtpUser = process.env.SMTP_USER ?? process.env.EMAIL_SERVER_USER;
+  const smtpPassword = process.env.SMTP_PASSWORD ?? process.env.EMAIL_SERVER_PASSWORD;
+  const smtpHost =
+    process.env.SMTP_HOST ??
+    (process.env.AWS_REGION ? `email-smtp.${process.env.AWS_REGION}.amazonaws.com` : undefined);
+  const smtpPort = Number(process.env.SMTP_PORT ?? 587);
+  if (smtpUser && smtpPassword && smtpHost) {
+    await sendSmtpMail({
+      host: smtpHost,
+      port: smtpPort,
+      username: smtpUser,
+      password: smtpPassword,
+      from,
+      to: lead.routedToEmail,
+      replyTo: lead.form.email,
+      subject,
+      text,
+    });
+    return { ok: true, transport: "smtp" };
+  }
+
+  if (!process.env.AWS_REGION) return { ok: false, skipped: true, reason: "ses_unconfigured" };
 
   const client = new SESv2Client({ region: process.env.AWS_REGION });
   await client.send(
@@ -24,24 +58,17 @@ export async function notifyOwner(lead: StoredLead) {
       ReplyToAddresses: [lead.form.email],
       Content: {
         Simple: {
-          Subject: { Data: `Oriental partner lead: ${lead.form.org}` },
+          Subject: { Data: subject },
           Body: {
             Text: {
-              Data: [
-                `Segment: ${getSegment(lead.segment).label}`,
-                `Name: ${lead.form.name}`,
-                `Email: ${lead.form.email}`,
-                `Organisation: ${lead.form.org}`,
-                "",
-                lead.form.message,
-              ].join("\n"),
+              Data: text,
             },
           },
         },
       },
     }),
   );
-  return { ok: true };
+  return { ok: true, transport: "sesv2" };
 }
 
 export async function notifySlack(lead: StoredLead) {
