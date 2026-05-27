@@ -1,0 +1,249 @@
+import type { SegmentId } from "@/lib/segments";
+
+export const siteMeta = {
+  title: "Oriental · A future we build together",
+  description:
+    "Oriental Building — a historic Kuala Lumpur landmark, reactivated as a home for future learning, technology, creativity, and community. Mereka, Biji-biji Initiative, CIMB, and partners are shaping Levels 2 to 4 before the building opens in 2027.",
+  url: "https://oriental.mereka.io",
+  email: "team@mereka.io",
+};
+
+export const navItems = [
+  ["vision", "Vision"],
+  ["ecosystem", "Ecosystem"],
+  ["facilities", "Spaces"],
+  ["partners", "Partners"],
+  ["timeline", "Timeline"],
+] as const;
+
+export const ecosystemCells = [
+  {
+    number: "01",
+    intent: "programme" as SegmentId,
+    title: "Public Programme & Event Spaces",
+    description: "Talks, forums, launches, screenings, exhibitions, performances, and public conversations.",
+  },
+  {
+    number: "02",
+    intent: "community" as SegmentId,
+    title: "Creative Studios & Collaboration Spaces",
+    description: "Making, designing, teaching, prototyping, production, and project-based work.",
+  },
+  {
+    number: "03",
+    intent: "technology" as SegmentId,
+    title: "Technology Showcase & Demo Spaces",
+    description:
+      "Hands-on experiences with AI, digital tools, future skills, digital trust, and emerging technologies.",
+  },
+  {
+    number: "04",
+    intent: "education" as SegmentId,
+    title: "Workshops & Future Skills Programmes",
+    description:
+      "Youth development, professional upskilling, entrepreneurship, creative learning, and community education.",
+  },
+  {
+    number: "05",
+    intent: "community" as SegmentId,
+    title: "Innovation & Social Impact Initiatives",
+    description:
+      "NGOs, social enterprises, startups, and mission-driven teams building solutions with community relevance.",
+  },
+] as const;
+
+export const audiences = [
+  "Students & youth",
+  "Social enterprises & NGOs",
+  "MSMEs & working professionals",
+  "Creative practitioners & cultural communities",
+  "Ageing & community groups",
+  "Educators & programme operators",
+  "Technology & innovation partners",
+  "Institutions & mission-aligned tenants",
+] as const;
+
+export const pillars = [
+  {
+    name: "Future Readiness & New Economic Opportunities",
+    description: "Helping people prepare for new work, new tools, and new forms of livelihood.",
+    intent: "education" as SegmentId,
+  },
+  {
+    name: "Digital Trust, AI Literacy & Inclusion",
+    description: "Making technology understandable, usable, and relevant across communities.",
+    intent: "ai" as SegmentId,
+  },
+  {
+    name: "NGO & Social Enterprise Capability Building",
+    description: "Strengthening the organisations working closest to social and community needs.",
+    intent: "community" as SegmentId,
+  },
+  {
+    name: "MSME & Livelihood Resilience",
+    description:
+      "Supporting small businesses, freelancers, and working professionals with practical skills and networks.",
+    intent: "programme" as SegmentId,
+  },
+  {
+    name: "Health, Ageing & Community Wellbeing",
+    description: "Creating space for intergenerational learning, care, connection, and community participation.",
+    intent: "community" as SegmentId,
+  },
+] as const;
+
+export const spaces = [
+  {
+    number: "01",
+    title: "Public Commons & Community Lounge",
+    description:
+      "The social heart of the building — open, welcoming, and active throughout the day. Designed for casual collaboration, exhibitions, networking, community gatherings, and the moments between programmes where new connections begin.",
+    cta: "Explore the Commons",
+    intent: "community" as SegmentId,
+    image: "/assets/81_agora_world_cafe_evening_openai_4e792ccfe15d_20260504-213415_0.png",
+  },
+  {
+    number: "02",
+    title: "Academy of Tomorrow Learning Studios",
+    description:
+      "Flexible studios for future skills training, entrepreneurship programmes, youth development, creative workshops, professional upskilling, and recurring classes.",
+    cta: "Bring a Learning Programme",
+    intent: "education" as SegmentId,
+    image: "/assets/2026-05-04-05-academy-tomorrow-2-v2.png",
+  },
+  {
+    number: "03",
+    title: "Flexible Event Spaces",
+    description:
+      "Modular spaces for talks, forums, screenings, product showcases, performances, launches, exhibitions, and public discussions.",
+    cta: "Host an Event or Activation",
+    intent: "programme" as SegmentId,
+    image: "/assets/16-buy-social-showcase.png",
+  },
+  {
+    number: "04",
+    title: "Technology Showcase & Demo Lab",
+    description:
+      "A hands-on environment for technology partners to demonstrate tools, host learning experiences, and make emerging technologies more accessible to the public.",
+    cta: "Showcase Technology Here",
+    intent: "technology" as SegmentId,
+    image: "/assets/05-sustainability-workshop.png",
+  },
+  {
+    number: "05",
+    title: "Social Enterprise & Innovation Spaces",
+    description:
+      "Collaborative work, incubation, and partnership spaces for social enterprises, NGOs, startups, and impact-driven organisations.",
+    cta: "Discuss an Innovation Space",
+    intent: "community" as SegmentId,
+    image: "/assets/20-ngo-finance-guild.png",
+  },
+] as const;
+
+export const partners = [
+  {
+    number: "01",
+    tag: "TENANCY",
+    title: "Mission-Aligned Tenants",
+    description:
+      "Organisations, studios, social enterprises, and community-driven brands looking for a collaborative city-centre space to grow, connect, and contribute to a wider public ecosystem.",
+    cta: "Discuss Tenancy",
+    intent: "tenancy" as SegmentId,
+  },
+  {
+    number: "02",
+    tag: "EDUCATION",
+    title: "Education & Programme Partners",
+    description:
+      "Academic institutions, training providers, social enterprises, and learning organisations that want to deliver future-facing, impact-driven programmes.",
+    cta: "Propose a Learning Partnership",
+    intent: "education" as SegmentId,
+  },
+  {
+    number: "03",
+    tag: "PROGRAMME",
+    title: "Programme & Activation Partners",
+    description:
+      "Teams running workshops, trainings, talks, forums, exhibitions, screenings, showcases, cultural activations, or recurring public programmes.",
+    cta: "Bring a Programme Here",
+    intent: "programme" as SegmentId,
+  },
+  {
+    number: "04",
+    tag: "TECHNOLOGY",
+    title: "Technology & Innovation Partners",
+    description:
+      "Companies, platforms, labs, and innovation teams looking to showcase tools, run demos, support hands-on learning, or create embedded technology experiences.",
+    cta: "Explore a Technology Showcase",
+    intent: "technology" as SegmentId,
+  },
+  {
+    number: "05",
+    tag: "COMMUNITY",
+    title: "Community & Cultural Partners",
+    description:
+      "Community organisations, cultural practitioners, creative collectives, facilitators, and civic groups looking for a meaningful space to gather, teach, exhibit, perform, or co-create.",
+    cta: "Explore a Community Activation",
+    intent: "community" as SegmentId,
+  },
+] as const;
+
+export const relevantIf = [
+  "Host recurring programmes in the city centre",
+  "Reach students, youth, MSMEs, NGOs, creatives, or community groups",
+  "Showcase technology in a human, hands-on way",
+  "Build public trust around AI, digital tools, and future skills",
+  "Contribute to a heritage-led civic and cultural activation",
+  "Shape the partner mix before the building opens",
+] as const;
+
+export const timelineSteps = [
+  {
+    year: "2026",
+    phase: "Phase 01",
+    label: "Co-design & Partnerships",
+    description:
+      "Shaping the vision, partner mix, spatial planning, programme models, commercial pathways, and ecosystem opportunities for Levels 2 to 4 of Oriental Building.",
+  },
+  {
+    year: "2026–27",
+    phase: "Phase 02",
+    label: "Renovation & Early Activation",
+    description:
+      "Transforming the space into a future-ready education, technology, creative, and community hub, with early pilots and partner-led activations helping shape what comes next.",
+  },
+  {
+    year: "2027",
+    phase: "Phase 03",
+    label: "Opening & Public Programmes",
+    description:
+      "Opening with collaborations, workshops, events, exhibitions, technology showcases, cultural activations, and community-driven programmes.",
+  },
+] as const;
+
+export const tourTopics = [
+  {
+    id: "vision",
+    label: "The vision",
+    blurb: "What we are building",
+    script: "Levels 2 to 4 become a future-focused ecosystem: education, technology, creativity, and community.",
+  },
+  {
+    id: "spaces",
+    label: "The spaces",
+    blurb: "Three floors, three rhythms",
+    script: "Level 2 is public, Level 3 is learning, and Level 4 is innovation.",
+  },
+  {
+    id: "timeline",
+    label: "Timeline",
+    blurb: "How we get there",
+    script: "2026 is planning and co-design, 2026 to 2027 is renovation, and 2027 is public opening.",
+  },
+  {
+    id: "heritage",
+    label: "Heritage",
+    blurb: "Why this building",
+    script: "This is not a real-estate move. It is a heritage-led civic platform for what Kuala Lumpur needs next.",
+  },
+] as const;

@@ -1,0 +1,390 @@
+/* =========================================================
+   Mereka Design System — Colors & Type
+   Source of truth for color tokens, type scale and semantics.
+   ========================================================= */
+
+/* ---------- Fonts: Poppins (display/headings) + Inter (body) self-hosted/CDN ---------- */
+@font-face {
+  font-family: "Poppins";
+  src: url("fonts/Poppins-Thin.ttf") format("truetype");
+  font-weight: 100;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Poppins";
+  src: url("fonts/Poppins-ThinItalic.ttf") format("truetype");
+  font-weight: 100;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Poppins";
+  src: url("fonts/Poppins-ExtraLight.ttf") format("truetype");
+  font-weight: 200;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Poppins";
+  src: url("fonts/Poppins-ExtraLightItalic.ttf") format("truetype");
+  font-weight: 200;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Poppins";
+  src: url("fonts/Poppins-Light.ttf") format("truetype");
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Poppins";
+  src: url("fonts/Poppins-LightItalic.ttf") format("truetype");
+  font-weight: 300;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Poppins";
+  src: url("fonts/Poppins-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Poppins";
+  src: url("fonts/Poppins-Italic.ttf") format("truetype");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Poppins";
+  src: url("fonts/Poppins-Medium.ttf") format("truetype");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Poppins";
+  src: url("fonts/Poppins-MediumItalic.ttf") format("truetype");
+  font-weight: 500;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Poppins";
+  src: url("fonts/Poppins-SemiBold.ttf") format("truetype");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Poppins";
+  src: url("fonts/Poppins-SemiBoldItalic.ttf") format("truetype");
+  font-weight: 600;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Poppins";
+  src: url("fonts/Poppins-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Poppins";
+  src: url("fonts/Poppins-BoldItalic.ttf") format("truetype");
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Poppins";
+  src: url("fonts/Poppins-ExtraBold.ttf") format("truetype");
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Poppins";
+  src: url("fonts/Poppins-ExtraBoldItalic.ttf") format("truetype");
+  font-weight: 800;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Poppins";
+  src: url("fonts/Poppins-Black.ttf") format("truetype");
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Poppins";
+  src: url("fonts/Poppins-BlackItalic.ttf") format("truetype");
+  font-weight: 900;
+  font-style: italic;
+  font-display: swap;
+}
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+
+:root {
+  /* ===========================
+     COLOR — General palette
+     (Source: Mereka Brand Guideline §3.4.1)
+     =========================== */
+  --mk-off-black: #1a1623; /* Off Black  — primary text & strong fills */
+  --mk-white: #ffffff; /* White      — surfaces, inverse text */
+  --mk-grey: #f5f6f7; /* Grey       — page tint, soft surfaces */
+  --mk-strategy-teal: #1fa3a6; /* Strategy Teal — Future of Work pillar (primary) */
+  --mk-anchor-blue: #1f3f7c; /* Anchor Blue   — Future of Business pillar (primary) */
+
+  /* Programme secondary colours (per Brand Guideline §3.4.2) */
+  --mk-momentum-gold: #e8a92f; /* Momentum Gold — FOW Youth, FOB Non-AI Lab Training */
+  --mk-horizon-blue: #5c7db8; /* Horizon Blue  — FOW General, FOB Space & Innovate */
+
+  /* Derived neutrals (oklch-aligned to Off Black) */
+  --mk-ink-900: #1a1623;
+  --mk-ink-700: #3a3547;
+  --mk-ink-500: #6b6678;
+  --mk-ink-400: #908b9c;
+  --mk-ink-300: #c2bdcb;
+  --mk-ink-200: #e3e0e7;
+  --mk-ink-100: #eef0f2;
+  --mk-ink-50: #f5f6f7;
+
+  /* Tints of pillar colors (for surfaces, hover, focus rings) */
+  --mk-teal-50: #e6f5f5;
+  --mk-teal-100: #c2e7e7;
+  --mk-teal-300: #6cc7c8;
+  --mk-teal-500: #1fa3a6; /* = strategy teal */
+  --mk-teal-700: #157578;
+  --mk-teal-900: #0c4a4c;
+
+  --mk-blue-50: #ecf0f8;
+  --mk-blue-100: #cdd7ea;
+  --mk-blue-200: #93a8ce;
+  --mk-blue-300: #5c7db8; /* = horizon blue */
+  --mk-blue-500: #3e5e98; /* midpoint between horizon and anchor */
+  --mk-blue-700: #1f3f7c; /* = anchor blue */
+  --mk-blue-900: #142a59;
+
+  /* Aliases */
+  --mk-horizon-500: #5c7db8;
+  --mk-anchor-500: #1f3f7c;
+
+  /* Momentum Gold tint scale */
+  --mk-gold-50: #fdf6e6;
+  --mk-gold-100: #f9e6b3;
+  --mk-gold-300: #f0c46e;
+  --mk-gold-500: #e8a92f;
+  --mk-gold-700: #b6831a;
+  --mk-gold-900: #6e4f0e;
+
+  /* Semantic */
+  --mk-success: #1fa37a;
+  --mk-warning: #d99033;
+  --mk-danger: #c0413f;
+  --mk-info: var(--mk-anchor-blue);
+
+  /* Surface roles */
+  --mk-bg: var(--mk-white);
+  --mk-bg-soft: var(--mk-grey);
+  --mk-bg-inverse: var(--mk-off-black);
+  --mk-fg: var(--mk-off-black);
+  --mk-fg-muted: var(--mk-ink-500);
+  --mk-fg-subtle: var(--mk-ink-400);
+  --mk-fg-inverse: var(--mk-white);
+  --mk-border: var(--mk-ink-200);
+  --mk-border-strong: var(--mk-ink-300);
+
+  /* Brand pillar accent (overridable per-section) */
+  --mk-accent: var(--mk-strategy-teal);
+  --mk-accent-fg: var(--mk-white);
+
+  /* ===========================
+     TYPE
+     =========================== */
+  --mk-font-display: "Poppins", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mk-font-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mk-font-ui: "Inter", system-ui, sans-serif;
+  --mk-font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+
+  /* Type scale (rem-based, 16px root) */
+  --mk-text-xs: 0.75rem; /* 12 */
+  --mk-text-sm: 0.875rem; /* 14 */
+  --mk-text-base: 1rem; /* 16 */
+  --mk-text-md: 1.125rem; /* 18 */
+  --mk-text-lg: 1.375rem; /* 22 */
+  --mk-text-xl: 1.75rem; /* 28 */
+  --mk-text-2xl: 2.25rem; /* 36 */
+  --mk-text-3xl: 3rem; /* 48 */
+  --mk-text-4xl: 3.75rem; /* 60 */
+  --mk-text-5xl: 4.75rem; /* 76 */
+
+  --mk-leading-tight: 1.1;
+  --mk-leading-snug: 1.25;
+  --mk-leading-normal: 1.5;
+  --mk-leading-loose: 1.7;
+
+  --mk-tracking-tight: -0.02em;
+  --mk-tracking-normal: 0;
+  --mk-tracking-wide: 0.02em;
+  --mk-tracking-caps: 0.08em;
+
+  /* ===========================
+     SPACING / RADIUS / SHADOW
+     =========================== */
+  --mk-s-1: 4px;
+  --mk-s-2: 8px;
+  --mk-s-3: 12px;
+  --mk-s-4: 16px;
+  --mk-s-5: 24px;
+  --mk-s-6: 32px;
+  --mk-s-7: 48px;
+  --mk-s-8: 64px;
+  --mk-s-9: 96px;
+
+  --mk-radius-sm: 6px;
+  --mk-radius-md: 12px;
+  --mk-radius-lg: 20px;
+  --mk-radius-xl: 28px;
+  --mk-radius-pill: 999px;
+
+  --mk-shadow-xs: 0 1px 2px rgba(26, 22, 35, 0.06);
+  --mk-shadow-sm: 0 2px 6px rgba(26, 22, 35, 0.08);
+  --mk-shadow-md: 0 8px 24px rgba(26, 22, 35, 0.1);
+  --mk-shadow-lg: 0 24px 48px rgba(26, 22, 35, 0.14);
+  --mk-shadow-ring: 0 0 0 3px rgba(31, 163, 166, 0.25);
+
+  /* Motion */
+  --mk-ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --mk-ease-out: cubic-bezier(0.16, 0.84, 0.32, 1);
+  --mk-dur-fast: 120ms;
+  --mk-dur: 200ms;
+  --mk-dur-slow: 360ms;
+}
+
+/* Pillar overrides — apply to a section/page to switch accent */
+[data-pillar="fow"] {
+  --mk-accent: var(--mk-strategy-teal);
+  --mk-accent-soft: var(--mk-teal-50);
+}
+[data-pillar="fob"] {
+  --mk-accent: var(--mk-anchor-blue);
+  --mk-accent-soft: var(--mk-blue-50);
+}
+
+/* ===========================
+   SEMANTIC ELEMENT STYLES
+   =========================== */
+html {
+  color: var(--mk-fg);
+  background: var(--mk-bg);
+  font-family: var(--mk-font-body);
+  -webkit-font-smoothing: antialiased;
+}
+body {
+  margin: 0;
+  line-height: var(--mk-leading-normal);
+}
+
+h1,
+.mk-h1 {
+  font-family: var(--mk-font-display);
+  font-weight: 800;
+  font-size: var(--mk-text-4xl);
+  line-height: var(--mk-leading-tight);
+  letter-spacing: var(--mk-tracking-tight);
+  margin: 0 0 var(--mk-s-5);
+  color: var(--mk-fg);
+  text-wrap: balance;
+}
+h2,
+.mk-h2 {
+  font-family: var(--mk-font-display);
+  font-weight: 700;
+  font-size: var(--mk-text-3xl);
+  line-height: var(--mk-leading-tight);
+  letter-spacing: var(--mk-tracking-tight);
+  margin: 0 0 var(--mk-s-4);
+  text-wrap: balance;
+}
+h3,
+.mk-h3 {
+  font-family: var(--mk-font-display);
+  font-weight: 700;
+  font-size: var(--mk-text-2xl);
+  line-height: var(--mk-leading-snug);
+  letter-spacing: var(--mk-tracking-tight);
+  margin: 0 0 var(--mk-s-3);
+}
+h4,
+.mk-h4 {
+  font-family: var(--mk-font-display);
+  font-weight: 700;
+  font-size: var(--mk-text-xl);
+  line-height: var(--mk-leading-snug);
+  margin: 0 0 var(--mk-s-3);
+}
+h5,
+.mk-h5 {
+  font-family: var(--mk-font-display);
+  font-weight: 600;
+  font-size: var(--mk-text-lg);
+  line-height: var(--mk-leading-snug);
+  margin: 0 0 var(--mk-s-2);
+}
+p,
+.mk-p {
+  font-size: var(--mk-text-base);
+  line-height: var(--mk-leading-normal);
+  margin: 0 0 var(--mk-s-4);
+  color: var(--mk-fg);
+  text-wrap: pretty;
+}
+.mk-lead {
+  font-size: var(--mk-text-md);
+  color: var(--mk-fg);
+  line-height: var(--mk-leading-normal);
+}
+small,
+.mk-small {
+  font-size: var(--mk-text-sm);
+  color: var(--mk-fg-muted);
+}
+.mk-eyebrow {
+  font-family: var(--mk-font-ui);
+  font-size: var(--mk-text-xs);
+  font-weight: 600;
+  letter-spacing: var(--mk-tracking-caps);
+  text-transform: uppercase;
+  color: var(--mk-accent);
+}
+code,
+.mk-code {
+  font-family: var(--mk-font-mono);
+  font-size: 0.9em;
+  background: var(--mk-ink-50);
+  padding: 2px 6px;
+  border-radius: var(--mk-radius-sm);
+}
+a {
+  color: var(--mk-accent);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in oklab, var(--mk-accent) 30%, transparent);
+  transition:
+    border-color var(--mk-dur) var(--mk-ease),
+    color var(--mk-dur) var(--mk-ease);
+}
+a:hover {
+  border-bottom-color: var(--mk-accent);
+}
+
+::selection {
+  background: color-mix(in oklab, var(--mk-strategy-teal) 30%, transparent);
+}

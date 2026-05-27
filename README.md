@@ -1,36 +1,88 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Oriental Website
 
-## Getting Started
+Next.js 16 microsite for the Oriental Building partner-intake launch. The site translates the prototype handoff into a production app with React 19, Tailwind CSS 4, shadcn/ui, Convex lead storage, SES/Slack notifications, and an OpenAI Realtime voice intake flow using `gpt-realtime-2`.
 
-First, run the development server:
+## Stack
+
+- Next.js 16 App Router, React 19, TypeScript
+- Tailwind CSS 4 and shadcn/ui primitives
+- Convex for lead and lead-event persistence
+- OpenAI Realtime client-secret minting via `/api/voice/session`
+- Cloudflare Turnstile, in-memory rate limiting, SES, and Slack webhook notification hooks
+- Docker standalone runtime for Coolify
+
+## Development
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+pnpm install
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open `http://127.0.0.1:3000`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Environment
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Copy `.env.local.example` to `.env.local` for local work. The Convex URL is non-secret and already points at the provisioned production deployment. Server-only secrets must be supplied through Infisical/Coolify for production.
 
-## Learn More
+Required production variables:
 
-To learn more about Next.js, take a look at the following resources:
+```dotenv
+NEXT_PUBLIC_CONVEX_URL=
+NEXT_PUBLIC_TURNSTILE_SITE_KEY=
+CONVEX_URL=
+OPENAI_API_KEY=
+OPENAI_REALTIME_MODEL=gpt-realtime-2
+OPENAI_REALTIME_VOICE=marin
+TURNSTILE_SECRET_KEY=
+IP_HASH_SECRET=
+AWS_REGION=
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+SES_FROM_ADDRESS=
+SES_REPLY_TO=
+SLACK_WEBHOOK_URL=
+OWNER_TENANCY=
+OWNER_EDUCATION=
+OWNER_PROGRAMME=
+OWNER_TECHNOLOGY=
+OWNER_AI=
+OWNER_CULTURAL=
+OWNER_COMMUNITY=
+OWNER_OTHER=
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Convex
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Production deployment:
 
-## Deploy on Vercel
+```text
+https://wary-hornet-265.eu-west-1.convex.cloud
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Deploy functions with a scoped Convex deploy key:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+CONVEX_DEPLOY_KEY='prod:...' pnpm exec convex deploy
+```
+
+Regenerated bindings live under `convex/_generated` and should remain committed.
+
+## Verification
+
+```bash
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+PLAYWRIGHT_BASE_URL=http://127.0.0.1:3011 pnpm test:e2e
+```
+
+For standalone proof after `pnpm build`:
+
+```bash
+mkdir -p .next/standalone/.next/static
+cp -R .next/static/. .next/standalone/.next/static/
+rm -rf .next/standalone/public
+cp -R public .next/standalone/public
+HOSTNAME=127.0.0.1 PORT=3011 node .next/standalone/server.js
+```
