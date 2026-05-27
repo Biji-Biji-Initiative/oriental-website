@@ -1,6 +1,13 @@
 import { mutationGeneric, queryGeneric } from "convex/server";
 import { v } from "convex/values";
 
+function requireIngestSecret(ingestSecret: string) {
+  const expected = process.env.CONVEX_INGEST_SECRET;
+  if (!expected || ingestSecret !== expected) {
+    throw new Error("unauthorized");
+  }
+}
+
 const transcriptValidator = v.array(
   v.object({
     role: v.string(),
@@ -26,9 +33,11 @@ const leadValidator = v.object({
 });
 
 export const createLead = mutationGeneric({
-  args: { lead: leadValidator },
+  args: { lead: leadValidator, ingestSecret: v.string() },
   returns: v.object({ id: v.string() }),
-  handler: async (ctx, { lead }) => {
+  handler: async (ctx, { lead, ingestSecret }) => {
+    requireIngestSecret(ingestSecret);
+
     await ctx.db.insert("leads", {
       leadId: lead.id,
       source: lead.source,
@@ -55,8 +64,10 @@ export const createLead = mutationGeneric({
 });
 
 export const recent = queryGeneric({
-  args: {},
-  handler: async (ctx) => {
+  args: { ingestSecret: v.string() },
+  handler: async (ctx, { ingestSecret }) => {
+    requireIngestSecret(ingestSecret);
+
     return await ctx.db.query("leads").order("desc").take(20);
   },
 });

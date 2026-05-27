@@ -4,10 +4,11 @@ import type { StoredLead } from "@/lib/server/notifications";
 
 export async function persistLead(lead: StoredLead) {
   const convexUrl = process.env.CONVEX_URL ?? process.env.NEXT_PUBLIC_CONVEX_URL;
-  if (!convexUrl) {
+  const ingestSecret = process.env.CONVEX_INGEST_SECRET;
+  if (!convexUrl || !ingestSecret) {
     return { id: lead.id, persisted: false as const, reason: "convex_unconfigured" };
   }
   const client = new ConvexHttpClient(convexUrl);
-  const result = await client.mutation(api.leads.createLead, { lead });
+  const result = await client.mutation(api.leads.createLead, { lead, ingestSecret });
   return { id: result.id, persisted: true as const };
 }
