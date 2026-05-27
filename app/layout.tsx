@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Fraunces } from "next/font/google";
 import localFont from "next/font/local";
+import { connection } from "next/server";
 import { SiteNav } from "@/components/site/SiteNav";
 import { VoiceRail } from "@/components/site/VoiceRail";
 import { Toaster } from "@/components/ui/sonner";
@@ -49,11 +50,12 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  await connection();
   const turnstileSiteKey = process.env.TURNSTILE_SITE_KEY || process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
   return (
