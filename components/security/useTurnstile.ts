@@ -91,7 +91,7 @@ function localDevelopmentToken() {
 }
 
 export function useTurnstile(action: string, siteKey?: string) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [container, setContainer] = useState<HTMLDivElement | null>(null);
   const widgetIdRef = useRef<TurnstileWidgetId | null>(null);
   const pendingRef = useRef<{
     resolve: (token: string) => void;
@@ -99,6 +99,9 @@ export function useTurnstile(action: string, siteKey?: string) {
     timeout: ReturnType<typeof setTimeout>;
   } | null>(null);
   const [ready, setReady] = useState(!siteKey);
+  const containerRef = useCallback((node: HTMLDivElement | null) => {
+    setContainer(node);
+  }, []);
 
   const rejectPending = useCallback((error: Error) => {
     if (!pendingRef.current) return;
@@ -108,15 +111,22 @@ export function useTurnstile(action: string, siteKey?: string) {
   }, []);
 
   useEffect(() => {
-    if (!siteKey || !containerRef.current) return;
+    if (!siteKey) {
+      setReady(true);
+      return;
+    }
+    if (!container) {
+      setReady(false);
+      return;
+    }
 
     let mounted = true;
 
     loadTurnstileScript()
       .then(() => {
-        if (!mounted || !window.turnstile || !containerRef.current || widgetIdRef.current) return;
+        if (!mounted || !window.turnstile || !container || widgetIdRef.current) return;
         try {
-          widgetIdRef.current = window.turnstile.render(containerRef.current, {
+          widgetIdRef.current = window.turnstile.render(container, {
             sitekey: siteKey,
             action,
             appearance: "interaction-only",
@@ -141,13 +151,14 @@ export function useTurnstile(action: string, siteKey?: string) {
 
     return () => {
       mounted = false;
+      setReady(false);
       rejectPending(new Error("turnstile_unmounted"));
       if (widgetIdRef.current && window.turnstile) {
         window.turnstile.remove(widgetIdRef.current);
         widgetIdRef.current = null;
       }
     };
-  }, [action, rejectPending, siteKey]);
+  }, [action, container, rejectPending, siteKey]);
 
   const execute = useCallback(async () => {
     if (!siteKey) {
