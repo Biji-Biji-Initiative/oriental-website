@@ -14,7 +14,7 @@ months after public launch.
 | B3 | **PDPA privacy notice** copy + hosted page | Legal | Required link in the voice modal and footer. |
 | B4 | Photography rights for every shipped image | Brand | Per [`04-CONTENT-INVENTORY.md`](./04-CONTENT-INVENTORY.md). |
 | B5 | Confirm **2027 opening date** (month if known) | PM | Currently says "Opening 2027". |
-| B6 | Data-plane launch proof for Convex ingest and owner notifications | Eng | Runtime uses Convex, not Postgres; see [`07-DATA-MODEL.md`](./07-DATA-MODEL.md) for schema truth. |
+| B6 | Data-plane launch proof for Convex ingest and owner notifications | Eng | Runtime uses Convex, not Postgres; production deploy is live, but final launch still needs repeated owner-notification smoke proof. |
 
 ---
 
@@ -42,6 +42,17 @@ Separate workstream, separate repo, behind auth.
 - Events: `voice_opened`, `voice_session_started`, `voice_submitted`,
   `form_submitted`, `email_submitted`, `segment_picked`.
 - Funnel dashboard in the Mereka-admin app.
+
+### Production observability
+
+- Structured JSON logs now exist in Coolify, but there is no admin-quality
+  session review dashboard yet.
+- Add Sentry or equivalent error tracking for route failures and client voice
+  errors.
+- Add metrics/alerts for Turnstile failures, OpenAI Realtime errors, Slack/email
+  delivery failures, and Redis limiter fallback.
+- Build a small internal session-review view for transcripts, captured fields,
+  Realtime usage, and notification status with PII-aware access control.
 
 ### A/B copy testing
 
@@ -89,9 +100,12 @@ Speculative; not committed:
   to a static gradient sphere — already partially handled, verify in port.
 - The hero photo's exact crop is hard-coded in CSS; consider a `<picture>`
   with art-directed sources for portrait orientation on small phones.
-- Consider switching from raw SES to a small queue (SQS) so a transient SES
-  outage doesn't block lead submission. v1 acceptably saves the lead and
-  logs the failure — bump if rate climbs.
+- Consider switching owner notifications to a queue (SQS or equivalent) so a
+  transient SES/Slack outage doesn't block lead submission. v1 saves the lead
+  and returns `notification_failed` in production when every notification
+  channel fails.
+- Expand Playwright coverage around full voice submit/end-call flows against a
+  staging URL with production-like secrets.
 
 ---
 

@@ -124,8 +124,8 @@ is unblocked.
 - **Accessibility** — WCAG 2.2 AA. Keyboard nav, focus rings,
   `prefers-reduced-motion`, alt text on photo content.
 - **Cost** — OpenAI Realtime is metered. Cap budget via session length
-  limit (180s default) and the current per-IP voice limiter (3 sessions/day,
-  in-memory until a shared limiter is added).
+  limit (150s current client cap), 20s idle timeout, and the per-IP voice
+  limiter (3 minted sessions/day) backed by Redis in production.
 
 ## 10. Release plan
 

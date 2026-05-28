@@ -198,8 +198,8 @@ type VoiceSessionResponse = {
   client_secret: { value: string; expires_at: number };
   session_id: string;
   model: string; // default "gpt-realtime-2"
-  voice: string; // default "marin"
-  speed: number; // default 1.12, clamped to OpenAI's 0.25..1.5 range
+  voice: string; // source fallback "marin"; production currently "coral"
+  speed: number; // source fallback 1.18; production currently 1.28; clamped to OpenAI's 0.25..1.5 range
 };
 ```
 
@@ -230,6 +230,8 @@ Server request:
 - `session.audio.input.transcription.model = "whisper-1"`
 - `session.audio.output.voice = OPENAI_REALTIME_VOICE ?? "marin"`
 - `session.audio.output.speed = OPENAI_REALTIME_SPEED ?? 1.18`
+- production Infisical/Coolify currently sets `OPENAI_REALTIME_VOICE=coral` and
+  `OPENAI_REALTIME_SPEED=1.28`
 - tools from `VOICE_TOOLS`, including `wait_for_user`
 
 Browser WebRTC exchange:
@@ -273,19 +275,26 @@ Purpose: Coolify/container health check.
 
 ### Response `200`
 
-```json
-{ "ok": true, "service": "oriental-website", "ts": "2026-05-27T00:00:00.000Z" }
+```ts
+type HealthResponse = {
+  ok: true;
+  version: string; // GIT_SHA, SOURCE_COMMIT, or "local"
+  uptime_s: number;
+  convex: boolean; // configuration presence, not a live upstream ping
+};
 ```
 
-The route does not ping Convex or OpenAI. It proves the Next server can respond.
+The route does not ping Convex or OpenAI. It proves the Next server can respond
+and exposes enough version/config signal for Coolify smoke checks.
 
 ## Cross-Cutting Concerns
 
 ### Rate Limiting
 
-Current runtime uses an in-memory per-process helper in `lib/server/security.ts`.
-This is sufficient for a single Coolify instance. Before horizontal scaling,
-replace it with Redis/KV or another shared limiter.
+Current runtime uses `checkRateLimit()` from `lib/server/rate-limit.ts`,
+re-exported by `lib/server/security.ts`. Production should be backed by
+`REDIS_URL` (or `UPSTASH_REDIS_URL` / `VALKEY_URL`); the in-memory limiter is a
+degraded fallback for local development or Redis outages.
 
 | Route | Current limit |
 |---|---|
@@ -295,12 +304,21 @@ replace it with Redis/KV or another shared limiter.
 
 429 responses currently do not include `Retry-After`.
 
+Structured logs for rate-limited requests include `event`, `requestId`, hashed
+IP metadata, `rateLimitStore`, `resetAt`, and `durationMs`. In production, a
+healthy shared limiter should log `rateLimitStore: "redis"`.
+
 ### CORS
 
 All routes are same-origin only. No CORS headers are emitted.
 
 ### Observability
 
-Current observability is application return values plus Coolify/container logs.
-Sentry, Prometheus counters, structured request logs, and PagerDuty alerts are
-future work unless a later PR adds them.
+Route handlers emit structured JSON logs to stdout/stderr via
+`lib/server/logger.ts`. Logs include `service`, `version`, `event`, request ids,
+hashed IP metadata where relevant, durations, rate-limit store, persistence
+status, and notification results. Sensitive keys are redacted by suffix.
+
+Current production review path is Coolify container logs plus API return values.
+Sentry, Prometheus counters, dashboards, and PagerDuty alerts are future work
+unless a later PR adds them.

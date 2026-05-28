@@ -24,11 +24,11 @@ Production microsite for **Oriental Building** partner intake at `oriental.merek
 | Content | `lib/content.ts` + section components in `components/site/` |
 | Leads | Convex (`convex/schema.ts`, `convex/leads.ts`) via `lib/server/convex.ts` |
 | Voice | OpenAI Realtime (`gpt-realtime-2`), WebRTC client, ephemeral tokens from `POST /api/voice/session` |
-| Abuse | Cloudflare Turnstile + in-memory rate limits (`lib/server/security.ts`) |
-| Notify | AWS SES + Slack webhook (`lib/server/notifications.ts`, `lib/server/smtp.ts`) |
-| Deploy | Docker `output: "standalone"` on Coolify; secrets from Infisical (not in git) |
+| Abuse | Cloudflare Turnstile + Redis-backed rate limits with memory fallback (`lib/server/rate-limit.ts`, re-exported by `security.ts`) |
+| Notify | AWS SES/SMTP + Slack Web API bot token, webhook fallback (`lib/server/notifications.ts`, `lib/server/smtp.ts`) |
+| Deploy | Docker `output: "standalone"` on Coolify app `mtrl2z6a7zvoyevxvufpntij`; secrets from Infisical (not in git) |
 
-**Product intent** lives in `docs/` (PRD, design, voice spec, API contracts). **Runtime truth** is this repo — older handover material may mention Postgres/Drizzle/Redis, but launch production uses **Convex** and **in-memory** rate limiting unless a PR explicitly migrates storage.
+**Product intent** lives in `docs/` (PRD, design, voice spec, API contracts). **Runtime truth** is this repo. Launch production uses **Convex**, **Redis-backed rate limiting via `REDIS_URL`**, structured JSON route logs, and Slack delivery to `#tech-team-test` through `SLACK_BOT_TOKEN` + `SLACK_CHANNEL_ID`.
 
 ---
 
@@ -61,7 +61,9 @@ lib/
   server/
     convex.ts             # lead persistence
     openai-realtime.ts    # session minting
-    security.ts           # Turnstile, rate limit, IP hash
+    security.ts           # Turnstile, IP hash, shared response helpers
+    rate-limit.ts         # Redis/Valkey/Upstash limiter, memory fallback
+    logger.ts             # structured JSON logs for route handlers
     notifications.ts      # SES + Slack
 convex/                   # schema + mutations; deploy with convex deploy
 tests/                    # vitest unit tests (*.test.ts)
@@ -90,6 +92,9 @@ docs/                     # handover specs — reference, not auto-synced to cod
 | Session token + server session config | `app/api/voice/session/route.ts`, `lib/server/openai-realtime.ts` |
 | Lead payload validation | `lib/schemas.ts` |
 | Owner email env mapping | `lib/server/notifications.ts` + `OWNER_*` in `.env.local.example` |
+| Shared rate limits | `lib/server/rate-limit.ts`; production should log `rateLimitStore: "redis"` |
+| Structured route logs | `lib/server/logger.ts`; view in Coolify app logs |
+| Infisical/Coolify deployment env | `/deploy/oriental-website`; `COOLIFY_ORIENTAL_APPLICATION_UUID=mtrl2z6a7zvoyevxvufpntij` |
 | Convex tables / ingest | `convex/schema.ts`, `convex/leads.ts` |
 | API error shapes | Source route handlers and `lib/schemas.ts`; update `docs/06-API-CONTRACTS.md` in the same PR |
 | Styles / tokens | `app/globals.css` (`@theme`), component Tailwind classes |
@@ -111,6 +116,8 @@ pnpm test                   # vitest
 pnpm build
 pnpm test:e2e               # needs app; README uses PORT=3011 for standalone proof
 pnpm check-secrets          # validate expected env keys (local)
+pnpm local:ngrok -- --check  # prove ngrok secret lookup without opening a tunnel
+pnpm voice:debug             # inspect latest local voice debug snapshots
 pnpm exec convex deploy     # needs CONVEX_DEPLOY_KEY
 ```
 
@@ -180,11 +187,14 @@ Read in order on first pass, then cherry-pick:
 - Do **not** commit `.env*`, API keys, or deploy keys.
 - Do **not** run destructive git commands unless the user explicitly asks.
 - Do **not** assume Vercel edge/runtime — hosting is Coolify Node standalone.
+- Do **not** run interactive `infisical login`; use Universal Auth from `~/.config/infisical/universal-auth.env`.
+- Do **not** use generic Coolify UUID secrets for this app; use `COOLIFY_ORIENTAL_APPLICATION_UUID` when scripting against Coolify.
 - Do **not** expand scope: no new abstractions for one-off helpers; no unrelated README/doc sweeps unless asked.
 - **Do** run `pnpm lint`, `pnpm typecheck`, and `pnpm test` when touching voice, API, or schemas.
 - **Do** update `docs/` only when the user wants spec alignment; otherwise fix code and mention doc drift in the PR/summary.
 - For local voice debugging, inspect `GET /api/voice/debug` while `NODE_ENV !== "production"`. It stores the latest local dialog snapshots only; do not rely on it in production.
 - Do not paste or commit real tester transcripts. Summarise issues and clear/restart the dev server when a local debug buffer has sensitive data.
+- Brand assets are local under `public/assets/brand/`; provenance is documented in `docs/ASSET-SOURCES.md`. Root `/favicon.ico` and `/apple-touch-icon.png` should keep serving the Mereka favicon.
 
 ---
 

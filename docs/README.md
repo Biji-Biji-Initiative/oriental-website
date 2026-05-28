@@ -45,7 +45,9 @@ disagree on intent, this doc wins.
 - **Secrets** — Infisical at `secrets.mereka.io`. Nothing in `.env` files, nothing in code. Coolify pulls at deploy time via a machine identity.
 - **Voice** — OpenAI Realtime API via ephemeral tokens, WebRTC client.
 - **Database** — Convex for launch lead and lead-event persistence.
-- **Email** — AWS SES/SMTP fallback (transactional). Slack mirror to `#partner-intake` when configured.
+- **Email** — AWS SES/SMTP fallback (transactional). Slack mirror to `#tech-team-test` through bot-token delivery for smoke testing, webhook fallback only.
+- **Rate limiting** — Redis-backed shared limiter in production, memory fallback only for local/degraded mode.
+- **Observability** — structured JSON route logs in Coolify; no Sentry/metrics/alerts yet.
 - **3D** — Not installed in the current runtime; `MiniOrb` is SVG. Prototype R3F notes are reference-only.
 - **No auth** on the public site. Internal CRM is a separate workstream.
 
@@ -61,4 +63,4 @@ Tracked in [`10-ROADMAP.md`](./10-ROADMAP.md) §Blockers. Highest-priority:
 
 ---
 
-*Last revised — handover compile, 2026-05-27.*
+*Last revised — production docs alignment, 2026-05-28.*

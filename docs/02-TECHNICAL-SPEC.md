@@ -18,11 +18,11 @@ Runtime truth for the production build:
 | Email | SMTP or AWS SESv2 | SMTP preferred when configured; SESv2 fallback by region. |
 | Slack | Bot token + channel id, webhook fallback | Lead mirror to `#tech-team-test` via `SLACK_CHANNEL_ID`; `SLACK_WEBHOOK_URL` is fallback-only. |
 | Abuse protection | Cloudflare Turnstile | Verified server-side on all intake POST routes. |
-| Rate limiting | In-memory per process | Single-instance launch guard. Replace before horizontal scale. |
+| Rate limiting | Redis/Valkey via `REDIS_URL`, memory fallback | Shared limiter is active in production; memory mode is degraded fallback only. |
 | DNS / TLS / WAF | Cloudflare | In front of Coolify origin. |
 | Secrets | Infisical + Coolify env | Project `6bfac905-9bb1-449e-8be8-f25f9634802b`, folder `/deploy/oriental-website`. |
 | Hosting | Coolify | Docker standalone Next.js app. |
-| Observability | Coolify logs + route responses | Sentry/metrics are future work unless added by a later PR. |
+| Observability | Structured JSON route logs in Coolify | Sentry/metrics/alerts are future work unless added by a later PR. |
 
 There is no React Three Fiber runtime in the current app. The public orb is the
 SVG `MiniOrb`.
@@ -131,11 +131,13 @@ CONVEX_URL=
 CONVEX_INGEST_SECRET=
 OPENAI_API_KEY=
 OPENAI_REALTIME_MODEL=gpt-realtime-2
-OPENAI_REALTIME_VOICE=marin
-OPENAI_REALTIME_SPEED=1.18
+OPENAI_REALTIME_VOICE=coral
+OPENAI_REALTIME_SPEED=1.28
+REDIS_URL=
 TURNSTILE_SITE_KEY=
 TURNSTILE_SECRET_KEY=
 IP_HASH_SECRET=
+COOLIFY_ORIENTAL_APPLICATION_UUID=mtrl2z6a7zvoyevxvufpntij
 AWS_REGION=
 AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
@@ -181,12 +183,14 @@ Session minting:
 Defaults:
 
 - model: `OPENAI_REALTIME_MODEL ?? "gpt-realtime-2"`
-- voice: `OPENAI_REALTIME_VOICE ?? "marin"`
-- speed: `OPENAI_REALTIME_SPEED ?? 1.18`
-- idle timeout: `45s` client timer
-- max session: `180s` client timer
-- tools: `set_partner_type`, `capture_field`, `summarise_lead`,
-  `route_to_team`, `wait_for_user`
+- source fallback voice: `OPENAI_REALTIME_VOICE ?? "marin"`
+- production voice: `coral` via Infisical/Coolify
+- source fallback speed: `OPENAI_REALTIME_SPEED ?? 1.18`
+- production speed: `1.28` via Infisical/Coolify
+- idle timeout: `20s` client timer
+- max session: `150s` client timer
+- tools: `set_partner_type`, `capture_field`, `clear_field`,
+  `summarise_lead`, `route_to_team`, `wait_for_user`, `end_call`
 
 ## 7. Build, Test, Deploy
 
@@ -238,8 +242,10 @@ Already implemented in source:
 - official Biji-biji/Mereka assets and CIMB partner marks
 - Convex lead persistence path
 - Turnstile verification
-- in-memory rate limits
+- Redis-backed rate limits with memory fallback
 - OpenAI Realtime 2 WebRTC path
+- Slack bot-token delivery to `#tech-team-test` with webhook fallback
+- structured JSON route logs for voice, lead, newsletter, and limiter events
 - focused Vitest and Playwright coverage
 
 Open before public launch:
@@ -249,4 +255,5 @@ Open before public launch:
 - legal/brand approval for partner logo usage
 - live Realtime conversation proof against staging/prod
 - Convex deploy proof and owner-notification proof
-- replacement shared rate limiter if scaling beyond one app instance
+- human listening QA for Reka's Malaysian-English voice and conversation quality
+- Sentry/metrics/alerting if operational risk requires more than Coolify logs

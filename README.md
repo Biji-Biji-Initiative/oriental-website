@@ -10,8 +10,8 @@ Next.js 16 microsite for the Oriental Building partner-intake launch. The site t
 - Tailwind CSS 4 and shadcn/ui primitives
 - Convex for lead and lead-event persistence
 - OpenAI Realtime client-secret minting via `/api/voice/session`
-- Cloudflare Turnstile, in-memory rate limiting, SES, and Slack webhook notification hooks
-- Docker standalone runtime for Coolify
+- Cloudflare Turnstile, Redis-backed rate limiting with memory fallback, SES/SMTP, and Slack Web API notifications
+- Docker standalone runtime for Coolify (`oriental.mereka.io`)
 
 ## Development
 
@@ -44,11 +44,13 @@ CONVEX_URL=
 CONVEX_INGEST_SECRET=
 OPENAI_API_KEY=
 OPENAI_REALTIME_MODEL=gpt-realtime-2
-OPENAI_REALTIME_VOICE=marin
-OPENAI_REALTIME_SPEED=1.18
+OPENAI_REALTIME_VOICE=coral
+OPENAI_REALTIME_SPEED=1.28
+REDIS_URL=
 TURNSTILE_SITE_KEY=
 TURNSTILE_SECRET_KEY=
 IP_HASH_SECRET=
+COOLIFY_ORIENTAL_APPLICATION_UUID=mtrl2z6a7zvoyevxvufpntij
 AWS_REGION=
 AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
@@ -75,7 +77,9 @@ OWNER_OTHER=
 
 The primary voice profile lives in `lib/voice/profile.ts`. Edit `VOICE_PROFILE` when you want to change the agent identity, tone, conversation flow, required capture fields, guardrails, VAD defaults, truncation, or Realtime tool descriptions. The generated prompt follows the OpenAI Realtime 2 sections for role, tone, reasoning, channels, preambles, tools, unclear audio, entity capture, routing, long-context behavior, escalation, and guardrails.
 
-Voice rendering is controlled by environment as well as prompt. `OPENAI_REALTIME_VOICE` must be one of the supported Realtime built-in voices, and `OPENAI_REALTIME_SPEED` is clamped to OpenAI's supported `0.25` to `1.5` range. The production default is `marin` at `1.18` speed so Reka speaks faster and more energetically without rushing exact names or emails. Test `cedar` during listening QA if `marin` still feels too Western.
+Voice rendering is controlled by environment as well as prompt. `OPENAI_REALTIME_VOICE` must be one of the supported Realtime built-in voices, and `OPENAI_REALTIME_SPEED` is clamped to OpenAI's supported `0.25` to `1.5` range. Source fallback is `marin` at `1.18`; production is currently configured to `coral` at `1.28` so Reka speaks faster and more brightly. Human listening QA still decides whether this is Malaysian enough.
+
+Server route handlers emit structured JSON logs with `service`, `version`, `event`, `requestId`, hashed IP metadata, durations, rate-limit store, and notification results. Use Coolify logs plus `pnpm voice:debug` locally when reviewing failed voice conversations.
 
 Segment-specific routing and opener copy live in `lib/segments.ts`. Realtime event handling is isolated in `lib/voice/realtime-events.ts`, outbound client event serialization is in `lib/voice/client-events.ts`, and browser microphone/WebRTC lifetime is in `components/voice-agent/useRealtimeVoiceSession.ts`. Behavior changes should get focused tests in `tests/realtime-events.test.ts`, `tests/realtime-client-events.test.ts`, or `tests/openai-realtime.test.ts` before deployment.
 

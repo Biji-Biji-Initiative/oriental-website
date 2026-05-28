@@ -19,12 +19,14 @@ Coolify application
   ├── Convex Cloud              lead + lead-event persistence
   ├── OpenAI Realtime API       client secrets + WebRTC calls
   ├── AWS SES / SMTP            owner notifications
-  ├── Slack webhook             optional lead mirror
+  ├── Slack Web API             lead mirror to #tech-team-test
+  ├── Redis / Valkey            shared rate limiting
   └── Infisical via Coolify     runtime env materialized at deploy
 ```
 
-Current launch shape is a **single Coolify app instance**. The in-memory rate
-limiter is acceptable only for that shape.
+Current production uses a Redis-backed limiter through `REDIS_URL`. The
+in-memory limiter remains as local/degraded fallback only; do not treat memory
+mode as horizontally scalable.
 
 ## Domain And DNS
 
@@ -74,6 +76,7 @@ Self-hosted Infisical:
 | Project ID | `6bfac905-9bb1-449e-8be8-f25f9634802b` |
 | App folder | `/deploy/oriental-website` |
 | Environments | `dev`, `staging`, `prod` |
+| Coolify app UUID | `mtrl2z6a7zvoyevxvufpntij` (`COOLIFY_ORIENTAL_APPLICATION_UUID`) |
 
 Never run interactive `infisical login` in automation. Use Universal Auth:
 
@@ -99,6 +102,7 @@ Secret contract is enforced by `scripts/check-secrets.ts`.
 | Field | Value |
 |---|---|
 | Service | `oriental-website` / app currently serving `oriental.mereka.io` |
+| Application UUID | `mtrl2z6a7zvoyevxvufpntij` |
 | Type | Docker application |
 | Branch | `main` for production |
 | Runtime port | `3000` by default |
@@ -136,9 +140,18 @@ Runtime env:
 CONVEX_URL=
 NEXT_PUBLIC_CONVEX_URL=
 CONVEX_INGEST_SECRET=
+REDIS_URL=
 ```
 
 `CONVEX_INGEST_SECRET` protects app-to-Convex mutations.
+
+Rate limiting uses Redis/Valkey keys under `oriental:rate:*` when `REDIS_URL`,
+`UPSTASH_REDIS_URL`, or `VALKEY_URL` is set. Route logs include
+`rateLimitStore`; production should normally show `"redis"`.
+
+Slack delivery uses `SLACK_BOT_TOKEN` + `SLACK_CHANNEL_ID` first. Current smoke
+channel is `#tech-team-test` (`C01AVSGACFN`). `SLACK_WEBHOOK_URL` is fallback
+only.
 
 ## Local Public Testing
 
@@ -158,8 +171,11 @@ temporary ngrok config, and redacts token-like output.
 
 Current runtime:
 
-- `/api/health` proves the Next server is responsive.
+- `/api/health` returns `version`, `uptime_s`, and `convex` config presence.
 - Coolify container logs retain stdout/stderr.
+- Route handlers emit structured JSON logs through `lib/server/logger.ts`.
+- Important events include `voice_session.*`, `lead.*`, `newsletter.*`, and
+  `rate_limit.redis_fallback`.
 - Route responses expose persistence/notification status for accepted leads.
 
 Not currently implemented unless a later PR adds it:
@@ -168,7 +184,18 @@ Not currently implemented unless a later PR adds it:
 - Prometheus metrics
 - scraped Turnstile/OpenAI failure-rate counters
 - PagerDuty alerting
-- structured request log pipeline
+
+Safe log proof examples:
+
+```bash
+curl -sS https://oriental.mereka.io/api/health
+curl -sS -X POST https://oriental.mereka.io/api/leads \
+  -H 'content-type: application/json' \
+  --data '{"source":"form","form":{}}'
+```
+
+The second command should return `400 invalid_payload` and create a structured
+`lead.invalid_payload` log without storing a lead.
 
 ## Rotation
 
@@ -176,7 +203,7 @@ Not currently implemented unless a later PR adds it:
 |---|---|
 | OpenAI API key | 90 days or immediately after temporary key use |
 | AWS / SMTP credentials | 90 days |
-| Slack webhook | staff/channel change or suspected leak |
+| Slack bot token / webhook | staff/channel change or suspected leak |
 | Turnstile secret | annually or suspected leak |
 | Infisical Universal Auth credentials | 180 days |
 | Convex ingest/deploy secrets | staff change or suspected leak |
@@ -197,7 +224,8 @@ Rotation means updating Infisical/Coolify and redeploying the app.
 - Confirm final Coolify service naming and resource limits in the live UI.
 - Confirm Cloudflare zone ownership and WAF rules.
 - Define Convex backup/export process and retention.
-- Decide whether a shared Redis/KV limiter is needed before launch or only
-  before horizontal scaling.
+- Decide whether Coolify log retention is enough for launch or whether Sentry,
+  metrics, and alerts are required before public traffic.
 - Confirm staging domain if one is required (`oriental-staging.mereka.io` or
   Coolify preview URL).
+- Complete human listening QA for Reka's Malaysian-English voice quality.

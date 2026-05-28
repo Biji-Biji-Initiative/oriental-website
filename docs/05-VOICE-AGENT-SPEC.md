@@ -15,7 +15,7 @@ with Zod validation.
 | Surface | Purpose |
 |---|---|
 | **Partner rail** | Segment intent and routing owner hint. |
-| **Voice stage** | Mereka orb, voice start/end, story cues, live audio state. |
+| **Voice stage** | Reka voice controls, brand orb chrome, story cues, live audio state. |
 | **Handoff panel** | Editable Name, Email, Organisation, and brief fields. |
 | **Live notes** | Recent transcript snippets for user confidence and debugging. |
 
@@ -83,6 +83,7 @@ const tools = [
         key:   { type: 'string', enum: ['name','email','org','message'] },
         value: { type: 'string' },
         evidence: { type: 'string' }, // exact user-transcript words; required by policy for name/email/org
+        mode: { type: 'string', enum: ['replace','append'] },
       },
       required: ['key','value'],
     },
@@ -121,8 +122,10 @@ const tools = [
 
 Tool calls stream into the shared React state backing the editable shadcn form.
 For `name`, `email`, and `org`, the reducer rejects captures that are not
-grounded in recent user transcript evidence. This is a hard guard against the
-model inventing names, organisations, or contact details.
+grounded in recent user transcript evidence. Typed handoff values are synced
+back to the model as explicit context, so Reka can see what the user typed and
+should not ask for those fields again. Brief updates may use `mode: "append"`
+so the user can build a better story without losing earlier context.
 
 ## 5. System prompt
 
@@ -168,10 +171,10 @@ lead was sent until route_to_team succeeds.
 | Parameter | Value |
 |---|---|
 | Model | `gpt-realtime-2` by default via `OPENAI_REALTIME_MODEL` |
-| Voice | `marin` by default via `OPENAI_REALTIME_VOICE` |
-| Speech speed | `1.18` by default via `OPENAI_REALTIME_SPEED`; clamped to OpenAI's supported `0.25` to `1.5` range |
+| Voice | Source fallback is `marin`; production is currently `coral` via `OPENAI_REALTIME_VOICE` |
+| Speech speed | Source fallback is `1.18`; production is currently `1.28` via `OPENAI_REALTIME_SPEED`; clamped to OpenAI's supported `0.25` to `1.5` range |
 | Input audio | Browser-default mic, captured locally before token minting |
-| Session length cap | **150 seconds** client-side runtime cap; `/api/voice/session` also refuses to mint a new token if the same IP exceeds 3 sessions / day in the current in-memory limiter |
+| Session length cap | **150 seconds** client-side runtime cap; `/api/voice/session` refuses to mint a new token if the same IP exceeds 3 sessions / day in the Redis-backed limiter, with memory fallback only when Redis is unavailable |
 | Server VAD | `server_vad`, `threshold: 0.5`, `prefix_padding_ms: 300`, `silence_duration_ms: 700`, `create_response: true`, `interrupt_response: true` |
 | Modalities | Audio output with text events and tool-call events on the data channel |
 
@@ -201,6 +204,24 @@ See [`06-API-CONTRACTS.md`](./06-API-CONTRACTS.md) §`/api/voice/session`.
 | OpenAI Realtime returns 5xx | Same. Track in Coolify logs until a dedicated observability stack is added. |
 | User goes idle in voice mode | Voice tears down after 20 seconds of inactivity. The form and captured fields remain visible. |
 | Conversation reaches max duration | Voice tears down after 150 seconds. The form and captured fields remain visible. |
+
+## 8.1 Conversation QA Contract
+
+The current product bar is not only that tools fire; Reka must feel like a
+distinct Malaysian host. Manual QA should check:
+
+- Reka introduces herself proactively when voice connects.
+- She says **Reka** as her name and treats **Mereka** as the organisation.
+- She uses current handoff-panel context and does not claim she cannot fill the
+  form.
+- She appends story updates when the user asks to add or improve the brief.
+- She submits immediately when the user says "send" and required fields are
+  present.
+- She calls `end_call` when the user says bye, stop, or end voice.
+- She does not invent identity fields from overlays, account names, or old
+  defaults.
+- Human ears decide whether the configured voice is Malaysian enough before a
+  wider launch.
 
 ## 9. Privacy
 

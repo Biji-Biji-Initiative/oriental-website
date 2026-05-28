@@ -13,6 +13,7 @@ Use this on the day of soft-launch and again 24 hours before public-launch.
 - [ ] Image size < 220 MB
 - [ ] `pnpm exec convex deploy` completed with the production deploy key
 - [ ] `/api/health` returns `200` for 5 consecutive checks
+- [ ] `/api/health` reports the expected deployed `version` commit and `convex: true`
 - [ ] Cloudflare DNS for `oriental.mereka.io` resolves to Coolify origin
 - [ ] Cloudflare cert active (Full Strict mode)
 - [ ] Cloudflare cache rules avoid stale HTML while the root layout is dynamic
@@ -27,6 +28,8 @@ Use this on the day of soft-launch and again 24 hours before public-launch.
 - [ ] CI/check machine identity has read-only access where used
 - [ ] Rotation calendar reminder set for OPENAI / AWS keys (90 days)
 - [ ] CI's `scripts/check-secrets.ts` passes for all three environments
+- [ ] `REDIS_URL` is present in production and API logs show `rateLimitStore: "redis"`
+- [ ] `COOLIFY_ORIENTAL_APPLICATION_UUID` is set to `mtrl2z6a7zvoyevxvufpntij` for deploy scripts
 
 ## Cloudflare Turnstile
 
@@ -53,6 +56,11 @@ Use this on the day of soft-launch and again 24 hours before public-launch.
 - [ ] `capture_field` only saves name/email/org when supported by recent user transcript evidence
 - [ ] Client idle/max timers stop microphone/WebRTC at 20s idle and 150s max
 - [ ] Rate limit enforced — 4th minted session/IP/day returns `429 voice_limit_reached`
+- [ ] Reka introduces herself proactively, says Reka (not Mereka) as her name, and explains Oriental in one short Malaysian-English opener
+- [ ] Reka can use typed handoff-panel context and does not ask again for fields already typed
+- [ ] Saying "send" submits immediately when all required fields are present
+- [ ] Saying "bye", "stop", or "end voice" tears down WebRTC without continuing the conversation
+- [ ] Human listening QA signs off that the configured Realtime voice is Malaysian enough for launch
 - [ ] Falls back to typed handoff panel on mic-denied
 - [ ] Falls back to typed handoff panel on session 429
 
@@ -67,10 +75,10 @@ Use this on the day of soft-launch and again 24 hours before public-launch.
 
 ## Slack
 
-- [ ] `#partner-intake` channel created
-- [ ] Webhook tested end-to-end (test submission → message visible)
+- [ ] `#tech-team-test` channel is the current smoke-test destination
+- [ ] `SLACK_BOT_TOKEN` + `SLACK_CHANNEL_ID=C01AVSGACFN` tested end-to-end (test submission → message visible)
 - [ ] Slack message includes routed owner, lead id, source, contact fields, brief, and transcript excerpt
-- [ ] Webhook URL is in Infisical, not in code
+- [ ] `SLACK_WEBHOOK_URL` is treated as fallback only and stays in Infisical, not in code
 
 ## Functional smoke test
 
@@ -79,8 +87,8 @@ Walk through every user path on the staging URL:
 - [ ] Hero loads with the building photo within 2.5s on a 4G simulation
 - [ ] Hero email capture: invalid email is rejected
 - [ ] Hero email capture: valid email shows success state + "Take 2 minutes" link
-- [ ] Clicking "Talk to Mereka" in nav opens the voice modal
-- [ ] Mereka orb renders in the voice modal within 600ms of modal open
+- [ ] Clicking the nav voice CTA opens the voice modal
+- [ ] Brand orb renders in the voice modal within 600ms of modal open
 - [ ] Pressing SPACE on a non-input element opens the voice modal
 - [ ] Each ecosystem cell opens the modal with the right segment intent
 - [ ] Each space card opens the modal with the right segment intent
@@ -95,6 +103,7 @@ Walk through every user path on the staging URL:
 - [ ] Voice rail disappears when modal is open
 - [ ] Footer `mailto:team@mereka.io` opens email client
 - [ ] Footer partner logo row renders Mereka, Biji-biji, and CIMB marks
+- [ ] `/favicon.ico`, `/apple-touch-icon.png`, and `/assets/brand/mereka/favicon-*.png` return `200`
 - [ ] Footer address link opens Google Maps in new tab
 - [ ] ESC closes the voice modal
 - [ ] Mobile (375×812): hero stacks, segment rail scrolls horizontally,
@@ -147,7 +156,7 @@ Walk through every user path on the staging URL:
 - [ ] DNS TTL lowered to 5 min 24h before launch
 - [ ] Comms scheduled: LinkedIn post, internal email, partner network
 - [ ] On-call rota for first 72 hours
-- [ ] Slack `#partner-intake-ops` channel ready for incident triage
+- [ ] Agreed Slack ops channel ready for incident triage (`#tech-team-test` is current smoke-test channel)
 - [ ] Coolify rollback button tested
 
 ## First 72 hours (post-launch)
@@ -155,4 +164,4 @@ Walk through every user path on the staging URL:
 - [ ] Monitor Coolify container errors hourly
 - [ ] Monitor Cloudflare Turnstile failure rate
 - [ ] Monitor OpenAI usage / spend
-- [ ] Daily lead count posted to `#partner-intake`
+- [ ] Daily lead count posted to the agreed launch channel
