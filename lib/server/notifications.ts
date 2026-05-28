@@ -73,6 +73,25 @@ export async function notifyOwner(lead: StoredLead): Promise<NotificationResult>
 }
 
 export async function notifySlack(lead: StoredLead): Promise<NotificationResult> {
+  const payload = buildSlackPayload(lead);
+  const slackBotToken = readEnv("SLACK_BOT_TOKEN");
+  const slackChannel = readEnv("SLACK_CHANNEL_ID") ?? readEnv("SLACK_CHANNEL");
+  if (slackBotToken && slackChannel) {
+    const response = await fetch("https://slack.com/api/chat.postMessage", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${slackBotToken}`,
+        "Content-Type": "application/json; charset=utf-8",
+      },
+      body: JSON.stringify({ channel: slackChannel, text: payload.text, blocks: payload.blocks }),
+    });
+    const body = (await response.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+    if (!response.ok || body?.ok !== true) {
+      return { ok: false, error: body?.error ?? "slack_api_error", status: response.status };
+    }
+    return { ok: true, transport: "slack" };
+  }
+
   const slackWebhookUrl = readEnv("SLACK_WEBHOOK_URL");
   if (!slackWebhookUrl) {
     return { ok: false, skipped: true, reason: "slack_unconfigured" };
@@ -81,7 +100,7 @@ export async function notifySlack(lead: StoredLead): Promise<NotificationResult>
   const response = await fetch(slackWebhookUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(buildSlackPayload(lead)),
+    body: JSON.stringify(payload),
   });
   if (!response.ok) {
     return { ok: false, error: "slack_http_error", status: response.status };

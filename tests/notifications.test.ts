@@ -110,6 +110,36 @@ describe("notifySlack", () => {
     expect(JSON.stringify(payload)).toContain("*Brief*");
   });
 
+  it("uses Slack Web API channel routing when a bot token and channel are configured", async () => {
+    process.env = {
+      ...process.env,
+      SLACK_BOT_TOKEN: "xoxb-test",
+      SLACK_CHANNEL_ID: "C01AVSGACFN",
+    };
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+      Response.json({ ok: true, channel: "C01AVSGACFN", ts: "123.456" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await notifySlack(lead());
+
+    expect(result).toEqual({ ok: true, transport: "slack" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://slack.com/api/chat.postMessage",
+      expect.objectContaining({
+        method: "POST",
+        headers: {
+          Authorization: "Bearer xoxb-test",
+          "Content-Type": "application/json; charset=utf-8",
+        },
+      }),
+    );
+    const init = fetchMock.mock.calls[0]?.[1];
+    const payload = JSON.parse(String(init?.body));
+    expect(payload.channel).toBe("C01AVSGACFN");
+    expect(payload.blocks).toHaveLength(4);
+  });
+
   it("returns Slack HTTP status failures without throwing", async () => {
     vi.stubGlobal(
       "fetch",
@@ -120,6 +150,24 @@ describe("notifySlack", () => {
       ok: false,
       error: "slack_http_error",
       status: 500,
+    });
+  });
+
+  it("returns Slack Web API failures without falling back to webhook", async () => {
+    process.env = {
+      ...process.env,
+      SLACK_BOT_TOKEN: "xoxb-test",
+      SLACK_CHANNEL_ID: "C01AVSGACFN",
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ ok: false, error: "channel_not_found" })),
+    );
+
+    await expect(notifySlack(lead())).resolves.toEqual({
+      ok: false,
+      error: "channel_not_found",
+      status: 200,
     });
   });
 });

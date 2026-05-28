@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { serializeRealtimeCommand } from "@/lib/voice/client-events";
+import { serializeHandoffContext, serializeRealtimeCommand, serializeResponseCreate } from "@/lib/voice/client-events";
 
 describe("serializeRealtimeCommand", () => {
   it("serializes function call output with event ids and optional response creation", () => {
@@ -40,6 +40,43 @@ describe("serializeRealtimeCommand", () => {
 
     expect(events).toHaveLength(1);
     expect(events[0]?.type).toBe("conversation.item.create");
+  });
+
+  it("serializes typed handoff context as a user conversation item", () => {
+    const event = serializeHandoffContext(
+      {
+        segment: "ai",
+        captured: {
+          name: "Mei Ling",
+          email: "mei@example.com",
+          org: "Future Lab",
+          message: "AI literacy demos for students.",
+        },
+      },
+      nextEventId(["evt_context"]),
+    );
+
+    expect(event).toMatchObject({
+      type: "conversation.item.create",
+      event_id: "evt_context",
+      item: {
+        type: "message",
+        role: "user",
+      },
+    });
+    const body = JSON.stringify(event);
+    expect(body).toContain("Treat non-empty fields as user-provided typed details");
+    expect(body).toContain("Name: Mei Ling");
+    expect(body).toContain("Email: mei@example.com");
+    expect(body).toContain("Brief: AI literacy demos for students.");
+  });
+
+  it("serializes a response.create event with optional per-response instructions", () => {
+    expect(serializeResponseCreate("Start as Reka.", nextEventId(["evt_response"]))).toEqual({
+      type: "response.create",
+      event_id: "evt_response",
+      response: { instructions: "Start as Reka." },
+    });
   });
 });
 

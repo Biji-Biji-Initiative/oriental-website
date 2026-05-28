@@ -44,6 +44,24 @@ describe("reduceRealtimeServerEvent", () => {
     ]);
   });
 
+  it("waits for response.done before executing function calls", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.output_item.done",
+        item: {
+          type: "function_call",
+          name: "capture_field",
+          call_id: "call_too_early",
+          arguments: JSON.stringify({ key: "name", value: "Asha", evidence: "Asha" }),
+        },
+      },
+      state({ transcript: [{ role: "user", text: "I am Asha." }] }),
+    );
+
+    expect(result.state.captured.name).toBe("");
+    expect(result.commands).toHaveLength(0);
+  });
+
   it("routes only through known segments and asks the UI to submit", () => {
     const result = reduceRealtimeServerEvent(
       {
@@ -243,6 +261,35 @@ describe("reduceRealtimeServerEvent", () => {
         createResponse: false,
         output: { ok: true, waited: true },
       },
+    ]);
+  });
+
+  it("ends the voice session without asking the model to keep speaking", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "end_call",
+              call_id: "call_end",
+              arguments: JSON.stringify({ reason: "user_done" }),
+            },
+          ],
+        },
+      },
+      state(),
+    );
+
+    expect(result.commands).toEqual([
+      {
+        type: "function_result",
+        callId: "call_end",
+        createResponse: false,
+        output: { ok: true, ended: true, reason: "user_done" },
+      },
+      { type: "end_voice", reason: "user_done" },
     ]);
   });
 

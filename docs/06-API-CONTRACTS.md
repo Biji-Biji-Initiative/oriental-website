@@ -112,8 +112,10 @@ route returns `502 persistence_failed` if persistence fails.
 3. Owner notification is attempted through SMTP when SMTP env exists, otherwise
    SESv2 when `AWS_REGION` is set. Owner email includes the lead id, source,
    segment, routed owner, contact fields, brief, and recent transcript context.
-4. Slack notification is attempted when `SLACK_WEBHOOK_URL` exists. Slack blocks
-   include the same routing/contact fields plus a brief and transcript excerpt.
+4. Slack notification is attempted through `SLACK_BOT_TOKEN` +
+   `SLACK_CHANNEL_ID` first, with `SLACK_WEBHOOK_URL` as a fallback. Slack
+   blocks include the same routing/contact fields plus a brief and transcript
+   excerpt.
 
 In local and test environments, notification failures are represented in the
 `notifications` object and do not turn a successfully accepted lead into an
@@ -227,7 +229,7 @@ Server request:
 - `session.audio.input.turn_detection` from `VOICE_SESSION_DEFAULTS`
 - `session.audio.input.transcription.model = "whisper-1"`
 - `session.audio.output.voice = OPENAI_REALTIME_VOICE ?? "marin"`
-- `session.audio.output.speed = OPENAI_REALTIME_SPEED ?? 1.12`
+- `session.audio.output.speed = OPENAI_REALTIME_SPEED ?? 1.18`
 - tools from `VOICE_TOOLS`, including `wait_for_user`
 
 Browser WebRTC exchange:

@@ -9,6 +9,10 @@ describe("voice profile", () => {
     expect(prompt).toContain("# Unclear Audio");
     expect(prompt).toContain("# Sample Phrases");
     expect(prompt).toContain("distinctive KL ecosystem host");
+    expect(prompt).toContain("You are Reka");
+    expect(prompt).toContain("Treat non-empty typed fields there as user-provided details");
+    expect(prompt).toContain("call route_to_team immediately");
+    expect(prompt).toContain("call end_call");
     expect(prompt).toContain("not grounded");
     expect(prompt).toContain("Required fields are name, email, organisation, and a short brief.");
     expect(prompt).toContain("Never invent prices.");
@@ -23,6 +27,7 @@ describe("voice profile", () => {
       "summarise_lead",
       "route_to_team",
       "wait_for_user",
+      "end_call",
     ]);
   });
 });

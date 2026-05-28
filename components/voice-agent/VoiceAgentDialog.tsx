@@ -16,7 +16,7 @@ import { tourTopics } from "@/lib/content";
 import { leadFormSchema } from "@/lib/schemas";
 import { getSegment, type SegmentId, segmentOptions } from "@/lib/segments";
 import { cn } from "@/lib/utils";
-import { serializeRealtimeCommand } from "@/lib/voice/client-events";
+import { serializeHandoffContext, serializeRealtimeCommand, serializeResponseCreate } from "@/lib/voice/client-events";
 import {
   type CapturedLead,
   emptyCapturedLead,
@@ -53,6 +53,9 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const stateRef = useRef<VoiceRuntimeState>({ segment, captured, transcript });
   const submittingRef = useRef(false);
+  const lastSyncedHandoffRef = useRef("");
+  const openedVoiceTurnRef = useRef(false);
+  const teardownVoiceRef = useRef<((reason: VoiceCloseReason) => void) | null>(null);
 
   const handleVoiceClose = useCallback((reason: VoiceCloseReason) => {
     if (reason === "error") {
@@ -170,18 +173,22 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
           sendRealtimeCommand(channel, command);
         }
         if (command.type === "submit_voice") submitVoiceCommand(channel, command, reduced.state);
+        if (command.type === "end_voice") {
+          teardownVoiceRef.current?.("manual");
+        }
       }
     },
     [submitVoiceCommand],
   );
 
-  const { connectVoice, connectionStatus, teardownVoice } = useRealtimeVoiceSession({
+  const { connectVoice, connectionStatus, sendClientEvents, teardownVoice } = useRealtimeVoiceSession({
     audioRef,
     getTurnstileToken: turnstile.execute,
     onClose: handleVoiceClose,
     onEvent: handleRealtimeEvent,
     segment,
   });
+  teardownVoiceRef.current = teardownVoice;
 
   useEffect(() => {
     if (!open) return;
@@ -192,6 +199,8 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
     setActiveTopicId(null);
     setSubmitting(false);
     submittingRef.current = false;
+    lastSyncedHandoffRef.current = "";
+    openedVoiceTurnRef.current = false;
     stateRef.current = {
       segment: intent ?? "other",
       captured: { ...emptyCapturedLead, email: prefill?.email ?? "" },
@@ -214,8 +223,33 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
   }, [status, teardownVoice]);
 
   useEffect(() => {
-    if (connectionStatus === "listening") toast.success("Voice is live.");
-  }, [connectionStatus]);
+    if (connectionStatus !== "listening") {
+      openedVoiceTurnRef.current = false;
+      return;
+    }
+    toast.success("Voice is live.");
+    const current = { segment: stateRef.current.segment, captured: stateRef.current.captured };
+    lastSyncedHandoffRef.current = handoffSyncKey(current);
+    sendClientEvents([
+      serializeHandoffContext(current),
+      serializeResponseCreate(
+        "Start the intake now as Reka. One warm Malaysian-English opening only: say we are moving into Oriental, it is an exciting new chapter, and ask what the visitor would like to build or explore with us. Do not explain pronunciation, tools, limitations, privacy, or the form.",
+      ),
+    ]);
+    openedVoiceTurnRef.current = true;
+  }, [connectionStatus, sendClientEvents]);
+
+  useEffect(() => {
+    if (connectionStatus !== "listening" || !openedVoiceTurnRef.current) return;
+    const current = { segment, captured };
+    const key = handoffSyncKey(current);
+    if (key === lastSyncedHandoffRef.current) return;
+    const timeout = window.setTimeout(() => {
+      lastSyncedHandoffRef.current = key;
+      sendClientEvents(serializeHandoffContext(current));
+    }, 450);
+    return () => window.clearTimeout(timeout);
+  }, [captured, connectionStatus, segment, sendClientEvents]);
 
   useEffect(() => {
     if (!open || process.env.NODE_ENV === "production") return;
@@ -247,7 +281,6 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
   }, [onOpenChange, open]);
 
   const selectedSegment = getSegment(segment);
-  const transcriptPreview = transcript.slice(-4);
   const activeTopic = useMemo(() => tourTopics.find((topic) => topic.id === activeTopicId) ?? null, [activeTopicId]);
   const updateCaptured = useCallback((key: keyof CapturedLead, value: string) => {
     setCaptured((current) => ({ ...current, [key]: value }));
@@ -256,7 +289,7 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[94svh] w-[min(1500px,96vw)] overflow-hidden rounded-[22px] border-white/10 bg-mk-off-black p-0 text-white shadow-2xl sm:max-w-none">
-        <DialogTitle className="sr-only">Talk to Mereka</DialogTitle>
+        <DialogTitle className="sr-only">Talk to Reka</DialogTitle>
         <div className="grid max-h-[94svh] grid-cols-1 overflow-y-auto lg:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_360px]">
           <aside className="border-b border-white/10 p-5 lg:row-span-2 lg:border-r lg:border-b-0 xl:row-span-1">
             <div className="mb-5 text-xs uppercase tracking-[0.16em] text-white/48">Partner type</div>
@@ -301,7 +334,7 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
                     aria-live="polite"
                     className="mt-8 max-w-2xl text-[clamp(1.7rem,3vw,2.8rem)] font-medium leading-tight text-balance"
                   >
-                    Hi, I&apos;m Mereka. Talk it through, or type on the side while we go.
+                    Hi, I&apos;m Reka. Talk it through, or type on the side while we go.
                   </p>
                   <p className="mt-3 text-sm text-white/58">
                     I&apos;ll pick up useful details as you speak. You can edit the handoff anytime before sending.
@@ -370,7 +403,7 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
             ready={turnstile.ready}
             selectedSegment={selectedSegment}
             submitting={submitting}
-            transcriptPreview={transcriptPreview}
+            transcript={transcript}
           />
         </div>
       </DialogContent>
@@ -386,7 +419,7 @@ function HandoffPanel({
   ready,
   selectedSegment,
   submitting,
-  transcriptPreview,
+  transcript,
 }: {
   className?: string;
   form: UseFormReturn<CapturedLead>;
@@ -395,12 +428,22 @@ function HandoffPanel({
   ready: boolean;
   selectedSegment: ReturnType<typeof getSegment>;
   submitting: boolean;
-  transcriptPreview: Array<{ role: "assistant" | "user"; text: string }>;
+  transcript: Array<{ role: "assistant" | "user"; text: string }>;
 }) {
   const fieldClassName =
     "h-11 rounded-[16px] border-white/12 bg-white/[0.045] px-4 text-white placeholder:text-white/30 focus-visible:border-mk-horizon focus-visible:ring-mk-horizon/20 aria-invalid:border-destructive aria-invalid:ring-destructive/20";
   const messageClassName = "text-xs leading-5 text-[#ffb4ab]";
   const invalidCount = Object.keys(form.formState.errors).length;
+  const transcriptRef = useRef<HTMLDivElement | null>(null);
+  const transcriptTurnCount = transcript.length;
+  const latestTranscriptKey = transcript.at(-1) ? `${transcript.at(-1)?.role}:${transcript.at(-1)?.text}` : "";
+
+  useEffect(() => {
+    if (!latestTranscriptKey) return;
+    const node = transcriptRef.current;
+    if (!node) return;
+    node.scrollTop = node.scrollHeight;
+  }, [latestTranscriptKey]);
 
   return (
     <aside className={cn("border-t border-white/10 p-5 lg:border-l xl:border-t-0", className)}>
@@ -534,13 +577,22 @@ function HandoffPanel({
           </Button>
         </form>
       </Form>
-      {transcriptPreview.length > 0 ? (
+      {transcriptTurnCount > 0 ? (
         <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-          <div className="text-[11px] uppercase tracking-[0.14em] text-white/42">Live notes</div>
-          <div className="mt-3 space-y-2">
-            {transcriptPreview.map((entry) => (
-              <p className="text-xs leading-5 text-white/62" key={`${entry.role}-${entry.text}`}>
-                <span className="font-semibold text-white/78">{entry.role === "user" ? "You" : "Mereka"}:</span>{" "}
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-[11px] uppercase tracking-[0.14em] text-white/42">Live notes</div>
+            <div className="text-[11px] text-white/36">{transcriptTurnCount} turns</div>
+          </div>
+          <div
+            aria-label="Conversation transcript"
+            aria-live="polite"
+            className="mt-3 max-h-72 space-y-2 overflow-y-auto overscroll-contain pr-2"
+            ref={transcriptRef}
+            role="log"
+          >
+            {transcript.map((entry) => (
+              <p className="text-xs leading-5 text-white/62" key={`${entry.role}:${entry.text}`}>
+                <span className="font-semibold text-white/78">{entry.role === "user" ? "You" : "Reka"}:</span>{" "}
                 {entry.text}
               </p>
             ))}
@@ -570,6 +622,10 @@ type NotificationResult = {
 
 function notificationDelivered(response: LeadSubmitResponse | null) {
   return response?.notifications?.email?.ok === true || response?.notifications?.slack?.ok === true;
+}
+
+function handoffSyncKey(state: Pick<VoiceRuntimeState, "segment" | "captured">) {
+  return JSON.stringify({ segment: state.segment, captured: state.captured });
 }
 
 function leadSubmitErrorCopy(status: number | undefined, response: LeadSubmitResponse | null) {

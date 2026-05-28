@@ -71,7 +71,7 @@ export default async function RootLayout({
           <SiteNav />
           {children}
           <VoiceRail />
-          <Toaster richColors position="top-center" />
+          <Toaster richColors />
         </VoiceProvider>
       </body>
     </html>

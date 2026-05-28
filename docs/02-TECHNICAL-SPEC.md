@@ -16,7 +16,7 @@ Runtime truth for the production build:
 | Voice | OpenAI Realtime 2 | `gpt-realtime-2`, WebRTC, ephemeral client secrets. |
 | Data | Convex | `convex/schema.ts`, `convex/leads.ts`, `lib/server/convex.ts`. |
 | Email | SMTP or AWS SESv2 | SMTP preferred when configured; SESv2 fallback by region. |
-| Slack | Incoming webhook | Optional mirror when `SLACK_WEBHOOK_URL` exists. |
+| Slack | Bot token + channel id, webhook fallback | Lead mirror to `#tech-team-test` via `SLACK_CHANNEL_ID`; `SLACK_WEBHOOK_URL` is fallback-only. |
 | Abuse protection | Cloudflare Turnstile | Verified server-side on all intake POST routes. |
 | Rate limiting | In-memory per process | Single-instance launch guard. Replace before horizontal scale. |
 | DNS / TLS / WAF | Cloudflare | In front of Coolify origin. |
@@ -132,6 +132,7 @@ CONVEX_INGEST_SECRET=
 OPENAI_API_KEY=
 OPENAI_REALTIME_MODEL=gpt-realtime-2
 OPENAI_REALTIME_VOICE=marin
+OPENAI_REALTIME_SPEED=1.18
 TURNSTILE_SITE_KEY=
 TURNSTILE_SECRET_KEY=
 IP_HASH_SECRET=
@@ -144,6 +145,8 @@ SMTP_HOST=
 SMTP_PORT=
 SMTP_USER=
 SMTP_PASSWORD=
+SLACK_BOT_TOKEN=
+SLACK_CHANNEL_ID=C01AVSGACFN
 SLACK_WEBHOOK_URL=
 OWNER_TENANCY=
 OWNER_EDUCATION=
@@ -179,6 +182,7 @@ Defaults:
 
 - model: `OPENAI_REALTIME_MODEL ?? "gpt-realtime-2"`
 - voice: `OPENAI_REALTIME_VOICE ?? "marin"`
+- speed: `OPENAI_REALTIME_SPEED ?? 1.18`
 - idle timeout: `45s` client timer
 - max session: `180s` client timer
 - tools: `set_partner_type`, `capture_field`, `summarise_lead`,

@@ -2,6 +2,7 @@
 
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
 import type { SegmentId } from "@/lib/segments";
+import type { RealtimeOutboundEvent } from "@/lib/voice/client-events";
 import { VOICE_SESSION_DEFAULTS } from "@/lib/voice/profile";
 import type { RealtimeServerEvent } from "@/lib/voice/realtime-events";
 
@@ -61,6 +62,15 @@ export function useRealtimeVoiceSession({
     }, VOICE_SESSION_DEFAULTS.idleTimeoutMs);
   }, [teardownVoice]);
 
+  const sendClientEvents = useCallback((events: RealtimeOutboundEvent | RealtimeOutboundEvent[]) => {
+    const channel = dataChannelRef.current;
+    if (!channel || channel.readyState !== "open") return false;
+    for (const event of Array.isArray(events) ? events : [events]) {
+      channel.send(JSON.stringify(event));
+    }
+    return true;
+  }, []);
+
   const armMaxTimer = useCallback(() => {
     if (maxTimerRef.current) window.clearTimeout(maxTimerRef.current);
     maxTimerRef.current = window.setTimeout(() => {
@@ -97,6 +107,14 @@ export function useRealtimeVoiceSession({
 
       const channel = peer.createDataChannel("oai-events");
       dataChannelRef.current = channel;
+      channel.onopen = () => {
+        setConnectionStatus("listening");
+        resetIdleTimer();
+        armMaxTimer();
+      };
+      channel.onclose = () => {
+        if (dataChannelRef.current === channel) dataChannelRef.current = null;
+      };
       channel.onmessage = (event) => {
         resetIdleTimer();
         try {
@@ -118,9 +136,6 @@ export function useRealtimeVoiceSession({
       });
       if (!sdpResponse.ok) throw new Error("webrtc_failed");
       await peer.setRemoteDescription({ type: "answer", sdp: await sdpResponse.text() });
-      setConnectionStatus("listening");
-      resetIdleTimer();
-      armMaxTimer();
     } catch {
       teardownVoice("error");
     }
@@ -128,5 +143,5 @@ export function useRealtimeVoiceSession({
 
   useEffect(() => teardownVoice, [teardownVoice]);
 
-  return { connectVoice, connectionStatus, teardownVoice };
+  return { connectVoice, connectionStatus, sendClientEvents, teardownVoice };
 }

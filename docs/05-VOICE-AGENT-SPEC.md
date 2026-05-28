@@ -48,13 +48,13 @@ constant matching the prototype's `voice-agent.jsx`.
 ## 3. Conversation flow (voice)
 
 ```
-1. Greeting        → "Welcome. I'm Mereka. What brings you to Oriental today?"
+1. Greeting        → "Hi, I'm Reka. We're moving into Oriental..."
 2. Segment pick    → tool_call: set_partner_type(segment)
 3. Opener          → voiceOpener for the picked segment
 4. Discovery       → free dialogue, agent uses capture_field() only for grounded values
-5. Summary check   → "So that's <name>, <email>, building <thing>. Sound right?"
+5. Send or recap   → route immediately when the user says "send"; recap only when helpful
 6. Routing         → tool_call: route_to_team(segment)
-7. Close           → "Sent. <First name> will be in touch within 2 working days."
+7. Close           → tool_call: end_call() when the user says bye/stop/end voice
 ```
 
 The agent can revisit any step. If the user changes partner type mid-call, the
@@ -111,6 +111,11 @@ const tools = [
     description: 'End the turn without a spoken reply for silence, background audio, or side conversation.',
     parameters: { type: 'object', properties: {} },
   },
+  {
+    name: 'end_call',
+    description: 'End the voice session when the user says goodbye, asks to stop, or is done with voice.',
+    parameters: { type: 'object', properties: { reason: { type: 'string', enum: ['user_done','user_cancelled'] } } },
+  },
 ];
 ```
 
@@ -122,9 +127,9 @@ model inventing names, organisations, or contact details.
 ## 5. System prompt
 
 ```
-You are Mereka, the partner intake for Oriental Building — a historic Kuala
-Lumpur landmark being reactivated for future learning, technology, creativity,
-and community. You speak with prospective tenants, programme operators,
+You are Reka, the voice host for Mereka's Oriental Building partner intake — a
+historic Kuala Lumpur landmark being reactivated for future learning,
+technology, creativity, and community. You speak with prospective tenants, programme operators,
 education partners, technology partners, cultural and community
 collaborators, and strategic partners.
 
@@ -132,8 +137,8 @@ Your job, in order:
   1. Identify the right partner segment (use set_partner_type).
   2. Capture name, email, organisation, and a short brief of what they'd bring
      (use capture_field one key at a time).
-  3. Summarise the captured lead back to the user (use summarise_lead).
-  4. Route the enquiry to the correct Mereka team member (use route_to_team).
+  3. Use typed handoff panel context without asking for those fields again.
+  4. Route the enquiry to the correct Mereka team member when the user says send.
 
 Tone: warm, Malaysian, upbeat, pace-driven, precise. Sound like a distinctive KL
 ecosystem host, not a Western call-centre voice. Use Malaysian English spelling
@@ -154,8 +159,8 @@ a person's name not listed above, or a guarantee of partnership. If the user
 asks something you don't know, capture the question in the message field and
 say a human will follow up.
 
-End the conversation by summarising and confirming routing. Never end without
-a captured email.
+End the voice session when the user says bye, stop, or end voice. Never say a
+lead was sent until route_to_team succeeds.
 ```
 
 ## 6. Voice / audio constraints
@@ -164,7 +169,7 @@ a captured email.
 |---|---|
 | Model | `gpt-realtime-2` by default via `OPENAI_REALTIME_MODEL` |
 | Voice | `marin` by default via `OPENAI_REALTIME_VOICE` |
-| Speech speed | `1.12` by default via `OPENAI_REALTIME_SPEED`; clamped to OpenAI's supported `0.25` to `1.5` range |
+| Speech speed | `1.18` by default via `OPENAI_REALTIME_SPEED`; clamped to OpenAI's supported `0.25` to `1.5` range |
 | Input audio | Browser-default mic, captured locally before token minting |
 | Session length cap | **150 seconds** client-side runtime cap; `/api/voice/session` also refuses to mint a new token if the same IP exceeds 3 sessions / day in the current in-memory limiter |
 | Server VAD | `server_vad`, `threshold: 0.5`, `prefix_padding_ms: 300`, `silence_duration_ms: 700`, `create_response: true`, `interrupt_response: true` |
@@ -232,7 +237,8 @@ Server then:
 3. Inserts a row into `leads` through the Convex `leads.createLead` mutation.
 4. Inserts a row into `leadEvents` (`kind: "created"`).
 5. Attempts owner email via SMTP or SES, depending on configured secrets.
-6. Attempts Slack webhook notification when `SLACK_WEBHOOK_URL` is configured.
+6. Attempts Slack notification with `SLACK_BOT_TOKEN` + `SLACK_CHANNEL_ID`,
+   falling back to `SLACK_WEBHOOK_URL` when bot-token delivery is not configured.
 7. Returns `{ ok: true, id, persisted, notifications }` when the lead is saved
    and production notification policy is satisfied.
 

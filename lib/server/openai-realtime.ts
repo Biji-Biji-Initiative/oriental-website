@@ -69,8 +69,8 @@ export async function createRealtimeClientSecret(safetyIdentifier: string, initi
 }
 
 function readRealtimeSpeed() {
-  const raw = readEnv("OPENAI_REALTIME_SPEED", "1.12") ?? "1.12";
+  const raw = readEnv("OPENAI_REALTIME_SPEED", "1.18") ?? "1.18";
   const speed = Number(raw);
-  if (!Number.isFinite(speed)) return 1.12;
+  if (!Number.isFinite(speed)) return 1.18;
   return Math.min(1.5, Math.max(0.25, speed));
 }

@@ -42,7 +42,8 @@ export type RealtimeClientCommand =
       createResponse: boolean;
       output: Record<string, unknown>;
     }
-  | { type: "submit_voice"; callId: string; segment: SegmentId };
+  | { type: "submit_voice"; callId: string; segment: SegmentId }
+  | { type: "end_voice"; reason: "user_done" | "user_cancelled" };
 
 type RealtimeContentPart = {
   type?: string;
@@ -131,8 +132,7 @@ export function reduceRealtimeServerEvent(
     };
   }
 
-  const items =
-    event.type === "response.output_item.done" && event.item ? [event.item] : (event.response?.output ?? []);
+  const items = event.type === "response.done" ? (event.response?.output ?? []) : [];
   for (const item of items) {
     const text = getOutputText(item);
     if (text) state = appendTranscript(state, "assistant", text);
@@ -225,10 +225,23 @@ function applyFunctionCall(
     createResponse = false;
   }
 
+  if (item.name === "end_call") {
+    const reason = args.reason === "user_cancelled" ? "user_cancelled" : "user_done";
+    output = { ok: true, ended: true, reason };
+    createResponse = false;
+    commands.push({ type: "end_voice", reason });
+  }
+
   if (
-    !["set_partner_type", "capture_field", "clear_field", "summarise_lead", "route_to_team", "wait_for_user"].includes(
-      item.name,
-    )
+    ![
+      "set_partner_type",
+      "capture_field",
+      "clear_field",
+      "summarise_lead",
+      "route_to_team",
+      "wait_for_user",
+      "end_call",
+    ].includes(item.name)
   ) {
     output = { ok: false, error: "unknown_tool" };
   }

@@ -19,6 +19,7 @@ const required = [
 
 const smtpRequired = ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SES_FROM_ADDRESS"];
 const sesRequired = ["AWS_REGION", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "SES_FROM_ADDRESS"];
+const slackRequired = ["SLACK_BOT_TOKEN", "SLACK_CHANNEL_ID"];
 
 const supportedRealtimeVoices = new Set([
   "alloy",
@@ -52,6 +53,12 @@ if (!hasSmtp && !hasSes) {
 }
 
 if (process.env.NODE_ENV === "production") {
+  const missingSlack = slackRequired.filter((name) => !envValue(name));
+  if (missingSlack.length > 0) {
+    console.error(`Missing Slack routing variables: ${missingSlack.join(", ")}`);
+    process.exit(1);
+  }
+
   const turnstileValues = [envValue("TURNSTILE_SITE_KEY"), envValue("TURNSTILE_SECRET_KEY")];
   if (turnstileValues.some((value) => value?.startsWith("1x0"))) {
     console.error("Production Turnstile keys must not use Cloudflare test keys.");
