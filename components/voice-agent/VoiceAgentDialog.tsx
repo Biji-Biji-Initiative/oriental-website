@@ -359,7 +359,14 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
             className="lg:col-start-2 xl:col-start-auto"
             form={form}
             onChange={updateCaptured}
-            onSubmit={() => submit("form")}
+            onSubmit={(values) =>
+              submit("form", {
+                ...stateRef.current,
+                captured: values,
+                segment,
+                transcript,
+              })
+            }
             ready={turnstile.ready}
             selectedSegment={selectedSegment}
             submitting={submitting}
@@ -384,7 +391,7 @@ function HandoffPanel({
   className?: string;
   form: UseFormReturn<CapturedLead>;
   onChange: (key: keyof CapturedLead, value: string) => void;
-  onSubmit: () => Promise<Record<string, unknown>> | Record<string, unknown> | undefined;
+  onSubmit: (values: CapturedLead) => Promise<Record<string, unknown>> | Record<string, unknown> | undefined;
   ready: boolean;
   selectedSegment: ReturnType<typeof getSegment>;
   submitting: boolean;
@@ -412,7 +419,7 @@ function HandoffPanel({
         <form
           className="mt-5 grid gap-4"
           onSubmit={form.handleSubmit(
-            () => onSubmit(),
+            (values) => onSubmit(values),
             () => {
               toast.error("Please fix the highlighted details.", {
                 description: "The handoff needs a name, valid email, organisation, and short brief.",

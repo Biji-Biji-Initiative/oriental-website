@@ -66,3 +66,42 @@ test("lead form prevents duplicate posts while submission is pending", async ({ 
   releaseLead?.();
   await expect(page.getByRole("heading", { name: /Sent to/i })).toBeVisible();
 });
+
+test("lead form submits the latest typed handoff values", async ({ page }) => {
+  let submittedBody: unknown;
+
+  await page.route("**/api/leads", async (route) => {
+    submittedBody = route.request().postDataJSON();
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        id: "lead_latest_values",
+        persisted: false,
+        notifications: {
+          email: { ok: false, skipped: true },
+          slack: { ok: false, skipped: true },
+        },
+      }),
+    });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: /Tell us why/i }).click();
+  await page.getByLabel("Name").fill("Mei Ling");
+  await page.getByLabel("Email").fill("mei@example.com");
+  await page.getByLabel("Organisation").fill("Fresh Typed Org");
+  await page.getByLabel("What would you bring to Oriental?").fill("A last-moment typed brief for the handoff.");
+  await page.getByRole("button", { name: "Send to Mereka" }).click();
+
+  await expect(page.getByRole("heading", { name: /Sent to/i })).toBeVisible();
+  expect(submittedBody).toMatchObject({
+    source: "form",
+    form: {
+      name: "Mei Ling",
+      email: "mei@example.com",
+      org: "Fresh Typed Org",
+      message: "A last-moment typed brief for the handoff.",
+    },
+  });
+});
