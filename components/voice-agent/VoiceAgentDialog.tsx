@@ -115,7 +115,7 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
           sendRealtimeCommand(channel, {
             type: "function_result",
             callId: command.callId,
-            createResponse: true,
+            createResponse: output.submitted !== true,
             output,
           });
         })
@@ -194,6 +194,26 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
   }, [connectionStatus]);
 
   useEffect(() => {
+    if (!open || process.env.NODE_ENV === "production") return;
+    const timeout = window.setTimeout(() => {
+      void fetch("/api/voice/debug", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          segment,
+          captured,
+          transcript,
+          status,
+          connectionStatus,
+          usage: stateRef.current.usage,
+          errors: stateRef.current.errors,
+        }),
+      }).catch(() => null);
+    }, 250);
+    return () => window.clearTimeout(timeout);
+  }, [captured, connectionStatus, open, segment, status, transcript]);
+
+  useEffect(() => {
     if (!open) return;
     const handler = (event: KeyboardEvent) => {
       if (event.key === "Escape") onOpenChange(false);
@@ -204,6 +224,7 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
 
   const selectedSegment = getSegment(segment);
   const ready = leadFormSchema.safeParse(captured).success;
+  const transcriptPreview = transcript.slice(-4);
 
   const capturedRows = useMemo(
     () => [
@@ -269,7 +290,11 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
                     <p aria-live="polite" className="mt-8 max-w-xl text-2xl font-medium leading-tight">
                       Hi, I&apos;m Mereka. Tell me what brings you to Oriental today.
                     </p>
-                    <p className="mt-3 text-sm text-white/58">{selectedSegment.voiceOpener}</p>
+                    <p className="mt-3 text-sm text-white/58">
+                      Speak naturally. I&apos;ll pick up the useful details and ask for contact info only when we need
+                      to route it.
+                    </p>
+                    <p className="mt-2 text-sm text-white/42">{selectedSegment.voiceOpener}</p>
                     <div className="mt-8 flex flex-wrap justify-center gap-2">
                       {tourTopics.map((topic) => (
                         <button
@@ -287,16 +312,19 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
                     </div>
                     <button
                       className="mt-8 rounded-full bg-white px-6 py-3 text-sm font-semibold text-mk-off-black transition hover:bg-mk-horizon disabled:cursor-not-allowed disabled:opacity-55"
-                      disabled={!turnstile.ready || connectionStatus !== "idle"}
-                      onClick={connectVoice}
+                      disabled={!turnstile.ready || connectionStatus === "connecting"}
+                      onClick={connectionStatus === "listening" ? () => teardownVoice("manual") : connectVoice}
                       type="button"
                     >
                       {connectionStatus === "connecting"
                         ? "Connecting..."
                         : connectionStatus === "listening"
-                          ? "Listening"
+                          ? "End voice"
                           : "Start voice"}
                     </button>
+                    <p className="mt-3 text-xs text-white/42">
+                      Auto-ends after 20 seconds of inactivity or 2.5 minutes total.
+                    </p>
                     {/* biome-ignore lint/a11y/useMediaCaption: Live WebRTC audio has no static caption asset; captured text appears in the transcript state. */}
                     <audio autoPlay ref={audioRef} />
                   </div>
@@ -324,6 +352,19 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
                 </div>
               ))}
             </dl>
+            {transcriptPreview.length > 0 ? (
+              <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                <div className="text-[11px] uppercase tracking-[0.14em] text-white/42">Live notes</div>
+                <div className="mt-3 space-y-2">
+                  {transcriptPreview.map((entry) => (
+                    <p className="text-xs leading-5 text-white/62" key={`${entry.role}-${entry.text}`}>
+                      <span className="font-semibold text-white/78">{entry.role === "user" ? "You" : "Mereka"}:</span>{" "}
+                      {entry.text}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <button
               className="mt-5 w-full rounded-full bg-mk-horizon px-5 py-3 text-sm font-semibold text-mk-off-black transition hover:bg-white disabled:opacity-45"
               disabled={!ready || !turnstile.ready || submitting}

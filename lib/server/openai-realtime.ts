@@ -1,14 +1,15 @@
+import { readEnv } from "@/lib/env";
 import type { SegmentId } from "@/lib/segments";
 import { buildVoiceInstructions, VOICE_SESSION_DEFAULTS, VOICE_TOOLS } from "@/lib/voice/profile";
 
 export async function createRealtimeClientSecret(safetyIdentifier: string, initialSegment?: SegmentId) {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = readEnv("OPENAI_API_KEY");
   if (!apiKey) {
     throw new Error("openai_unconfigured");
   }
 
-  const model = process.env.OPENAI_REALTIME_MODEL ?? "gpt-realtime-2";
-  const voice = process.env.OPENAI_REALTIME_VOICE ?? "marin";
+  const model = readEnv("OPENAI_REALTIME_MODEL", "gpt-realtime-2") ?? "gpt-realtime-2";
+  const voice = readEnv("OPENAI_REALTIME_VOICE", "marin") ?? "marin";
 
   const response = await fetch("https://api.openai.com/v1/realtime/client_secrets", {
     method: "POST",

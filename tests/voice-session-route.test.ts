@@ -20,7 +20,7 @@ async function json(response: Response) {
 }
 
 function mockOpenAiFetch() {
-  return vi.fn(async () =>
+  return vi.fn(async (_url: string | URL | Request, _init?: RequestInit) =>
     Response.json({
       client_secret: { value: "client-secret", expires_at: 123 },
       session: { id: "sess_123" },
@@ -94,5 +94,18 @@ describe("POST /api/voice/session", () => {
     const limited = await POST(request({ intent: "technology", turnstileToken: "good-token" }));
     expect(limited.status).toBe(429);
     expect(await json(limited)).toMatchObject({ ok: false, error: "voice_limit_reached" });
+  });
+
+  it("accepts the local development Turnstile token from localhost with a configured secret", async () => {
+    process.env.TURNSTILE_SECRET_KEY = "turnstile-secret";
+    const fetchMock = mockOpenAiFetch();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await POST(request({ intent: "technology", turnstileToken: "local-dev" }, "127.0.0.1"));
+
+    expect(response.status).toBe(200);
+    expect(await json(response)).toMatchObject({ ok: true });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("api.openai.com");
   });
 });

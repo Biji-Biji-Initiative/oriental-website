@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { isProductionEnv } from "@/lib/env";
 import { leadRequestSchema } from "@/lib/schemas";
 import { persistLead } from "@/lib/server/convex";
 import { notifyOwner, notifySlack, routeLead } from "@/lib/server/notifications";
@@ -26,11 +27,18 @@ export async function POST(request: NextRequest) {
   }
 
   const lead = routeLead(parsed.data);
-  if (!lead.routedToEmail && process.env.NODE_ENV === "production") {
+  if (!lead.routedToEmail && isProductionEnv()) {
     return noStoreJson({ ok: false, error: "routing_unconfigured" }, { status: 500 });
   }
 
-  const persistence = await persistLead(lead);
+  const persistence = await persistLead(lead).catch((error) => ({
+    id: lead.id,
+    persisted: false as const,
+    reason: error instanceof Error ? error.message : "convex_failed",
+  }));
+  if (!persistence.persisted && isProductionEnv()) {
+    return noStoreJson({ ok: false, error: "persistence_failed", reason: persistence.reason }, { status: 502 });
+  }
   const [email, slack] = await Promise.allSettled([notifyOwner(lead), notifySlack(lead)]);
 
   return noStoreJson({

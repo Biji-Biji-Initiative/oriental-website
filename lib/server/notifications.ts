@@ -1,4 +1,5 @@
 import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
+import { readEnv } from "@/lib/env";
 import type { LeadRequest } from "@/lib/schemas";
 import { getOwnerEmail, getSegment } from "@/lib/segments";
 import { sendSmtpMail } from "@/lib/server/smtp";
@@ -12,7 +13,7 @@ export type StoredLead = RoutableLead & {
 };
 
 export async function notifyOwner(lead: StoredLead) {
-  const from = process.env.SES_FROM_ADDRESS ?? process.env.SES_FROM_EMAIL;
+  const from = readEnv("SES_FROM_ADDRESS") ?? readEnv("SES_FROM_EMAIL");
   if (!from || !lead.routedToEmail) {
     return { ok: false, skipped: true, reason: "email_unconfigured" };
   }
@@ -27,12 +28,11 @@ export async function notifyOwner(lead: StoredLead) {
     lead.form.message,
   ].join("\n");
 
-  const smtpUser = process.env.SMTP_USER ?? process.env.EMAIL_SERVER_USER;
-  const smtpPassword = process.env.SMTP_PASSWORD ?? process.env.EMAIL_SERVER_PASSWORD;
-  const smtpHost =
-    process.env.SMTP_HOST ??
-    (process.env.AWS_REGION ? `email-smtp.${process.env.AWS_REGION}.amazonaws.com` : undefined);
-  const smtpPort = Number(process.env.SMTP_PORT ?? 587);
+  const smtpUser = readEnv("SMTP_USER") ?? readEnv("EMAIL_SERVER_USER");
+  const smtpPassword = readEnv("SMTP_PASSWORD") ?? readEnv("EMAIL_SERVER_PASSWORD");
+  const awsRegion = readEnv("AWS_REGION");
+  const smtpHost = readEnv("SMTP_HOST") ?? (awsRegion ? `email-smtp.${awsRegion}.amazonaws.com` : undefined);
+  const smtpPort = Number(readEnv("SMTP_PORT", "587"));
   if (smtpUser && smtpPassword && smtpHost) {
     await sendSmtpMail({
       host: smtpHost,
@@ -48,9 +48,9 @@ export async function notifyOwner(lead: StoredLead) {
     return { ok: true, transport: "smtp" };
   }
 
-  if (!process.env.AWS_REGION) return { ok: false, skipped: true, reason: "ses_unconfigured" };
+  if (!awsRegion) return { ok: false, skipped: true, reason: "ses_unconfigured" };
 
-  const client = new SESv2Client({ region: process.env.AWS_REGION });
+  const client = new SESv2Client({ region: awsRegion });
   await client.send(
     new SendEmailCommand({
       FromEmailAddress: from,
@@ -72,12 +72,13 @@ export async function notifyOwner(lead: StoredLead) {
 }
 
 export async function notifySlack(lead: StoredLead) {
-  if (!process.env.SLACK_WEBHOOK_URL) {
+  const slackWebhookUrl = readEnv("SLACK_WEBHOOK_URL");
+  if (!slackWebhookUrl) {
     return { ok: false, skipped: true, reason: "slack_unconfigured" };
   }
 
   const segment = getSegment(lead.segment);
-  const response = await fetch(process.env.SLACK_WEBHOOK_URL, {
+  const response = await fetch(slackWebhookUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

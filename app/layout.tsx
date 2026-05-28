@@ -6,6 +6,7 @@ import { VoiceRail } from "@/components/site/VoiceRail";
 import { Toaster } from "@/components/ui/sonner";
 import { VoiceProvider } from "@/components/voice-agent/voice-state";
 import { siteMeta } from "@/lib/content";
+import { readEnv } from "@/lib/env";
 import "./globals.css";
 
 const poppins = localFont({
@@ -61,7 +62,7 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   await connection();
-  const turnstileSiteKey = process.env.TURNSTILE_SITE_KEY || process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+  const turnstileSiteKey = readEnv("TURNSTILE_SITE_KEY") || readEnv("NEXT_PUBLIC_TURNSTILE_SITE_KEY");
 
   return (
     <html lang="en" className={`${poppins.variable} ${fraunces.variable} scroll-smooth antialiased`}>

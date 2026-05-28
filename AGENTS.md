@@ -183,6 +183,8 @@ Read in order on first pass, then cherry-pick:
 - Do **not** expand scope: no new abstractions for one-off helpers; no unrelated README/doc sweeps unless asked.
 - **Do** run `pnpm lint`, `pnpm typecheck`, and `pnpm test` when touching voice, API, or schemas.
 - **Do** update `docs/` only when the user wants spec alignment; otherwise fix code and mention doc drift in the PR/summary.
+- For local voice debugging, inspect `GET /api/voice/debug` while `NODE_ENV !== "production"`. It stores the latest local dialog snapshots only; do not rely on it in production.
+- Do not paste or commit real tester transcripts. Summarise issues and clear/restart the dev server when a local debug buffer has sensitive data.
 
 ---
 

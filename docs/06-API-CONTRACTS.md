@@ -214,8 +214,32 @@ Browser WebRTC exchange:
 
 Client-enforced caps live in `VOICE_SESSION_DEFAULTS`:
 
-- idle timeout: 45 seconds
-- max voice duration: 180 seconds
+- max duration: 150 seconds
+- idle timeout: 20 seconds
+
+## Development-only voice diagnostics
+
+### `GET /api/voice/debug`
+
+Returns the latest in-memory voice debug snapshots in local development:
+
+```ts
+{
+  ok: true;
+  entries: Array<{
+    id: string;
+    createdAt: string;
+    payload: unknown;
+  }>;
+}
+```
+
+### `POST /api/voice/debug`
+
+The client dialog posts captured fields, transcript, usage, errors, status, and
+connection state while the voice modal is open. This is intentionally local-only
+so agents can inspect conversation flow during testing. In production, both
+methods return `404`.
 
 ## `GET /api/health`
 

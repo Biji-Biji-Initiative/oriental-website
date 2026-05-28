@@ -138,7 +138,7 @@ a captured email.
 | Model | `gpt-realtime-2` by default via `OPENAI_REALTIME_MODEL` |
 | Voice | `marin` by default via `OPENAI_REALTIME_VOICE` |
 | Input audio | Browser-default mic, captured locally before token minting |
-| Session length cap | **180 seconds** client-side runtime cap; `/api/voice/session` also refuses to mint a new token if the same IP exceeds 3 sessions / day in the current in-memory limiter |
+| Session length cap | **150 seconds** client-side runtime cap; `/api/voice/session` also refuses to mint a new token if the same IP exceeds 3 sessions / day in the current in-memory limiter |
 | Server VAD | `server_vad`, `threshold: 0.5`, `prefix_padding_ms: 300`, `silence_duration_ms: 700`, `create_response: true`, `interrupt_response: true` |
 | Modalities | Audio output with text events and tool-call events on the data channel |
 
@@ -166,7 +166,8 @@ See [`06-API-CONTRACTS.md`](./06-API-CONTRACTS.md) §`/api/voice/session`.
 | WebRTC ICE fails | Same — switch to Form mode. |
 | `/api/voice/session` returns 429 | Form mode + toast: "Voice limit reached for today. Form is open." |
 | OpenAI Realtime returns 5xx | Same. Track in Coolify logs until a dedicated observability stack is added. |
-| User goes idle for 30s in voice mode | Gentle ping ("Still there?"). After another 30s, agent thanks them and ends the session. |
+| User goes idle in voice mode | Voice tears down after 20 seconds of inactivity. The form and captured fields remain visible. |
+| Conversation reaches max duration | Voice tears down after 150 seconds. The form and captured fields remain visible. |
 
 ## 9. Privacy
 
@@ -215,6 +216,7 @@ If the user reloads mid-session, current `captured` state is **lost**. We do
 not localStorage the partial form because (a) it's a 2-minute interaction and
 (b) PDPA cleanliness.
 
-Once submitted, the server returns the lead `id`; we don't surface it to the
-user but we do keep it in memory for the duration of the success screen so
-that "Send another?" works without a refresh.
+During local development only, the dialog posts the latest captured fields,
+transcript, usage, and errors to `GET /api/voice/debug` so agents can inspect
+conversation failures without asking the tester to paste browser logs. The
+endpoint returns 404 in production.

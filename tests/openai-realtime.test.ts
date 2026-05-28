@@ -77,4 +77,24 @@ describe("createRealtimeClientSecret", () => {
     expect(body.session.instructions).toContain("Initial Context");
     expect(body.session.tools.map((tool: { name: string }) => tool.name)).toContain("wait_for_user");
   });
+
+  it("unwraps quoted Infisical model and voice values before calling OpenAI", async () => {
+    process.env.OPENAI_REALTIME_MODEL = "'gpt-realtime-2'";
+    process.env.OPENAI_REALTIME_VOICE = "'marin'";
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+      Response.json({
+        client_secret: { value: "client-secret", expires_at: 123 },
+        session: { id: "sess_quoted" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await createRealtimeClientSecret("safe-user", "ai");
+
+    expect(result.model).toBe("gpt-realtime-2");
+    expect(result.voice).toBe("marin");
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(body.session.model).toBe("gpt-realtime-2");
+    expect(body.session.audio.output.voice).toBe("marin");
+  });
 });
