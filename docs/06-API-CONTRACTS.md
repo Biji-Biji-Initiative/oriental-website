@@ -9,7 +9,7 @@ no-store`.
 
 ```ts
 type Ok<T> = { ok: true } & T;
-type Err = { ok: false; error: string; details?: unknown };
+type Err = { ok: false; error: string; details?: unknown; reason?: string };
 ```
 
 `error` values are stable enough for client branching. User-facing copy should
@@ -70,14 +70,29 @@ type LeadResponse = {
   id: string;
   persisted: boolean;
   notifications: {
-    email: { ok: boolean; transport?: "smtp" | "sesv2"; skipped?: boolean; reason?: string; error?: string };
-    slack: { ok: boolean; skipped?: boolean; reason?: string; error?: string };
+    email: {
+      ok: boolean;
+      transport?: "smtp" | "sesv2";
+      skipped?: boolean;
+      reason?: string;
+      error?: string;
+      status?: number;
+    };
+    slack: {
+      ok: boolean;
+      transport?: "slack";
+      skipped?: boolean;
+      reason?: string;
+      error?: string;
+      status?: number;
+    };
   };
 };
 ```
 
 `persisted: false` is possible in local development when Convex is not
-configured. Production `pnpm check-secrets` requires Convex secrets.
+configured. Production `pnpm check-secrets` requires Convex secrets and the
+route returns `502 persistence_failed` if persistence fails.
 
 ### Errors
 
@@ -87,17 +102,24 @@ configured. Production `pnpm check-secrets` requires Convex secrets.
 | 403 | `turnstile_failed` | Cloudflare verify rejected the token. |
 | 429 | `rate_limited` | More than 12 lead attempts per IP per hour. |
 | 500 | `routing_unconfigured` | Production owner email missing for the resolved segment. |
+| 502 | `persistence_failed` | Production Convex persistence failed after validation/routing. |
+| 502 | `notification_failed` | Production lead persisted, but neither owner email nor Slack delivered. |
 
 ### Side Effects
 
 1. `routeLead()` resolves owner metadata from `lib/segments.ts` and `OWNER_*`.
 2. `persistLead()` inserts into Convex `leads` and `leadEvents` when configured.
 3. Owner notification is attempted through SMTP when SMTP env exists, otherwise
-   SESv2 when `AWS_REGION` is set.
-4. Slack notification is attempted when `SLACK_WEBHOOK_URL` exists.
+   SESv2 when `AWS_REGION` is set. Owner email includes the lead id, source,
+   segment, routed owner, contact fields, brief, and recent transcript context.
+4. Slack notification is attempted when `SLACK_WEBHOOK_URL` exists. Slack blocks
+   include the same routing/contact fields plus a brief and transcript excerpt.
 
-Notification failures are represented in the `notifications` object and do not
-turn a successfully accepted lead into an error response.
+In local and test environments, notification failures are represented in the
+`notifications` object and do not turn a successfully accepted lead into an
+error response. In production, at least one notification channel must deliver;
+otherwise the route returns `502 notification_failed` with the persisted lead id
+and per-channel notification results.
 
 ## `POST /api/newsletter`
 
@@ -175,6 +197,7 @@ type VoiceSessionResponse = {
   session_id: string;
   model: string; // default "gpt-realtime-2"
   voice: string; // default "marin"
+  speed: number; // default 1.12, clamped to OpenAI's 0.25..1.5 range
 };
 ```
 
@@ -204,6 +227,7 @@ Server request:
 - `session.audio.input.turn_detection` from `VOICE_SESSION_DEFAULTS`
 - `session.audio.input.transcription.model = "whisper-1"`
 - `session.audio.output.voice = OPENAI_REALTIME_VOICE ?? "marin"`
+- `session.audio.output.speed = OPENAI_REALTIME_SPEED ?? 1.12`
 - tools from `VOICE_TOOLS`, including `wait_for_user`
 
 Browser WebRTC exchange:

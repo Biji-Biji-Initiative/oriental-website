@@ -50,22 +50,26 @@ Use this on the day of soft-launch and again 24 hours before public-launch.
 - [ ] WebRTC handshake completes in < 2s on stable broadband
 - [ ] Tool calls `set_partner_type` / `capture_field` / `summarise_lead` /
       `route_to_team` / `wait_for_user` all fire correctly during a 90s mock conversation
-- [ ] Client idle/max timers stop microphone/WebRTC at 45s idle and 180s max
+- [ ] `capture_field` only saves name/email/org when supported by recent user transcript evidence
+- [ ] Client idle/max timers stop microphone/WebRTC at 20s idle and 150s max
 - [ ] Rate limit enforced — 4th minted session/IP/day returns `429 voice_limit_reached`
-- [ ] Falls back to Form mode on mic-denied
-- [ ] Falls back to Form mode on session 429
+- [ ] Falls back to typed handoff panel on mic-denied
+- [ ] Falls back to typed handoff panel on session 429
 
 ## Email (SES)
 
 - [ ] `SES_FROM_ADDRESS` (`oriental@mereka.io`) is verified
 - [ ] DKIM, SPF, DMARC records in place
 - [ ] Test lead routes to each of the 8 owners' inboxes
+- [ ] Owner email includes lead id, source, segment, routed owner, contact fields, brief, and transcript excerpt
+- [ ] Reply-To points to the lead's submitted email address
 - [ ] Bounce / complaint webhook configured (or accepted as deferred)
 
 ## Slack
 
 - [ ] `#partner-intake` channel created
 - [ ] Webhook tested end-to-end (test submission → message visible)
+- [ ] Slack message includes routed owner, lead id, source, contact fields, brief, and transcript excerpt
 - [ ] Webhook URL is in Infisical, not in code
 
 ## Functional smoke test
@@ -81,10 +85,12 @@ Walk through every user path on the staging URL:
 - [ ] Each ecosystem cell opens the modal with the right segment intent
 - [ ] Each space card opens the modal with the right segment intent
 - [ ] Each partner card opens the modal with the right segment intent
-- [ ] Mode toggle between Voice / Form preserves captured state
+- [ ] Voice and typed handoff share one editable workspace and preserve captured state
 - [ ] Form: all 4 fields validate (required, email format, length caps)
+- [ ] Invalid handoff submit shows field-level shadcn validation and a specific toast
 - [ ] Form submit returns 200 + shows `<SubmittedView>`
-- [ ] Captured rail shows the routed-to person + role
+- [ ] Editable handoff panel shows the routed-to person + role
+- [ ] Story cue buttons show in-dialog context cards, not page-level toast overlays
 - [ ] Voice rail (floating) appears after 720px scroll
 - [ ] Voice rail disappears when modal is open
 - [ ] Footer `mailto:team@mereka.io` opens email client

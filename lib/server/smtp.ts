@@ -11,6 +11,7 @@ type SmtpConfig = {
   replyTo?: string;
   subject: string;
   text: string;
+  html?: string;
 };
 
 type SocketLike = net.Socket | tls.TLSSocket;
@@ -21,6 +22,33 @@ function encodeHeader(value: string) {
 
 function dotStuff(value: string) {
   return value.replace(/\r?\n/g, "\r\n").replace(/^\./gm, "..");
+}
+
+function mailBody(config: SmtpConfig) {
+  if (!config.html) {
+    return {
+      headers: ["Content-Type: text/plain; charset=UTF-8", "Content-Transfer-Encoding: 8bit"],
+      body: config.text,
+    };
+  }
+
+  const boundary = `oriental-${Date.now().toString(36)}`;
+  return {
+    headers: [`Content-Type: multipart/alternative; boundary="${boundary}"`],
+    body: [
+      `--${boundary}`,
+      "Content-Type: text/plain; charset=UTF-8",
+      "Content-Transfer-Encoding: 8bit",
+      "",
+      config.text,
+      `--${boundary}`,
+      "Content-Type: text/html; charset=UTF-8",
+      "Content-Transfer-Encoding: 8bit",
+      "",
+      config.html,
+      `--${boundary}--`,
+    ].join("\r\n"),
+  };
 }
 
 function readReply(socket: SocketLike) {
@@ -88,17 +116,17 @@ export async function sendSmtpMail(config: SmtpConfig) {
     await sendCommand(socket, `RCPT TO:<${config.to}>`, [250, 251]);
     await sendCommand(socket, "DATA", 354);
 
+    const message = mailBody(config);
     const headers = [
       `From: ${encodeHeader(config.from)}`,
       `To: ${encodeHeader(config.to)}`,
       config.replyTo ? `Reply-To: ${encodeHeader(config.replyTo)}` : null,
       `Subject: ${encodeHeader(config.subject)}`,
       "MIME-Version: 1.0",
-      "Content-Type: text/plain; charset=UTF-8",
-      "Content-Transfer-Encoding: 8bit",
+      ...message.headers,
     ].filter(Boolean);
 
-    socket.write(`${headers.join("\r\n")}\r\n\r\n${dotStuff(config.text)}\r\n.\r\n`);
+    socket.write(`${headers.join("\r\n")}\r\n\r\n${dotStuff(message.body)}\r\n.\r\n`);
     const sent = await readReply(socket);
     if (sent.code !== 250) throw new Error(`smtp_${sent.code}`);
 
