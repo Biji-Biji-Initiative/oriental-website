@@ -55,10 +55,12 @@ ADMIN_REVIEW_TOKEN=
 COOLIFY_ORIENTAL_APPLICATION_UUID=mtrl2z6a7zvoyevxvufpntij
 SENTRY_DSN=
 NEXT_PUBLIC_SENTRY_DSN=
-SENTRY_ORG=
+SENTRY_ORG=biji-biji-non-profits
 SENTRY_PROJECT=oriental-website
+# Optional CI/build-only source-map upload; do not require it as Coolify runtime env.
 SENTRY_AUTH_TOKEN=
 SENTRY_ENVIRONMENT=production
+NEXT_PUBLIC_SENTRY_ENVIRONMENT=production
 AWS_REGION=
 AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=

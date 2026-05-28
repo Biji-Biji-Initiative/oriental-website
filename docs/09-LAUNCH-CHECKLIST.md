@@ -31,8 +31,8 @@ Use this on the day of soft-launch and again 24 hours before public-launch.
 - [ ] `REDIS_URL` is present in production and API logs show `rateLimitStore: "redis"`
 - [ ] `COOLIFY_ORIENTAL_APPLICATION_UUID` is set to `mtrl2z6a7zvoyevxvufpntij` for deploy scripts
 - [ ] `ADMIN_REVIEW_TOKEN` is present in `/deploy/oriental-website`
-- [ ] `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_ORG`,
-      `SENTRY_PROJECT=oriental-website`, and `SENTRY_AUTH_TOKEN` are present
+- [ ] Sentry `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_ORG`, and
+      `SENTRY_PROJECT=oriental-website` are present
 - [ ] `OPS_ALERT_SLACK_CHANNEL_ID=C01AVSGACFN` targets `#tech-team-test`
 
 ## Cloudflare Turnstile
@@ -91,7 +91,8 @@ Use this on the day of soft-launch and again 24 hours before public-launch.
 ## Observability
 
 - [ ] Sentry receives a test server error in project `oriental-website`
-- [ ] Sentry sourcemaps upload during production build when `SENTRY_AUTH_TOKEN` is present
+- [ ] Sentry sourcemaps upload during production build when a build-only
+      `SENTRY_AUTH_TOKEN` is supplied outside Coolify runtime logs
 - [ ] Redis limiter fallback emits `rate_limit.redis_fallback` and sends a Slack ops alert in a controlled test
 - [ ] OpenAI session mint failure emits `voice_session.openai_failed` and sends a Slack ops alert in a controlled test
 - [ ] `/api/admin/review` rejects unauthenticated requests

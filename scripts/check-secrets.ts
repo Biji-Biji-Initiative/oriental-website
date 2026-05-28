@@ -20,7 +20,7 @@ const required = [
 const smtpRequired = ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SES_FROM_ADDRESS"];
 const sesRequired = ["AWS_REGION", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "SES_FROM_ADDRESS"];
 const slackRequired = ["SLACK_BOT_TOKEN", "SLACK_CHANNEL_ID"];
-const sentryRequired = ["SENTRY_DSN", "NEXT_PUBLIC_SENTRY_DSN", "SENTRY_ORG", "SENTRY_PROJECT", "SENTRY_AUTH_TOKEN"];
+const sentryRequired = ["SENTRY_DSN", "NEXT_PUBLIC_SENTRY_DSN", "SENTRY_ORG", "SENTRY_PROJECT"];
 const adminRequired = ["ADMIN_REVIEW_TOKEN"];
 const opsAlertRequired = ["OPS_ALERT_SLACK_CHANNEL_ID"];
 
