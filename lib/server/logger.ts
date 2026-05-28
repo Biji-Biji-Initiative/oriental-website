@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/nextjs";
 import { readEnv } from "@/lib/env";
 
 type LogLevel = "info" | "warn" | "error";
@@ -32,6 +33,13 @@ function logEvent(level: LogLevel, event: string, meta: LogMeta) {
   if (readEnv("NODE_ENV") === "test" && readEnv("LOG_TEST_EVENTS") !== "true") return;
 
   const metaPayload = sanitize(meta);
+  if (level === "error") {
+    Sentry.captureMessage(event, {
+      level: "error",
+      tags: { service: "oriental-website", event },
+      extra: isRecord(metaPayload) ? metaPayload : { meta: metaPayload },
+    });
+  }
   const payload = {
     ts: new Date().toISOString(),
     level,

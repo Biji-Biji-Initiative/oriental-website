@@ -26,6 +26,7 @@ Production microsite for **Oriental Building** partner intake at `oriental.merek
 | Voice | OpenAI Realtime (`gpt-realtime-2`), WebRTC client, ephemeral tokens from `POST /api/voice/session` |
 | Abuse | Cloudflare Turnstile + Redis-backed rate limits with memory fallback (`lib/server/rate-limit.ts`, re-exported by `security.ts`) |
 | Notify | AWS SES/SMTP + Slack Web API bot token, webhook fallback (`lib/server/notifications.ts`, `lib/server/smtp.ts`) |
+| Observability | Sentry Next.js SDK, structured JSON logs, Slack ops alerts, admin review dashboard |
 | Deploy | Docker `output: "standalone"` on Coolify app `mtrl2z6a7zvoyevxvufpntij`; secrets from Infisical (not in git) |
 
 **Product intent** lives in `docs/` (PRD, design, voice spec, API contracts). **Runtime truth** is this repo. Launch production uses **Convex**, **Redis-backed rate limiting via `REDIS_URL`**, structured JSON route logs, and Slack delivery to `#tech-team-test` through `SLACK_BOT_TOKEN` + `SLACK_CHANNEL_ID`.
@@ -42,9 +43,12 @@ app/
   api/
     leads/route.ts        # form/voice lead POST
     newsletter/route.ts   # hero email capture
+    admin/                # token-gated admin review JSON endpoints
     voice/session/route.ts
     health/route.ts
+  admin/session-review/   # token-gated lead + voice session review dashboard
 components/
+  admin/                  # admin login/review UI helpers
   site/                   # Hero, sections, Timeline, VoiceRail
   voice-agent/            # dialog, hooks, voice-state, HeroEmailCapture
   orb/                    # MiniOrb (SVG)
@@ -60,7 +64,9 @@ lib/
     client-events.ts      # client-side event helpers
   server/
     convex.ts             # lead persistence
+    admin-auth.ts         # signed admin review cookie/token helpers
     openai-realtime.ts    # session minting
+    ops-alerts.ts         # Slack ops alerts for production failures
     security.ts           # Turnstile, IP hash, shared response helpers
     rate-limit.ts         # Redis/Valkey/Upstash limiter, memory fallback
     logger.ts             # structured JSON logs for route handlers
@@ -90,6 +96,9 @@ docs/                     # handover specs — reference, not auto-synced to cod
 | Realtime protocol / transcript state machine | `lib/voice/realtime-events.ts` + `tests/realtime-events.test.ts` |
 | Voice UI / WebRTC wiring | `components/voice-agent/useRealtimeVoiceSession.ts`, `VoiceAgentDialog.tsx` |
 | Session token + server session config | `app/api/voice/session/route.ts`, `lib/server/openai-realtime.ts` |
+| Admin session review | `app/admin/session-review/page.tsx`, `app/api/admin/*`, `components/admin/*` |
+| Sentry setup | `sentry.*.config.ts`, `instrumentation.ts`, `instrumentation-client.ts`, `next.config.ts` |
+| Ops Slack alerts | `lib/server/ops-alerts.ts`; production target is `OPS_ALERT_SLACK_CHANNEL_ID` |
 | Lead payload validation | `lib/schemas.ts` |
 | Owner email env mapping | `lib/server/notifications.ts` + `OWNER_*` in `.env.local.example` |
 | Shared rate limits | `lib/server/rate-limit.ts`; production should log `rateLimitStore: "redis"` |
@@ -154,6 +163,8 @@ sequenceDiagram
   Browser->>API: POST /api/leads (on submit)
   API->>Convex: persist lead
   API-->>Browser: ok + notifications
+  Browser->>API: POST /api/voice/debug + signed review token
+  API->>Convex: upsert voiceSessions review snapshot
 ```
 
 - **Profile:** `VOICE_PROFILE` in `lib/voice/profile.ts` drives instructions, tools, turn detection, truncation.
@@ -192,7 +203,7 @@ Read in order on first pass, then cherry-pick:
 - Do **not** expand scope: no new abstractions for one-off helpers; no unrelated README/doc sweeps unless asked.
 - **Do** run `pnpm lint`, `pnpm typecheck`, and `pnpm test` when touching voice, API, or schemas.
 - **Do** update `docs/` only when the user wants spec alignment; otherwise fix code and mention doc drift in the PR/summary.
-- For local voice debugging, inspect `GET /api/voice/debug` while `NODE_ENV !== "production"`. It stores the latest local dialog snapshots only; do not rely on it in production.
+- For local voice debugging, inspect `GET /api/voice/debug` while `NODE_ENV !== "production"`. Production review snapshots use signed per-session review tokens and persist to Convex `voiceSessions`.
 - Do not paste or commit real tester transcripts. Summarise issues and clear/restart the dev server when a local debug buffer has sensitive data.
 - Brand assets are local under `public/assets/brand/`; provenance is documented in `docs/ASSET-SOURCES.md`. Root `/favicon.ico` and `/apple-touch-icon.png` should keep serving the Mereka favicon.
 

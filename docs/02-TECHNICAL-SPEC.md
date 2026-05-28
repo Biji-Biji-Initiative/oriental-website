@@ -22,7 +22,7 @@ Runtime truth for the production build:
 | DNS / TLS / WAF | Cloudflare | In front of Coolify origin. |
 | Secrets | Infisical + Coolify env | Project `6bfac905-9bb1-449e-8be8-f25f9634802b`, folder `/deploy/oriental-website`. |
 | Hosting | Coolify | Docker standalone Next.js app. |
-| Observability | Structured JSON route logs in Coolify | Sentry/metrics/alerts are future work unless added by a later PR. |
+| Observability | Sentry + structured logs + Slack ops alerts | Admin review at `/admin/session-review`; route logs stay in Coolify. |
 
 There is no React Three Fiber runtime in the current app. The public orb is the
 SVG `MiniOrb`.
@@ -35,11 +35,14 @@ app/
   page.tsx                # home page section composition + JSON-LD
   globals.css             # Tailwind v4 tokens + component chrome
   api/
+    admin/                # token-gated review APIs
     health/route.ts
     leads/route.ts
     newsletter/route.ts
     voice/session/route.ts
+  admin/session-review/   # internal lead + voice session review
 components/
+  admin/                  # admin login/review UI
   site/                   # homepage sections, grids, nav, timeline, rail
   voice-agent/            # dialog, WebRTC hook, state, hero email capture
   security/               # Turnstile hook
@@ -137,7 +140,14 @@ REDIS_URL=
 TURNSTILE_SITE_KEY=
 TURNSTILE_SECRET_KEY=
 IP_HASH_SECRET=
+ADMIN_REVIEW_TOKEN=
 COOLIFY_ORIENTAL_APPLICATION_UUID=mtrl2z6a7zvoyevxvufpntij
+SENTRY_DSN=
+NEXT_PUBLIC_SENTRY_DSN=
+SENTRY_ORG=
+SENTRY_PROJECT=oriental-website
+SENTRY_AUTH_TOKEN=
+SENTRY_ENVIRONMENT=production
 AWS_REGION=
 AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
@@ -149,7 +159,9 @@ SMTP_USER=
 SMTP_PASSWORD=
 SLACK_BOT_TOKEN=
 SLACK_CHANNEL_ID=C01AVSGACFN
+OPS_ALERT_SLACK_CHANNEL_ID=C01AVSGACFN
 SLACK_WEBHOOK_URL=
+OPS_ALERT_SLACK_WEBHOOK_URL=
 OWNER_TENANCY=
 OWNER_EDUCATION=
 OWNER_PROGRAMME=
@@ -191,6 +203,8 @@ Defaults:
 - max session: `150s` client timer
 - tools: `set_partner_type`, `capture_field`, `clear_field`,
   `summarise_lead`, `route_to_team`, `wait_for_user`, `end_call`
+- review snapshots: `/api/voice/session` returns signed review credentials;
+  `/api/voice/debug` verifies and upserts Convex `voiceSessions`
 
 ## 7. Build, Test, Deploy
 
@@ -211,6 +225,14 @@ CI currently runs the `verify` workflow on PRs. Coolify builds the Docker
 standalone app and serves the generated Next.js server.
 
 No Drizzle migrations or `DATABASE_URL` are part of the launch runtime.
+
+Admin review and observability:
+
+- `/admin/session-review` is protected by `ADMIN_REVIEW_TOKEN`.
+- Sentry uses `@sentry/nextjs` config files and `withSentryConfig` in
+  `next.config.ts`.
+- Production ops alerts use `OPS_ALERT_SLACK_CHANNEL_ID`; the current smoke
+  channel is `#tech-team-test` (`C01AVSGACFN`).
 
 ## 8. Performance And SEO
 

@@ -11,6 +11,7 @@ Next.js 16 microsite for the Oriental Building partner-intake launch. The site t
 - Convex for lead and lead-event persistence
 - OpenAI Realtime client-secret minting via `/api/voice/session`
 - Cloudflare Turnstile, Redis-backed rate limiting with memory fallback, SES/SMTP, and Slack Web API notifications
+- Sentry error tracking, Slack ops alerts, and a token-gated internal session review dashboard
 - Docker standalone runtime for Coolify (`oriental.mereka.io`)
 
 ## Development
@@ -50,7 +51,14 @@ REDIS_URL=
 TURNSTILE_SITE_KEY=
 TURNSTILE_SECRET_KEY=
 IP_HASH_SECRET=
+ADMIN_REVIEW_TOKEN=
 COOLIFY_ORIENTAL_APPLICATION_UUID=mtrl2z6a7zvoyevxvufpntij
+SENTRY_DSN=
+NEXT_PUBLIC_SENTRY_DSN=
+SENTRY_ORG=
+SENTRY_PROJECT=oriental-website
+SENTRY_AUTH_TOKEN=
+SENTRY_ENVIRONMENT=production
 AWS_REGION=
 AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
@@ -62,7 +70,9 @@ SMTP_USER=
 SMTP_PASSWORD=
 SLACK_BOT_TOKEN=
 SLACK_CHANNEL_ID=C01AVSGACFN
+OPS_ALERT_SLACK_CHANNEL_ID=C01AVSGACFN
 SLACK_WEBHOOK_URL=
+OPS_ALERT_SLACK_WEBHOOK_URL=
 OWNER_TENANCY=
 OWNER_EDUCATION=
 OWNER_PROGRAMME=
@@ -84,6 +94,14 @@ Server route handlers emit structured JSON logs with `service`, `version`, `even
 Segment-specific routing and opener copy live in `lib/segments.ts`. Realtime event handling is isolated in `lib/voice/realtime-events.ts`, outbound client event serialization is in `lib/voice/client-events.ts`, and browser microphone/WebRTC lifetime is in `components/voice-agent/useRealtimeVoiceSession.ts`. Behavior changes should get focused tests in `tests/realtime-events.test.ts`, `tests/realtime-client-events.test.ts`, or `tests/openai-realtime.test.ts` before deployment.
 
 During local testing, run `pnpm voice:debug` after a call to inspect the latest captured fields, full transcript, token usage, and Realtime errors from `/api/voice/debug`.
+
+## Admin Review & Observability
+
+The internal review surface lives at `/admin/session-review`. It is protected by `ADMIN_REVIEW_TOKEN`, sets a signed HTTP-only admin cookie, and reads recent Convex `leads` plus `voiceSessions` snapshots. Use it to review failed voice conversations, captured-field drift, notification status, Realtime usage, and error/rate-limit signals.
+
+Production Realtime sessions receive signed review credentials from `/api/voice/session`; the browser posts snapshots to `/api/voice/debug`, which persists verified snapshots to Convex. `GET /api/voice/debug` remains local-development only.
+
+Sentry is configured through `@sentry/nextjs` with server, edge, and client config files. Production env uses the `oriental-website` Sentry project. Operational alerts for persistence, notification, OpenAI, and Redis limiter fallback failures go to Slack via `OPS_ALERT_SLACK_CHANNEL_ID` (currently `#tech-team-test`).
 
 ## Convex
 

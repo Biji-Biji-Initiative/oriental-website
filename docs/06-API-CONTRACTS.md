@@ -245,11 +245,12 @@ Client-enforced caps live in `VOICE_SESSION_DEFAULTS`:
 - max duration: 150 seconds
 - idle timeout: 20 seconds
 
-## Development-only voice diagnostics
+## Voice diagnostics and review snapshots
 
 ### `GET /api/voice/debug`
 
-Returns the latest in-memory voice debug snapshots in local development:
+Returns the latest in-memory voice debug snapshots in local development. Returns
+`404 not_found` in production.
 
 ```ts
 {
@@ -265,9 +266,50 @@ Returns the latest in-memory voice debug snapshots in local development:
 ### `POST /api/voice/debug`
 
 The client dialog posts captured fields, transcript, usage, errors, status, and
-connection state while the voice modal is open. This is intentionally local-only
-so agents can inspect conversation flow during testing. In production, both
-methods return `404`.
+connection state while the voice modal is open.
+
+In local development, invalid signatures are accepted into the in-memory debug
+buffer for fast agent review. In production, the route requires signed review
+credentials returned by `POST /api/voice/session`; verified snapshots upsert the
+Convex `voiceSessions` table.
+
+```ts
+type VoiceReviewSnapshotRequest = {
+  review: { id: string; token: string };
+  snapshot: {
+    sessionId: string;
+    leadId?: string | null;
+    segment: SegmentId;
+    status: "idle" | "submitted";
+    connectionStatus: "idle" | "connecting" | "listening";
+    model?: string;
+    voice?: string;
+    speed?: number;
+    captured: { name: string; email: string; org: string; message: string };
+    transcript: Array<{ role: "user" | "assistant" | "system"; text: string }>;
+    usage?: RealtimeUsageSummary;
+    errors: Array<{ eventId?: string; message: string }>;
+    rateLimits: Array<Record<string, unknown>>;
+    routeRequested: boolean;
+    submittedAt?: number;
+  };
+};
+```
+
+Production errors:
+
+- `400 invalid_payload`
+- `401 unauthorized`
+
+### `POST /api/admin/login`
+
+Validates `ADMIN_REVIEW_TOKEN` and sets the signed `oriental_admin` HTTP-only
+cookie scoped to `/admin`.
+
+### `GET /api/admin/review`
+
+Bearer-token or admin-cookie protected JSON endpoint returning recent `leads`,
+`voiceSessions`, and aggregate metrics for internal QA.
 
 ## `GET /api/health`
 
@@ -319,6 +361,6 @@ Route handlers emit structured JSON logs to stdout/stderr via
 hashed IP metadata where relevant, durations, rate-limit store, persistence
 status, and notification results. Sensitive keys are redacted by suffix.
 
-Current production review path is Coolify container logs plus API return values.
-Sentry, Prometheus counters, dashboards, and PagerDuty alerts are future work
-unless a later PR adds them.
+Current production review path is Coolify container logs, Sentry errors, Slack
+ops alerts, API return values, and `/admin/session-review`. Prometheus counters
+and PagerDuty alerts are still deferred.

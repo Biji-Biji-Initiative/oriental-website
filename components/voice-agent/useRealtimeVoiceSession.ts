@@ -9,11 +9,21 @@ import type { RealtimeServerEvent } from "@/lib/voice/realtime-events";
 export type VoiceConnectionStatus = "idle" | "connecting" | "listening";
 export type VoiceCloseReason = "idle_timeout" | "max_duration" | "manual" | "error";
 
+export type VoiceReviewMetadata = {
+  id: string;
+  token: string;
+  sessionId: string;
+  model?: string;
+  voice?: string;
+  speed?: number;
+};
+
 type UseRealtimeVoiceSessionArgs = {
   audioRef: RefObject<HTMLAudioElement | null>;
   getTurnstileToken: () => Promise<string>;
   onClose: (reason: VoiceCloseReason) => void;
   onEvent: (event: RealtimeServerEvent, channel: RTCDataChannel) => void;
+  onSessionReady?: (metadata: VoiceReviewMetadata) => void;
   segment: SegmentId;
 };
 
@@ -22,6 +32,7 @@ export function useRealtimeVoiceSession({
   getTurnstileToken,
   onClose,
   onEvent,
+  onSessionReady,
   segment,
 }: UseRealtimeVoiceSessionArgs) {
   const [connectionStatus, setConnectionStatus] = useState<VoiceConnectionStatus>("idle");
@@ -92,6 +103,16 @@ export function useRealtimeVoiceSession({
       }).then((response) => response.json());
 
       if (!session.ok) throw new Error(session.error ?? "voice_unavailable");
+      if (session.review?.id && session.review?.token) {
+        onSessionReady?.({
+          id: session.review.id,
+          token: session.review.token,
+          sessionId: session.session_id,
+          model: session.model,
+          voice: session.voice,
+          speed: session.speed,
+        });
+      }
 
       const peer = new RTCPeerConnection();
       connectionRef.current = peer;
@@ -139,7 +160,17 @@ export function useRealtimeVoiceSession({
     } catch {
       teardownVoice("error");
     }
-  }, [armMaxTimer, audioRef, connectionStatus, getTurnstileToken, onEvent, resetIdleTimer, segment, teardownVoice]);
+  }, [
+    armMaxTimer,
+    audioRef,
+    connectionStatus,
+    getTurnstileToken,
+    onEvent,
+    onSessionReady,
+    resetIdleTimer,
+    segment,
+    teardownVoice,
+  ]);
 
   useEffect(() => teardownVoice, [teardownVoice]);
 

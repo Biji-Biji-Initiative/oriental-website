@@ -6,8 +6,9 @@ the only Convex mutation exposed to the app is `api.leads.createLead`, protected
 by `CONVEX_INGEST_SECRET`.
 
 ```
-Next Route Handler ──persistLead()──► Convex mutation ──► leads
-                                                    └──► leadEvents
+Next Route Handler ──persistLead()──────────────► Convex mutation ──► leads
+                                                        └──────────► leadEvents
+Voice modal ────────signed review snapshot──────► /api/voice/debug ─► voiceSessions
 ```
 
 ## Tables
@@ -34,18 +35,24 @@ capture.
 | `transcript` | `{ role: string; text: string }[]` | Voice transcript rows; empty for form/newsletter. |
 | `utm` | `Record<string,string>` | Optional attribution data. |
 | `status` | string | Launch writes `"new"` only. |
+| `notificationDelivered` | boolean? | True when at least one owner notification channel delivered. |
+| `notificationEmailOk` | boolean? | Last owner email delivery result. |
+| `notificationSlackOk` | boolean? | Last Slack delivery result. |
+| `notificationSummary` | string? | Compact last notification status. |
+| `lastNotificationAt` | number? | Last notification status write timestamp. |
 | `createdAt` | number | Milliseconds since epoch, set by mutation. |
 
 Indexes:
 
+- `by_lead_id`
 - `by_email`
 - `by_segment`
 - `by_status`
 
 ### `leadEvents`
 
-Append-only lead audit events. Launch writes a single `created` event for each
-lead.
+Append-only lead audit events. Launch writes `created` and notification status
+events.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -58,6 +65,36 @@ Index:
 
 - `by_lead`
 
+### `voiceSessions`
+
+One document per signed Realtime review session. The browser posts periodic
+snapshots while the modal is open and a final snapshot after successful voice
+submission.
+
+| Field | Type | Notes |
+|---|---|---|
+| `reviewId` | string | Signed review UUID returned by `/api/voice/session`. |
+| `sessionId` | string | OpenAI Realtime session id when available. |
+| `leadId` | string \| null | Set after successful `/api/leads` voice submission. |
+| `segment` | string | Current routed segment. |
+| `status` | string | Dialog status (`idle` or `submitted`). |
+| `connectionStatus` | string | WebRTC state from the client. |
+| `model` / `voice` / `speed` | optional | Realtime render settings used for the session. |
+| `captured` | object | Current editable handoff fields. |
+| `transcript` | `{ role: string; text: string }[]` | Latest text transcript. |
+| `usage` | object? | Reduced Realtime usage counters. |
+| `errors` | array | Realtime/client error summaries. |
+| `rateLimits` | array | Realtime rate-limit telemetry. |
+| `routeRequested` | boolean | Whether Reka has attempted route submission. |
+| `createdAt` / `updatedAt` | number | Millisecond timestamps. |
+| `submittedAt` | number? | Final successful voice-submit timestamp. |
+
+Indexes:
+
+- `by_review_id`
+- `by_session_id`
+- `by_updated_at`
+
 ## Write Path
 
 1. Route handler validates a request with Zod (`lib/schemas.ts`).
@@ -68,6 +105,8 @@ Index:
 5. Convex validates `CONVEX_INGEST_SECRET`, inserts `leads`, then inserts a
    `leadEvents` row.
 6. Owner email and Slack notifications are attempted after persistence.
+7. Notification status is patched back to the lead and appended to
+   `leadEvents`.
 
 If Convex is not configured locally, `persistLead()` returns
 `{ persisted: false, reason: "convex_unconfigured" }` and the route still

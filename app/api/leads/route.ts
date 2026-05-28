@@ -1,9 +1,10 @@
 import type { NextRequest } from "next/server";
 import { isProductionEnv } from "@/lib/env";
 import { leadRequestSchema } from "@/lib/schemas";
-import { persistLead } from "@/lib/server/convex";
+import { persistLead, recordLeadNotificationStatus } from "@/lib/server/convex";
 import { durationSince, errorMeta, logError, logInfo, logWarn } from "@/lib/server/logger";
 import { type NotificationResult, notifyOwner, notifySlack, routeLead } from "@/lib/server/notifications";
+import { sendOpsAlert } from "@/lib/server/ops-alerts";
 import { checkRateLimit, hashIp, noStoreJson, requestIp, verifyTurnstile } from "@/lib/server/security";
 
 export const runtime = "nodejs";
@@ -54,6 +55,13 @@ export async function POST(request: NextRequest) {
       routedTo: lead.routedTo,
       durationMs: durationSince(startedAt),
     });
+    await sendOpsAlert({
+      event: "lead.routing_unconfigured",
+      severity: "critical",
+      summary: "A production lead could not be routed because owner email is missing.",
+      meta: { requestId, leadId: lead.id, segment: lead.segment, routedTo: lead.routedTo },
+      fingerprint: lead.segment,
+    });
     return noStoreJson({ ok: false, error: "routing_unconfigured" }, { status: 500 });
   }
 
@@ -71,6 +79,13 @@ export async function POST(request: NextRequest) {
       reason: persistence.reason,
       durationMs: durationSince(startedAt),
     });
+    await sendOpsAlert({
+      event: "lead.persistence_failed",
+      severity: "critical",
+      summary: "A production lead failed to persist to Convex.",
+      meta: { requestId, leadId: lead.id, source: lead.source, segment: lead.segment, reason: persistence.reason },
+      fingerprint: persistence.reason,
+    });
     return noStoreJson({ ok: false, error: "persistence_failed", reason: persistence.reason }, { status: 502 });
   }
   const [email, slack] = await Promise.allSettled([notifyOwner(lead), notifySlack(lead)]);
@@ -79,6 +94,16 @@ export async function POST(request: NextRequest) {
     slack: notificationResult(slack, "slack_failed"),
   };
   const delivered = notifications.email.ok === true || notifications.slack.ok === true;
+  if (persistence.persisted) {
+    await recordLeadNotificationStatus(persistence.id, notifications).catch((error) => {
+      logWarn("lead.notification_status_persist_failed", {
+        requestId,
+        leadId: persistence.id,
+        error: errorMeta(error),
+        durationMs: durationSince(startedAt),
+      });
+    });
+  }
   if (!delivered && isProductionEnv()) {
     logError("lead.notification_failed", {
       requestId,
@@ -88,6 +113,13 @@ export async function POST(request: NextRequest) {
       persisted: true,
       notifications,
       durationMs: durationSince(startedAt),
+    });
+    await sendOpsAlert({
+      event: "lead.notification_failed",
+      severity: "error",
+      summary: "A lead was saved, but every notification channel failed.",
+      meta: { requestId, leadId: lead.id, source: lead.source, segment: lead.segment, notifications },
+      fingerprint: lead.segment,
     });
     return noStoreJson(
       { ok: false, error: "notification_failed", id: persistence.id, persisted: true, notifications },

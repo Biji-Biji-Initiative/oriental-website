@@ -2,7 +2,9 @@ import type { NextRequest } from "next/server";
 import { voiceSessionRequestSchema } from "@/lib/schemas";
 import { durationSince, errorMeta, logError, logInfo, logWarn } from "@/lib/server/logger";
 import { createRealtimeClientSecret } from "@/lib/server/openai-realtime";
+import { sendOpsAlert } from "@/lib/server/ops-alerts";
 import { checkRateLimit, hashIp, noStoreJson, requestIp, verifyTurnstile } from "@/lib/server/security";
+import { createVoiceReviewCredentials } from "@/lib/server/voice-review-token";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,6 +41,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const secret = await createRealtimeClientSecret(hashIp(ip, "openai-safety"), parsed.data.intent);
+    const review = createVoiceReviewCredentials();
     logInfo("voice_session.created", {
       requestId,
       ipHash,
@@ -46,11 +49,12 @@ export async function POST(request: NextRequest) {
       model: secret.model,
       voice: secret.voice,
       speed: secret.speed,
+      reviewId: review.id,
       rateLimitStore: limit.store,
       remaining: limit.remaining,
       durationMs: durationSince(startedAt),
     });
-    return noStoreJson({ ok: true, ...secret });
+    return noStoreJson({ ok: true, ...secret, review });
   } catch (error) {
     const message = error instanceof Error ? error.message : "openai_unavailable";
     logError("voice_session.openai_failed", {
@@ -58,6 +62,13 @@ export async function POST(request: NextRequest) {
       ipHash,
       error: errorMeta(error),
       durationMs: durationSince(startedAt),
+    });
+    await sendOpsAlert({
+      event: "voice_session.openai_failed",
+      severity: message === "openai_unconfigured" ? "critical" : "error",
+      summary: "Realtime client secret minting failed.",
+      meta: { requestId, ipHash, message, durationMs: durationSince(startedAt) },
+      fingerprint: message,
     });
     return noStoreJson({ ok: false, error: message }, { status: message === "openai_unconfigured" ? 503 : 502 });
   }

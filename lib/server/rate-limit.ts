@@ -1,6 +1,7 @@
 import Redis from "ioredis";
 import { readEnv } from "@/lib/env";
 import { logWarn } from "@/lib/server/logger";
+import { sendOpsAlert } from "@/lib/server/ops-alerts";
 
 type LimitBucket = {
   count: number;
@@ -28,8 +29,16 @@ export async function checkRateLimit(key: string, limit: number, windowMs: numbe
     try {
       return await withTimeout(checkRedisLimit(redis, key, limit, windowMs), redisTimeoutMs);
     } catch (error) {
+      const reason = error instanceof Error ? error.message : "unknown";
       logWarn("rate_limit.redis_fallback", {
-        reason: error instanceof Error ? error.message : "unknown",
+        reason,
+      });
+      void sendOpsAlert({
+        event: "rate_limit.redis_fallback",
+        severity: "error",
+        summary: "Redis-backed rate limiting failed; app is using memory fallback.",
+        meta: { reason },
+        fingerprint: reason,
       });
     }
   }

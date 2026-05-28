@@ -124,6 +124,12 @@ Convex function deployment is separate:
 CONVEX_DEPLOY_KEY='prod:...' pnpm exec convex deploy
 ```
 
+Current operational note: the app runtime secrets include `CONVEX_URL` and
+`CONVEX_INGEST_SECRET`, but no `CONVEX_DEPLOY_KEY` is currently stored in the
+Oriental Infisical folder. Schema/function changes require a deploy key from a
+Convex project admin before `/admin/session-review` can read new `voiceSessions`
+queries in production.
+
 There is no `pnpm db:migrate` step and no launch `DATABASE_URL`.
 
 ## Data Plane
@@ -153,6 +159,27 @@ Slack delivery uses `SLACK_BOT_TOKEN` + `SLACK_CHANNEL_ID` first. Current smoke
 channel is `#tech-team-test` (`C01AVSGACFN`). `SLACK_WEBHOOK_URL` is fallback
 only.
 
+## Observability
+
+Current production floor:
+
+- Structured JSON logs from route handlers, visible in Coolify logs.
+- Sentry Next.js SDK (`sentry.server.config.ts`, `sentry.edge.config.ts`,
+  `sentry.client.config.ts`, `instrumentation.ts`, `instrumentation-client.ts`)
+  with project `oriental-website`.
+- Slack ops alerts through `SLACK_BOT_TOKEN` and
+  `OPS_ALERT_SLACK_CHANNEL_ID=C01AVSGACFN` (`#tech-team-test`).
+- Token-gated `/admin/session-review` for recent Convex leads, voice session
+  snapshots, Realtime usage, transcript review, and notification failures.
+
+Alert sources in source today:
+
+- OpenAI Realtime client-secret mint failures.
+- Production lead persistence failures.
+- Production owner notification failures.
+- Production routing misconfiguration.
+- Redis/shared rate-limit fallback.
+
 ## Local Public Testing
 
 Use the repo helper instead of writing ngrok credentials into the global config:
@@ -180,7 +207,6 @@ Current runtime:
 
 Not currently implemented unless a later PR adds it:
 
-- Sentry
 - Prometheus metrics
 - scraped Turnstile/OpenAI failure-rate counters
 - PagerDuty alerting
@@ -204,6 +230,8 @@ The second command should return `400 invalid_payload` and create a structured
 | OpenAI API key | 90 days or immediately after temporary key use |
 | AWS / SMTP credentials | 90 days |
 | Slack bot token / webhook | staff/channel change or suspected leak |
+| Sentry auth token / DSN | staff/project change or suspected leak |
+| Admin review token | staff change or suspected leak |
 | Turnstile secret | annually or suspected leak |
 | Infisical Universal Auth credentials | 180 days |
 | Convex ingest/deploy secrets | staff change or suspected leak |
@@ -224,8 +252,8 @@ Rotation means updating Infisical/Coolify and redeploying the app.
 - Confirm final Coolify service naming and resource limits in the live UI.
 - Confirm Cloudflare zone ownership and WAF rules.
 - Define Convex backup/export process and retention.
-- Decide whether Coolify log retention is enough for launch or whether Sentry,
-  metrics, and alerts are required before public traffic.
+- Tune Sentry alerts, Slack alert thresholds, and dashboard review cadence after
+  the first real traffic.
 - Confirm staging domain if one is required (`oriental-staging.mereka.io` or
   Coolify preview URL).
 - Complete human listening QA for Reka's Malaysian-English voice quality.

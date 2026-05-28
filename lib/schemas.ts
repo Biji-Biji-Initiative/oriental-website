@@ -36,6 +36,55 @@ export const voiceSessionRequestSchema = z.object({
   utm: z.record(z.string(), z.string()).default({}),
 });
 
+export const adminLoginSchema = z.object({
+  token: z.string().min(20).max(300),
+});
+
+export const voiceReviewSnapshotSchema = z.object({
+  review: z.object({
+    id: z.string().uuid(),
+    token: z.string().min(20).max(500),
+  }),
+  snapshot: z.object({
+    sessionId: z.string().min(1).max(160),
+    leadId: z.string().max(160).nullable().optional(),
+    segment: segmentSchema,
+    status: z.enum(["idle", "submitted"]).default("idle"),
+    connectionStatus: z.enum(["idle", "connecting", "listening"]),
+    model: z.string().max(80).optional(),
+    voice: z.string().max(80).optional(),
+    speed: z.number().min(0.25).max(1.5).optional(),
+    captured: z.object({
+      name: z.string().max(120).default(""),
+      email: z.string().max(180).default(""),
+      org: z.string().max(180).default(""),
+      message: z.string().max(2500).default(""),
+    }),
+    transcript: z.array(transcriptEntrySchema).max(120).default([]),
+    usage: z
+      .object({
+        responseCount: z.number().int().nonnegative(),
+        responseTokens: z.number().int().nonnegative(),
+        responseInputTokens: z.number().int().nonnegative(),
+        responseOutputTokens: z.number().int().nonnegative(),
+        responseCachedTokens: z.number().int().nonnegative(),
+        transcriptionCount: z.number().int().nonnegative(),
+        transcriptionTokens: z.number().int().nonnegative(),
+        transcriptionInputTokens: z.number().int().nonnegative(),
+        transcriptionOutputTokens: z.number().int().nonnegative(),
+      })
+      .optional(),
+    errors: z
+      .array(z.object({ eventId: z.string().max(160).optional(), message: z.string().min(1).max(500) }))
+      .max(20)
+      .default([]),
+    rateLimits: z.array(z.record(z.string(), z.unknown())).max(20).default([]),
+    routeRequested: z.boolean().default(false),
+    submittedAt: z.number().optional(),
+  }),
+});
+
 export type LeadRequest = z.infer<typeof leadRequestSchema>;
 export type NewsletterRequest = z.infer<typeof newsletterRequestSchema>;
 export type VoiceSessionRequest = z.infer<typeof voiceSessionRequestSchema>;
+export type VoiceReviewSnapshotRequest = z.infer<typeof voiceReviewSnapshotSchema>;

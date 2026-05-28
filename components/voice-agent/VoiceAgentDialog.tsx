@@ -13,7 +13,7 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { tourTopics } from "@/lib/content";
-import { leadFormSchema } from "@/lib/schemas";
+import { leadFormSchema, type VoiceReviewSnapshotRequest } from "@/lib/schemas";
 import { getSegment, type SegmentId, segmentOptions } from "@/lib/segments";
 import { cn } from "@/lib/utils";
 import { serializeHandoffContext, serializeRealtimeCommand, serializeResponseCreate } from "@/lib/voice/client-events";
@@ -25,7 +25,12 @@ import {
   reduceRealtimeServerEvent,
   type VoiceRuntimeState,
 } from "@/lib/voice/realtime-events";
-import { useRealtimeVoiceSession, type VoiceCloseReason } from "./useRealtimeVoiceSession";
+import {
+  useRealtimeVoiceSession,
+  type VoiceCloseReason,
+  type VoiceConnectionStatus,
+  type VoiceReviewMetadata,
+} from "./useRealtimeVoiceSession";
 
 type VoiceAgentDialogProps = {
   open: boolean;
@@ -57,7 +62,17 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
   const submittingRef = useRef(false);
   const lastSyncedHandoffRef = useRef("");
   const openedVoiceTurnRef = useRef(false);
+  const reviewRef = useRef<VoiceReviewMetadata | null>(null);
+  const localReviewRef = useRef<VoiceReviewCredentials | null>(null);
   const teardownVoiceRef = useRef<((reason: VoiceCloseReason) => void) | null>(null);
+  const connectionStatusRef = useRef<VoiceConnectionStatus>("idle");
+
+  const currentReviewCredentials = useCallback((): VoiceReviewCredentials | null => {
+    if (reviewRef.current) return reviewRef.current;
+    if (process.env.NODE_ENV === "production") return null;
+    localReviewRef.current ??= { id: crypto.randomUUID(), token: "local-development-review-token" };
+    return localReviewRef.current;
+  }, []);
 
   const handleVoiceClose = useCallback((reason: VoiceCloseReason) => {
     if (reason === "error") {
@@ -117,19 +132,31 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
           };
         }
         const routedTo = getSegment(leadState.segment).routedTo;
+        if (source === "voice") {
+          const review = currentReviewCredentials();
+          if (review) {
+            void postVoiceReviewSnapshot(
+              review,
+              buildVoiceReviewSnapshot(review, leadState, connectionStatusRef.current, {
+                leadId: responseBody?.id ?? null,
+                submittedAt: Date.now(),
+              }),
+            );
+          }
+        }
         setStatus("submitted");
         toast.success(`Sent to ${routedTo.name}.`, {
           description: notificationDelivered(responseBody)
             ? "The handoff was saved and the routing notification was delivered."
             : "Saved locally. Owner notifications are not configured in this environment.",
         });
-        return { ok: true, submitted: true, segment: leadState.segment, routedTo };
+        return { ok: true, submitted: true, id: responseBody?.id, segment: leadState.segment, routedTo };
       } finally {
         submittingRef.current = false;
         setSubmitting(false);
       }
     },
-    [turnstile, form],
+    [turnstile, form, currentReviewCredentials],
   );
 
   const submitVoiceCommand = useCallback(
@@ -192,9 +219,13 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
     getTurnstileToken: turnstile.execute,
     onClose: handleVoiceClose,
     onEvent: handleRealtimeEvent,
+    onSessionReady: (metadata) => {
+      reviewRef.current = metadata;
+    },
     segment,
   });
   teardownVoiceRef.current = teardownVoice;
+  connectionStatusRef.current = connectionStatus;
 
   useEffect(() => {
     if (!open) return;
@@ -207,6 +238,8 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
     submittingRef.current = false;
     lastSyncedHandoffRef.current = "";
     openedVoiceTurnRef.current = false;
+    reviewRef.current = null;
+    localReviewRef.current = null;
     stateRef.current = {
       segment: intent ?? "other",
       captured: { ...emptyCapturedLead, email: prefill?.email ?? "" },
@@ -258,24 +291,18 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
   }, [captured, connectionStatus, segment, sendClientEvents]);
 
   useEffect(() => {
-    if (!open || process.env.NODE_ENV === "production") return;
+    if (!open) return;
+    const review = currentReviewCredentials();
+    if (!review) return;
+    const snapshotState = { ...stateRef.current, segment, captured, transcript };
     const timeout = window.setTimeout(() => {
-      void fetch("/api/voice/debug", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          segment,
-          captured,
-          transcript,
-          status,
-          connectionStatus,
-          usage: stateRef.current.usage,
-          errors: stateRef.current.errors,
-        }),
-      }).catch(() => null);
-    }, 250);
+      void postVoiceReviewSnapshot(
+        review,
+        buildVoiceReviewSnapshot(review, snapshotState, connectionStatus, { status }),
+      ).catch(() => null);
+    }, 1500);
     return () => window.clearTimeout(timeout);
-  }, [captured, connectionStatus, open, segment, status, transcript]);
+  }, [captured, connectionStatus, currentReviewCredentials, open, segment, status, transcript]);
 
   useEffect(() => {
     if (!open) return;
@@ -611,6 +638,7 @@ function HandoffPanel({
 
 type LeadSubmitResponse = {
   ok?: boolean;
+  id?: string;
   error?: string;
   persisted?: boolean;
   notifications?: {
@@ -642,6 +670,44 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, tim
 
 function handoffSyncKey(state: Pick<VoiceRuntimeState, "segment" | "captured">) {
   return JSON.stringify({ segment: state.segment, captured: state.captured });
+}
+
+type VoiceReviewCredentials = Pick<VoiceReviewMetadata, "id" | "token"> & Partial<VoiceReviewMetadata>;
+
+function buildVoiceReviewSnapshot(
+  review: VoiceReviewCredentials,
+  state: VoiceRuntimeState,
+  connectionStatus: "idle" | "connecting" | "listening",
+  overrides: { leadId?: string | null; status?: "idle" | "submitted"; submittedAt?: number } = {},
+): VoiceReviewSnapshotRequest["snapshot"] {
+  return {
+    sessionId: review.sessionId ?? review.id,
+    leadId: overrides.leadId,
+    segment: state.segment,
+    status: overrides.status ?? (overrides.submittedAt ? "submitted" : "idle"),
+    connectionStatus,
+    model: review.model,
+    voice: review.voice,
+    speed: review.speed,
+    captured: state.captured,
+    transcript: state.transcript,
+    usage: state.usage,
+    errors: state.errors ?? [],
+    rateLimits: state.rateLimits ?? [],
+    routeRequested: state.routeRequested ?? false,
+    submittedAt: overrides.submittedAt,
+  };
+}
+
+async function postVoiceReviewSnapshot(
+  review: VoiceReviewCredentials,
+  snapshot: VoiceReviewSnapshotRequest["snapshot"],
+) {
+  await fetch("/api/voice/debug", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ review: { id: review.id, token: review.token }, snapshot }),
+  });
 }
 
 function leadSubmitErrorCopy(status: number | undefined, response: LeadSubmitResponse | null) {

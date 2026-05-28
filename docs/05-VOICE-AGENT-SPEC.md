@@ -277,7 +277,12 @@ If the user reloads mid-session, current `captured` state is **lost**. We do
 not localStorage the partial form because (a) it's a 2-minute interaction and
 (b) PDPA cleanliness.
 
-During local development only, the dialog posts the latest captured fields,
-transcript, usage, and errors to `GET /api/voice/debug` so agents can inspect
-conversation failures without asking the tester to paste browser logs. The
-endpoint returns 404 in production.
+During local development, the dialog posts the latest captured fields,
+transcript, usage, and errors to `/api/voice/debug` so agents can inspect
+conversation failures without asking the tester to paste browser logs.
+
+In production, `/api/voice/session` returns signed review credentials. The
+dialog uses those credentials to POST review snapshots to `/api/voice/debug`;
+the route verifies the signature and upserts the Convex `voiceSessions` row for
+the internal `/admin/session-review` dashboard. `GET /api/voice/debug` remains
+local-development only.

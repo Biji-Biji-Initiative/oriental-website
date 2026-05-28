@@ -45,14 +45,12 @@ Separate workstream, separate repo, behind auth.
 
 ### Production observability
 
-- Structured JSON logs now exist in Coolify, but there is no admin-quality
-  session review dashboard yet.
-- Add Sentry or equivalent error tracking for route failures and client voice
-  errors.
-- Add metrics/alerts for Turnstile failures, OpenAI Realtime errors, Slack/email
-  delivery failures, and Redis limiter fallback.
-- Build a small internal session-review view for transcripts, captured fields,
-  Realtime usage, and notification status with PII-aware access control.
+- Done in source: structured JSON logs, Sentry Next.js SDK, Slack ops alerts for
+  critical production failures, Redis fallback alerts, and token-gated
+  `/admin/session-review`.
+- Remaining: richer metric time-series, alert tuning after real traffic, Sentry
+  issue ownership rules, Convex retention/export automation, and a full internal
+  CRM workflow for status assignment and owner notes.
 
 ### A/B copy testing
 

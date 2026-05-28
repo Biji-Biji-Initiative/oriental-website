@@ -16,7 +16,7 @@ function request(body: unknown, ip = "203.0.113.10") {
 }
 
 async function json(response: Response) {
-  return (await response.json()) as { ok?: boolean; error?: string };
+  return (await response.json()) as { ok?: boolean; error?: string; review?: { id?: string; token?: string } };
 }
 
 function mockOpenAiFetch() {
@@ -56,7 +56,10 @@ describe("POST /api/voice/session", () => {
     for (let index = 0; index < 3; index += 1) {
       const response = await POST(request({ intent: "technology", turnstileToken: "local-dev" }));
       expect(response.status).toBe(200);
-      expect(await json(response)).toMatchObject({ ok: true });
+      expect(await json(response)).toMatchObject({
+        ok: true,
+        review: { id: expect.any(String), token: expect.any(String) },
+      });
     }
 
     const limited = await POST(request({ intent: "technology", turnstileToken: "local-dev" }));
@@ -88,7 +91,10 @@ describe("POST /api/voice/session", () => {
     for (let index = 0; index < 3; index += 1) {
       const response = await POST(request({ intent: "technology", turnstileToken: "good-token" }));
       expect(response.status).toBe(200);
-      expect(await json(response)).toMatchObject({ ok: true });
+      expect(await json(response)).toMatchObject({
+        ok: true,
+        review: { id: expect.any(String), token: expect.any(String) },
+      });
     }
 
     const limited = await POST(request({ intent: "technology", turnstileToken: "good-token" }));
@@ -104,7 +110,10 @@ describe("POST /api/voice/session", () => {
     const response = await POST(request({ intent: "technology", turnstileToken: "local-dev" }, "127.0.0.1"));
 
     expect(response.status).toBe(200);
-    expect(await json(response)).toMatchObject({ ok: true });
+    expect(await json(response)).toMatchObject({
+      ok: true,
+      review: { id: expect.any(String), token: expect.any(String) },
+    });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("api.openai.com");
   });

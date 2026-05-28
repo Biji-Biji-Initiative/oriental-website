@@ -353,11 +353,19 @@ function validateCaptureGrounding(
   }
 
   const valueForms = normalizedValueForms(key, value);
-  if (!valueForms.some((form) => normalizedEvidence.includes(form) || normalizedUserText.includes(form))) {
-    return { ok: false, error: "ungrounded_identity_capture" };
+  if (valueForms.some((form) => normalizedEvidence.includes(form) || normalizedUserText.includes(form))) {
+    return { ok: true };
   }
 
-  return { ok: true };
+  if (
+    key === "org" &&
+    userAskedAssistantToWriteIt(transcript) &&
+    valueForms.some((form) => hasRecentOrganisationEvidence(form, transcript))
+  ) {
+    return { ok: true };
+  }
+
+  return { ok: false, error: "ungrounded_identity_capture" };
 }
 
 function normalizedValueForms(key: keyof CapturedLead, value: string) {
@@ -392,6 +400,28 @@ function normalizeOrganisation(value: string) {
   const normalized = normalizeEvidence(value);
   if (["mereka", "moreika", "merika", "merekaah", "merekaa"].includes(normalized)) return "Mereka";
   return value.trim();
+}
+
+function userAskedAssistantToWriteIt(transcript: VoiceTranscriptEntry[]) {
+  return transcript
+    .filter((entry) => entry.role === "user")
+    .slice(-4)
+    .some((entry) => {
+      const text = normalizeEvidence(entry.text);
+      return (
+        text.includes("youwriteitin") ||
+        text.includes("youputitin") ||
+        text.includes("isikan") ||
+        text.includes("tuliskan")
+      );
+    });
+}
+
+function hasRecentOrganisationEvidence(form: string, transcript: VoiceTranscriptEntry[]) {
+  return transcript
+    .filter((entry) => entry.role === "user")
+    .slice(-8)
+    .some((entry) => normalizeEvidence(entry.text).includes(form));
 }
 
 function normalizeEvidence(value: string) {

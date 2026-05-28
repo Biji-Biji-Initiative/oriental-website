@@ -20,6 +20,9 @@ const required = [
 const smtpRequired = ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SES_FROM_ADDRESS"];
 const sesRequired = ["AWS_REGION", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "SES_FROM_ADDRESS"];
 const slackRequired = ["SLACK_BOT_TOKEN", "SLACK_CHANNEL_ID"];
+const sentryRequired = ["SENTRY_DSN", "NEXT_PUBLIC_SENTRY_DSN", "SENTRY_ORG", "SENTRY_PROJECT", "SENTRY_AUTH_TOKEN"];
+const adminRequired = ["ADMIN_REVIEW_TOKEN"];
+const opsAlertRequired = ["OPS_ALERT_SLACK_CHANNEL_ID"];
 
 const supportedRealtimeVoices = new Set([
   "alloy",
@@ -56,6 +59,24 @@ if (process.env.NODE_ENV === "production") {
   const missingSlack = slackRequired.filter((name) => !envValue(name));
   if (missingSlack.length > 0) {
     console.error(`Missing Slack routing variables: ${missingSlack.join(", ")}`);
+    process.exit(1);
+  }
+
+  const missingSentry = sentryRequired.filter((name) => !envValue(name));
+  if (missingSentry.length > 0) {
+    console.error(`Missing Sentry variables: ${missingSentry.join(", ")}`);
+    process.exit(1);
+  }
+
+  const missingAdmin = adminRequired.filter((name) => !envValue(name));
+  if (missingAdmin.length > 0) {
+    console.error(`Missing admin review variables: ${missingAdmin.join(", ")}`);
+    process.exit(1);
+  }
+
+  const missingOpsAlerts = opsAlertRequired.filter((name) => !envValue(name));
+  if (missingOpsAlerts.length > 0) {
+    console.error(`Missing ops alert variables: ${missingOpsAlerts.join(", ")}`);
     process.exit(1);
   }
 

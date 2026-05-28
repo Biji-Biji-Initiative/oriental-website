@@ -401,6 +401,33 @@ describe("reduceRealtimeServerEvent", () => {
     expect(result.state.captured.org).toBe("Mereka");
   });
 
+  it("captures organisation when the user asks Reka to write a recently mentioned value", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_org_write_it",
+              arguments: JSON.stringify({ key: "org", value: "Mereka", evidence: "You write it in" }),
+            },
+          ],
+        },
+      },
+      state({
+        transcript: [
+          { role: "user", text: "Moreika." },
+          { role: "assistant", text: "Please say the organisation name." },
+          { role: "user", text: "You write it in." },
+        ],
+      }),
+    );
+
+    expect(result.state.captured.org).toBe("Mereka");
+  });
+
   it("clears fields when the user rejects a wrong capture", () => {
     const result = reduceRealtimeServerEvent(
       {

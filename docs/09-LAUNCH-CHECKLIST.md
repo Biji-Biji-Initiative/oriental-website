@@ -30,6 +30,10 @@ Use this on the day of soft-launch and again 24 hours before public-launch.
 - [ ] CI's `scripts/check-secrets.ts` passes for all three environments
 - [ ] `REDIS_URL` is present in production and API logs show `rateLimitStore: "redis"`
 - [ ] `COOLIFY_ORIENTAL_APPLICATION_UUID` is set to `mtrl2z6a7zvoyevxvufpntij` for deploy scripts
+- [ ] `ADMIN_REVIEW_TOKEN` is present in `/deploy/oriental-website`
+- [ ] `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_ORG`,
+      `SENTRY_PROJECT=oriental-website`, and `SENTRY_AUTH_TOKEN` are present
+- [ ] `OPS_ALERT_SLACK_CHANNEL_ID=C01AVSGACFN` targets `#tech-team-test`
 
 ## Cloudflare Turnstile
 
@@ -42,6 +46,8 @@ Use this on the day of soft-launch and again 24 hours before public-launch.
 ## Convex
 
 - [ ] `convex/schema.ts` deployed to production
+- [ ] Convex `leads.recordVoiceSession`, `leads.recordLeadNotification`, and
+      `leads.reviewDashboard` are deployed before `/admin/session-review` is used
 - [ ] `leads` table accepts a staging/prod test lead
 - [ ] `leadEvents` receives the matching `created` event
 - [ ] `CONVEX_INGEST_SECRET` rejects an invalid secret
@@ -61,6 +67,8 @@ Use this on the day of soft-launch and again 24 hours before public-launch.
 - [ ] Saying "send" submits immediately when all required fields are present
 - [ ] Saying "bye", "stop", or "end voice" tears down WebRTC without continuing the conversation
 - [ ] Human listening QA signs off that the configured Realtime voice is Malaysian enough for launch
+- [ ] `/admin/session-review` shows the test voice transcript, captured fields,
+      usage counters, and submitted lead id after a voice submit
 - [ ] Falls back to typed handoff panel on mic-denied
 - [ ] Falls back to typed handoff panel on session 429
 
@@ -79,6 +87,15 @@ Use this on the day of soft-launch and again 24 hours before public-launch.
 - [ ] `SLACK_BOT_TOKEN` + `SLACK_CHANNEL_ID=C01AVSGACFN` tested end-to-end (test submission → message visible)
 - [ ] Slack message includes routed owner, lead id, source, contact fields, brief, and transcript excerpt
 - [ ] `SLACK_WEBHOOK_URL` is treated as fallback only and stays in Infisical, not in code
+
+## Observability
+
+- [ ] Sentry receives a test server error in project `oriental-website`
+- [ ] Sentry sourcemaps upload during production build when `SENTRY_AUTH_TOKEN` is present
+- [ ] Redis limiter fallback emits `rate_limit.redis_fallback` and sends a Slack ops alert in a controlled test
+- [ ] OpenAI session mint failure emits `voice_session.openai_failed` and sends a Slack ops alert in a controlled test
+- [ ] `/api/admin/review` rejects unauthenticated requests
+- [ ] `/admin/session-review` requires the admin token and renders recent Convex data
 
 ## Functional smoke test
 
