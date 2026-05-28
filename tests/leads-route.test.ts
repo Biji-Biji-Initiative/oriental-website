@@ -3,11 +3,22 @@ import { POST } from "@/app/api/leads/route";
 
 const mocks = vi.hoisted(() => ({
   persistLead: vi.fn(),
+  notifyOwner: vi.fn(),
+  notifySlack: vi.fn(),
 }));
 
 vi.mock("@/lib/server/convex", () => ({
   persistLead: mocks.persistLead,
 }));
+
+vi.mock("@/lib/server/notifications", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/server/notifications")>();
+  return {
+    ...actual,
+    notifyOwner: mocks.notifyOwner,
+    notifySlack: mocks.notifySlack,
+  };
+});
 
 const originalEnv = process.env;
 
@@ -42,6 +53,8 @@ describe("POST /api/leads", () => {
       IP_HASH_SECRET: "lead-route-test",
     };
     mocks.persistLead.mockResolvedValue({ id: "lead_123", persisted: true });
+    mocks.notifyOwner.mockResolvedValue({ ok: false, skipped: true, reason: "email_unconfigured" });
+    mocks.notifySlack.mockResolvedValue({ ok: true, transport: "slack" });
   });
 
   afterEach(() => {
@@ -58,5 +71,20 @@ describe("POST /api/leads", () => {
     expect(response.status).toBe(200);
     expect(body).toMatchObject({ ok: true, persisted: false });
     expect(mocks.persistLead).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns notification delivery details with a successful response", async () => {
+    const response = await POST(request());
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      ok: true,
+      persisted: true,
+      notifications: {
+        email: { ok: false, skipped: true, reason: "email_unconfigured" },
+        slack: { ok: true, transport: "slack" },
+      },
+    });
   });
 });

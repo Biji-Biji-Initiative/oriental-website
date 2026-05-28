@@ -12,7 +12,11 @@ export type StoredLead = RoutableLead & {
   routedToEmail: string | null;
 };
 
-export async function notifyOwner(lead: StoredLead) {
+export type NotificationResult =
+  | { ok: true; transport: "smtp" | "sesv2" | "slack" }
+  | { ok: false; skipped?: true; reason?: string; error?: string; status?: number };
+
+export async function notifyOwner(lead: StoredLead): Promise<NotificationResult> {
   const from = readEnv("SES_FROM_ADDRESS") ?? readEnv("SES_FROM_EMAIL");
   if (!from || !lead.routedToEmail) {
     return { ok: false, skipped: true, reason: "email_unconfigured" };
@@ -71,7 +75,7 @@ export async function notifyOwner(lead: StoredLead) {
   return { ok: true, transport: "sesv2" };
 }
 
-export async function notifySlack(lead: StoredLead) {
+export async function notifySlack(lead: StoredLead): Promise<NotificationResult> {
   const slackWebhookUrl = readEnv("SLACK_WEBHOOK_URL");
   if (!slackWebhookUrl) {
     return { ok: false, skipped: true, reason: "slack_unconfigured" };
@@ -95,7 +99,10 @@ export async function notifySlack(lead: StoredLead) {
       ],
     }),
   });
-  return { ok: response.ok };
+  if (!response.ok) {
+    return { ok: false, error: "slack_http_error", status: response.status };
+  }
+  return { ok: true, transport: "slack" };
 }
 
 export function routeLead(input: RoutableLead): StoredLead {

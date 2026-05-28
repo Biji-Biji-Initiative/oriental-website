@@ -1,12 +1,14 @@
 import { expect, test } from "@playwright/test";
 
-test("renders the Oriental microsite and opens form mode", async ({ page }) => {
+test("renders the Oriental microsite and opens the collaborative intake workspace", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /Reimagining/i })).toBeVisible();
   await page.getByRole("button", { name: /Tell us why/i }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
-  await page.getByRole("tab", { name: "Form" }).click();
+  await expect(page.getByText("Handoff details")).toBeVisible();
   await expect(page.getByLabel("Name")).toBeVisible();
+  await page.getByRole("button", { name: "The spaces" }).click();
+  await expect(page.getByText("Story cue")).toBeVisible();
 });
 
 test("mobile menu opens sections and closes after navigation", async ({ page }) => {
@@ -53,7 +55,6 @@ test("lead form prevents duplicate posts while submission is pending", async ({ 
 
   await page.goto("/");
   await page.getByRole("button", { name: /Tell us why/i }).click();
-  await page.getByRole("tab", { name: "Form" }).click();
   await page.getByLabel("Name").fill("Asha");
   await page.getByLabel("Email").fill("asha@example.com");
   await page.getByLabel("Organisation").fill("Future Lab");

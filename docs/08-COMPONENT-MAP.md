@@ -48,16 +48,16 @@ component-prefixed class names:
 |---|---|---|---|
 | Voice context | `components/voice-agent/voice-state.tsx` | — | Owns global open state and passes Turnstile site key. |
 | Voice button | `components/voice-agent/VoiceButton.tsx` | — | Opens dialog with optional segment/prefill. |
-| Dialog shell | `components/voice-agent/VoiceAgentDialog.tsx` | `Dialog`, `Tabs`, `Input`, `Textarea`, `Label` | Segment rail, voice tab, form tab, captured rail, submitted state. |
+| Dialog shell | `components/voice-agent/VoiceAgentDialog.tsx` | `Dialog`, `Form`, `Input`, `Textarea`, `Button` | Unified segment rail, voice stage, editable handoff panel, story cues, live notes, submitted state. |
 | WebRTC lifecycle | `components/voice-agent/useRealtimeVoiceSession.ts` | — | Mic, peer connection, data channel, timers, teardown. |
 | Turnstile | `components/security/useTurnstile.ts` | — | Script/widget lifecycle and local-dev token fallback. |
 | Realtime profile | `lib/voice/profile.ts` | — | Prompt sections, tools, VAD/session defaults. |
 | Realtime reducer | `lib/voice/realtime-events.ts` | — | Pure state machine for transcripts, tool calls, route command. |
 | Client events | `lib/voice/client-events.ts` | — | Serializes `function_call_output` and optional `response.create`. |
 
-The voice modal is intentionally still a single component because the left rail,
-main tab body, captured rail, and submission flow share form state. Split only
-when a new behavior boundary emerges.
+The voice modal remains a single component because the segment rail, voice stage,
+editable handoff form, and submission flow share realtime state. Split only when
+a new behavior boundary emerges.
 
 ## Orb
 

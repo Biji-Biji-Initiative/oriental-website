@@ -21,12 +21,12 @@ describe("reduceRealtimeServerEvent", () => {
               type: "function_call",
               name: "capture_field",
               call_id: "call_1",
-              arguments: JSON.stringify({ key: "email", value: "asha@example.com" }),
+              arguments: JSON.stringify({ key: "email", value: "asha@example.com", evidence: "asha@example.com" }),
             },
           ],
         },
       },
-      state(),
+      state({ transcript: [{ role: "user", text: "My email is asha@example.com." }] }),
     );
 
     expect(result.state.captured.email).toBe("asha@example.com");
@@ -147,13 +147,13 @@ describe("reduceRealtimeServerEvent", () => {
             type: "function_call",
             name: "capture_field",
             call_id: "call_repeat",
-            arguments: JSON.stringify({ key: "name", value: "Asha" }),
+            arguments: JSON.stringify({ key: "name", value: "Asha", evidence: "Asha" }),
           },
         ],
       },
     };
 
-    const first = reduceRealtimeServerEvent(event, state());
+    const first = reduceRealtimeServerEvent(event, state({ transcript: [{ role: "user", text: "I am Asha." }] }));
     const second = reduceRealtimeServerEvent(event, first.state);
 
     expect(first.commands).toHaveLength(1);
@@ -244,5 +244,85 @@ describe("reduceRealtimeServerEvent", () => {
         output: { ok: true, waited: true },
       },
     ]);
+  });
+
+  it("rejects ungrounded identity fields instead of hallucinating contact details", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_hallucinated_name",
+              arguments: JSON.stringify({ key: "name", value: "Alex Tan" }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "I want to explore an AI demo partnership." }] }),
+    );
+
+    expect(result.state.captured.name).toBe("");
+    expect(result.commands).toEqual([
+      {
+        type: "function_result",
+        callId: "call_hallucinated_name",
+        createResponse: true,
+        output: { ok: false, error: "ungrounded_identity_capture", key: "name", value: "Alex Tan" },
+      },
+    ]);
+  });
+
+  it("accepts spoken email evidence when it matches the user transcript", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_spoken_email",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "asha.lim+ai@example.com",
+                evidence: "asha dot lim plus ai at example dot com",
+              }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "My email is asha dot lim plus ai at example dot com." }] }),
+    );
+
+    expect(result.state.captured.email).toBe("asha.lim+ai@example.com");
+  });
+
+  it("clears fields when the user rejects a wrong capture", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "clear_field",
+              call_id: "call_clear_name",
+              arguments: JSON.stringify({ key: "name" }),
+            },
+          ],
+        },
+      },
+      state({ captured: { ...emptyCapturedLead, name: "Alex Tan" } }),
+    );
+
+    expect(result.state.captured.name).toBe("");
+    expect(result.commands[0]).toMatchObject({
+      type: "function_result",
+      callId: "call_clear_name",
+      output: { ok: true, key: "name" },
+    });
   });
 });

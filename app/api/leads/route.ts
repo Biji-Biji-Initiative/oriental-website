@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { isProductionEnv } from "@/lib/env";
 import { leadRequestSchema } from "@/lib/schemas";
 import { persistLead } from "@/lib/server/convex";
-import { notifyOwner, notifySlack, routeLead } from "@/lib/server/notifications";
+import { type NotificationResult, notifyOwner, notifySlack, routeLead } from "@/lib/server/notifications";
 import { checkRateLimit, hashIp, noStoreJson, requestIp, verifyTurnstile } from "@/lib/server/security";
 
 export const runtime = "nodejs";
@@ -40,14 +40,30 @@ export async function POST(request: NextRequest) {
     return noStoreJson({ ok: false, error: "persistence_failed", reason: persistence.reason }, { status: 502 });
   }
   const [email, slack] = await Promise.allSettled([notifyOwner(lead), notifySlack(lead)]);
+  const notifications = {
+    email: notificationResult(email, "email_failed"),
+    slack: notificationResult(slack, "slack_failed"),
+  };
+  const delivered = notifications.email.ok === true || notifications.slack.ok === true;
+  if (!delivered && isProductionEnv()) {
+    return noStoreJson(
+      { ok: false, error: "notification_failed", id: persistence.id, persisted: true, notifications },
+      { status: 502 },
+    );
+  }
 
   return noStoreJson({
     ok: true,
     id: persistence.id,
     persisted: persistence.persisted,
-    notifications: {
-      email: email.status === "fulfilled" ? email.value : { ok: false, error: "ses_failed" },
-      slack: slack.status === "fulfilled" ? slack.value : { ok: false, error: "slack_failed" },
-    },
+    notifications,
   });
+}
+
+function notificationResult(
+  result: PromiseSettledResult<NotificationResult>,
+  fallbackError: string,
+): NotificationResult {
+  if (result.status === "fulfilled") return result.value;
+  return { ok: false, error: fallbackError };
 }

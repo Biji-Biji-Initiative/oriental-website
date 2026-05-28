@@ -5,18 +5,23 @@ The voice agent is the heart of the partner intake. This document is the
 
 ---
 
-## 1. Modes
+## 1. Interaction Model
 
-A single fullscreen overlay with two interchangeable modes. State is shared —
-fields captured in one mode are visible in the other.
+A single fullscreen overlay acts as a collaborative workspace. Voice and typing
+are available at the same time; the user never has to choose a separate mode.
+The right-hand handoff panel is always editable and uses shadcn form primitives
+with Zod validation.
 
-| Mode | Surface | When to use |
-|---|---|---|
-| **Voice** | Mereka orb + utterance + tour topics + transcript | Default. Hands-free, conversational. |
-| **Form** | 4-field intake (Name, Email, Organisation, "What you'd bring") | Quiet environments, accessibility preference, or "I just want to type this". |
+| Surface | Purpose |
+|---|---|
+| **Partner rail** | Segment intent and routing owner hint. |
+| **Voice stage** | Mereka orb, voice start/end, story cues, live audio state. |
+| **Handoff panel** | Editable Name, Email, Organisation, and brief fields. |
+| **Live notes** | Recent transcript snippets for user confidence and debugging. |
 
-Mode toggle is a `Tabs`-style switch in the centre stage. The user can switch at
-any time without losing data.
+The design principle is: let the user talk naturally, but let them type or fix
+anything instantly. Voice-captured values populate the same form fields the user
+can edit before sending.
 
 ## 2. Partner segments
 
@@ -46,7 +51,7 @@ constant matching the prototype's `voice-agent.jsx`.
 1. Greeting        → "Welcome. I'm Mereka. What brings you to Oriental today?"
 2. Segment pick    → tool_call: set_partner_type(segment)
 3. Opener          → voiceOpener for the picked segment
-4. Discovery       → free dialogue, agent uses capture_field() liberally
+4. Discovery       → free dialogue, agent uses capture_field() only for grounded values
 5. Summary check   → "So that's <name>, <email>, building <thing>. Sound right?"
 6. Routing         → tool_call: route_to_team(segment)
 7. Close           → "Sent. <First name> will be in touch within 2 working days."
@@ -77,8 +82,18 @@ const tools = [
       properties: {
         key:   { type: 'string', enum: ['name','email','org','message'] },
         value: { type: 'string' },
+        evidence: { type: 'string' }, // exact user-transcript words; required by policy for name/email/org
       },
       required: ['key','value'],
+    },
+  },
+  {
+    name: 'clear_field',
+    description: 'Clear a field after the user rejects or corrects a capture.',
+    parameters: {
+      type: 'object',
+      properties: { key: { type: 'string', enum: ['name','email','org','message'] } },
+      required: ['key'],
     },
   },
   {
@@ -91,12 +106,18 @@ const tools = [
     description: 'Finalise. Marks the lead ready for human follow-up.',
     parameters: { type: 'object', properties: { segment: { type: 'string', enum: SEGMENT_IDS } }, required: ['segment'] },
   },
+  {
+    name: 'wait_for_user',
+    description: 'End the turn without a spoken reply for silence, background audio, or side conversation.',
+    parameters: { type: 'object', properties: {} },
+  },
 ];
 ```
 
-Tool calls stream into the existing `captured` React state via the same
-`setCaptured` setter the prototype uses today — no UI changes required to
-accept them.
+Tool calls stream into the shared React state backing the editable shadcn form.
+For `name`, `email`, and `org`, the reducer rejects captures that are not
+grounded in recent user transcript evidence. This is a hard guard against the
+model inventing names, organisations, or contact details.
 
 ## 5. System prompt
 
@@ -114,9 +135,15 @@ Your job, in order:
   3. Summarise the captured lead back to the user (use summarise_lead).
   4. Route the enquiry to the correct Mereka team member (use route_to_team).
 
-Tone: warm, civic, precise. Never hyped, never salesy. Use Malaysian English
-spelling and idiom (organisation, programme, neighbourhood). Be brief — short
-sentences, no monologues.
+Tone: warm, Malaysian, upbeat, pace-driven, precise. Sound like a distinctive KL
+ecosystem host, not a Western call-centre voice. Use Malaysian English spelling
+and light Malaysian English rhythm without caricature or forced slang.
+
+For name, email, and organisation, include exact user-transcript evidence when
+calling capture_field. Never infer these from examples, browser overlays,
+background audio, account names, email domains, or previous defaults. If the
+user rejects a captured identity field, call clear_field and ask them to type or
+say the correct value.
 
 If asked something off-topic (real estate prices, availability, dates), say
 honestly that the building opens in 2027, partner conversations are open now,
@@ -162,9 +189,9 @@ See [`06-API-CONTRACTS.md`](./06-API-CONTRACTS.md) §`/api/voice/session`.
 
 | Failure | Behaviour |
 |---|---|
-| Mic permission denied | Auto-switch to Form mode. Show toast: "Microphone unavailable — switched to form." |
-| WebRTC ICE fails | Same — switch to Form mode. |
-| `/api/voice/session` returns 429 | Form mode + toast: "Voice limit reached for today. Form is open." |
+| Mic permission denied | Voice is unavailable; the handoff form remains editable. Show toast: "Voice unavailable. You can keep typing here." |
+| WebRTC ICE fails | Same — handoff form remains editable. |
+| `/api/voice/session` returns 429 | Handoff form remains editable + toast: "Voice limit reached for today." |
 | OpenAI Realtime returns 5xx | Same. Track in Coolify logs until a dedicated observability stack is added. |
 | User goes idle in voice mode | Voice tears down after 20 seconds of inactivity. The form and captured fields remain visible. |
 | Conversation reaches max duration | Voice tears down after 150 seconds. The form and captured fields remain visible. |
@@ -205,10 +232,16 @@ Server then:
 4. Inserts a row into `leadEvents` (`kind: "created"`).
 5. Attempts owner email via SMTP or SES, depending on configured secrets.
 6. Attempts Slack webhook notification when `SLACK_WEBHOOK_URL` is configured.
-7. Returns `{ ok: true, id, persisted, notifications }`.
+7. Returns `{ ok: true, id, persisted, notifications }` when the lead is saved
+   and production notification policy is satisfied.
+
+In production, if persistence succeeds but neither owner email nor Slack
+notification delivers, the route returns `{ ok: false, error:
+"notification_failed", persisted: true, notifications }` with status `502` so
+the UI can tell the user the handoff was saved but needs notification attention.
 
 Errors surface as `{ ok: false, error: 'human_readable' }` — UI toasts and
-stays in the modal so the user can retry.
+stays in the modal so the user can retry or use the fallback email.
 
 ## 11. Persistence of captured state
 

@@ -7,6 +7,9 @@ describe("voice profile", () => {
     expect(prompt).toContain("# Role and Objective");
     expect(prompt).toContain("# Tools");
     expect(prompt).toContain("# Unclear Audio");
+    expect(prompt).toContain("# Sample Phrases");
+    expect(prompt).toContain("distinctive KL ecosystem host");
+    expect(prompt).toContain("not grounded");
     expect(prompt).toContain("Required fields are name, email, organisation, and a short brief.");
     expect(prompt).toContain("Never invent prices.");
     expect(prompt).toContain("tenancy: Tenancy -> Chewi, Tenancy Lead");
@@ -16,6 +19,7 @@ describe("voice profile", () => {
     expect(VOICE_TOOLS.map((tool) => tool.name)).toEqual([
       "set_partner_type",
       "capture_field",
+      "clear_field",
       "summarise_lead",
       "route_to_team",
       "wait_for_user",

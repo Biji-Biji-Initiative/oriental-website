@@ -173,8 +173,24 @@ function applyFunctionCall(
   if (item.name === "capture_field") {
     const key = toCapturedKey(args.key);
     const value = typeof args.value === "string" ? args.value.trim() : "";
+    const evidence = typeof args.evidence === "string" ? args.evidence.trim() : "";
     if (key && value) {
-      next = { ...next, captured: { ...next.captured, [key]: value } };
+      const grounding = validateCaptureGrounding(key, value, evidence, next.transcript);
+      if (!grounding.ok) {
+        output = { ok: false, error: grounding.error, key, value };
+      } else {
+        next = { ...next, captured: { ...next.captured, [key]: value } };
+        output = { ok: true, key, captured: next.captured };
+      }
+    } else {
+      output = { ok: false, error: "invalid_field" };
+    }
+  }
+
+  if (item.name === "clear_field") {
+    const key = toCapturedKey(args.key);
+    if (key) {
+      next = { ...next, captured: { ...next.captured, [key]: "" } };
       output = { ok: true, key, captured: next.captured };
     } else {
       output = { ok: false, error: "invalid_field" };
@@ -209,7 +225,11 @@ function applyFunctionCall(
     createResponse = false;
   }
 
-  if (!["set_partner_type", "capture_field", "summarise_lead", "route_to_team", "wait_for_user"].includes(item.name)) {
+  if (
+    !["set_partner_type", "capture_field", "clear_field", "summarise_lead", "route_to_team", "wait_for_user"].includes(
+      item.name,
+    )
+  ) {
     output = { ok: false, error: "unknown_tool" };
   }
 
@@ -291,6 +311,55 @@ function toSegmentId(value: unknown): SegmentId | null {
 
 function toCapturedKey(value: unknown): keyof CapturedLead | null {
   return value === "name" || value === "email" || value === "org" || value === "message" ? value : null;
+}
+
+function validateCaptureGrounding(
+  key: keyof CapturedLead,
+  value: string,
+  evidence: string,
+  transcript: VoiceTranscriptEntry[],
+): { ok: true } | { ok: false; error: string } {
+  if (key === "message") return { ok: true };
+  if (!evidence) return { ok: false, error: "ungrounded_identity_capture" };
+
+  const recentUserText = transcript
+    .filter((entry) => entry.role === "user")
+    .slice(-6)
+    .map((entry) => entry.text)
+    .join(" ");
+  const normalizedUserText = normalizeEvidence(recentUserText);
+  const normalizedEvidence = normalizeEvidence(evidence);
+
+  if (normalizedEvidence.length < 2 || !normalizedUserText.includes(normalizedEvidence)) {
+    return { ok: false, error: "ungrounded_identity_capture" };
+  }
+
+  const valueForms = normalizedValueForms(key, value);
+  if (!valueForms.some((form) => normalizedEvidence.includes(form) || normalizedUserText.includes(form))) {
+    return { ok: false, error: "ungrounded_identity_capture" };
+  }
+
+  return { ok: true };
+}
+
+function normalizedValueForms(key: keyof CapturedLead, value: string) {
+  const forms = [normalizeEvidence(value)];
+  if (key === "email") forms.push(normalizeEvidence(spokenEmailForm(value)));
+  return forms.filter((form) => form.length >= 2);
+}
+
+function spokenEmailForm(value: string) {
+  return value
+    .toLowerCase()
+    .replaceAll("@", " at ")
+    .replaceAll(".", " dot ")
+    .replaceAll("-", " dash ")
+    .replaceAll("_", " underscore ")
+    .replaceAll("+", " plus ");
+}
+
+function normalizeEvidence(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
 function getMissingFields(captured: CapturedLead) {
