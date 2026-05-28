@@ -1,11 +1,32 @@
-import { ArrowUpRight, Building2, Cpu, FlaskConical, Sparkles, UsersRound } from "lucide-react";
 import Image from "next/image";
+import { EcosystemGrid } from "@/components/site/EcosystemGrid";
+import { FacilitiesBands } from "@/components/site/FacilitiesBands";
+import { PartnersBands } from "@/components/site/PartnersBands";
 import { HeroEmailCapture } from "@/components/voice-agent/HeroEmailCapture";
 import { VoiceButton } from "@/components/voice-agent/VoiceButton";
-import { audiences, ecosystemCells, partners, pillars, relevantIf, siteMeta, spaces } from "@/lib/content";
+import { siteMeta } from "@/lib/content";
 import { cn } from "@/lib/utils";
 
-const icons = [UsersRound, Building2, Cpu, Sparkles, FlaskConical];
+const footerPartners = [
+  {
+    name: "Mereka",
+    detail: "Talent development & creative education ecosystem",
+    logo: "/assets/mereka-symbol-white.png",
+    logoClassName: "size-7",
+  },
+  {
+    name: "Biji-biji Initiative",
+    detail: "Social impact & innovation",
+    logo: "/assets/brand/biji-biji/biji-biji-logo-white.svg",
+    logoClassName: "size-8",
+  },
+  {
+    name: "CIMB",
+    detail: "Strategic partner",
+    logo: "/assets/brand/cimb/cimb-symbol.svg",
+    logoClassName: "size-8",
+  },
+] as const;
 
 export function Hero() {
   return (
@@ -145,33 +166,11 @@ export function Ecosystem() {
         <h2 className="section-heading max-w-5xl text-white">
           Spaces for learning, making, <em>gathering, & testing new ideas.</em>
         </h2>
-        <p className="mt-8 max-w-3xl text-lg leading-8 text-white/62">
+        <p className="eco-lede">
           The planned ecosystem brings together flexible spaces, public programming, and partner-led activations across
           education, technology, creativity, culture, and social impact.
         </p>
-        <div className="mt-14 grid border-t border-white/12 lg:grid-cols-5">
-          {ecosystemCells.map((cell, index) => {
-            const Icon = icons[index] ?? Sparkles;
-            return (
-              <VoiceCard intent={cell.intent} key={cell.number}>
-                <div className="text-xs uppercase tracking-[0.14em] text-white/42">{cell.number}</div>
-                <Icon className="mt-10 size-8 text-mk-horizon" />
-                <h3 className="mt-8 text-2xl font-semibold leading-tight">{cell.title}</h3>
-                <p className="mt-5 leading-7 text-white/58">{cell.description}</p>
-                <ArrowUpRight className="mt-8 size-5 text-white/42 transition group-hover:translate-x-1 group-hover:-translate-y-1 group-hover:text-white" />
-              </VoiceCard>
-            );
-          })}
-        </div>
-        <div className="mt-12 flex flex-col items-start justify-between gap-6 border-t border-white/12 pt-8 md:flex-row md:items-center">
-          <p className="max-w-2xl text-white/60">
-            Designed for educators, creatives, organisations, communities, entrepreneurs, and future-focused
-            collaborators.
-          </p>
-          <VoiceButton className="border-white/20 bg-white/8 text-white hover:bg-white hover:text-mk-off-black">
-            Discuss a partnership
-          </VoiceButton>
-        </div>
+        <EcosystemGrid />
       </div>
     </section>
   );
@@ -188,90 +187,12 @@ export function Facilities() {
         <h2 className="section-heading max-w-5xl">
           Built for communities that <em>should meet more often.</em>
         </h2>
-        <p className="mt-8 max-w-3xl text-lg leading-8 text-mk-off-black/66">
+        <p className="facilities-lede">
           Oriental Building is envisioned as a shared platform where different communities can learn from each other,
           build together, and access new opportunities in the heart of Kuala Lumpur.
         </p>
 
-        <div className="mt-16 grid gap-8 lg:grid-cols-[0.7fr_1.3fr]">
-          <div>
-            <h3 className="text-3xl font-semibold">Designed for</h3>
-            <p className="mt-4 leading-7 text-mk-off-black/58">
-              A shared platform bringing together diverse communities through accessible programming and meaningful
-              engagement.
-            </p>
-          </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            {audiences.map((audience, index) => (
-              <VoiceCard className="border-mk-line bg-white p-5 text-mk-off-black" key={audience}>
-                <span className="text-xs text-mk-anchor-blue">{String(index + 1).padStart(2, "0")}</span>
-                <span className="ml-4 font-medium">{audience}</span>
-              </VoiceCard>
-            ))}
-          </div>
-        </div>
-
-        <div className="mt-20 grid gap-8 lg:grid-cols-[0.7fr_1.3fr]">
-          <div>
-            <h3 className="text-3xl font-semibold">Programme pillars.</h3>
-            <p className="mt-4 leading-7 text-mk-off-black/58">
-              Five intersecting pillars shape the programmes the building will host.
-            </p>
-          </div>
-          <div className="divide-y divide-mk-line border-y border-mk-line">
-            {pillars.map((pillar, index) => (
-              <VoiceCard
-                className="flex items-start gap-5 border-0 bg-transparent p-6 text-mk-off-black shadow-none"
-                intent={pillar.intent}
-                key={pillar.name}
-              >
-                <span className="text-sm text-mk-anchor-blue">{String(index + 1).padStart(2, "0")}</span>
-                <span>
-                  <span className="block text-xl font-semibold">{pillar.name}</span>
-                  <span className="mt-2 block leading-7 text-mk-off-black/58">{pillar.description}</span>
-                </span>
-              </VoiceCard>
-            ))}
-          </div>
-        </div>
-
-        <div className="mt-20">
-          <div className="mb-10 flex flex-col justify-between gap-5 md:flex-row">
-            <h3 className="text-4xl font-semibold">
-              Key spaces <em className="font-serif font-light italic text-mk-anchor-blue">being shaped.</em>
-            </h3>
-            <p className="max-w-xl leading-7 text-mk-off-black/58">
-              Each space is being designed with partners. What is listed below is the working brief, open to your input.
-            </p>
-          </div>
-          <div className="grid gap-6 md:grid-cols-2">
-            {spaces.map((space) => (
-              <VoiceCard
-                className="overflow-hidden border-mk-line bg-white p-0 text-mk-off-black"
-                intent={space.intent}
-                key={space.number}
-              >
-                <div className="relative aspect-[1.45] overflow-hidden">
-                  <Image
-                    alt={space.title}
-                    className="object-cover transition duration-500 group-hover:scale-105"
-                    fill
-                    sizes="(max-width: 768px) 100vw, 50vw"
-                    src={space.image}
-                  />
-                  <span className="absolute left-4 top-4 rounded-full bg-mk-off-black/72 px-3 py-1 text-xs text-white">
-                    {space.number}
-                  </span>
-                </div>
-                <div className="p-6">
-                  <h4 className="text-2xl font-semibold">{space.title}</h4>
-                  <p className="mt-4 leading-7 text-mk-off-black/62">{space.description}</p>
-                  <div className="mt-6 font-semibold text-mk-anchor-blue">{space.cta} →</div>
-                </div>
-              </VoiceCard>
-            ))}
-          </div>
-        </div>
+        <FacilitiesBands />
       </div>
     </section>
   );
@@ -288,42 +209,11 @@ export function Partners() {
         <h2 className="section-heading text-white">
           Let&apos;s build this <em>together.</em>
         </h2>
-        <p className="mt-8 max-w-4xl text-lg leading-8 text-white/62">
+        <p className="partners-lede">
           We are looking for partners who want to help shape the building before it opens — not only occupy it after it
           is ready.
         </p>
-        <div className="mt-14 grid gap-px overflow-hidden rounded-[18px] border border-white/10 bg-white/10 md:grid-cols-2">
-          {partners.map((partner) => (
-            <VoiceCard
-              className="border-0 bg-mk-off-black p-7 text-white shadow-none hover:bg-white/[0.06]"
-              intent={partner.intent}
-              key={partner.number}
-            >
-              <div className="flex items-center gap-3 text-xs uppercase tracking-[0.14em] text-white/42">
-                <span>{partner.number}</span>
-                <span>{partner.tag}</span>
-              </div>
-              <h3 className="mt-8 text-3xl font-semibold">{partner.title}</h3>
-              <p className="mt-5 leading-7 text-white/58">{partner.description}</p>
-              <div className="mt-8 font-semibold text-mk-horizon">{partner.cta} →</div>
-            </VoiceCard>
-          ))}
-        </div>
-        <div className="mt-10 rounded-[18px] border border-white/10 bg-white/[0.04] p-7">
-          <div className="text-xs uppercase tracking-[0.16em] text-white/42">Especially relevant if you want to</div>
-          <ul className="mt-6 grid gap-4 md:grid-cols-2">
-            {relevantIf.map((item) => (
-              <li className="flex gap-3 text-white/74" key={item}>
-                <span className="mt-2 size-1.5 rounded-full bg-mk-horizon" />
-                {item}
-              </li>
-            ))}
-          </ul>
-          <p className="mt-7 text-sm text-white/50">
-            No polished proposal needed. Your enquiry routes to the right Mereka team. No public listing. No commitment
-            required.
-          </p>
-        </div>
+        <PartnersBands />
       </div>
     </section>
   );
@@ -416,10 +306,26 @@ export function Footer() {
           </div>
           <div>
             <div className="footer-tag">An initiative by</div>
-            <ul className="mt-4 space-y-4 text-white/68">
-              <li>Mereka · Talent development & creative education ecosystem</li>
-              <li>Biji-biji Initiative · Social impact & innovation</li>
-              <li>CIMB · Strategic partner</li>
+            <ul className="footer-brand-list">
+              {footerPartners.map((partner) => (
+                <li className="footer-brand-card" key={partner.name}>
+                  <span className="footer-brand-mark">
+                    <Image
+                      alt=""
+                      aria-hidden
+                      className={cn("object-contain", partner.logoClassName)}
+                      height={40}
+                      src={partner.logo}
+                      unoptimized
+                      width={40}
+                    />
+                  </span>
+                  <span>
+                    <span className="footer-brand-name">{partner.name}</span>
+                    <span className="footer-brand-detail">{partner.detail}</span>
+                  </span>
+                </li>
+              ))}
             </ul>
           </div>
         </div>
@@ -429,28 +335,5 @@ export function Footer() {
         </div>
       </div>
     </footer>
-  );
-}
-
-function VoiceCard({
-  children,
-  className,
-  intent,
-}: {
-  children: React.ReactNode;
-  className?: string;
-  intent?: import("@/lib/segments").SegmentId;
-}) {
-  return (
-    <VoiceButton
-      className={cn(
-        "group flex w-full flex-col items-start gap-0 rounded-none border-b border-white/12 bg-transparent p-6 text-left text-inherit shadow-none hover:translate-y-0 hover:bg-white/[0.04]",
-        className,
-      )}
-      intent={intent}
-      orb={false}
-    >
-      {children}
-    </VoiceButton>
   );
 }

@@ -1,190 +1,148 @@
 # 07 — Data Model
 
-Postgres. Two tables. That's the entire app-owned schema for v1.
+Runtime truth: the launch site stores intake data in **Convex**, not
+Postgres/Drizzle. The public Next.js app writes through `lib/server/convex.ts`;
+the only Convex mutation exposed to the app is `api.leads.createLead`, protected
+by `CONVEX_INGEST_SECRET`.
 
 ```
-leads ─────► lead_events
+Next Route Handler ──persistLead()──► Convex mutation ──► leads
+                                                    └──► leadEvents
 ```
 
----
+## Tables
 
-## `leads`
+Schema source: `convex/schema.ts`.
 
-One row per enquiry, across all surfaces.
+### `leads`
 
-```sql
-create table leads (
-  id              uuid primary key default gen_random_uuid(),
-  created_at      timestamptz not null default now(),
-  updated_at      timestamptz not null default now(),
+One document per enquiry across the voice modal, manual form, and hero email
+capture.
 
-  -- Routing
-  segment         text not null
-                  check (segment in (
-                    'tenancy','education','programme','technology',
-                    'ai','cultural','community','other'
-                  )),
-  routed_to       text not null,                   -- denormalised name; survives staff changes
-  routed_to_email text not null,                   -- resolved at write time from OWNER_<SEG>
-  source          text not null
-                  check (source in (
-                    'voice','form','hero-email','footer-email','admin'
-                  )),
+| Field | Type | Notes |
+|---|---|---|
+| `_id` / `_creationTime` | Convex-managed | Internal document identity and creation time. |
+| `leadId` | string | App-generated UUID from `routeLead`; returned to the browser. |
+| `source` | `"voice" | "form" | "hero-email"` | Entry surface. |
+| `segment` | string | One of the segment IDs in `lib/segments.ts`; Convex keeps it string-typed. |
+| `routedTo` | string | Denormalised owner name at write time. |
+| `routedToEmail` | string \| null | Resolved from `OWNER_*`; nullable so non-production can still capture. |
+| `name` | string | For hero email capture this is currently `"Newsletter subscriber"`. |
+| `email` | string | Validated by `lib/schemas.ts`. |
+| `org` | string | For hero email capture this is `"Unknown"`. |
+| `message` | string | For hero email capture this is `"Keep me posted about Oriental Building."`. |
+| `transcript` | `{ role: string; text: string }[]` | Voice transcript rows; empty for form/newsletter. |
+| `utm` | `Record<string,string>` | Optional attribution data. |
+| `status` | string | Launch writes `"new"` only. |
+| `createdAt` | number | Milliseconds since epoch, set by mutation. |
 
-  -- Person
-  name            text,
-  email           text not null,
-  org             text,
-  message         text,
+Indexes:
 
-  -- Conversation
-  transcript_url  text,                            -- s3://... or null
-  ai_summary      text,                            -- short LLM-written summary
+- `by_email`
+- `by_segment`
+- `by_status`
 
-  -- Marketing
-  utm             jsonb,
-  ip_hash         text,                            -- sha256(ip + daily salt)
-  user_agent      text,
+### `leadEvents`
 
-  -- Lifecycle
-  status          text not null default 'new'
-                  check (status in (
-                    'new','contacted','qualified','partnered','declined','closed'
-                  ))
-);
+Append-only lead audit events. Launch writes a single `created` event for each
+lead.
 
-create index leads_created_at_desc on leads (created_at desc);
-create index leads_segment_status   on leads (segment, status);
-create index leads_email            on leads (lower(email));
+| Field | Type | Notes |
+|---|---|---|
+| `leadId` | string | App lead ID, not Convex `_id`. |
+| `kind` | string | Launch value: `"created"`. |
+| `note` | string? | Human-readable event note. |
+| `createdAt` | number | Milliseconds since epoch. |
+
+Index:
+
+- `by_lead`
+
+## Write Path
+
+1. Route handler validates a request with Zod (`lib/schemas.ts`).
+2. Turnstile is verified server-side.
+3. `routeLead()` resolves segment owner metadata from `lib/segments.ts` and
+   `OWNER_*` environment variables.
+4. `persistLead()` calls Convex with `{ lead, ingestSecret }`.
+5. Convex validates `CONVEX_INGEST_SECRET`, inserts `leads`, then inserts a
+   `leadEvents` row.
+6. Owner email and Slack notifications are attempted after persistence.
+
+If Convex is not configured locally, `persistLead()` returns
+`{ persisted: false, reason: "convex_unconfigured" }` and the route still
+returns `ok: true`. Production secret checks require Convex configuration.
+
+## Segments And Routing
+
+Segment IDs are owned by `lib/segments.ts`:
+
+```ts
+tenancy | education | programme | technology | ai | cultural | community | other
 ```
 
-### Field notes
+Owner email variables:
 
-- **`routed_to`** is the **name** ("Chewi", "Lala"). We denormalise to survive
-  staff transitions — if Chewi leaves, historical leads still show "routed to
-  Chewi" even after we point new ones at someone else.
-- **`routed_to_email`** is the address that was emailed at the time. Same
-  rationale — auditability.
-- **`source`** distinguishes the four entry points + a fifth (`admin`) for
-  manual entry from the Mereka-admin app.
-- **`transcript_url`** is `null` for form submissions. For voice, points at
-  a JSON blob: `[{ "role": "user"|"assistant", "text": "..." }, ...]`.
-- **`ip_hash`** is sha256 over `IP + DAILY_SALT`. Lets us detect repeat
-  submissions from the same person same day without storing raw IP (PDPA-friendly).
-
-## `lead_events`
-
-Append-only audit log of everything that has happened to a lead.
-
-```sql
-create table lead_events (
-  id        uuid primary key default gen_random_uuid(),
-  lead_id   uuid not null references leads(id) on delete cascade,
-  at        timestamptz not null default now(),
-  actor     text,                       -- 'system' | 'chewi@mereka.io' | etc.
-  kind      text not null
-            check (kind in (
-              'created','emailed','slack_posted',
-              'replied','meeting_booked','status_changed','note_added',
-              'transcript_attached','retry_succeeded','retry_failed'
-            )),
-  payload   jsonb
-);
-
-create index lead_events_lead_id_at on lead_events (lead_id, at desc);
+```dotenv
+OWNER_TENANCY=
+OWNER_EDUCATION=
+OWNER_PROGRAMME=
+OWNER_TECHNOLOGY=
+OWNER_AI=
+OWNER_CULTURAL=
+OWNER_COMMUNITY=
+OWNER_OTHER=
 ```
 
-Common payload shapes:
-
-```jsonc
-// kind: 'status_changed'
-{ "from": "new", "to": "contacted" }
-
-// kind: 'emailed'
-{ "to": "chewi@mereka.io", "ses_message_id": "...", "template": "lead-routed-v1" }
-
-// kind: 'slack_posted'
-{ "channel": "#partner-intake", "ts": "1714578123.123456" }
-```
+Owner names live in code so historical lead displays remain stable. Owner
+emails live in environment variables so operations can rotate routing without a
+copy or code deploy.
 
 ## Lifecycle
 
-```
-            ┌──────────────────────────────────────────────────┐
-            │                                                  │
-created ─▶ new ──▶ contacted ──▶ qualified ──▶ partnered ──▶ closed
-                        │              │
-                        ▼              ▼
-                     declined       declined
-```
+The microsite only creates `new` leads. Any later lifecycle state belongs to the
+future internal CRM workstream.
 
-| `status` | Meaning |
+Planned lifecycle vocabulary:
+
+| Status | Meaning |
 |---|---|
 | `new` | Just landed. Owner has not yet acknowledged. |
 | `contacted` | Owner has sent the first follow-up. |
 | `qualified` | Conversation is real and ongoing. |
-| `partnered` | We have a signed (or near-signed) partnership / tenancy. |
-| `declined` | Either side decided no. Capture reason in a `note_added` event. |
-| `closed` | Terminal. Cold or abandoned. |
+| `partnered` | We have a signed or near-signed partnership / tenancy. |
+| `declined` | Either side decided no; capture reason in a note event. |
+| `closed` | Terminal, cold, or abandoned. |
 
-The microsite **only ever writes `new`**. Everything else moves through the
-Mereka-admin app (separate workstream).
+## Deploy And Operations
 
-## Lead-routing resolver
+Commands:
 
-When the API writes a lead it resolves `routed_to_email` from env, like:
-
-```ts
-const RESOLVE: Record<Segment, { name: string; email: string }> = {
-  tenancy:    { name: 'Chewi',    email: process.env.OWNER_TENANCY!   },
-  education:  { name: 'Lala',     email: process.env.OWNER_EDUCATION! },
-  programme:  { name: 'Jey',      email: process.env.OWNER_PROGRAMME! },
-  technology: { name: 'Gurpreet', email: process.env.OWNER_TECHNOLOGY! },
-  ai:         { name: 'Gurpreet', email: process.env.OWNER_AI!        },
-  cultural:   { name: 'AVI',      email: process.env.OWNER_CULTURAL!  },
-  community:  { name: 'Ambika',   email: process.env.OWNER_COMMUNITY! },
-  other:      { name: 'Nadia',    email: process.env.OWNER_OTHER!     },
-};
+```bash
+pnpm convex:codegen
+CONVEX_DEPLOY_KEY='prod:...' pnpm exec convex deploy
 ```
 
-The `name` is a constant in code, not env, because copy lives with code. The
-**email** is env-driven so HR changes don't need a code deploy.
+Do not hand-edit `convex/_generated/`; regenerate after schema changes.
 
-## Migrations
+Runtime secrets:
 
-Drizzle migrations live under `drizzle/`. The first migration creates both
-tables + indexes. The Coolify pre-deploy hook runs `pnpm db:migrate`.
-
-Forward-only — no automatic down migrations. To revert, write a new forward
-migration.
+```dotenv
+CONVEX_URL=
+NEXT_PUBLIC_CONVEX_URL=
+CONVEX_INGEST_SECRET=
+CONVEX_DEPLOY_KEY= # deploy only, not app runtime
+```
 
 ## Retention
 
-| Data | Retention |
-|---|---|
-| Lead row | Forever (or until a future deletion request) |
-| `transcript_url` blob | 90 days from `created_at`, then S3 lifecycle deletes |
-| `ip_hash` | 30 days, then nulled by a nightly job |
-| `user_agent` | 30 days, then nulled by a nightly job |
+No automated retention job exists yet. Until PDPA/legal policy is finalized,
+Convex lead documents and transcripts are retained indefinitely.
 
-PDPA review of these durations is pending.
+Launch follow-ups:
 
-## Future: `attachments`
-
-When a partner sends a deck / PDF in follow-up, the Mereka-admin app will need
-an `attachments` table. Out of scope for v1 — sketch a column shape now so we
-don't paint ourselves into a corner:
-
-```sql
--- v2 sketch
-create table lead_attachments (
-  id         uuid primary key default gen_random_uuid(),
-  lead_id    uuid not null references leads(id) on delete cascade,
-  uploaded_at timestamptz not null default now(),
-  uploaded_by text,                     -- mereka staff email
-  filename    text not null,
-  s3_url      text not null,
-  size_bytes  bigint not null,
-  mime        text not null
-);
-```
+- Define retention/deletion policy for leads and transcripts.
+- Decide whether IP-derived abuse data should ever be persisted. It is not
+  stored today.
+- Add CRM mutations for notes, status changes, and exports in a separate
+  authenticated app.

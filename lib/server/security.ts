@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { NextRequest } from "next/server";
+import { isProductionEnv, readEnv } from "@/lib/env";
 
 type LimitBucket = {
   count: number;
@@ -17,14 +18,22 @@ export function requestIp(request: NextRequest): string {
 }
 
 export function hashIp(ip: string, scope = "lead"): string {
-  const secret = process.env.IP_HASH_SECRET ?? "oriental-local-development";
+  const secret = readEnv("IP_HASH_SECRET", "oriental-local-development") ?? "oriental-local-development";
   return createHash("sha256").update(`${scope}:${secret}:${ip}`).digest("hex");
 }
 
+function isLocalDevelopmentIp(ip: string) {
+  return ip === "localhost" || ip === "::1" || ip === "127.0.0.1" || ip.startsWith("127.");
+}
+
 export async function verifyTurnstile(token: string | undefined, ip: string) {
-  const secret = process.env.TURNSTILE_SECRET_KEY;
+  if (!isProductionEnv() && token === "local-dev" && isLocalDevelopmentIp(ip)) {
+    return true;
+  }
+
+  const secret = readEnv("TURNSTILE_SECRET_KEY");
   if (!secret) {
-    return process.env.NODE_ENV !== "production";
+    return !isProductionEnv();
   }
   if (!token) return false;
 
@@ -54,6 +63,11 @@ export function checkRateLimit(key: string, limit: number, windowMs: number) {
   }
   current.count += 1;
   return { ok: true, remaining: limit - current.count };
+}
+
+export function resetRateLimitBucketsForTest() {
+  if (readEnv("NODE_ENV") !== "test") return;
+  buckets.clear();
 }
 
 export function noStoreJson(data: unknown, init: ResponseInit = {}) {

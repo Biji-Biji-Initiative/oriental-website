@@ -1,106 +1,95 @@
 # 08 — Component Map
 
-Prototype DOM → production component. Use this table when porting; one row =
-one port task.
+Current production component map after the prototype parity pass. Use this file
+to route future homepage and voice changes without reopening the raw prototype
+unless visual fidelity is in question.
 
-The prototype is HTML + JSX hand-written for prototyping speed. The
-production app uses **shadcn/ui** primitives where they fit and bespoke
-components where the design diverges from anything shadcn ships.
+## Page Composition
 
----
+| Runtime surface | Production path | Client? | Notes |
+|---|---|---:|---|
+| Root layout | `app/layout.tsx` | Server | Fonts, metadata, `VoiceProvider`, `SiteNav`, `VoiceRail`, `Toaster`. Uses `connection()` so the root is dynamic. |
+| Home page | `app/page.tsx` | Server | JSON-LD and ordered section composition. |
+| Nav | `components/site/SiteNav.tsx` | Yes | Scroll background, active-section observer, mobile menu, Space shortcut, voice CTA. |
+| Voice rail | `components/site/VoiceRail.tsx` | Yes | Floating voice affordance. |
 
-## Section components
+## Homepage Sections
 
-| Prototype (`microsite.jsx`) | Production path | shadcn primitives used | Notes |
+Most sections live in `components/site/Sections.tsx` to preserve the single-page
+story order. Large interactive bands are split out so the main section file does
+not own every click target.
+
+| Section | Runtime path | Notes |
+|---|---|---|
+| Hero | `components/site/Sections.tsx` | Background image, primary `VoiceButton`, `HeroEmailCapture`. |
+| Hero email capture | `components/voice-agent/HeroEmailCapture.tsx` | Client island; calls `/api/newsletter`. |
+| Vision | `components/site/Sections.tsx` | Static story + building image. |
+| Ecosystem | `components/site/Sections.tsx` + `components/site/EcosystemGrid.tsx` | Clickable cells open voice with segment intent. |
+| Facilities / Spaces | `components/site/Sections.tsx` + `components/site/FacilitiesBands.tsx` | Audience grid, pillars, and space cards. |
+| Partners | `components/site/Sections.tsx` + `components/site/PartnersBands.tsx` | Partner archetype cards and relevant-if list. |
+| Timeline | `components/site/Timeline.tsx` | Client hover/focus progress state. |
+| Closing | `components/site/Sections.tsx` | Static CTA section. |
+| Footer | `components/site/Sections.tsx` | Contact CTA, address, official partner logo row. |
+
+CSS for prototype-parity homepage chrome lives in `app/globals.css` using
+component-prefixed class names:
+
+- `.eco-*`
+- `.facilities-*`
+- `.partner-*`
+- `.partners-relevant*`
+- `.timeline*`
+- `.site-nav__*`
+- `.footer-brand*`
+
+## Voice Agent
+
+| Runtime surface | Production path | shadcn primitives | Notes |
 |---|---|---|---|
-| `<Nav>` | `components/nav/SiteNav.tsx` | none | Client component (scroll listener + IntersectionObserver). |
-| `<Hero>` | `components/sections/Hero.tsx` | `Button` | Server. Hero photo is `<Image priority>`. Email capture is a small client island. |
-| `<HeroEmailCapture>` | `components/sections/HeroEmailCapture.tsx` | `Input`, `Button` | Client. Calls `/api/newsletter`. |
-| `<Vision>` | `components/sections/Vision.tsx` | none | Server. |
-| `<Ecosystem>` | `components/sections/Ecosystem.tsx` | `Card` (for cells) | Cells trigger the voice modal via context. |
-| `<Facilities>` | `components/sections/Facilities.tsx` | `Card` | Three sub-bands. Server, with thin client wrappers for click handlers. |
-| `<Partners>` | `components/sections/Partners.tsx` | `Card` | |
-| `<Timeline>` | `components/sections/Timeline.tsx` | none | Client (hover state). |
-| `<Closing>` | `components/sections/Closing.tsx` | `Button` | |
-| `<Footer>` | `components/sections/Footer.tsx` | none | Server. |
-| `<VoiceRail>` | `components/nav/VoiceRail.tsx` | none | Client (scroll-trigger). |
+| Voice context | `components/voice-agent/voice-state.tsx` | — | Owns global open state and passes Turnstile site key. |
+| Voice button | `components/voice-agent/VoiceButton.tsx` | — | Opens dialog with optional segment/prefill. |
+| Dialog shell | `components/voice-agent/VoiceAgentDialog.tsx` | `Dialog`, `Form`, `Input`, `Textarea`, `Button` | Unified segment rail, voice stage, editable handoff panel, story cues, live notes, submitted state. |
+| WebRTC lifecycle | `components/voice-agent/useRealtimeVoiceSession.ts` | — | Mic, peer connection, data channel, timers, teardown. |
+| Turnstile | `components/security/useTurnstile.ts` | — | Script/widget lifecycle and local-dev token fallback. |
+| Realtime profile | `lib/voice/profile.ts` | — | Prompt sections, tools, VAD/session defaults. |
+| Realtime reducer | `lib/voice/realtime-events.ts` | — | Pure state machine for transcripts, tool calls, route command. |
+| Client events | `lib/voice/client-events.ts` | — | Serializes `function_call_output` and optional `response.create`. |
 
-## Voice agent
-
-| Prototype (`voice-agent.jsx`) | Production path | shadcn primitives | Notes |
-|---|---|---|---|
-| `<VoiceAgent>` | `components/voice-agent/VoiceAgentDialog.tsx` | `Dialog` (full-screen variant) | Top-level modal. |
-| Mode toggle (Voice / Form) | inside `VoiceAgentDialog` | `Tabs` | Two tabs, shared state. |
-| Segment rail (left) | `components/voice-agent/SegmentRail.tsx` | `Card` per item | On mobile: horizontal scroll. |
-| `<VoiceMode>` | `components/voice-agent/VoiceMode.tsx` | — | Orb + utterance + tour topics. |
-| `<FormMode>` | `components/voice-agent/FormMode.tsx` | `Input`, `Textarea`, `Label`, `Button` | 4-field intake. Inline validation. |
-| Captured / Transcript switcher (right rail) | `components/voice-agent/CapturedRail.tsx` | `Tabs` | "Captured" and "Transcript" tabs. |
-| `<SubmittedView>` | `components/voice-agent/SubmittedView.tsx` | — | The "Sent to <First name>" screen. |
+The voice modal remains a single component because the segment rail, voice stage,
+editable handoff form, and submission flow share realtime state. Split only when
+a new behavior boundary emerges.
 
 ## Orb
 
-| Prototype | Production path | Notes |
+| Runtime surface | Production path | Notes |
 |---|---|---|
-| `<VoiceOrb>` (Canvas 2D, in `voice-agent.jsx`) | *retired* | Superseded by `OrbCanvas`. Keep the 2D version commented out for reference. |
-| `MerekaOrb3D` (`voice-orb-3d.jsx`) | `components/orb/OrbCanvas.tsx` | React Three Fiber. Lazy-loaded via `next/dynamic({ ssr: false })`. |
-| `<MiniOrb>` (SVG) | `components/orb/MiniOrb.tsx` | Pure SVG. Used in all CTAs. |
+| Mini orb | `components/orb/MiniOrb.tsx` | Pure SVG. Used in nav, CTAs, and dialog. |
 
-## Shared / utility
+There is no React Three Fiber runtime in the current app. Prototype R3F/WebGL
+notes are reference-only until a future PR reintroduces 3D.
 
-| Prototype | Production path | Notes |
-|---|---|---|
-| `<Icon>` (SVG sprite-in-JSX) | `components/ui/Icon.tsx` | Same; consider Iconify if the set grows. |
-| `TWEAK_DEFAULTS` block | *removed* | Tweak system was prototype-only. In production these become real config or are removed. |
-| `<TweaksPanel>` (and friends) | *removed* | |
-| `<image-slot>` web component | *removed* | Was loaded but never used. |
-| `_reset.html` | *removed* | Dev utility. |
+## Content And Routing
 
-## State management
+| Concern | Production path |
+|---|---|
+| Marketing copy, nav labels, grids, partners, timeline | `lib/content.ts` |
+| Segment metadata, owner labels, env mapping | `lib/segments.ts` |
+| API request validation | `lib/schemas.ts` |
+| Lead persistence | `lib/server/convex.ts`, `convex/leads.ts`, `convex/schema.ts` |
+| Notifications | `lib/server/notifications.ts`, `lib/server/smtp.ts` |
 
-The prototype uses **prop-drilling + context-less `onVoice` callbacks**. In
-production, lift modal open-state into a small context:
+## Accessibility Notes
 
-```ts
-// app/(site)/voice-context.tsx
-'use client';
+Prototype `div onClick` regions are now real buttons in the key interactive
+areas:
 
-type VoiceContextValue = {
-  open: (intent?: Segment, prefill?: { email?: string }) => void;
-  close: () => void;
-};
+- ecosystem cells
+- facilities audiences
+- facilities pillars
+- facilities space cards
+- partner cards
+- timeline steps
 
-export const VoiceContext = createContext<VoiceContextValue | null>(null);
-```
-
-Wrap the page in `<VoiceProvider>` (client). Any server component below can
-still render — it just hands a server-rendered "click here" anchor, and the
-client island reaches into `useVoice()` to open the modal.
-
-## Form validation
-
-Use **react-hook-form + zod resolver**. The same zod schemas from
-`lib/schemas.ts` validate on the client and the server.
-
-## Toasts
-
-shadcn's `Toaster` mounted in `app/(site)/layout.tsx`. Toast on:
-
-- Voice unavailable / fallback to form
-- `429 rate_limited`
-- `403 turnstile_failed` ("Couldn't verify — please refresh.")
-- Successful submission (the modal also visibly switches to `<SubmittedView>`)
-
-## Accessibility port notes
-
-The prototype uses `<div onClick>` extensively on the ecosystem cells, pillar
-rows, space cards, and partner cards. **In production these MUST become
-`<button type="button">` elements** with proper focus rings and Enter/Space
-behaviour. shadcn's `Card` accepts an `asChild` pattern that makes this clean:
-
-```tsx
-<Card asChild>
-  <button type="button" onClick={() => openVoice('education')}>
-    {…}
-  </button>
-</Card>
-```
+Keep this invariant. New interactive visual cards should be
+`<button type="button">` or a semantic link, with visible focus styles in
+`app/globals.css`.

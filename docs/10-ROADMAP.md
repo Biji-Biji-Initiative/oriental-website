@@ -10,12 +10,11 @@ months after public launch.
 | # | Item | Owner | Notes |
 |---|---|---|---|
 | B1 | Confirm name spelling, official title, and headshot for **Chewi, Lala, Jey, Gurpreet, AVI, Ambika, Nadia** | Mereka People | Drives `SEGMENTS` map. |
-| B2 | Official **Biji-biji Initiative** SVG logo for footer | Biji-biji marketing | Footer partner row currently uses a placeholder mark. |
-| B3 | Official **CIMB** SVG logo for footer | CIMB partnerships | Same. |
-| B4 | **PDPA privacy notice** copy + hosted page | Legal | Required link in the voice modal and footer. |
-| B5 | Photography rights for every shipped image | Brand | Per [`04-CONTENT-INVENTORY.md`](./04-CONTENT-INVENTORY.md). |
-| B6 | Confirm **2027 opening date** (month if known) | PM | Currently says "Opening 2027". |
-| B7 | Postgres host decision: managed vs self-hosted in Coolify | Eng | Affects [`07-DATA-MODEL.md`](./07-DATA-MODEL.md). |
+| B2 | Brand approval for **Biji-biji Initiative** and **CIMB** footer logo usage | Brand / partnerships | Runtime assets are now sourced under `public/assets/brand/`; provenance is in [`ASSET-SOURCES.md`](./ASSET-SOURCES.md). |
+| B3 | **PDPA privacy notice** copy + hosted page | Legal | Required link in the voice modal and footer. |
+| B4 | Photography rights for every shipped image | Brand | Per [`04-CONTENT-INVENTORY.md`](./04-CONTENT-INVENTORY.md). |
+| B5 | Confirm **2027 opening date** (month if known) | PM | Currently says "Opening 2027". |
+| B6 | Data-plane launch proof for Convex ingest and owner notifications | Eng | Runtime uses Convex, not Postgres; see [`07-DATA-MODEL.md`](./07-DATA-MODEL.md) for schema truth. |
 
 ---
 
@@ -107,7 +106,7 @@ decisions.
 | 2026-05 | Coolify over Vercel | Mereka infra standard; cost. |
 | 2026-05 | Infisical at `secrets.mereka.io` | Existing org-wide secrets platform. |
 | 2026-05 | Cloudflare Turnstile over hCaptcha | Already on Cloudflare; lower friction. |
-| 2026-05 | Postgres + Drizzle | Standard Mereka data plane. |
+| 2026-05 | Convex over Postgres + Drizzle for launch intake | Faster managed launch path; current runtime stores leads and lead events through Convex mutations. |
 | 2026-05 | shadcn/ui over Mantine / MUI | Aligns with Tailwind v4; least runtime bloat. |
 | 2026-05 | Single page, anchored sections | Content fits; routing complexity not justified. |
 | 2026-05 | Voice agent dual-mode (Voice + Form) | Accessibility, environment, and trust. |

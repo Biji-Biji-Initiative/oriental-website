@@ -111,6 +111,10 @@ export function useTurnstile(action: string, siteKey?: string) {
   }, []);
 
   useEffect(() => {
+    if (localDevelopmentToken()) {
+      setReady(true);
+      return;
+    }
     if (!siteKey) {
       setReady(true);
       return;
@@ -161,9 +165,10 @@ export function useTurnstile(action: string, siteKey?: string) {
   }, [action, container, rejectPending, siteKey]);
 
   const execute = useCallback(async () => {
+    const localToken = localDevelopmentToken();
+    if (localToken) return localToken;
+
     if (!siteKey) {
-      const token = localDevelopmentToken();
-      if (token) return token;
       throw new Error("turnstile_unconfigured");
     }
 

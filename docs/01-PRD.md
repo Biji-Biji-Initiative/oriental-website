@@ -124,13 +124,14 @@ is unblocked.
 - **Accessibility** — WCAG 2.2 AA. Keyboard nav, focus rings,
   `prefers-reduced-motion`, alt text on photo content.
 - **Cost** — OpenAI Realtime is metered. Cap budget via session length
-  limit (180s default) and Redis-based per-IP rate limit (3 sessions/day).
+  limit (180s default) and the current per-IP voice limiter (3 sessions/day,
+  in-memory until a shared limiter is added).
 
 ## 10. Release plan
 
 | Milestone | Scope |
 |---|---|
-| **M1 — Static** | Sections 1–6 + Closing + Footer ship as static. Voice agent shows a scripted demo. Hero email writes to leads DB. |
+| **M1 — Static** | Sections 1–6 + Closing + Footer ship as static. Voice agent shows a scripted demo. Hero email writes to Convex. |
 | **M2 — Live voice** | OpenAI Realtime wired. Tool-call flow populates lead structure. SES email + Slack ping live. |
 | **M3 — Internal CRM** | Mereka-admin app reads `leads` table, lets owners update `status`. Separate workstream. |
 | **M4 — Polish** | Analytics, A/B copy, BM translation, press kit. |

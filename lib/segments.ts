@@ -1,3 +1,5 @@
+import { readEnv } from "@/lib/env";
+
 export const SEGMENT_IDS = [
   "tenancy",
   "education",
@@ -97,7 +99,7 @@ export function getSegment(id: string | null | undefined): Segment {
 
 export function getOwnerEmail(segmentId: SegmentId): string | null {
   const key = `OWNER_${segmentId.toUpperCase()}`;
-  return process.env[key] ?? process.env.OWNER_OTHER ?? null;
+  return readEnv(key) ?? readEnv("OWNER_OTHER") ?? null;
 }
 
 export function segmentOptions() {

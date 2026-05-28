@@ -1,6 +1,8 @@
 import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
+import { readEnv } from "@/lib/env";
 import type { LeadRequest } from "@/lib/schemas";
 import { getOwnerEmail, getSegment } from "@/lib/segments";
+import { buildOwnerNotification, buildSlackPayload } from "@/lib/server/notification-payloads";
 import { sendSmtpMail } from "@/lib/server/smtp";
 
 type RoutableLead = Omit<LeadRequest, "source"> & { source: LeadRequest["source"] | "hero-email" };
@@ -11,28 +13,23 @@ export type StoredLead = RoutableLead & {
   routedToEmail: string | null;
 };
 
-export async function notifyOwner(lead: StoredLead) {
-  const from = process.env.SES_FROM_ADDRESS ?? process.env.SES_FROM_EMAIL;
+export type NotificationResult =
+  | { ok: true; transport: "smtp" | "sesv2" | "slack" }
+  | { ok: false; skipped?: true; reason?: string; error?: string; status?: number };
+
+export async function notifyOwner(lead: StoredLead): Promise<NotificationResult> {
+  const from = readEnv("SES_FROM_ADDRESS") ?? readEnv("SES_FROM_EMAIL");
   if (!from || !lead.routedToEmail) {
     return { ok: false, skipped: true, reason: "email_unconfigured" };
   }
 
-  const subject = `Oriental partner lead: ${lead.form.org}`;
-  const text = [
-    `Segment: ${getSegment(lead.segment).label}`,
-    `Name: ${lead.form.name}`,
-    `Email: ${lead.form.email}`,
-    `Organisation: ${lead.form.org}`,
-    "",
-    lead.form.message,
-  ].join("\n");
+  const notification = buildOwnerNotification(lead);
 
-  const smtpUser = process.env.SMTP_USER ?? process.env.EMAIL_SERVER_USER;
-  const smtpPassword = process.env.SMTP_PASSWORD ?? process.env.EMAIL_SERVER_PASSWORD;
-  const smtpHost =
-    process.env.SMTP_HOST ??
-    (process.env.AWS_REGION ? `email-smtp.${process.env.AWS_REGION}.amazonaws.com` : undefined);
-  const smtpPort = Number(process.env.SMTP_PORT ?? 587);
+  const smtpUser = readEnv("SMTP_USER") ?? readEnv("EMAIL_SERVER_USER");
+  const smtpPassword = readEnv("SMTP_PASSWORD") ?? readEnv("EMAIL_SERVER_PASSWORD");
+  const awsRegion = readEnv("AWS_REGION");
+  const smtpHost = readEnv("SMTP_HOST") ?? (awsRegion ? `email-smtp.${awsRegion}.amazonaws.com` : undefined);
+  const smtpPort = Number(readEnv("SMTP_PORT", "587"));
   if (smtpUser && smtpPassword && smtpHost) {
     await sendSmtpMail({
       host: smtpHost,
@@ -42,15 +39,16 @@ export async function notifyOwner(lead: StoredLead) {
       from,
       to: lead.routedToEmail,
       replyTo: lead.form.email,
-      subject,
-      text,
+      subject: notification.subject,
+      text: notification.text,
+      html: notification.html,
     });
     return { ok: true, transport: "smtp" };
   }
 
-  if (!process.env.AWS_REGION) return { ok: false, skipped: true, reason: "ses_unconfigured" };
+  if (!awsRegion) return { ok: false, skipped: true, reason: "ses_unconfigured" };
 
-  const client = new SESv2Client({ region: process.env.AWS_REGION });
+  const client = new SESv2Client({ region: awsRegion });
   await client.send(
     new SendEmailCommand({
       FromEmailAddress: from,
@@ -58,10 +56,13 @@ export async function notifyOwner(lead: StoredLead) {
       ReplyToAddresses: [lead.form.email],
       Content: {
         Simple: {
-          Subject: { Data: subject },
+          Subject: { Data: notification.subject },
           Body: {
             Text: {
-              Data: text,
+              Data: notification.text,
+            },
+            Html: {
+              Data: notification.html,
             },
           },
         },
@@ -71,30 +72,40 @@ export async function notifyOwner(lead: StoredLead) {
   return { ok: true, transport: "sesv2" };
 }
 
-export async function notifySlack(lead: StoredLead) {
-  if (!process.env.SLACK_WEBHOOK_URL) {
+export async function notifySlack(lead: StoredLead): Promise<NotificationResult> {
+  const payload = buildSlackPayload(lead);
+  const slackBotToken = readEnv("SLACK_BOT_TOKEN");
+  const slackChannel = readEnv("SLACK_CHANNEL_ID") ?? readEnv("SLACK_CHANNEL");
+  if (slackBotToken && slackChannel) {
+    const response = await fetch("https://slack.com/api/chat.postMessage", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${slackBotToken}`,
+        "Content-Type": "application/json; charset=utf-8",
+      },
+      body: JSON.stringify({ channel: slackChannel, text: payload.text, blocks: payload.blocks }),
+    });
+    const body = (await response.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+    if (!response.ok || body?.ok !== true) {
+      return { ok: false, error: body?.error ?? "slack_api_error", status: response.status };
+    }
+    return { ok: true, transport: "slack" };
+  }
+
+  const slackWebhookUrl = readEnv("SLACK_WEBHOOK_URL");
+  if (!slackWebhookUrl) {
     return { ok: false, skipped: true, reason: "slack_unconfigured" };
   }
 
-  const segment = getSegment(lead.segment);
-  const response = await fetch(process.env.SLACK_WEBHOOK_URL, {
+  const response = await fetch(slackWebhookUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      text: `New Oriental lead for ${lead.routedTo}`,
-      blocks: [
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `*New Oriental lead* → ${segment.label}\n*${lead.form.name}* from *${lead.form.org}*\n${lead.form.email}`,
-          },
-        },
-        { type: "section", text: { type: "mrkdwn", text: lead.form.message } },
-      ],
-    }),
+    body: JSON.stringify(payload),
   });
-  return { ok: response.ok };
+  if (!response.ok) {
+    return { ok: false, error: "slack_http_error", status: response.status };
+  }
+  return { ok: true, transport: "slack" };
 }
 
 export function routeLead(input: RoutableLead): StoredLead {

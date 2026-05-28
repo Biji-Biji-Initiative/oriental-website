@@ -1,10 +1,11 @@
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
+import { readEnv } from "@/lib/env";
 import type { StoredLead } from "@/lib/server/notifications";
 
 export async function persistLead(lead: StoredLead) {
-  const convexUrl = process.env.CONVEX_URL ?? process.env.NEXT_PUBLIC_CONVEX_URL;
-  const ingestSecret = process.env.CONVEX_INGEST_SECRET;
+  const convexUrl = readEnv("CONVEX_URL") ?? readEnv("NEXT_PUBLIC_CONVEX_URL");
+  const ingestSecret = readEnv("CONVEX_INGEST_SECRET");
   if (!convexUrl || !ingestSecret) {
     return { id: lead.id, persisted: false as const, reason: "convex_unconfigured" };
   }
