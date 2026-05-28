@@ -174,13 +174,18 @@ function applyFunctionCall(
     const key = toCapturedKey(args.key);
     const value = typeof args.value === "string" ? args.value.trim() : "";
     const evidence = typeof args.evidence === "string" ? args.evidence.trim() : "";
+    const mode = args.mode === "append" ? "append" : "replace";
     if (key && value) {
-      const grounding = validateCaptureGrounding(key, value, evidence, next.transcript);
+      const normalizedValue = key === "org" ? normalizeOrganisation(value) : value;
+      const grounding = validateCaptureGrounding(key, normalizedValue, evidence, next.transcript);
       if (!grounding.ok) {
-        output = { ok: false, error: grounding.error, key, value };
+        output = { ok: false, error: grounding.error, key, value: normalizedValue };
       } else {
-        next = { ...next, captured: { ...next.captured, [key]: value } };
-        output = { ok: true, key, captured: next.captured };
+        const existing = next.captured[key];
+        const nextValue =
+          key === "message" && mode === "append" ? appendBrief(existing, normalizedValue) : normalizedValue;
+        next = { ...next, captured: { ...next.captured, [key]: nextValue } };
+        output = { ok: true, key, mode, captured: next.captured };
       }
     } else {
       output = { ok: false, error: "invalid_field" };
@@ -358,6 +363,9 @@ function validateCaptureGrounding(
 function normalizedValueForms(key: keyof CapturedLead, value: string) {
   const forms = [normalizeEvidence(value)];
   if (key === "email") forms.push(normalizeEvidence(spokenEmailForm(value)));
+  if (key === "org" && normalizeEvidence(value) === "mereka") {
+    forms.push("moreika", "merika", "merekaah", "merekaa");
+  }
   return forms.filter((form) => form.length >= 2);
 }
 
@@ -371,8 +379,27 @@ function spokenEmailForm(value: string) {
     .replaceAll("+", " plus ");
 }
 
+function appendBrief(existing: string, addition: string) {
+  const current = existing.trim();
+  const next = addition.trim();
+  if (!current) return next;
+  if (!next) return current;
+  if (normalizeEvidence(current).includes(normalizeEvidence(next))) return current;
+  return `${current}\n\n${next}`;
+}
+
+function normalizeOrganisation(value: string) {
+  const normalized = normalizeEvidence(value);
+  if (["mereka", "moreika", "merika", "merekaah", "merekaa"].includes(normalized)) return "Mereka";
+  return value.trim();
+}
+
 function normalizeEvidence(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  return value
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/\p{Mark}/gu, "")
+    .replace(/[^\p{Letter}\p{Number}]+/gu, "");
 }
 
 function getMissingFields(captured: CapturedLead) {

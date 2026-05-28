@@ -2,12 +2,7 @@ import { createHash } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { isProductionEnv, readEnv } from "@/lib/env";
 
-type LimitBucket = {
-  count: number;
-  resetAt: number;
-};
-
-const buckets = new Map<string, LimitBucket>();
+export { checkRateLimit, resetRateLimitBucketsForTest } from "@/lib/server/rate-limit";
 
 export function requestIp(request: NextRequest): string {
   return (
@@ -49,25 +44,6 @@ export async function verifyTurnstile(token: string | undefined, ip: string) {
   if (!response.ok) return false;
   const result = (await response.json()) as { success?: boolean };
   return result.success === true;
-}
-
-export function checkRateLimit(key: string, limit: number, windowMs: number) {
-  const now = Date.now();
-  const current = buckets.get(key);
-  if (!current || current.resetAt <= now) {
-    buckets.set(key, { count: 1, resetAt: now + windowMs });
-    return { ok: true, remaining: limit - 1 };
-  }
-  if (current.count >= limit) {
-    return { ok: false, remaining: 0 };
-  }
-  current.count += 1;
-  return { ok: true, remaining: limit - current.count };
-}
-
-export function resetRateLimitBucketsForTest() {
-  if (readEnv("NODE_ENV") !== "test") return;
-  buckets.clear();
 }
 
 export function noStoreJson(data: unknown, init: ResponseInit = {}) {

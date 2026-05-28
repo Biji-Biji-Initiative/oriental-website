@@ -35,11 +35,15 @@ export const metadata: Metadata = {
   alternates: { canonical: "/" },
   icons: {
     icon: [
+      { url: "/favicon.ico", sizes: "any" },
       { url: "/assets/brand/mereka/favicon-16x16.png", sizes: "16x16", type: "image/png" },
       { url: "/assets/brand/mereka/favicon-32x32.png", sizes: "32x32", type: "image/png" },
       { url: "/assets/brand/mereka/favicon-256x256.png", sizes: "256x256", type: "image/png" },
     ],
-    apple: [{ url: "/assets/brand/mereka/favicon-256x256.png", sizes: "256x256", type: "image/png" }],
+    apple: [
+      { url: "/apple-touch-icon.png", sizes: "256x256", type: "image/png" },
+      { url: "/assets/brand/mereka/favicon-256x256.png", sizes: "256x256", type: "image/png" },
+    ],
   },
   openGraph: {
     title: siteMeta.title,
@@ -71,7 +75,7 @@ export default async function RootLayout({
           <SiteNav />
           {children}
           <VoiceRail />
-          <Toaster richColors />
+          <Toaster />
         </VoiceProvider>
       </body>
     </html>

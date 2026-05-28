@@ -35,6 +35,8 @@ type VoiceAgentDialogProps = {
   turnstileSiteKey?: string;
 };
 
+const leadSubmitTimeoutMs = 18_000;
+
 export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstileSiteKey }: VoiceAgentDialogProps) {
   const [segment, setSegment] = useState<SegmentId>(intent ?? "other");
   const [captured, setCaptured] = useState<CapturedLead>({ ...emptyCapturedLead, email: prefill?.email ?? "" });
@@ -87,18 +89,22 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
           toast.error("Could not verify this browser. Try again in a moment.");
           return { ok: false, error: "turnstile_unavailable" };
         }
-        const response = await fetch("/api/leads", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            source,
-            segment: leadState.segment,
-            form: parsed.data,
-            transcript: leadState.transcript,
-            turnstileToken,
-            utm: {},
-          }),
-        }).catch(() => null);
+        const response = await fetchWithTimeout(
+          "/api/leads",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              source,
+              segment: leadState.segment,
+              form: parsed.data,
+              transcript: leadState.transcript,
+              turnstileToken,
+              utm: {},
+            }),
+          },
+          leadSubmitTimeoutMs,
+        ).catch(() => null);
         const responseBody = (await response?.json().catch(() => null)) as LeadSubmitResponse | null;
         if (!response?.ok) {
           const copy = leadSubmitErrorCopy(response?.status, responseBody);
@@ -233,7 +239,7 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
     sendClientEvents([
       serializeHandoffContext(current),
       serializeResponseCreate(
-        "Start the intake now as Reka. One warm Malaysian-English opening only: say we are moving into Oriental, it is an exciting new chapter, and ask what the visitor would like to build or explore with us. Do not explain pronunciation, tools, limitations, privacy, or the form.",
+        "Start the intake now as Reka, pronounced REH-ka. Sound like a bright KL Malaysian host, not American: faster, upbeat, practical, warm. Say one short opener: we are moving into Oriental, it is a new chapter for Mereka, and we are excited to build it with the right people. Then ask what the visitor wants to build or explore. Do not explain pronunciation, tools, limitations, privacy, or the form.",
       ),
     ]);
     openedVoiceTurnRef.current = true;
@@ -622,6 +628,16 @@ type NotificationResult = {
 
 function notificationDelivered(response: LeadSubmitResponse | null) {
   return response?.notifications?.email?.ok === true || response?.notifications?.slack?.ok === true;
+}
+
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs: number) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeout);
+  }
 }
 
 function handoffSyncKey(state: Pick<VoiceRuntimeState, "segment" | "captured">) {

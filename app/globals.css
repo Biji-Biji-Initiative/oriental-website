@@ -466,7 +466,7 @@
   }
 
   .site-nav__mobile-panel {
-    @apply fixed inset-0 z-30 pt-[4.5rem];
+    @apply fixed inset-0 z-50 pt-[4.5rem];
   }
 
   .site-nav__mobile-backdrop {

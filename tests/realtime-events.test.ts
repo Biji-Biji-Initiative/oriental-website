@@ -38,6 +38,7 @@ describe("reduceRealtimeServerEvent", () => {
         output: {
           ok: true,
           key: "email",
+          mode: "replace",
           captured: { ...emptyCapturedLead, email: "asha@example.com" },
         },
       },
@@ -345,6 +346,59 @@ describe("reduceRealtimeServerEvent", () => {
     );
 
     expect(result.state.captured.email).toBe("asha.lim+ai@example.com");
+  });
+
+  it("appends brief updates when the model marks the message capture as additive", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_append_message",
+              arguments: JSON.stringify({
+                key: "message",
+                value: "I can also rent the space and teach workshops.",
+                mode: "append",
+              }),
+            },
+          ],
+        },
+      },
+      state({
+        captured: {
+          ...emptyCapturedLead,
+          message: "I am a trainer and want the team to look me up.",
+        },
+      }),
+    );
+
+    expect(result.state.captured.message).toBe(
+      "I am a trainer and want the team to look me up.\n\nI can also rent the space and teach workshops.",
+    );
+  });
+
+  it("normalizes common spoken Mereka variants for organisation capture", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_org_moreika",
+              arguments: JSON.stringify({ key: "org", value: "Moreika", evidence: "Moreika" }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "Moreika." }] }),
+    );
+
+    expect(result.state.captured.org).toBe("Mereka");
   });
 
   it("clears fields when the user rejects a wrong capture", () => {

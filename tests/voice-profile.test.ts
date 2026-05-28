@@ -8,8 +8,11 @@ describe("voice profile", () => {
     expect(prompt).toContain("# Tools");
     expect(prompt).toContain("# Unclear Audio");
     expect(prompt).toContain("# Sample Phrases");
-    expect(prompt).toContain("distinctive KL ecosystem host");
+    expect(prompt).toContain("Accent target: contemporary Malaysian English from Kuala Lumpur");
     expect(prompt).toContain("You are Reka");
+    expect(prompt).toContain("Do not call yourself Mereka");
+    expect(prompt).toContain("Do not say 'I'll capture that cleanly'");
+    expect(prompt).toContain("You can update the visible handoff panel by calling capture_field");
     expect(prompt).toContain("Treat non-empty typed fields there as user-provided details");
     expect(prompt).toContain("call route_to_team immediately");
     expect(prompt).toContain("call end_call");
