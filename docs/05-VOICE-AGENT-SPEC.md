@@ -164,6 +164,7 @@ a captured email.
 |---|---|
 | Model | `gpt-realtime-2` by default via `OPENAI_REALTIME_MODEL` |
 | Voice | `marin` by default via `OPENAI_REALTIME_VOICE` |
+| Speech speed | `1.12` by default via `OPENAI_REALTIME_SPEED`; clamped to OpenAI's supported `0.25` to `1.5` range |
 | Input audio | Browser-default mic, captured locally before token minting |
 | Session length cap | **150 seconds** client-side runtime cap; `/api/voice/session` also refuses to mint a new token if the same IP exceeds 3 sessions / day in the current in-memory limiter |
 | Server VAD | `server_vad`, `threshold: 0.5`, `prefix_padding_ms: 300`, `silence_duration_ms: 700`, `create_response: true`, `interrupt_response: true` |
@@ -176,7 +177,7 @@ The browser **never** holds the long-lived `OPENAI_API_KEY`. Flow:
 1. Client POSTs `/api/voice/session` with a Turnstile token.
 2. Route Handler verifies Turnstile, applies the voice rate limit, and asks
    OpenAI for an ephemeral client secret.
-3. Returns `{ client_secret, expires_at, model, voice }`.
+3. Returns `{ client_secret, expires_at, model, voice, speed }`.
 4. Client opens a WebRTC peer connection using the ephemeral token.
 5. Mic audio is streamed up; assistant audio is streamed down to an
    `<audio>` element.

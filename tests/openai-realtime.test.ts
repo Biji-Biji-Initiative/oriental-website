@@ -10,6 +10,7 @@ describe("createRealtimeClientSecret", () => {
       OPENAI_API_KEY: "sk-test",
       OPENAI_REALTIME_MODEL: "gpt-realtime-2",
       OPENAI_REALTIME_VOICE: "marin",
+      OPENAI_REALTIME_SPEED: "1.12",
     };
   });
 
@@ -34,6 +35,7 @@ describe("createRealtimeClientSecret", () => {
       session_id: "sess_123",
       model: "gpt-realtime-2",
       voice: "marin",
+      speed: 1.12,
     });
     expect(fetchMock).toHaveBeenCalledWith(
       "https://api.openai.com/v1/realtime/client_secrets",
@@ -64,7 +66,7 @@ describe("createRealtimeClientSecret", () => {
           },
           transcription: { model: "whisper-1" },
         },
-        output: { voice: "marin" },
+        output: { voice: "marin", speed: 1.12 },
       },
       truncation: {
         type: "retention_ratio",
@@ -96,5 +98,45 @@ describe("createRealtimeClientSecret", () => {
     const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
     expect(body.session.model).toBe("gpt-realtime-2");
     expect(body.session.audio.output.voice).toBe("marin");
+  });
+
+  it("unwraps quoted Infisical model, voice, and speed values before calling OpenAI", async () => {
+    process.env.OPENAI_REALTIME_MODEL = "'gpt-realtime-2'";
+    process.env.OPENAI_REALTIME_VOICE = "'marin'";
+    process.env.OPENAI_REALTIME_SPEED = "'1.2'";
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+      Response.json({
+        client_secret: { value: "client-secret", expires_at: 123 },
+        session: { id: "sess_quoted" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await createRealtimeClientSecret("safe-user", "ai");
+
+    expect(result.model).toBe("gpt-realtime-2");
+    expect(result.voice).toBe("marin");
+    expect(result.speed).toBe(1.2);
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(body.session.model).toBe("gpt-realtime-2");
+    expect(body.session.audio.output.voice).toBe("marin");
+    expect(body.session.audio.output.speed).toBe(1.2);
+  });
+
+  it("clamps invalid Realtime speed values to the supported OpenAI range", async () => {
+    process.env.OPENAI_REALTIME_SPEED = "9";
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+      Response.json({
+        client_secret: { value: "client-secret", expires_at: 123 },
+        session: { id: "sess_speed" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await createRealtimeClientSecret("safe-user", "ai");
+
+    expect(result.speed).toBe(1.5);
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(body.session.audio.output.speed).toBe(1.5);
   });
 });

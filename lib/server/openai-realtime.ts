@@ -10,6 +10,7 @@ export async function createRealtimeClientSecret(safetyIdentifier: string, initi
 
   const model = readEnv("OPENAI_REALTIME_MODEL", "gpt-realtime-2") ?? "gpt-realtime-2";
   const voice = readEnv("OPENAI_REALTIME_VOICE", "marin") ?? "marin";
+  const speed = readRealtimeSpeed();
 
   const response = await fetch("https://api.openai.com/v1/realtime/client_secrets", {
     method: "POST",
@@ -32,7 +33,7 @@ export async function createRealtimeClientSecret(safetyIdentifier: string, initi
             turn_detection: VOICE_SESSION_DEFAULTS.turnDetection,
             transcription: { model: VOICE_SESSION_DEFAULTS.transcriptionModel },
           },
-          output: { voice },
+          output: { voice, speed },
         },
         tools: VOICE_TOOLS,
         tool_choice: "auto",
@@ -63,5 +64,13 @@ export async function createRealtimeClientSecret(safetyIdentifier: string, initi
     session_id: data.session?.id ?? data.id ?? crypto.randomUUID(),
     model,
     voice,
+    speed,
   };
+}
+
+function readRealtimeSpeed() {
+  const raw = readEnv("OPENAI_REALTIME_SPEED", "1.12") ?? "1.12";
+  const speed = Number(raw);
+  if (!Number.isFinite(speed)) return 1.12;
+  return Math.min(1.5, Math.max(0.25, speed));
 }
