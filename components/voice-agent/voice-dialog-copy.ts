@@ -1,0 +1,97 @@
+import type { CapturedLead } from "@/lib/voice/realtime-events";
+import type { VoiceCloseReason, VoiceConnectionStatus } from "./useRealtimeVoiceSession";
+
+export const handoffFieldSpecs = [
+  { key: "name", label: "Name" },
+  { key: "email", label: "Email" },
+  { key: "org", label: "Organisation" },
+  { key: "message", label: "Brief" },
+] as const satisfies ReadonlyArray<{ key: keyof CapturedLead; label: string }>;
+
+export function handoffCompletion(captured: CapturedLead) {
+  const completed = handoffFieldSpecs.filter((field) => captured[field.key].trim().length > 0);
+  return {
+    completedCount: completed.length,
+    totalCount: handoffFieldSpecs.length,
+    ready: completed.length === handoffFieldSpecs.length,
+    completedKeys: new Set(completed.map((field) => field.key)),
+  };
+}
+
+export function voiceStatusCopy(status: VoiceConnectionStatus) {
+  if (status === "connecting") {
+    return {
+      label: "Setting up",
+      detail: "Preparing a live voice line with Reka.",
+      button: "Setting up...",
+    };
+  }
+  if (status === "listening") {
+    return {
+      label: "Live now",
+      detail: "Speak naturally. Reka will keep the handoff sharp.",
+      button: "End voice",
+    };
+  }
+  return {
+    label: "Ready",
+    detail: "Start with the idea, programme, tenancy, or question.",
+    button: "Start talking with Reka",
+  };
+}
+
+export function voiceCloseReasonToast(reason: VoiceCloseReason) {
+  if (reason === "error" || reason === "session_failed" || reason === "webrtc_failed") {
+    return {
+      tone: "error" as const,
+      title: "Voice unavailable.",
+      description: "You can keep typing in the handoff panel.",
+    };
+  }
+  if (reason === "mic_denied") {
+    return {
+      tone: "error" as const,
+      title: "Microphone access is blocked.",
+      description: "Allow microphone access in the browser, or type the handoff instead.",
+    };
+  }
+  if (reason === "voice_limit_reached") {
+    return {
+      tone: "warning" as const,
+      title: "Voice limit reached for today.",
+      description: "You can still send the handoff from the panel.",
+    };
+  }
+  if (reason === "verification_failed") {
+    return {
+      tone: "error" as const,
+      title: "Could not verify this browser.",
+      description: "Refresh and try again in a moment.",
+    };
+  }
+  if (reason === "disconnected") {
+    return {
+      tone: "warning" as const,
+      title: "Voice disconnected.",
+      description: "Your captured details are still here.",
+    };
+  }
+  if (reason === "idle_timeout") {
+    return {
+      tone: "message" as const,
+      title: "Voice ended after inactivity.",
+      description: "Your details are still here.",
+    };
+  }
+  if (reason === "max_duration") {
+    return {
+      tone: "message" as const,
+      title: "Voice ended after 2.5 minutes.",
+      description: "Your details are still here.",
+    };
+  }
+  return null;
+}
+
+export const openingVoiceInstruction =
+  "Start the intake now as Reka, pronounced REH-ka. Sound like a bright KL Malaysian host, not American: faster, upbeat, practical, warm. Say one short opener: we are moving into Oriental, it is a new chapter for Mereka, and we are excited to build it with the right people. Then ask what the visitor wants to build or explore. Do not explain pronunciation, tools, limitations, privacy, or the form.";

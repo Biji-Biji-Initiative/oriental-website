@@ -1,22 +1,22 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Mic2Icon, SendIcon, TriangleAlertIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { type UseFormReturn, useForm } from "react-hook-form";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { MiniOrb } from "@/components/orb/MiniOrb";
 import { useTurnstile } from "@/components/security/useTurnstile";
-import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { tourTopics } from "@/lib/content";
-import { leadFormSchema, type VoiceReviewSnapshotRequest } from "@/lib/schemas";
+import { leadFormSchema } from "@/lib/schemas";
 import { getSegment, type SegmentId, segmentOptions } from "@/lib/segments";
 import { cn } from "@/lib/utils";
 import { serializeHandoffContext, serializeRealtimeCommand, serializeResponseCreate } from "@/lib/voice/client-events";
+import {
+  fetchWithTimeout,
+  LEAD_SUBMIT_TIMEOUT_MS,
+  type LeadSubmitResponse,
+  leadSubmitErrorCopy,
+  notificationDelivered,
+} from "@/lib/voice/lead-submit";
 import {
   type CapturedLead,
   emptyCapturedLead,
@@ -26,11 +26,19 @@ import {
   type VoiceRuntimeState,
 } from "@/lib/voice/realtime-events";
 import {
+  buildVoiceReviewSnapshot,
+  postVoiceReviewSnapshot,
+  type VoiceReviewCredentials,
+} from "@/lib/voice/review-snapshot";
+import { HandoffPanel } from "./HandoffPanel";
+import {
   useRealtimeVoiceSession,
   type VoiceCloseReason,
   type VoiceConnectionStatus,
   type VoiceReviewMetadata,
 } from "./useRealtimeVoiceSession";
+import { VoiceSessionStage } from "./VoiceSessionStage";
+import { openingVoiceInstruction, voiceCloseReasonToast } from "./voice-dialog-copy";
 
 type VoiceAgentDialogProps = {
   open: boolean;
@@ -39,8 +47,6 @@ type VoiceAgentDialogProps = {
   prefill?: { email?: string; mode?: "voice" | "form" };
   turnstileSiteKey?: string;
 };
-
-const leadSubmitTimeoutMs = 18_000;
 
 export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstileSiteKey }: VoiceAgentDialogProps) {
   const [segment, setSegment] = useState<SegmentId>(intent ?? "other");
@@ -75,11 +81,17 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
   }, []);
 
   const handleVoiceClose = useCallback((reason: VoiceCloseReason) => {
-    if (reason === "error") {
-      toast.error("Voice unavailable. You can keep typing here.");
+    const copy = voiceCloseReasonToast(reason);
+    if (!copy) return;
+    if (copy.tone === "error") {
+      toast.error(copy.title, { description: copy.description });
+      return;
     }
-    if (reason === "idle_timeout") toast.message("Voice ended after inactivity. Your details are still here.");
-    if (reason === "max_duration") toast.message("Voice ended after 2.5 minutes. Your details are still here.");
+    if (copy.tone === "warning") {
+      toast.warning(copy.title, { description: copy.description });
+      return;
+    }
+    toast.message(copy.title, { description: copy.description });
   }, []);
 
   const submit = useCallback(
@@ -118,7 +130,7 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
               utm: {},
             }),
           },
-          leadSubmitTimeoutMs,
+          LEAD_SUBMIT_TIMEOUT_MS,
         ).catch(() => null);
         const responseBody = (await response?.json().catch(() => null)) as LeadSubmitResponse | null;
         if (!response?.ok) {
@@ -269,12 +281,7 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
     toast.success("Voice is live.");
     const current = { segment: stateRef.current.segment, captured: stateRef.current.captured };
     lastSyncedHandoffRef.current = handoffSyncKey(current);
-    sendClientEvents([
-      serializeHandoffContext(current),
-      serializeResponseCreate(
-        "Start the intake now as Reka, pronounced REH-ka. Sound like a bright KL Malaysian host, not American: faster, upbeat, practical, warm. Say one short opener: we are moving into Oriental, it is a new chapter for Mereka, and we are excited to build it with the right people. Then ask what the visitor wants to build or explore. Do not explain pronunciation, tools, limitations, privacy, or the form.",
-      ),
-    ]);
+    sendClientEvents([serializeHandoffContext(current), serializeResponseCreate(openingVoiceInstruction)]);
     openedVoiceTurnRef.current = true;
   }, [connectionStatus, sendClientEvents]);
 
@@ -314,7 +321,6 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
   }, [onOpenChange, open]);
 
   const selectedSegment = getSegment(segment);
-  const activeTopic = useMemo(() => tourTopics.find((topic) => topic.id === activeTopicId) ?? null, [activeTopicId]);
   const updateCaptured = useCallback((key: keyof CapturedLead, value: string) => {
     setCaptured((current) => ({ ...current, [key]: value }));
   }, []);
@@ -345,83 +351,23 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
           </aside>
 
           <main className="min-w-0 border-t border-white/10 p-5 sm:p-8 lg:border-t-0">
-            {status === "submitted" ? (
-              <div className="grid h-full place-items-center text-center">
-                <div>
-                  <MiniOrb size={72} />
-                  <h2 className="mt-6 text-4xl font-semibold">Sent to {selectedSegment.routedTo.name}.</h2>
-                  <p className="mx-auto mt-3 max-w-md text-white/62">
-                    The right Mereka team member has the context and will follow up within 2 working days.
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div>
-                <div ref={turnstile.containerRef} />
-                <div className="mx-auto grid max-w-[min(680px,100%)] place-items-center text-center">
-                  <div className="relative grid size-44 place-items-center rounded-full bg-[radial-gradient(circle_at_35%_30%,#c9d5ec,#5c7db8_44%,#1f3f7c_68%,#100d18)] shadow-[0_0_90px_rgba(92,125,184,0.42)] sm:size-56">
-                    <div className="absolute inset-[-24px] rounded-full border border-white/10 motion-safe:animate-pulse" />
-                    <MiniOrb size={120} />
-                  </div>
-                  <p
-                    aria-live="polite"
-                    className="mt-8 max-w-2xl text-[clamp(1.7rem,3vw,2.8rem)] font-medium leading-tight text-balance"
-                  >
-                    Hi, I&apos;m Reka. Talk it through, or type on the side while we go.
-                  </p>
-                  <p className="mt-3 text-sm text-white/58">
-                    I&apos;ll pick up useful details as you speak. You can edit the handoff anytime before sending.
-                  </p>
-                  <p className="mt-2 text-sm text-white/42">{selectedSegment.voiceOpener}</p>
-                  <div className="mt-8 flex max-w-2xl flex-wrap justify-center gap-2">
-                    {tourTopics.map((topic) => (
-                      <button
-                        aria-pressed={topic.id === activeTopicId}
-                        className={cn(
-                          "rounded-full border border-white/12 px-4 py-2 text-sm text-white/72 transition hover:border-mk-horizon hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mk-horizon",
-                          topic.id === activeTopicId && "border-mk-horizon bg-white/10 text-white",
-                        )}
-                        key={topic.id}
-                        onClick={() => setActiveTopicId((current) => (current === topic.id ? null : topic.id))}
-                        type="button"
-                      >
-                        {topic.label}
-                      </button>
-                    ))}
-                  </div>
-                  {activeTopic ? (
-                    <div className="mt-5 w-full max-w-2xl rounded-2xl border border-white/10 bg-white/[0.045] p-4 text-left shadow-[0_20px_80px_rgba(0,0,0,0.18)]">
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-mk-horizon/80">
-                        Story cue
-                      </div>
-                      <p className="mt-2 text-sm font-semibold text-white">{activeTopic.blurb}</p>
-                      <p className="mt-2 text-sm leading-6 text-white/60">{activeTopic.script}</p>
-                    </div>
-                  ) : null}
-                  <Button
-                    className="mt-8 h-12 rounded-full bg-white px-7 text-sm font-semibold text-mk-off-black transition hover:bg-mk-horizon disabled:cursor-not-allowed disabled:opacity-55"
-                    disabled={!turnstile.ready || connectionStatus === "connecting"}
-                    onClick={connectionStatus === "listening" ? () => teardownVoice("manual") : connectVoice}
-                    type="button"
-                  >
-                    <Mic2Icon data-icon="inline-start" />
-                    {connectionStatus === "connecting"
-                      ? "Connecting..."
-                      : connectionStatus === "listening"
-                        ? "End voice"
-                        : "Start voice"}
-                  </Button>
-                  <p className="mt-3 text-xs text-white/42">
-                    Auto-ends after 20 seconds of inactivity or 2.5 minutes total.
-                  </p>
-                  {/* biome-ignore lint/a11y/useMediaCaption: Live WebRTC audio has no static caption asset; captured text appears in the transcript state. */}
-                  <audio autoPlay ref={audioRef} />
-                </div>
-              </div>
-            )}
+            <div ref={turnstile.containerRef} />
+            <VoiceSessionStage
+              activeTopicId={activeTopicId}
+              audioRef={audioRef}
+              captured={captured}
+              connectionStatus={connectionStatus}
+              onConnect={connectVoice}
+              onDisconnect={teardownVoice}
+              onTopicToggle={(topicId) => setActiveTopicId((current) => (current === topicId ? null : topicId))}
+              selectedSegment={selectedSegment}
+              status={status}
+              turnstileReady={turnstile.ready}
+            />
           </main>
 
           <HandoffPanel
+            captured={captured}
             className="lg:col-start-2 xl:col-start-auto"
             form={form}
             onChange={updateCaptured}
@@ -444,302 +390,8 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
   );
 }
 
-function HandoffPanel({
-  className,
-  form,
-  onChange,
-  onSubmit,
-  ready,
-  selectedSegment,
-  submitting,
-  transcript,
-}: {
-  className?: string;
-  form: UseFormReturn<CapturedLead>;
-  onChange: (key: keyof CapturedLead, value: string) => void;
-  onSubmit: (values: CapturedLead) => Promise<Record<string, unknown>> | Record<string, unknown> | undefined;
-  ready: boolean;
-  selectedSegment: ReturnType<typeof getSegment>;
-  submitting: boolean;
-  transcript: Array<{ role: "assistant" | "user"; text: string }>;
-}) {
-  const fieldClassName =
-    "h-11 rounded-[16px] border-white/12 bg-white/[0.045] px-4 text-white placeholder:text-white/30 focus-visible:border-mk-horizon focus-visible:ring-mk-horizon/20 aria-invalid:border-destructive aria-invalid:ring-destructive/20";
-  const messageClassName = "text-xs leading-5 text-[#ffb4ab]";
-  const invalidCount = Object.keys(form.formState.errors).length;
-  const transcriptRef = useRef<HTMLDivElement | null>(null);
-  const transcriptTurnCount = transcript.length;
-  const latestTranscriptKey = transcript.at(-1) ? `${transcript.at(-1)?.role}:${transcript.at(-1)?.text}` : "";
-
-  useEffect(() => {
-    if (!latestTranscriptKey) return;
-    const node = transcriptRef.current;
-    if (!node) return;
-    node.scrollTop = node.scrollHeight;
-  }, [latestTranscriptKey]);
-
-  return (
-    <aside className={cn("border-t border-white/10 p-5 lg:border-l xl:border-t-0", className)}>
-      <div className="text-xs uppercase tracking-[0.16em] text-white/48">Handoff details</div>
-      <p className="mt-2 text-sm leading-5 text-white/58">
-        Voice and typing work together. Edit anything here before sending.
-      </p>
-      <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-        <div className="text-[11px] uppercase tracking-[0.14em] text-white/42">Routing</div>
-        <div className="mt-1 text-sm font-semibold text-white/84">{selectedSegment.label}</div>
-        <div className="mt-1 text-xs leading-5 text-white/52">
-          {selectedSegment.routedTo.name} · {selectedSegment.routedTo.role}
-        </div>
-      </div>
-      <Form {...form}>
-        <form
-          className="mt-5 grid gap-4"
-          onSubmit={form.handleSubmit(
-            (values) => onSubmit(values),
-            () => {
-              toast.error("Please fix the highlighted details.", {
-                description: "The handoff needs a name, valid email, organisation, and short brief.",
-              });
-            },
-          )}
-        >
-          <FormField
-            control={form.control}
-            name="name"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel className="text-white/78">Name</FormLabel>
-                <FormControl>
-                  <Input
-                    {...field}
-                    className={fieldClassName}
-                    onChange={(event) => {
-                      field.onChange(event);
-                      onChange("name", event.target.value);
-                    }}
-                    placeholder="Your name"
-                  />
-                </FormControl>
-                <FormMessage className={messageClassName} />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="email"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel className="text-white/78">Email</FormLabel>
-                <FormControl>
-                  <Input
-                    {...field}
-                    className={fieldClassName}
-                    onChange={(event) => {
-                      field.onChange(event);
-                      onChange("email", event.target.value);
-                    }}
-                    placeholder="name@example.com"
-                    type="email"
-                  />
-                </FormControl>
-                <FormMessage className={messageClassName} />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="org"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel className="text-white/78">Organisation</FormLabel>
-                <FormControl>
-                  <Input
-                    {...field}
-                    className={fieldClassName}
-                    onChange={(event) => {
-                      field.onChange(event);
-                      onChange("org", event.target.value);
-                    }}
-                    placeholder="Company, school, collective, or Individual"
-                  />
-                </FormControl>
-                <FormMessage className={messageClassName} />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="message"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel className="text-white/78">What would you bring to Oriental?</FormLabel>
-                <FormControl>
-                  <Textarea
-                    {...field}
-                    className={cn(fieldClassName, "min-h-28 resize-none py-3")}
-                    onChange={(event) => {
-                      field.onChange(event);
-                      onChange("message", event.target.value);
-                    }}
-                    placeholder="A short note on the partnership, programme, tenancy, demo, or question."
-                  />
-                </FormControl>
-                <FormDescription className="text-xs leading-5 text-white/42">
-                  You can type this directly, let voice draft it, then edit before sending.
-                </FormDescription>
-                <FormMessage className={messageClassName} />
-              </FormItem>
-            )}
-          />
-          {invalidCount > 0 ? (
-            <div
-              className="flex gap-2 rounded-2xl border border-[#ffb4ab]/25 bg-[#ffb4ab]/10 p-3 text-xs leading-5 text-[#ffd8d2]"
-              role="alert"
-            >
-              <TriangleAlertIcon className="mt-0.5 size-4 shrink-0" />
-              Fix the highlighted fields before sending the handoff.
-            </div>
-          ) : null}
-          <Button
-            className="h-12 rounded-full bg-mk-horizon px-5 text-sm font-semibold text-mk-off-black transition hover:bg-white disabled:opacity-45"
-            disabled={!ready || submitting}
-            type="submit"
-          >
-            <SendIcon data-icon="inline-start" />
-            {submitting ? "Sending..." : "Send to Mereka"}
-          </Button>
-        </form>
-      </Form>
-      {transcriptTurnCount > 0 ? (
-        <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-[11px] uppercase tracking-[0.14em] text-white/42">Live notes</div>
-            <div className="text-[11px] text-white/36">{transcriptTurnCount} turns</div>
-          </div>
-          <div
-            aria-label="Conversation transcript"
-            aria-live="polite"
-            className="mt-3 max-h-72 space-y-2 overflow-y-auto overscroll-contain pr-2"
-            ref={transcriptRef}
-            role="log"
-          >
-            {transcript.map((entry) => (
-              <p className="text-xs leading-5 text-white/62" key={`${entry.role}:${entry.text}`}>
-                <span className="font-semibold text-white/78">{entry.role === "user" ? "You" : "Reka"}:</span>{" "}
-                {entry.text}
-              </p>
-            ))}
-          </div>
-        </div>
-      ) : null}
-    </aside>
-  );
-}
-
-type LeadSubmitResponse = {
-  ok?: boolean;
-  id?: string;
-  error?: string;
-  persisted?: boolean;
-  notifications?: {
-    email?: NotificationResult;
-    slack?: NotificationResult;
-  };
-};
-
-type NotificationResult = {
-  ok?: boolean;
-  skipped?: boolean;
-  reason?: string;
-  error?: string;
-};
-
-function notificationDelivered(response: LeadSubmitResponse | null) {
-  return response?.notifications?.email?.ok === true || response?.notifications?.slack?.ok === true;
-}
-
-async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs: number) {
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(input, { ...init, signal: controller.signal });
-  } finally {
-    window.clearTimeout(timeout);
-  }
-}
-
 function handoffSyncKey(state: Pick<VoiceRuntimeState, "segment" | "captured">) {
   return JSON.stringify({ segment: state.segment, captured: state.captured });
-}
-
-type VoiceReviewCredentials = Pick<VoiceReviewMetadata, "id" | "token"> & Partial<VoiceReviewMetadata>;
-
-function buildVoiceReviewSnapshot(
-  review: VoiceReviewCredentials,
-  state: VoiceRuntimeState,
-  connectionStatus: "idle" | "connecting" | "listening",
-  overrides: { leadId?: string | null; status?: "idle" | "submitted"; submittedAt?: number } = {},
-): VoiceReviewSnapshotRequest["snapshot"] {
-  return {
-    sessionId: review.sessionId ?? review.id,
-    leadId: overrides.leadId,
-    segment: state.segment,
-    status: overrides.status ?? (overrides.submittedAt ? "submitted" : "idle"),
-    connectionStatus,
-    model: review.model,
-    voice: review.voice,
-    speed: review.speed,
-    captured: state.captured,
-    transcript: state.transcript,
-    usage: state.usage,
-    errors: state.errors ?? [],
-    rateLimits: state.rateLimits ?? [],
-    routeRequested: state.routeRequested ?? false,
-    submittedAt: overrides.submittedAt,
-  };
-}
-
-async function postVoiceReviewSnapshot(
-  review: VoiceReviewCredentials,
-  snapshot: VoiceReviewSnapshotRequest["snapshot"],
-) {
-  await fetch("/api/voice/debug", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ review: { id: review.id, token: review.token }, snapshot }),
-  });
-}
-
-function leadSubmitErrorCopy(status: number | undefined, response: LeadSubmitResponse | null) {
-  if (response?.error === "notification_failed" && response.persisted) {
-    return {
-      title: "Saved, but notifications need attention.",
-      description:
-        "Your details were stored, but the owner notification did not complete. Please use team@mereka.io if this is urgent.",
-    };
-  }
-  if (response?.error === "turnstile_failed") {
-    return {
-      title: "Browser verification failed.",
-      description: "Refresh and try again. If it keeps failing, email team@mereka.io.",
-    };
-  }
-  if (response?.error === "rate_limited" || status === 429) {
-    return {
-      title: "Too many attempts.",
-      description: "Please wait a few minutes before sending again.",
-    };
-  }
-  if (response?.error === "invalid_payload") {
-    return {
-      title: "Some details look incomplete.",
-      description: "Please check the highlighted fields and send again.",
-    };
-  }
-  return {
-    title: "Could not send this yet.",
-    description: "Your handoff is still here. Please try again or email team@mereka.io.",
-  };
 }
 
 function sendRealtimeCommand(

@@ -160,61 +160,78 @@ function applyFunctionCall(
   let createResponse = true;
   const commands: RealtimeClientCommand[] = [];
 
-  if (item.name === "set_partner_type") {
-    const segment = toSegmentId(args.segment);
-    if (segment) {
-      next = { ...next, segment };
-      output = { ok: true, segment };
-    } else {
-      output = { ok: false, error: "invalid_segment" };
+  switch (item.name) {
+    case "set_partner_type": {
+      const segment = toSegmentId(args.segment);
+      output = segment ? { ok: true, segment } : { ok: false, error: "invalid_segment" };
+      if (segment) next = { ...next, segment };
+      break;
     }
-  }
+    case "capture_field": {
+      const key = toCapturedKey(args.key);
+      const value = typeof args.value === "string" ? args.value.trim() : "";
+      const evidence = typeof args.evidence === "string" ? args.evidence.trim() : "";
+      const mode = args.mode === "append" ? "append" : "replace";
+      if (!key || !value) {
+        output = { ok: false, error: "invalid_field" };
+        break;
+      }
 
-  if (item.name === "capture_field") {
-    const key = toCapturedKey(args.key);
-    const value = typeof args.value === "string" ? args.value.trim() : "";
-    const evidence = typeof args.evidence === "string" ? args.evidence.trim() : "";
-    const mode = args.mode === "append" ? "append" : "replace";
-    if (key && value) {
       const normalizedValue = key === "org" ? normalizeOrganisation(value) : value;
       const grounding = validateCaptureGrounding(key, normalizedValue, evidence, next.transcript);
       if (!grounding.ok) {
         output = { ok: false, error: grounding.error, key, value: normalizedValue };
-      } else {
-        const existing = next.captured[key];
-        const nextValue =
-          key === "message" && mode === "append" ? appendBrief(existing, normalizedValue) : normalizedValue;
-        next = { ...next, captured: { ...next.captured, [key]: nextValue } };
-        output = { ok: true, key, mode, captured: next.captured };
+        break;
       }
-    } else {
-      output = { ok: false, error: "invalid_field" };
+
+      const existing = next.captured[key];
+      const nextValue =
+        key === "message" && mode === "append" ? appendBrief(existing, normalizedValue) : normalizedValue;
+      next = { ...next, captured: { ...next.captured, [key]: nextValue } };
+      output = { ok: true, key, mode, captured: next.captured };
+      break;
     }
-  }
-
-  if (item.name === "clear_field") {
-    const key = toCapturedKey(args.key);
-    if (key) {
-      next = { ...next, captured: { ...next.captured, [key]: "" } };
-      output = { ok: true, key, captured: next.captured };
-    } else {
-      output = { ok: false, error: "invalid_field" };
+    case "clear_field": {
+      const key = toCapturedKey(args.key);
+      if (key) {
+        next = { ...next, captured: { ...next.captured, [key]: "" } };
+        output = { ok: true, key, captured: next.captured };
+      } else {
+        output = { ok: false, error: "invalid_field" };
+      }
+      break;
     }
-  }
+    case "summarise_lead": {
+      const missingFields = getMissingFields(next.captured);
+      output = {
+        ok: true,
+        segment: next.segment,
+        captured: next.captured,
+        ready: missingFields.length === 0,
+        missingFields,
+        missingFieldLabels: getMissingFieldLabels(missingFields),
+        routeRequested: next.routeRequested ?? false,
+      };
+      break;
+    }
+    case "route_to_team": {
+      const segment = toSegmentId(args.segment);
+      if (!segment) {
+        output = { ok: false, error: "invalid_segment" };
+        break;
+      }
 
-  if (item.name === "summarise_lead") {
-    output = { ok: true, segment: next.segment, captured: next.captured };
-  }
-
-  if (item.name === "route_to_team") {
-    const segment = toSegmentId(args.segment);
-    if (!segment) {
-      output = { ok: false, error: "invalid_segment" };
-    } else {
       next = { ...next, segment };
       const missingFields = getMissingFields(next.captured);
       if (missingFields.length > 0) {
-        output = { ok: false, ready: false, segment: next.segment, missingFields };
+        output = {
+          ok: false,
+          ready: false,
+          segment: next.segment,
+          missingFields,
+          missingFieldLabels: getMissingFieldLabels(missingFields),
+          captured: next.captured,
+        };
       } else if (next.routeRequested) {
         output = { ok: false, error: "route_already_requested", segment: next.segment };
       } else {
@@ -222,33 +239,24 @@ function applyFunctionCall(
         commands.push({ type: "submit_voice", callId: item.call_id, segment: next.segment });
         return { state: next, commands };
       }
+      break;
     }
-  }
-
-  if (item.name === "wait_for_user") {
-    output = { ok: true, waited: true };
-    createResponse = false;
-  }
-
-  if (item.name === "end_call") {
-    const reason = args.reason === "user_cancelled" ? "user_cancelled" : "user_done";
-    output = { ok: true, ended: true, reason };
-    createResponse = false;
-    commands.push({ type: "end_voice", reason });
-  }
-
-  if (
-    ![
-      "set_partner_type",
-      "capture_field",
-      "clear_field",
-      "summarise_lead",
-      "route_to_team",
-      "wait_for_user",
-      "end_call",
-    ].includes(item.name)
-  ) {
-    output = { ok: false, error: "unknown_tool" };
+    case "wait_for_user": {
+      output = { ok: true, waited: true };
+      createResponse = false;
+      break;
+    }
+    case "end_call": {
+      const reason = args.reason === "user_cancelled" ? "user_cancelled" : "user_done";
+      output = { ok: true, ended: true, reason };
+      createResponse = false;
+      commands.push({ type: "end_voice", reason });
+      break;
+    }
+    default: {
+      output = { ok: false, error: "unknown_tool" };
+      break;
+    }
   }
 
   return {
@@ -433,5 +441,16 @@ function normalizeEvidence(value: string) {
 }
 
 function getMissingFields(captured: CapturedLead) {
-  return (["name", "email", "org", "message"] as const).filter((key) => !captured[key]);
+  return (Object.keys(capturedFieldLabels) as Array<keyof CapturedLead>).filter((key) => !captured[key].trim());
+}
+
+const capturedFieldLabels: Record<keyof CapturedLead, string> = {
+  name: "name",
+  email: "email",
+  org: "organisation",
+  message: "brief",
+};
+
+function getMissingFieldLabels(fields: Array<keyof CapturedLead>) {
+  return fields.map((field) => capturedFieldLabels[field]);
 }

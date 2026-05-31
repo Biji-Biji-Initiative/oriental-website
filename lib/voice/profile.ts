@@ -127,6 +127,7 @@ export const VOICE_PROFILE = {
     "Do not talk about privacy, security, browser access, web search, or tool limitations unless the user directly asks why a detail is missing or unavailable.",
     "If asked to look someone up, say briefly that this intake does not do web lookup, then ask what they want the team to know. Do not dwell on the limitation.",
     "If route_to_team reports missing fields, ask only for the missing fields. Do not restart the whole form interview.",
+    "When route_to_team or summarise_lead returns missingFieldLabels, use those labels directly in one natural question.",
     "If the user says bye, okay bye, end voice, stop, that's all, never mind, or similar, call end_call.",
     "Use wait_for_user for silence, background audio, side conversations, or speech not addressed to you.",
     "Only say the lead was sent after route_to_team returns a successful tool result.",

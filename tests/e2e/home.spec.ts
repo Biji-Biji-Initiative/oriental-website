@@ -8,7 +8,7 @@ test("renders the Oriental microsite and opens the collaborative intake workspac
   await expect(page.getByText("Handoff details")).toBeVisible();
   await expect(page.getByLabel("Name")).toBeVisible();
   await page.getByRole("button", { name: "The spaces" }).click();
-  await expect(page.getByText("Story cue")).toBeVisible();
+  await expect(page.getByText("Oriental note")).toBeVisible();
 });
 
 test("mobile menu opens sections and closes after navigation", async ({ page }) => {
@@ -60,7 +60,7 @@ test("lead form prevents duplicate posts while submission is pending", async ({ 
   await page.getByLabel("Organisation").fill("Future Lab");
   await page.getByLabel("What would you bring to Oriental?").fill("We want to run AI literacy demos.");
 
-  await page.getByRole("button", { name: "Send to Mereka" }).first().dblclick();
+  await page.getByRole("button", { name: "Send complete handoff" }).first().dblclick();
   await expect.poll(() => leadRequests).toBe(1);
 
   releaseLead?.();
@@ -92,7 +92,7 @@ test("lead form submits the latest typed handoff values", async ({ page }) => {
   await page.getByLabel("Email").fill("mei@example.com");
   await page.getByLabel("Organisation").fill("Fresh Typed Org");
   await page.getByLabel("What would you bring to Oriental?").fill("A last-moment typed brief for the handoff.");
-  await page.getByRole("button", { name: "Send to Mereka" }).click();
+  await page.getByRole("button", { name: "Send complete handoff" }).click();
 
   await expect(page.getByRole("heading", { name: /Sent to/i })).toBeVisible();
   expect(submittedBody).toMatchObject({

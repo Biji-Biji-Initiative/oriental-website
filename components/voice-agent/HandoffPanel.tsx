@@ -1,0 +1,252 @@
+"use client";
+
+import { CheckIcon, CircleDashedIcon, SendIcon, TriangleAlertIcon } from "lucide-react";
+import { useEffect, useMemo, useRef } from "react";
+import type { UseFormReturn } from "react-hook-form";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import type { getSegment } from "@/lib/segments";
+import { cn } from "@/lib/utils";
+import type { CapturedLead, VoiceTranscriptEntry } from "@/lib/voice/realtime-events";
+import { handoffCompletion, handoffFieldSpecs } from "./voice-dialog-copy";
+
+type HandoffPanelProps = {
+  captured: CapturedLead;
+  className?: string;
+  form: UseFormReturn<CapturedLead>;
+  onChange: (key: keyof CapturedLead, value: string) => void;
+  onSubmit: (values: CapturedLead) => Promise<Record<string, unknown>> | Record<string, unknown> | undefined;
+  ready: boolean;
+  selectedSegment: ReturnType<typeof getSegment>;
+  submitting: boolean;
+  transcript: VoiceTranscriptEntry[];
+};
+
+export function HandoffPanel({
+  captured,
+  className,
+  form,
+  onChange,
+  onSubmit,
+  ready,
+  selectedSegment,
+  submitting,
+  transcript,
+}: HandoffPanelProps) {
+  const completion = useMemo(() => handoffCompletion(captured), [captured]);
+  const invalidCount = Object.keys(form.formState.errors).length;
+  const transcriptRef = useRef<HTMLDivElement | null>(null);
+  const transcriptTurnCount = transcript.length;
+  const latestTranscriptKey = transcript.at(-1) ? `${transcript.at(-1)?.role}:${transcript.at(-1)?.text}` : "";
+
+  useEffect(() => {
+    if (!latestTranscriptKey) return;
+    const node = transcriptRef.current;
+    if (!node) return;
+    node.scrollTop = node.scrollHeight;
+  }, [latestTranscriptKey]);
+
+  return (
+    <aside className={cn("border-t border-white/10 p-5 lg:border-l xl:border-t-0", className)}>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-xs uppercase tracking-[0.16em] text-white/48">Handoff details</div>
+          <p className="mt-2 text-sm leading-5 text-white/58">Captured for the team that should follow up.</p>
+        </div>
+        <div
+          className={cn(
+            "rounded-full border px-3 py-1 text-xs font-semibold",
+            completion.ready
+              ? "border-mk-horizon/50 bg-mk-horizon/18 text-mk-horizon"
+              : "border-white/12 bg-white/[0.045] text-white/58",
+          )}
+        >
+          {completion.completedCount}/{completion.totalCount}
+        </div>
+      </div>
+
+      <div className="mt-5 grid grid-cols-2 gap-2">
+        {handoffFieldSpecs.map((field) => {
+          const complete = completion.completedKeys.has(field.key);
+          return (
+            <div
+              className={cn(
+                "flex min-h-10 items-center gap-2 rounded-[14px] border px-3 text-xs font-medium",
+                complete
+                  ? "border-mk-horizon/35 bg-mk-horizon/12 text-white"
+                  : "border-white/10 bg-white/[0.035] text-white/46",
+              )}
+              key={field.key}
+            >
+              {complete ? (
+                <CheckIcon className="size-3.5 text-mk-horizon" />
+              ) : (
+                <CircleDashedIcon className="size-3.5" />
+              )}
+              {field.label}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-5 rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
+        <div className="text-[11px] uppercase tracking-[0.14em] text-white/42">Routing</div>
+        <div className="mt-1 text-sm font-semibold text-white/84">{selectedSegment.label}</div>
+        <div className="mt-1 text-xs leading-5 text-white/52">
+          {selectedSegment.routedTo.name} · {selectedSegment.routedTo.role}
+        </div>
+      </div>
+
+      <Form {...form}>
+        <form
+          className="mt-5 grid gap-4"
+          onSubmit={form.handleSubmit(
+            (values) => onSubmit(values),
+            () => {
+              toast.error("Please fix the highlighted details.", {
+                description: "The handoff needs a name, valid email, organisation, and short brief.",
+              });
+            },
+          )}
+        >
+          <FormField
+            control={form.control}
+            name="name"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-white/78">Name</FormLabel>
+                <FormControl>
+                  <Input
+                    {...field}
+                    className={fieldClassName}
+                    onChange={(event) => {
+                      field.onChange(event);
+                      onChange("name", event.target.value);
+                    }}
+                    placeholder="Your name"
+                  />
+                </FormControl>
+                <FormMessage className={messageClassName} />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="email"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-white/78">Email</FormLabel>
+                <FormControl>
+                  <Input
+                    {...field}
+                    className={fieldClassName}
+                    onChange={(event) => {
+                      field.onChange(event);
+                      onChange("email", event.target.value);
+                    }}
+                    placeholder="name@example.com"
+                    type="email"
+                  />
+                </FormControl>
+                <FormMessage className={messageClassName} />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="org"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-white/78">Organisation</FormLabel>
+                <FormControl>
+                  <Input
+                    {...field}
+                    className={fieldClassName}
+                    onChange={(event) => {
+                      field.onChange(event);
+                      onChange("org", event.target.value);
+                    }}
+                    placeholder="Company, school, collective, or Individual"
+                  />
+                </FormControl>
+                <FormMessage className={messageClassName} />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="message"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-white/78">What would you bring to Oriental?</FormLabel>
+                <FormControl>
+                  <Textarea
+                    {...field}
+                    className={cn(fieldClassName, "min-h-28 resize-none py-3")}
+                    onChange={(event) => {
+                      field.onChange(event);
+                      onChange("message", event.target.value);
+                    }}
+                    placeholder="A short note on the partnership, programme, tenancy, demo, or question."
+                  />
+                </FormControl>
+                <FormDescription className="text-xs leading-5 text-white/42">
+                  Voice can draft it; you can edit it before sending.
+                </FormDescription>
+                <FormMessage className={messageClassName} />
+              </FormItem>
+            )}
+          />
+          {invalidCount > 0 ? (
+            <div
+              className="flex gap-2 rounded-[16px] border border-[#ffb4ab]/25 bg-[#ffb4ab]/10 p-3 text-xs leading-5 text-[#ffd8d2]"
+              role="alert"
+            >
+              <TriangleAlertIcon className="mt-0.5 size-4 shrink-0" />
+              Fix the highlighted fields before sending the handoff.
+            </div>
+          ) : null}
+          <Button
+            className="h-12 rounded-full bg-mk-horizon px-5 text-sm font-semibold text-mk-off-black transition hover:bg-white disabled:opacity-45"
+            disabled={!ready || submitting}
+            type="submit"
+          >
+            <SendIcon data-icon="inline-start" />
+            {submitting ? "Sending..." : completion.ready ? "Send complete handoff" : "Send to Mereka"}
+          </Button>
+        </form>
+      </Form>
+
+      {transcriptTurnCount > 0 ? (
+        <div className="mt-5 rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-[11px] uppercase tracking-[0.14em] text-white/42">Live notes</div>
+            <div className="text-[11px] text-white/36">{transcriptTurnCount} turns</div>
+          </div>
+          <div
+            aria-label="Conversation transcript"
+            aria-live="polite"
+            className="mt-3 max-h-72 space-y-2 overflow-y-auto overscroll-contain pr-2"
+            ref={transcriptRef}
+            role="log"
+          >
+            {transcript.map((entry) => (
+              <p className="text-xs leading-5 text-white/62" key={`${entry.role}:${entry.text}`}>
+                <span className="font-semibold text-white/78">{entry.role === "user" ? "You" : "Reka"}:</span>{" "}
+                {entry.text}
+              </p>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </aside>
+  );
+}
+
+const fieldClassName =
+  "h-11 rounded-[16px] border-white/12 bg-white/[0.045] px-4 text-white placeholder:text-white/30 focus-visible:border-mk-horizon focus-visible:ring-mk-horizon/20 aria-invalid:border-destructive aria-invalid:ring-destructive/20";
+
+const messageClassName = "text-xs leading-5 text-[#ffb4ab]";

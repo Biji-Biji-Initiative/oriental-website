@@ -152,9 +152,68 @@ describe("reduceRealtimeServerEvent", () => {
         type: "function_result",
         callId: "call_incomplete",
         createResponse: true,
-        output: { ok: false, ready: false, segment: "education", missingFields: ["email", "org", "message"] },
+        output: {
+          ok: false,
+          ready: false,
+          segment: "education",
+          missingFields: ["email", "org", "message"],
+          missingFieldLabels: ["email", "organisation", "brief"],
+          captured: { ...emptyCapturedLead, name: "Asha" },
+        },
       },
     ]);
+  });
+
+  it("treats whitespace-only fields as missing before routing", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "route_to_team",
+              call_id: "call_whitespace",
+              arguments: JSON.stringify({ segment: "education" }),
+            },
+          ],
+        },
+      },
+      state({ captured: { name: "Asha", email: "   ", org: "Future Lab", message: "AI literacy demos." } }),
+    );
+
+    expect(result.commands[0]).toMatchObject({
+      type: "function_result",
+      output: {
+        ok: false,
+        ready: false,
+        missingFields: ["email"],
+        missingFieldLabels: ["email"],
+      },
+    });
+  });
+
+  it("summarises readiness with missing-field labels", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [{ type: "function_call", name: "summarise_lead", call_id: "call_summary", arguments: "{}" }],
+        },
+      },
+      state({ captured: { ...emptyCapturedLead, name: "Asha", message: "A programme idea." } }),
+    );
+
+    expect(result.commands[0]).toMatchObject({
+      type: "function_result",
+      output: {
+        ok: true,
+        ready: false,
+        missingFields: ["email", "org"],
+        missingFieldLabels: ["email", "organisation"],
+        routeRequested: false,
+      },
+    });
   });
 
   it("does not apply the same function call twice", () => {

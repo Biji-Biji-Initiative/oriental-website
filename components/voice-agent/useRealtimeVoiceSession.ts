@@ -7,7 +7,17 @@ import { VOICE_SESSION_DEFAULTS } from "@/lib/voice/profile";
 import type { RealtimeServerEvent } from "@/lib/voice/realtime-events";
 
 export type VoiceConnectionStatus = "idle" | "connecting" | "listening";
-export type VoiceCloseReason = "idle_timeout" | "max_duration" | "manual" | "error";
+export type VoiceCloseReason =
+  | "idle_timeout"
+  | "max_duration"
+  | "manual"
+  | "error"
+  | "verification_failed"
+  | "voice_limit_reached"
+  | "mic_denied"
+  | "session_failed"
+  | "webrtc_failed"
+  | "disconnected";
 
 export type VoiceReviewMetadata = {
   id: string;
@@ -17,6 +27,23 @@ export type VoiceReviewMetadata = {
   voice?: string;
   speed?: number;
 };
+
+type VoiceSessionResponse = {
+  ok?: boolean;
+  error?: string;
+  client_secret?: { value?: string };
+  session_id?: string;
+  review?: { id?: string; token?: string };
+  model?: string;
+  voice?: string;
+  speed?: number;
+};
+
+class VoiceConnectionFailure extends Error {
+  constructor(readonly reason: VoiceCloseReason) {
+    super(reason);
+  }
+}
 
 type UseRealtimeVoiceSessionArgs = {
   audioRef: RefObject<HTMLAudioElement | null>;
@@ -41,6 +68,7 @@ export function useRealtimeVoiceSession({
   const localStreamRef = useRef<MediaStream | null>(null);
   const idleTimerRef = useRef<number | null>(null);
   const maxTimerRef = useRef<number | null>(null);
+  const statusRef = useRef<VoiceConnectionStatus>("idle");
 
   const clearTimers = useCallback(() => {
     if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
@@ -52,18 +80,22 @@ export function useRealtimeVoiceSession({
   const teardownVoice = useCallback(
     (reason: VoiceCloseReason = "manual") => {
       clearTimers();
-      dataChannelRef.current?.close();
+      const channel = dataChannelRef.current;
       dataChannelRef.current = null;
-      connectionRef.current?.close();
+      channel?.close();
+      const connection = connectionRef.current;
       connectionRef.current = null;
+      connection?.close();
       localStreamRef.current?.getTracks().forEach((track) => {
         track.stop();
       });
       localStreamRef.current = null;
+      if (audioRef.current) audioRef.current.srcObject = null;
       setConnectionStatus("idle");
+      statusRef.current = "idle";
       onClose(reason);
     },
-    [clearTimers, onClose],
+    [audioRef, clearTimers, onClose],
   );
 
   const resetIdleTimer = useCallback(() => {
@@ -92,22 +124,42 @@ export function useRealtimeVoiceSession({
   const connectVoice = useCallback(async () => {
     if (connectionStatus !== "idle") return;
     setConnectionStatus("connecting");
+    statusRef.current = "connecting";
     try {
-      const turnstileToken = await getTurnstileToken();
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      localStreamRef.current = stream;
-      const session = await fetch("/api/voice/session", {
+      let turnstileToken = "";
+      try {
+        turnstileToken = await getTurnstileToken();
+      } catch {
+        throw new VoiceConnectionFailure("verification_failed");
+      }
+
+      const sessionResponse = await fetch("/api/voice/session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ intent: segment, turnstileToken }),
-      }).then((response) => response.json());
+      });
+      const session = (await sessionResponse.json().catch(() => null)) as VoiceSessionResponse | null;
+      if (session?.error === "turnstile_failed") throw new VoiceConnectionFailure("verification_failed");
+      if (session?.error === "voice_limit_reached" || sessionResponse.status === 429) {
+        throw new VoiceConnectionFailure("voice_limit_reached");
+      }
+      if (!sessionResponse.ok || session?.ok !== true || !session.client_secret?.value) {
+        throw new VoiceConnectionFailure("session_failed");
+      }
 
-      if (!session.ok) throw new Error(session.error ?? "voice_unavailable");
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch {
+        throw new VoiceConnectionFailure("mic_denied");
+      }
+      localStreamRef.current = stream;
+
       if (session.review?.id && session.review?.token) {
         onSessionReady?.({
           id: session.review.id,
           token: session.review.token,
-          sessionId: session.session_id,
+          sessionId: session.session_id ?? session.review.id,
           model: session.model,
           voice: session.voice,
           speed: session.speed,
@@ -116,6 +168,15 @@ export function useRealtimeVoiceSession({
 
       const peer = new RTCPeerConnection();
       connectionRef.current = peer;
+      peer.onconnectionstatechange = () => {
+        if (
+          connectionRef.current === peer &&
+          statusRef.current === "listening" &&
+          (peer.connectionState === "failed" || peer.connectionState === "disconnected")
+        ) {
+          teardownVoice("disconnected");
+        }
+      };
       stream.getTracks().forEach((track) => {
         peer.addTrack(track, stream);
       });
@@ -130,11 +191,16 @@ export function useRealtimeVoiceSession({
       dataChannelRef.current = channel;
       channel.onopen = () => {
         setConnectionStatus("listening");
+        statusRef.current = "listening";
         resetIdleTimer();
         armMaxTimer();
       };
       channel.onclose = () => {
-        if (dataChannelRef.current === channel) dataChannelRef.current = null;
+        const wasCurrentChannel = dataChannelRef.current === channel;
+        if (wasCurrentChannel) {
+          dataChannelRef.current = null;
+          if (statusRef.current === "listening") teardownVoice("disconnected");
+        }
       };
       channel.onmessage = (event) => {
         resetIdleTimer();
@@ -155,10 +221,10 @@ export function useRealtimeVoiceSession({
         },
         body: offer.sdp,
       });
-      if (!sdpResponse.ok) throw new Error("webrtc_failed");
+      if (!sdpResponse.ok) throw new VoiceConnectionFailure("webrtc_failed");
       await peer.setRemoteDescription({ type: "answer", sdp: await sdpResponse.text() });
-    } catch {
-      teardownVoice("error");
+    } catch (error) {
+      teardownVoice(error instanceof VoiceConnectionFailure ? error.reason : "error");
     }
   }, [
     armMaxTimer,
@@ -171,6 +237,10 @@ export function useRealtimeVoiceSession({
     segment,
     teardownVoice,
   ]);
+
+  useEffect(() => {
+    statusRef.current = connectionStatus;
+  }, [connectionStatus]);
 
   useEffect(() => teardownVoice, [teardownVoice]);
 
