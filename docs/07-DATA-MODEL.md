@@ -2,8 +2,7 @@
 
 Runtime truth: the launch site stores intake data in **Convex**, not
 Postgres/Drizzle. The public Next.js app writes through `lib/server/convex.ts`;
-the only Convex mutation exposed to the app is `api.leads.createLead`, protected
-by `CONVEX_INGEST_SECRET`.
+Convex app mutations are protected by `CONVEX_INGEST_SECRET`.
 
 ```
 Next Route Handler ──persistLead()──────────────► Convex mutation ──► leads
@@ -34,7 +33,11 @@ capture.
 | `message` | string | For hero email capture this is `"Keep me posted about Oriental Building."`. |
 | `transcript` | `{ role: string; text: string }[]` | Voice transcript rows; empty for form/newsletter. |
 | `utm` | `Record<string,string>` | Optional attribution data. |
-| `status` | string | Launch writes `"new"` only. |
+| `status` | string | Admin workflow state; new leads start as `"new"`. |
+| `priority` | string? | Admin workflow priority: `low`, `normal`, `high`, or `urgent`. |
+| `owner` | string? | Human owner currently responsible for follow-up. |
+| `workflowNote` | string? | Latest admin handoff / next-action note. |
+| `lastReviewedAt` | number? | Last admin workflow update timestamp. |
 | `notificationDelivered` | boolean? | True when at least one owner notification channel delivered. |
 | `notificationEmailOk` | boolean? | Last owner email delivery result. |
 | `notificationSlackOk` | boolean? | Last Slack delivery result. |
@@ -51,13 +54,16 @@ Indexes:
 
 ### `leadEvents`
 
-Append-only lead audit events. Launch writes `created` and notification status
-events.
+Append-only lead audit events. Launch writes `created`, notification status, and
+admin `workflow_update` events.
 
 | Field | Type | Notes |
 |---|---|---|
 | `leadId` | string | App lead ID, not Convex `_id`. |
-| `kind` | string | Launch value: `"created"`. |
+| `kind` | string | Values include `created`, `notification_delivered`, `notification_failed`, and `workflow_update`. |
+| `actor` | string? | `system` for app-generated events; `admin` for console workflow mutations. |
+| `fromStatus` | string? | Previous status for workflow updates. |
+| `toStatus` | string? | New status for workflow updates. |
 | `note` | string? | Human-readable event note. |
 | `createdAt` | number | Milliseconds since epoch. |
 
@@ -107,6 +113,9 @@ Indexes:
 6. Owner email and Slack notifications are attempted after persistence.
 7. Notification status is patched back to the lead and appended to
    `leadEvents`.
+8. Admin workflow changes from `/admin/session-review` patch `status`,
+   `priority`, `owner`, optional `workflowNote`, and append a `workflow_update`
+   event.
 
 If Convex is not configured locally, `persistLead()` returns
 `{ persisted: false, reason: "convex_unconfigured" }` and the route still
@@ -139,19 +148,16 @@ copy or code deploy.
 
 ## Lifecycle
 
-The microsite only creates `new` leads. Any later lifecycle state belongs to the
-future internal CRM workstream.
-
-Planned lifecycle vocabulary:
+The admin console now owns a lightweight workflow queue for intake follow-up.
+The public microsite still creates all leads as `new`.
 
 | Status | Meaning |
 |---|---|
 | `new` | Just landed. Owner has not yet acknowledged. |
-| `contacted` | Owner has sent the first follow-up. |
+| `reviewing` | Someone is actively checking fit/routing. |
+| `contacted` | Owner has sent or scheduled the first follow-up. |
 | `qualified` | Conversation is real and ongoing. |
-| `partnered` | We have a signed or near-signed partnership / tenancy. |
-| `declined` | Either side decided no; capture reason in a note event. |
-| `closed` | Terminal, cold, or abandoned. |
+| `archived` | Terminal, cold, duplicate, or not useful for follow-up. |
 
 ## Deploy And Operations
 
@@ -183,5 +189,4 @@ Launch follow-ups:
 - Define retention/deletion policy for leads and transcripts.
 - Decide whether IP-derived abuse data should ever be persisted. It is not
   stored today.
-- Add CRM mutations for notes, status changes, and exports in a separate
-  authenticated app.
+- Add export and richer CRM integration once a downstream CRM owner exists.

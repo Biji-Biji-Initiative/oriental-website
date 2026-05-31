@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ADMIN_LEAD_PRIORITIES, ADMIN_LEAD_STATUSES } from "@/lib/admin-workflow";
 import { SEGMENT_IDS } from "@/lib/segments";
 
 const segmentSchema = z.enum(SEGMENT_IDS);
@@ -38,6 +39,13 @@ export const voiceSessionRequestSchema = z.object({
 
 export const adminLoginSchema = z.object({
   token: z.string().min(20).max(300),
+});
+
+export const adminLeadWorkflowSchema = z.object({
+  status: z.enum(ADMIN_LEAD_STATUSES),
+  priority: z.enum(ADMIN_LEAD_PRIORITIES),
+  owner: z.string().trim().max(80).default(""),
+  note: z.string().trim().max(600).optional(),
 });
 
 export const voiceReviewSnapshotSchema = z.object({
@@ -87,4 +95,5 @@ export const voiceReviewSnapshotSchema = z.object({
 export type LeadRequest = z.infer<typeof leadRequestSchema>;
 export type NewsletterRequest = z.infer<typeof newsletterRequestSchema>;
 export type VoiceSessionRequest = z.infer<typeof voiceSessionRequestSchema>;
+export type AdminLeadWorkflowRequest = z.infer<typeof adminLeadWorkflowSchema>;
 export type VoiceReviewSnapshotRequest = z.infer<typeof voiceReviewSnapshotSchema>;

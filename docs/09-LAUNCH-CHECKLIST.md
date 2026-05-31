@@ -46,8 +46,9 @@ Use this on the day of soft-launch and again 24 hours before public-launch.
 ## Convex
 
 - [ ] `convex/schema.ts` deployed to production
-- [ ] Convex `leads.recordVoiceSession`, `leads.recordLeadNotification`, and
-      `leads.reviewDashboard` are deployed before `/admin/session-review` is used
+- [ ] Convex `leads.recordVoiceSession`, `leads.recordLeadNotification`,
+      `leads.reviewDashboard`, and `leads.updateLeadWorkflow` are deployed before
+      `/admin/session-review` is used
 - [ ] `leads` table accepts a staging/prod test lead
 - [ ] `leadEvents` receives the matching `created` event
 - [ ] `CONVEX_INGEST_SECRET` rejects an invalid secret
@@ -96,6 +97,8 @@ Use this on the day of soft-launch and again 24 hours before public-launch.
 - [ ] Redis limiter fallback emits `rate_limit.redis_fallback` and sends a Slack ops alert in a controlled test
 - [ ] OpenAI session mint failure emits `voice_session.openai_failed` and sends a Slack ops alert in a controlled test
 - [ ] `/api/admin/review` rejects unauthenticated requests
+- [ ] `/api/admin/leads/[leadId]` rejects unauthenticated requests and records a
+      `workflow_update` event for a valid admin update
 - [ ] `/admin/session-review` requires the admin token and renders recent Convex data
 
 ## Functional smoke test

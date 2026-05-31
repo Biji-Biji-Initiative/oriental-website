@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { persistLead } from "@/lib/server/convex";
+import { persistLead, updateAdminLeadWorkflow } from "@/lib/server/convex";
 import type { StoredLead } from "@/lib/server/notifications";
 
 const mocks = vi.hoisted(() => ({
@@ -18,7 +18,7 @@ vi.mock("convex/browser", () => ({
 }));
 
 vi.mock("@/convex/_generated/api", () => ({
-  api: { leads: { createLead: "createLead" } },
+  api: { leads: { createLead: "createLead", updateLeadWorkflow: "updateLeadWorkflow" } },
 }));
 
 const originalEnv = process.env;
@@ -64,6 +64,28 @@ describe("persistLead", () => {
     expect(mocks.mutation).toHaveBeenCalledWith("createLead", {
       lead: expect.objectContaining({ id: "lead_123" }),
       ingestSecret: "ingest-secret",
+    });
+  });
+
+  it("applies admin workflow mutations through Convex", async () => {
+    mocks.mutation.mockResolvedValue({ ok: true });
+
+    await expect(
+      updateAdminLeadWorkflow("lead_123", {
+        status: "qualified",
+        priority: "urgent",
+        owner: "Gurpreet",
+        note: "Ready for direct follow-up.",
+      }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(mocks.mutation).toHaveBeenCalledWith("updateLeadWorkflow", {
+      ingestSecret: "ingest-secret",
+      leadId: "lead_123",
+      status: "qualified",
+      priority: "urgent",
+      owner: "Gurpreet",
+      note: "Ready for direct follow-up.",
     });
   });
 });

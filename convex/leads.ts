@@ -75,6 +75,16 @@ const voiceSessionValidator = v.object({
   submittedAt: v.optional(v.number()),
 });
 
+const workflowStatusValidator = v.union(
+  v.literal("new"),
+  v.literal("reviewing"),
+  v.literal("contacted"),
+  v.literal("qualified"),
+  v.literal("archived"),
+);
+
+const leadPriorityValidator = v.union(v.literal("low"), v.literal("normal"), v.literal("high"), v.literal("urgent"));
+
 export const createLead = mutationGeneric({
   args: { lead: leadValidator, ingestSecret: v.string() },
   returns: v.object({ id: v.string() }),
@@ -94,12 +104,15 @@ export const createLead = mutationGeneric({
       transcript: lead.transcript,
       utm: lead.utm,
       status: "new",
+      priority: "normal",
+      owner: "",
       notificationDelivered: false,
       createdAt: Date.now(),
     });
     await ctx.db.insert("leadEvents", {
       leadId: lead.id,
       kind: "created",
+      actor: "system",
       note: `Created from ${lead.source}`,
       createdAt: Date.now(),
     });
@@ -134,10 +147,55 @@ export const recordLeadNotification = mutationGeneric({
     await ctx.db.insert("leadEvents", {
       leadId,
       kind: notificationDelivered ? "notification_delivered" : "notification_failed",
+      actor: "system",
       note: summary,
       createdAt: Date.now(),
     });
     return { ok: true };
+  },
+});
+
+export const updateLeadWorkflow = mutationGeneric({
+  args: {
+    ingestSecret: v.string(),
+    leadId: v.string(),
+    status: workflowStatusValidator,
+    priority: leadPriorityValidator,
+    owner: v.string(),
+    note: v.optional(v.string()),
+  },
+  returns: v.union(
+    v.object({ ok: v.literal(true) }),
+    v.object({ ok: v.literal(false), reason: v.literal("not_found") }),
+  ),
+  handler: async (ctx, { ingestSecret, leadId, status, priority, owner, note }) => {
+    requireIngestSecret(ingestSecret);
+    const lead = await ctx.db
+      .query("leads")
+      .withIndex("by_lead_id", (query) => query.eq("leadId", leadId))
+      .unique();
+    if (!lead) return { ok: false as const, reason: "not_found" as const };
+
+    const now = Date.now();
+    const cleanOwner = owner.trim();
+    const cleanNote = note?.trim() ?? "";
+    await ctx.db.patch(lead._id, {
+      status,
+      priority,
+      owner: cleanOwner,
+      ...(cleanNote ? { workflowNote: cleanNote } : {}),
+      lastReviewedAt: now,
+    });
+    await ctx.db.insert("leadEvents", {
+      leadId,
+      kind: "workflow_update",
+      actor: "admin",
+      fromStatus: lead.status,
+      toStatus: status,
+      note: cleanNote || `Priority ${priority}${cleanOwner ? `, owner ${cleanOwner}` : ""}`,
+      createdAt: now,
+    });
+    return { ok: true as const };
   },
 });
 
@@ -196,21 +254,88 @@ export const reviewDashboard = queryGeneric({
   handler: async (ctx, { ingestSecret, limit }) => {
     requireIngestSecret(ingestSecret);
     const take = Math.min(Math.max(Math.floor(limit ?? 50), 1), 100);
-    const [leads, voiceSessions] = await Promise.all([
+    const now = Date.now();
+    const [leads, voiceSessions, leadEvents] = await Promise.all([
       ctx.db.query("leads").order("desc").take(take),
       ctx.db.query("voiceSessions").withIndex("by_updated_at").order("desc").take(take),
+      ctx.db
+        .query("leadEvents")
+        .order("desc")
+        .take(take * 2),
     ]);
+    const notificationDelivered = leads.filter((lead) => lead.notificationDelivered === true).length;
+    const notificationFailures = leads.filter((lead) => lead.notificationDelivered === false).length;
+    const voiceLeads = leads.filter((lead) => lead.source === "voice").length;
+    const activeLeads = leads.filter((lead) => !["qualified", "archived"].includes(lead.status)).length;
+    const urgentLeads = leads.filter((lead) => lead.priority === "urgent" || lead.priority === "high").length;
+    const sessionsWithErrors = voiceSessions.filter((session) => session.errors.length > 0).length;
+    const submittedSessions = voiceSessions.filter((session) => Boolean(session.leadId)).length;
+    const totalResponseTokens = voiceSessions.reduce((sum, session) => sum + (session.usage?.responseTokens ?? 0), 0);
     return {
+      generatedAt: now,
       leads,
       voiceSessions,
+      leadEvents,
       metrics: {
         recentLeads: leads.length,
-        voiceLeads: leads.filter((lead) => lead.source === "voice").length,
-        notificationFailures: leads.filter((lead) => lead.notificationDelivered === false).length,
+        activeLeads,
+        voiceLeads,
+        notificationFailures,
+        urgentLeads,
+        qualifiedLeads: leads.filter((lead) => lead.status === "qualified").length,
         reviewedSessions: voiceSessions.length,
-        sessionsWithErrors: voiceSessions.filter((session) => session.errors.length > 0).length,
-        submittedSessions: voiceSessions.filter((session) => Boolean(session.leadId)).length,
+        sessionsWithErrors,
+        submittedSessions,
+        notificationDeliveryRate: percent(notificationDelivered, leads.length),
+        voiceSubmitRate: percent(submittedSessions, voiceSessions.length),
+      },
+      analytics: {
+        sourceCounts: countBy(leads, (lead) => lead.source),
+        statusCounts: countBy(leads, (lead) => lead.status || "new"),
+        priorityCounts: countBy(leads, (lead) => lead.priority || "normal"),
+        segmentCounts: countBy(leads, (lead) => lead.segment || "other"),
+        dailyLeads: dailyLeadCounts(leads, now),
+        notification: {
+          delivered: notificationDelivered,
+          failed: notificationFailures,
+          pending: Math.max(leads.length - notificationDelivered - notificationFailures, 0),
+        },
+        voice: {
+          sessions: voiceSessions.length,
+          submitted: submittedSessions,
+          withErrors: sessionsWithErrors,
+          routeRequested: voiceSessions.filter((session) => session.routeRequested).length,
+          totalResponseTokens,
+        },
+      },
+      queues: {
+        triage: leads.filter((lead) => ["new", "reviewing"].includes(lead.status)).slice(0, 20),
+        failedNotifications: leads.filter((lead) => lead.notificationDelivered === false).slice(0, 20),
+        highPriority: leads.filter((lead) => lead.priority === "urgent" || lead.priority === "high").slice(0, 20),
       },
     };
   },
 });
+
+function countBy<T>(items: T[], key: (item: T) => string) {
+  return items.reduce<Record<string, number>>((counts, item) => {
+    const value = key(item);
+    counts[value] = (counts[value] ?? 0) + 1;
+    return counts;
+  }, {});
+}
+
+function dailyLeadCounts(leads: Array<{ createdAt: number }>, now: number) {
+  const formatter = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kuala_Lumpur" });
+  const days = Array.from({ length: 7 }, (_, index) => {
+    const date = now - (6 - index) * 24 * 60 * 60 * 1000;
+    return formatter.format(date);
+  });
+  const counts = countBy(leads, (lead) => formatter.format(lead.createdAt));
+  return days.map((date) => ({ date, count: counts[date] ?? 0 }));
+}
+
+function percent(numerator: number, denominator: number) {
+  if (denominator <= 0) return 0;
+  return Math.round((numerator / denominator) * 100);
+}

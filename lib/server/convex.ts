@@ -1,7 +1,7 @@
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import { readEnv } from "@/lib/env";
-import type { VoiceReviewSnapshotRequest } from "@/lib/schemas";
+import type { AdminLeadWorkflowRequest, VoiceReviewSnapshotRequest } from "@/lib/schemas";
 import type { NotificationResult, StoredLead } from "@/lib/server/notifications";
 
 export async function persistLead(lead: StoredLead) {
@@ -48,6 +48,18 @@ export async function getAdminReviewDashboard(limit = 50) {
   if (!client) return { ok: false as const, reason: "convex_unconfigured" };
   const data = await client.client.query(api.leads.reviewDashboard, { ingestSecret: client.ingestSecret, limit });
   return { ok: true as const, data };
+}
+
+export async function updateAdminLeadWorkflow(leadId: string, workflow: AdminLeadWorkflowRequest) {
+  const client = createConvexClient();
+  if (!client) return { ok: false as const, reason: "convex_unconfigured" };
+  const result = await client.client.mutation(api.leads.updateLeadWorkflow, {
+    ingestSecret: client.ingestSecret,
+    leadId,
+    ...workflow,
+  });
+  if (!result.ok) return { ok: false as const, reason: result.reason };
+  return { ok: true as const };
 }
 
 function createConvexClient() {

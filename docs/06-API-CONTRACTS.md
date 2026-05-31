@@ -309,7 +309,35 @@ cookie scoped to `/admin`.
 ### `GET /api/admin/review`
 
 Bearer-token or admin-cookie protected JSON endpoint returning recent `leads`,
-`voiceSessions`, and aggregate metrics for internal QA.
+`voiceSessions`, `leadEvents`, aggregate metrics, analytics buckets, and queue
+slices for the internal operations console.
+
+### `PATCH /api/admin/leads/[leadId]`
+
+Bearer-token or admin-cookie protected mutation for operator triage. Updates the
+Convex lead workflow fields and appends a `workflow_update` event to
+`leadEvents`.
+
+```ts
+type AdminLeadWorkflowRequest = {
+  status: "new" | "reviewing" | "contacted" | "qualified" | "archived";
+  priority: "low" | "normal" | "high" | "urgent";
+  owner?: string; // trim, max 80
+  note?: string; // trim, max 600
+};
+
+type AdminLeadWorkflowResponse = { ok: true };
+```
+
+Errors:
+
+| HTTP | `error` | Cause |
+|---|---|---|
+| 400 | `invalid_payload` | Zod validation failed. |
+| 401 | `missing` / `invalid` | Missing or invalid admin bearer/cookie auth. |
+| 404 | `not_found` | No Convex lead matched the route `leadId`. |
+| 503 | `unconfigured` | `ADMIN_REVIEW_TOKEN` is missing. |
+| 503 | `convex_unconfigured` / `convex_failed` | Convex env is missing or the mutation failed. |
 
 ## `GET /api/health`
 

@@ -1,17 +1,24 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import type { ReactNode } from "react";
+import { AdminLeadWorkflowForm } from "@/components/admin/AdminLeadWorkflowForm";
 import { AdminLoginForm } from "@/components/admin/AdminLoginForm";
 import { Badge } from "@/components/admin/Badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  adminLeadPriorityLabels,
+  adminLeadStatusLabels,
+  normalizeAdminLeadPriority,
+  normalizeAdminLeadStatus,
+} from "@/lib/admin-workflow";
 import { adminCookieName, verifyAdminSessionCookie } from "@/lib/server/admin-auth";
 import { getAdminReviewDashboard } from "@/lib/server/convex";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Session Review | Oriental Admin",
+  title: "Admin Console | Oriental Admin",
   robots: { index: false, follow: false },
 };
 
@@ -19,6 +26,7 @@ type DashboardResult = Awaited<ReturnType<typeof getAdminReviewDashboard>>;
 type DashboardData = Extract<DashboardResult, { ok: true }>["data"];
 type LeadRow = DashboardData["leads"][number];
 type VoiceSessionRow = DashboardData["voiceSessions"][number];
+type LeadEventRow = DashboardData["leadEvents"][number];
 
 export default async function SessionReviewPage() {
   const cookieStore = await cookies();
@@ -38,35 +46,47 @@ export default async function SessionReviewPage() {
   }
 
   return (
-    <AdminShell>
+    <AdminShell generatedAt={dashboard.data.generatedAt}>
       <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
         <MetricCard label="Recent leads" value={dashboard.data.metrics.recentLeads} />
-        <MetricCard label="Voice leads" value={dashboard.data.metrics.voiceLeads} />
-        <MetricCard label="Notification failures" tone="danger" value={dashboard.data.metrics.notificationFailures} />
-        <MetricCard label="Voice sessions" value={dashboard.data.metrics.reviewedSessions} />
+        <MetricCard label="Active queue" value={dashboard.data.metrics.activeLeads} />
+        <MetricCard label="High priority" tone="danger" value={dashboard.data.metrics.urgentLeads} />
+        <MetricCard label="Notification health" suffix="%" value={dashboard.data.metrics.notificationDeliveryRate} />
+        <MetricCard label="Voice submit rate" suffix="%" value={dashboard.data.metrics.voiceSubmitRate} />
         <MetricCard label="Sessions with errors" tone="danger" value={dashboard.data.metrics.sessionsWithErrors} />
-        <MetricCard label="Submitted sessions" value={dashboard.data.metrics.submittedSessions} />
       </div>
 
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
-        <LeadsPanel leads={dashboard.data.leads} />
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        <AnalyticsPanel data={dashboard.data} />
+        <WorkflowPanel leads={dashboard.data.leads} />
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-2">
+        <PriorityPanel leads={dashboard.data.queues.highPriority} />
+        <NotificationPanel leads={dashboard.data.queues.failedNotifications} />
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.65fr)]">
         <VoiceSessionsPanel sessions={dashboard.data.voiceSessions} />
+        <EventsPanel events={dashboard.data.leadEvents} />
       </section>
     </AdminShell>
   );
 }
 
-function AdminShell({ children }: { children: ReactNode }) {
+function AdminShell({ children, generatedAt }: { children: ReactNode; generatedAt?: number }) {
   return (
     <main className="min-h-svh bg-mk-paper px-4 py-8 text-mk-off-black sm:px-6 lg:px-8">
       <div className="mx-auto grid max-w-[1500px] gap-6">
         <header className="flex flex-col gap-4 border-b border-mk-ash/20 pb-5 md:flex-row md:items-end md:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-mk-blue">Oriental Admin</p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-tight">Session review</h1>
+            <h1 className="mt-2 text-3xl font-semibold tracking-tight">Operations console</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-mk-ash">
-              Review submitted handoffs, voice transcript quality, notification delivery, and Realtime runtime errors.
+              Triage partner handoffs, track conversion health, inspect voice QA, and leave an audit trail for
+              follow-up.
             </p>
+            {generatedAt ? <p className="mt-2 text-xs text-mk-ash">Fresh as of {formatDate(generatedAt)}</p> : null}
           </div>
           <form action="/api/admin/logout" method="post">
             <Button type="submit" variant="outline">
@@ -80,59 +100,325 @@ function AdminShell({ children }: { children: ReactNode }) {
   );
 }
 
-function MetricCard({ label, value, tone = "default" }: { label: string; value: number; tone?: "default" | "danger" }) {
+function MetricCard({
+  label,
+  value,
+  suffix = "",
+  tone = "default",
+}: {
+  label: string;
+  value: number;
+  suffix?: string;
+  tone?: "default" | "danger";
+}) {
   return (
     <Card className="border-mk-ash/20 bg-white shadow-sm" size="sm">
       <CardHeader>
         <CardDescription>{label}</CardDescription>
-        <CardTitle className={tone === "danger" && value > 0 ? "text-destructive" : undefined}>{value}</CardTitle>
+        <CardTitle className={tone === "danger" && value > 0 ? "text-destructive" : undefined}>
+          {value}
+          {suffix}
+        </CardTitle>
       </CardHeader>
     </Card>
   );
 }
 
-function LeadsPanel({ leads }: { leads: LeadRow[] }) {
+function WorkflowPanel({ leads }: { leads: LeadRow[] }) {
+  const ordered = [...leads].sort(
+    (left, right) => priorityRank(right) - priorityRank(left) || right.createdAt - left.createdAt,
+  );
   return (
     <Card className="border-mk-ash/20 bg-white shadow-sm">
       <CardHeader>
-        <CardTitle>Recent handoffs</CardTitle>
-        <CardDescription>Latest saved leads with routing and notification status.</CardDescription>
+        <CardTitle>Lead workflow</CardTitle>
+        <CardDescription>
+          Update status, priority, owner, and next-action notes without leaving the queue.
+        </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-3">
-        {leads.length === 0 ? <EmptyState label="No leads saved yet." /> : null}
-        {leads.map((lead) => (
-          <article className="rounded-lg border border-mk-ash/15 p-4" key={lead.leadId}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <div className="font-semibold">{lead.name || "Unnamed"}</div>
-                <div className="mt-1 text-xs text-mk-ash">
-                  {lead.email} · {lead.org || "No organisation"}
+        {ordered.length === 0 ? <EmptyState label="No leads saved yet." /> : null}
+        {ordered.map((lead) => (
+          <WorkflowLeadCard key={lead.leadId} lead={lead} />
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+function AnalyticsPanel({ data }: { data: DashboardData }) {
+  const maxDaily = Math.max(...data.analytics.dailyLeads.map((day) => day.count), 1);
+  return (
+    <Card className="border-mk-ash/20 bg-white shadow-sm">
+      <CardHeader>
+        <CardTitle>Analytics</CardTitle>
+        <CardDescription>
+          Recent acquisition mix, workflow state, notification health, and voice funnel quality.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-5">
+        <div className="grid gap-4 md:grid-cols-2">
+          <CountList title="Status" values={data.analytics.statusCounts} />
+          <CountList title="Source" values={data.analytics.sourceCounts} />
+          <CountList title="Priority" values={data.analytics.priorityCounts} />
+          <CountList title="Segment" values={data.analytics.segmentCounts} />
+        </div>
+        <div>
+          <div className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">7-day leads</div>
+          <div className="grid grid-cols-7 items-end gap-2 rounded-lg bg-mk-paper p-3">
+            {data.analytics.dailyLeads.map((day) => (
+              <div className="grid gap-2 text-center text-[11px] text-mk-ash" key={day.date}>
+                <div className="flex h-24 items-end rounded bg-white">
+                  <div
+                    aria-label={`${day.count} leads on ${day.date}`}
+                    className="w-full rounded bg-mk-blue/80"
+                    role="img"
+                    style={{ height: `${Math.max((day.count / maxDaily) * 100, day.count > 0 ? 8 : 2)}%` }}
+                  />
+                </div>
+                <span>{day.date.slice(5)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <HealthBox
+            label="Notifications"
+            value={`${data.metrics.notificationDeliveryRate}%`}
+            detail={`${data.analytics.notification.delivered} delivered · ${data.analytics.notification.failed} failed · ${data.analytics.notification.pending} pending`}
+            danger={data.analytics.notification.failed > 0}
+          />
+          <HealthBox
+            label="Voice funnel"
+            value={`${data.metrics.voiceSubmitRate}%`}
+            detail={`${data.analytics.voice.submitted}/${data.analytics.voice.sessions} submitted · ${data.analytics.voice.withErrors} with errors · ${data.analytics.voice.totalResponseTokens} response tokens`}
+            danger={data.analytics.voice.withErrors > 0}
+          />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function WorkflowLeadCard({ lead }: { lead: LeadRow }) {
+  const status = normalizeAdminLeadStatus(lead.status);
+  const priority = normalizeAdminLeadPriority(lead.priority);
+  return (
+    <article className="rounded-lg border border-mk-ash/15 bg-mk-paper/60 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="font-semibold">{lead.name || "Unnamed"}</div>
+          <div className="mt-1 text-xs text-mk-ash">
+            {lead.email} · {lead.org || "No organisation"}
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Badge tone={lead.source === "voice" ? "blue" : "neutral"}>{lead.source}</Badge>
+          <Badge tone={statusTone(status)}>{adminLeadStatusLabels[status]}</Badge>
+          <Badge tone={priorityTone(priority)}>{adminLeadPriorityLabels[priority]}</Badge>
+          <Badge tone={lead.notificationDelivered ? "green" : "red"}>
+            {lead.notificationDelivered ? "notified" : "notify failed"}
+          </Badge>
+        </div>
+      </div>
+      <dl className="mt-4 grid gap-2 text-xs text-mk-ash sm:grid-cols-3">
+        <div>
+          <dt className="font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">Route</dt>
+          <dd>{lead.routedTo}</dd>
+        </div>
+        <div>
+          <dt className="font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">Created</dt>
+          <dd>{formatDate(lead.createdAt)}</dd>
+        </div>
+        <div>
+          <dt className="font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">Last reviewed</dt>
+          <dd>{lead.lastReviewedAt ? formatDate(lead.lastReviewedAt) : "Not yet"}</dd>
+        </div>
+      </dl>
+      <p className="mt-4 whitespace-pre-wrap rounded-lg bg-white p-3 text-sm leading-6">{lead.message}</p>
+      {lead.workflowNote ? (
+        <p className="mt-3 rounded-lg bg-mk-horizon/15 p-3 text-xs text-mk-ash">{lead.workflowNote}</p>
+      ) : null}
+      <AdminLeadWorkflowForm
+        leadId={lead.leadId}
+        initialOwner={lead.owner}
+        initialPriority={priority}
+        initialStatus={status}
+      />
+      {lead.transcript.length > 0 ? <TranscriptLog transcript={lead.transcript} /> : null}
+    </article>
+  );
+}
+
+function PriorityPanel({ leads }: { leads: LeadRow[] }) {
+  return (
+    <QueuePanel
+      description="High and urgent handoffs that should get human ownership first."
+      emptyLabel="No high-priority handoffs in the recent window."
+      leads={leads}
+      title="Priority queue"
+    />
+  );
+}
+
+function NotificationPanel({ leads }: { leads: LeadRow[] }) {
+  return (
+    <QueuePanel
+      description="Leads where all configured delivery paths failed or are still unresolved."
+      emptyLabel="No notification failures in the recent window."
+      leads={leads}
+      title="Notification recovery"
+    />
+  );
+}
+
+function QueuePanel({
+  description,
+  emptyLabel,
+  leads,
+  title,
+}: {
+  description: string;
+  emptyLabel: string;
+  leads: LeadRow[];
+  title: string;
+}) {
+  return (
+    <Card className="border-mk-ash/20 bg-white shadow-sm">
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        {leads.length === 0 ? <EmptyState label={emptyLabel} /> : null}
+        {leads.map((lead) => {
+          const priority = normalizeAdminLeadPriority(lead.priority);
+          const status = normalizeAdminLeadStatus(lead.status);
+          return (
+            <article className="rounded-lg border border-mk-ash/15 p-3" key={`${title}:${lead.leadId}`}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="font-semibold">{lead.name || "Unnamed"}</div>
+                  <div className="mt-1 text-xs text-mk-ash">{lead.email}</div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Badge tone={priorityTone(priority)}>{adminLeadPriorityLabels[priority]}</Badge>
+                  <Badge tone={statusTone(status)}>{adminLeadStatusLabels[status]}</Badge>
                 </div>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <Badge tone={lead.source === "voice" ? "blue" : "neutral"}>{lead.source}</Badge>
-                <Badge tone={lead.notificationDelivered ? "green" : "red"}>
-                  {lead.notificationDelivered ? "notified" : "notify failed"}
-                </Badge>
+              <div className="mt-3 text-xs text-mk-ash">
+                {lead.routedTo} · {lead.owner || "Unassigned"} · {formatDate(lead.createdAt)}
               </div>
+              {lead.notificationSummary ? (
+                <p className="mt-2 text-xs text-destructive">{lead.notificationSummary}</p>
+              ) : null}
+            </article>
+          );
+        })}
+      </CardContent>
+    </Card>
+  );
+}
+
+function EventsPanel({ events }: { events: LeadEventRow[] }) {
+  return (
+    <Card className="border-mk-ash/20 bg-white shadow-sm">
+      <CardHeader>
+        <CardTitle>Audit trail</CardTitle>
+        <CardDescription>Recent system and admin events written beside lead records.</CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        {events.length === 0 ? <EmptyState label="No lead events yet." /> : null}
+        {events.map((event) => (
+          <article
+            className="rounded-lg border border-mk-ash/15 p-3"
+            key={`${event.leadId}:${event.createdAt}:${event.kind}`}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="font-semibold">{event.kind.replaceAll("_", " ")}</div>
+              <Badge tone={event.actor === "admin" ? "blue" : "neutral"}>{event.actor ?? "system"}</Badge>
             </div>
-            <dl className="mt-4 grid gap-2 text-xs text-mk-ash sm:grid-cols-2">
-              <div>
-                <dt className="font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">Route</dt>
-                <dd>{lead.routedTo}</dd>
+            <div className="mt-1 break-all text-xs text-mk-ash">{event.leadId}</div>
+            {event.fromStatus || event.toStatus ? (
+              <div className="mt-2 text-xs text-mk-ash">
+                {event.fromStatus ?? "n/a"} {"->"} {event.toStatus ?? "n/a"}
               </div>
-              <div>
-                <dt className="font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">Created</dt>
-                <dd>{formatDate(lead.createdAt)}</dd>
-              </div>
-            </dl>
-            <p className="mt-4 whitespace-pre-wrap rounded-lg bg-mk-paper p-3 text-sm leading-6">{lead.message}</p>
-            {lead.transcript.length > 0 ? <TranscriptLog transcript={lead.transcript} /> : null}
+            ) : null}
+            {event.note ? <p className="mt-2 text-sm leading-6">{event.note}</p> : null}
+            <div className="mt-2 text-xs text-mk-ash">{formatDate(event.createdAt)}</div>
           </article>
         ))}
       </CardContent>
     </Card>
   );
+}
+
+function CountList({ title, values }: { title: string; values: Record<string, number> }) {
+  const entries = Object.entries(values).sort((left, right) => right[1] - left[1]);
+  const total = entries.reduce((sum, [, count]) => sum + count, 0);
+  return (
+    <div className="rounded-lg border border-mk-ash/15 p-3">
+      <div className="mb-3 text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">{title}</div>
+      <div className="grid gap-2">
+        {entries.length === 0 ? <div className="text-xs text-mk-ash">No data</div> : null}
+        {entries.slice(0, 6).map(([label, count]) => (
+          <div className="grid gap-1" key={`${title}:${label}`}>
+            <div className="flex items-center justify-between gap-2 text-xs">
+              <span className="capitalize text-mk-ash">{label.replaceAll("-", " ")}</span>
+              <span className="font-semibold">{count}</span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-mk-paper">
+              <div
+                className="h-full rounded-full bg-mk-blue"
+                style={{ width: `${total ? (count / total) * 100 : 0}%` }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function HealthBox({
+  label,
+  value,
+  detail,
+  danger,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  danger?: boolean;
+}) {
+  return (
+    <div className="rounded-lg border border-mk-ash/15 bg-mk-paper p-3">
+      <div className="text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">{label}</div>
+      <div className={danger ? "mt-2 text-2xl font-semibold text-destructive" : "mt-2 text-2xl font-semibold"}>
+        {value}
+      </div>
+      <div className="mt-1 text-xs leading-5 text-mk-ash">{detail}</div>
+    </div>
+  );
+}
+
+function priorityRank(lead: LeadRow) {
+  const priority = normalizeAdminLeadPriority(lead.priority);
+  return { low: 0, normal: 1, high: 2, urgent: 3 }[priority];
+}
+
+function statusTone(status: ReturnType<typeof normalizeAdminLeadStatus>) {
+  if (status === "qualified") return "green";
+  if (status === "contacted") return "blue";
+  if (status === "reviewing") return "amber";
+  if (status === "archived") return "neutral";
+  return "red";
+}
+
+function priorityTone(priority: ReturnType<typeof normalizeAdminLeadPriority>) {
+  if (priority === "urgent" || priority === "high") return "amber";
+  if (priority === "low") return "neutral";
+  return "blue";
 }
 
 function VoiceSessionsPanel({ sessions }: { sessions: VoiceSessionRow[] }) {
