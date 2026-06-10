@@ -91,6 +91,7 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
     submittedAt: v.optional(v.number()),
+    followedUpAt: v.optional(v.number()),
   })
     .index("by_review_id", ["reviewId"])
     .index("by_session_id", ["sessionId"])

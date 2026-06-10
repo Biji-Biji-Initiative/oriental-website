@@ -48,6 +48,10 @@ export const adminLeadWorkflowSchema = z.object({
   note: z.string().trim().max(600).optional(),
 });
 
+export const adminVoiceFollowUpSchema = z.object({
+  followedUp: z.boolean(),
+});
+
 export const voiceReviewSnapshotSchema = z.object({
   review: z.object({
     id: z.string().uuid(),

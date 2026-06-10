@@ -241,6 +241,21 @@ export const recordVoiceSession = mutationGeneric({
   },
 });
 
+export const setVoiceSessionFollowUp = mutationGeneric({
+  args: { ingestSecret: v.string(), reviewId: v.string(), followedUp: v.boolean() },
+  returns: v.object({ ok: v.boolean(), reason: v.optional(v.string()) }),
+  handler: async (ctx, { ingestSecret, reviewId, followedUp }) => {
+    requireIngestSecret(ingestSecret);
+    const session = await ctx.db
+      .query("voiceSessions")
+      .withIndex("by_review_id", (query) => query.eq("reviewId", reviewId))
+      .unique();
+    if (!session) return { ok: false, reason: "not_found" };
+    await ctx.db.patch(session._id, { followedUpAt: followedUp ? Date.now() : undefined });
+    return { ok: true };
+  },
+});
+
 export const recent = queryGeneric({
   args: { ingestSecret: v.string() },
   handler: async (ctx, { ingestSecret }) => {

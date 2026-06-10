@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import type { ReactNode } from "react";
+import { AdminAutoRefresh } from "@/components/admin/AdminAutoRefresh";
 import { AdminLeadWorkflowForm } from "@/components/admin/AdminLeadWorkflowForm";
 import { AdminLoginForm } from "@/components/admin/AdminLoginForm";
+import { AdminVoiceFollowUpButton } from "@/components/admin/AdminVoiceFollowUpButton";
 import { Badge } from "@/components/admin/Badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -47,6 +49,10 @@ export default async function SessionReviewPage() {
     );
   }
 
+  const sessionsWithRealErrors = dashboard.data.voiceSessions.filter((session: VoiceSessionRow) =>
+    session.errors.some((error: { eventId?: string; message: string; code?: string }) => !isBenignVoiceError(error)),
+  ).length;
+
   return (
     <AdminShell generatedAt={dashboard.data.generatedAt}>
       <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
@@ -55,7 +61,7 @@ export default async function SessionReviewPage() {
         <MetricCard label="High priority" tone="danger" value={dashboard.data.metrics.urgentLeads} />
         <MetricCard label="Notification health" suffix="%" value={dashboard.data.metrics.notificationDeliveryRate} />
         <MetricCard label="Voice submit rate" suffix="%" value={dashboard.data.metrics.voiceSubmitRate} />
-        <MetricCard label="Sessions with errors" tone="danger" value={dashboard.data.metrics.sessionsWithErrors} />
+        <MetricCard label="Sessions with errors" tone="danger" value={sessionsWithRealErrors} />
       </div>
 
       <section className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
@@ -91,11 +97,14 @@ function AdminShell({ children, generatedAt }: { children: ReactNode; generatedA
             </p>
             {generatedAt ? <p className="mt-2 text-xs text-mk-ash">Fresh as of {formatDate(generatedAt)}</p> : null}
           </div>
-          <form action="/api/admin/logout" method="post">
-            <Button type="submit" variant="outline">
-              Sign out
-            </Button>
-          </form>
+          <div className="flex items-center gap-2">
+            <AdminAutoRefresh />
+            <form action="/api/admin/logout" method="post">
+              <Button type="submit" variant="outline">
+                Sign out
+              </Button>
+            </form>
+          </div>
         </header>
         {children}
       </div>
@@ -151,6 +160,12 @@ function WorkflowPanel({ leads }: { leads: LeadRow[] }) {
 
 function AnalyticsPanel({ data }: { data: DashboardData }) {
   const maxDaily = Math.max(...data.analytics.dailyLeads.map((day) => day.count), 1);
+  const voiceRealErrors = data.voiceSessions.filter((session: VoiceSessionRow) =>
+    session.errors.some((error: { eventId?: string; message: string; code?: string }) => !isBenignVoiceError(error)),
+  ).length;
+  const recoverableCount = data.voiceSessions.filter(
+    (session: VoiceSessionRow) => !session.leadId && session.captured.email.trim().length > 0 && !session.followedUpAt,
+  ).length;
   return (
     <Card className="border-mk-ash/20 bg-white shadow-sm">
       <CardHeader>
@@ -194,8 +209,8 @@ function AnalyticsPanel({ data }: { data: DashboardData }) {
           <HealthBox
             label="Voice funnel"
             value={`${data.metrics.voiceSubmitRate}%`}
-            detail={`${data.analytics.voice.submitted}/${data.analytics.voice.sessions} submitted · ${data.analytics.voice.withErrors} with errors · ${data.analytics.voice.totalResponseTokens} response tokens`}
-            danger={data.analytics.voice.withErrors > 0}
+            detail={`${data.analytics.voice.submitted}/${data.analytics.voice.sessions} submitted · ${recoverableCount} recoverable · ${voiceRealErrors} with errors · ${data.analytics.voice.totalResponseTokens} response tokens`}
+            danger={voiceRealErrors > 0}
           />
         </div>
       </CardContent>
@@ -425,7 +440,9 @@ function priorityTone(priority: ReturnType<typeof normalizeAdminLeadPriority>) {
 }
 
 function RecoverableVoicePanel({ sessions }: { sessions: VoiceSessionRow[] }) {
-  const recoverable = sessions.filter((session) => !session.leadId && session.captured.email.trim().length > 0);
+  const unsent = sessions.filter((session) => !session.leadId && session.captured.email.trim().length > 0);
+  const recoverable = unsent.filter((session) => !session.followedUpAt);
+  const followedUp = unsent.filter((session) => Boolean(session.followedUpAt));
   return (
     <Card className="border-mk-ash/20 bg-white shadow-sm">
       <CardHeader>
@@ -435,7 +452,7 @@ function RecoverableVoicePanel({ sessions }: { sessions: VoiceSessionRow[] }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-3">
-        {recoverable.length === 0 ? <EmptyState label="No unsent voice sessions with contact details." /> : null}
+        {recoverable.length === 0 ? <EmptyState label="No unsent voice sessions waiting for follow-up." /> : null}
         {recoverable.map((session) => {
           const owner = getSegment(session.segment).routedTo.name;
           return (
@@ -456,15 +473,40 @@ function RecoverableVoicePanel({ sessions }: { sessions: VoiceSessionRow[] }) {
               {session.captured.message ? (
                 <p className="mt-2 line-clamp-3 text-sm leading-6">{session.captured.message}</p>
               ) : null}
-              <a
-                className="mt-3 inline-flex h-9 items-center rounded-full bg-mk-off-black px-4 text-xs font-semibold text-white transition hover:bg-mk-blue"
-                href={followUpMailto(session)}
-              >
-                Follow up by email
-              </a>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <a
+                  className="inline-flex h-8 items-center rounded-full bg-mk-off-black px-4 text-xs font-semibold text-white transition hover:bg-mk-blue"
+                  href={followUpMailto(session)}
+                >
+                  Follow up by email
+                </a>
+                <AdminVoiceFollowUpButton markAs={true} reviewId={session.reviewId}>
+                  Mark followed up
+                </AdminVoiceFollowUpButton>
+              </div>
             </article>
           );
         })}
+        {followedUp.length > 0 ? (
+          <div className="rounded-lg border border-mk-ash/15 bg-mk-paper/60 p-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
+              Followed up
+            </div>
+            <div className="mt-2 grid gap-2">
+              {followedUp.map((session) => (
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs" key={session.reviewId}>
+                  <span className="break-all text-mk-ash">
+                    {session.captured.name || "Unnamed visitor"} · {session.captured.email}
+                    {session.followedUpAt ? ` · ${formatDate(session.followedUpAt)}` : ""}
+                  </span>
+                  <AdminVoiceFollowUpButton markAs={false} reviewId={session.reviewId} variant="ghost">
+                    Undo
+                  </AdminVoiceFollowUpButton>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );
