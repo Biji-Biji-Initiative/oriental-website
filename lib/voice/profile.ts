@@ -41,7 +41,11 @@ export type VoiceProfile = {
   session: {
     reasoningEffort: "minimal" | "low" | "medium" | "high" | "xhigh";
     turnDetection: VoiceTurnDetection;
-    transcriptionModel: string;
+    transcription: {
+      model: string;
+      language?: string;
+      prompt?: string;
+    };
     maxDurationMs: number;
     idleTimeoutMs: number;
     /** Window before the idle cutoff in which Reka says a short goodbye. */
@@ -224,15 +228,20 @@ export const VOICE_PROFILE = {
   ],
   session: {
     reasoningEffort: "low",
+    // Semantic VAD waits when the speaker pauses mid-thought — critical for
+    // visitors dictating email addresses and organisation names slowly.
     turnDetection: {
-      type: "server_vad",
-      threshold: 0.5,
-      prefix_padding_ms: 300,
-      silence_duration_ms: 700,
+      type: "semantic_vad",
+      eagerness: "auto",
       create_response: true,
       interrupt_response: true,
     },
-    transcriptionModel: "whisper-1",
+    transcription: {
+      model: "gpt-4o-transcribe",
+      language: "en",
+      prompt:
+        "Malaysian English partner intake for the Oriental Building in Kuala Lumpur. Expect personal names, organisation names, and email addresses spoken aloud, for example 'asha dot lim at example dot com'. Domain terms: Mereka, Biji-biji Initiative, CIMB, Oriental, KL, Academy of Tomorrow.",
+    },
     maxDurationMs: 150_000,
     idleTimeoutMs: 20_000,
     idleGoodbyeGraceMs: 6_000,
