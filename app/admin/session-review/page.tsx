@@ -476,8 +476,11 @@ function VoiceSessionsPanel({ sessions }: { sessions: VoiceSessionRow[] }) {
             <UsageSummary session={session} />
             {session.errors.length > 0 ? (
               <div className="mt-3 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-xs text-destructive">
-                {session.errors.map((error: { eventId?: string; message: string }) => (
-                  <div key={`${error.eventId ?? "error"}:${error.message}`}>{error.message}</div>
+                {session.errors.map((error: { eventId?: string; message: string; code?: string }) => (
+                  <div key={`${error.eventId ?? "error"}:${error.message}`}>
+                    {error.code ? <span className="font-semibold">{error.code}: </span> : null}
+                    {error.message}
+                  </div>
                 ))}
               </div>
             ) : null}

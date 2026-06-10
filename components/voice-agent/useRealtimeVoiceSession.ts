@@ -50,6 +50,8 @@ type UseRealtimeVoiceSessionArgs = {
   getTurnstileToken: () => Promise<string>;
   onClose: (reason: VoiceCloseReason) => void;
   onEvent: (event: RealtimeServerEvent, channel: RTCDataChannel) => void;
+  /** Called shortly before the idle cutoff so the agent can say a goodbye. */
+  onIdleWarning?: () => void;
   onSessionReady?: (metadata: VoiceReviewMetadata) => void;
   segment: SegmentId;
 };
@@ -59,6 +61,7 @@ export function useRealtimeVoiceSession({
   getTurnstileToken,
   onClose,
   onEvent,
+  onIdleWarning,
   onSessionReady,
   segment,
 }: UseRealtimeVoiceSessionArgs) {
@@ -67,19 +70,26 @@ export function useRealtimeVoiceSession({
   const dataChannelRef = useRef<RTCDataChannel | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const idleTimerRef = useRef<number | null>(null);
+  const idleWarningTimerRef = useRef<number | null>(null);
+  const idleClosingRef = useRef(false);
   const maxTimerRef = useRef<number | null>(null);
   const statusRef = useRef<VoiceConnectionStatus>("idle");
+  const onIdleWarningRef = useRef(onIdleWarning);
+  onIdleWarningRef.current = onIdleWarning;
 
   const clearTimers = useCallback(() => {
     if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
+    if (idleWarningTimerRef.current) window.clearTimeout(idleWarningTimerRef.current);
     if (maxTimerRef.current) window.clearTimeout(maxTimerRef.current);
     idleTimerRef.current = null;
+    idleWarningTimerRef.current = null;
     maxTimerRef.current = null;
   }, []);
 
   const teardownVoice = useCallback(
     (reason: VoiceCloseReason = "manual") => {
       clearTimers();
+      idleClosingRef.current = false;
       const channel = dataChannelRef.current;
       dataChannelRef.current = null;
       channel?.close();
@@ -99,7 +109,15 @@ export function useRealtimeVoiceSession({
   );
 
   const resetIdleTimer = useCallback(() => {
+    // While the goodbye is playing, the agent's own audio events must not extend the session.
+    if (idleClosingRef.current) return;
     if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
+    if (idleWarningTimerRef.current) window.clearTimeout(idleWarningTimerRef.current);
+    const graceMs = Math.min(VOICE_SESSION_DEFAULTS.idleGoodbyeGraceMs, VOICE_SESSION_DEFAULTS.idleTimeoutMs);
+    idleWarningTimerRef.current = window.setTimeout(() => {
+      idleClosingRef.current = true;
+      onIdleWarningRef.current?.();
+    }, VOICE_SESSION_DEFAULTS.idleTimeoutMs - graceMs);
     idleTimerRef.current = window.setTimeout(() => {
       teardownVoice("idle_timeout");
     }, VOICE_SESSION_DEFAULTS.idleTimeoutMs);
@@ -203,12 +221,18 @@ export function useRealtimeVoiceSession({
         }
       };
       channel.onmessage = (event) => {
-        resetIdleTimer();
+        let parsed: RealtimeServerEvent | null = null;
         try {
-          onEvent(JSON.parse(event.data) as RealtimeServerEvent, channel);
+          parsed = JSON.parse(event.data) as RealtimeServerEvent;
         } catch {
           // Non-JSON data channel messages are ignored.
         }
+        if (parsed?.type === "input_audio_buffer.speech_started") {
+          // The user came back during the goodbye window; resume the normal idle cycle.
+          idleClosingRef.current = false;
+        }
+        resetIdleTimer();
+        if (parsed) onEvent(parsed, channel);
       };
 
       const offer = await peer.createOffer();

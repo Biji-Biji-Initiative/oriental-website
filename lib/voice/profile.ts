@@ -44,6 +44,8 @@ export type VoiceProfile = {
     transcriptionModel: string;
     maxDurationMs: number;
     idleTimeoutMs: number;
+    /** Window before the idle cutoff in which Reka says a short goodbye. */
+    idleGoodbyeGraceMs: number;
     truncation: {
       type: "retention_ratio";
       retention_ratio: number;
@@ -233,6 +235,7 @@ export const VOICE_PROFILE = {
     transcriptionModel: "whisper-1",
     maxDurationMs: 150_000,
     idleTimeoutMs: 20_000,
+    idleGoodbyeGraceMs: 6_000,
     truncation: {
       type: "retention_ratio",
       retention_ratio: 0.8,

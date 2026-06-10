@@ -9,7 +9,11 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { leadFormSchema } from "@/lib/schemas";
 import { getSegment, type SegmentId, segmentOptions } from "@/lib/segments";
 import { cn } from "@/lib/utils";
-import { serializeHandoffContext, serializeResponseCreate } from "@/lib/voice/client-events";
+import {
+  type RealtimeOutboundEvent,
+  serializeHandoffContext,
+  serializeResponseCreate,
+} from "@/lib/voice/client-events";
 import {
   fetchWithTimeout,
   LEAD_SUBMIT_TIMEOUT_MS,
@@ -32,7 +36,7 @@ import {
 } from "./useRealtimeVoiceSession";
 import { useVoiceRuntime } from "./useVoiceRuntime";
 import { VoiceSessionStage } from "./VoiceSessionStage";
-import { openingVoiceInstruction, voiceCloseReasonToast } from "./voice-dialog-copy";
+import { idleGoodbyeInstruction, openingVoiceInstruction, voiceCloseReasonToast } from "./voice-dialog-copy";
 
 type VoiceAgentDialogProps = {
   open: boolean;
@@ -54,6 +58,9 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
   const reviewRef = useRef<VoiceReviewMetadata | null>(null);
   const localReviewRef = useRef<VoiceReviewCredentials | null>(null);
   const teardownVoiceRef = useRef<((reason: VoiceCloseReason) => void) | null>(null);
+  const sendClientEventsRef = useRef<((events: RealtimeOutboundEvent | RealtimeOutboundEvent[]) => boolean) | null>(
+    null,
+  );
   const connectionStatusRef = useRef<VoiceConnectionStatus>("idle");
 
   const currentReviewCredentials = useCallback((): VoiceReviewCredentials | null => {
@@ -177,12 +184,16 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
     getTurnstileToken: turnstile.execute,
     onClose: handleVoiceClose,
     onEvent: runtime.handleRealtimeEvent,
+    onIdleWarning: () => {
+      sendClientEventsRef.current?.(serializeResponseCreate(idleGoodbyeInstruction));
+    },
     onSessionReady: (metadata) => {
       reviewRef.current = metadata;
     },
     segment,
   });
   teardownVoiceRef.current = teardownVoice;
+  sendClientEventsRef.current = sendClientEvents;
   connectionStatusRef.current = connectionStatus;
 
   useEffect(() => {

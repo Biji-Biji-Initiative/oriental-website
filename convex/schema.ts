@@ -83,6 +83,7 @@ export default defineSchema({
       v.object({
         eventId: v.optional(v.string()),
         message: v.string(),
+        code: v.optional(v.string()),
       }),
     ),
     rateLimits: v.array(v.any()),
