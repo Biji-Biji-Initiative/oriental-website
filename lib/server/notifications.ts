@@ -122,6 +122,7 @@ async function sendSlackMessage(lead: StoredLead): Promise<NotificationResult> {
         "Content-Type": "application/json; charset=utf-8",
       },
       body: JSON.stringify({ channel: slackChannel, text: payload.text, blocks: payload.blocks }),
+      signal: AbortSignal.timeout(8_000),
     });
     const body = (await response.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
     if (!response.ok || body?.ok !== true) {
@@ -139,6 +140,7 @@ async function sendSlackMessage(lead: StoredLead): Promise<NotificationResult> {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(8_000),
   });
   if (!response.ok) {
     return { ok: false, error: "slack_http_error", status: response.status };

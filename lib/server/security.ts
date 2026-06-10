@@ -37,13 +37,19 @@ export async function verifyTurnstile(token: string | undefined, ip: string) {
   body.set("response", token);
   body.set("remoteip", ip);
 
-  const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
-    body,
-    method: "POST",
-  });
-  if (!response.ok) return false;
-  const result = (await response.json()) as { success?: boolean };
-  return result.success === true;
+  // A Turnstile outage must degrade to a clean rejection, not a hung or crashed request.
+  try {
+    const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+      body,
+      method: "POST",
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!response.ok) return false;
+    const result = (await response.json()) as { success?: boolean };
+    return result.success === true;
+  } catch {
+    return false;
+  }
 }
 
 export function noStoreJson(data: unknown, init: ResponseInit = {}) {

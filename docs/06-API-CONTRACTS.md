@@ -159,6 +159,7 @@ type NewsletterResponse = {
 | 400 | `invalid_payload` | Zod validation failed. |
 | 403 | `turnstile_failed` | Cloudflare verify rejected the token. |
 | 429 | `rate_limited` | More than 20 newsletter attempts per IP per hour. |
+| 502 | `persistence_failed` | Production Convex persistence failed; ops is alerted. |
 
 ### Side Effects
 
