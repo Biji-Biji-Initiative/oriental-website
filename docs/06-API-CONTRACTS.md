@@ -91,8 +91,13 @@ type LeadResponse = {
 ```
 
 `persisted: false` is possible in local development when Convex is not
-configured. Production `pnpm check-secrets` requires Convex secrets and the
-route returns `502 persistence_failed` if persistence fails.
+configured, and in production when Convex persistence fails but at least one
+notification channel delivered the lead. Notifications are an independent
+durability path: the owner email and Slack message carry the full lead, so
+they are attempted even when Convex is down, and the route only returns
+`502 persistence_failed` when persistence **and** every notification channel
+fail. Production persistence failures always page ops, including in the
+degraded-success case.
 
 ### Errors
 
@@ -102,7 +107,7 @@ route returns `502 persistence_failed` if persistence fails.
 | 403 | `turnstile_failed` | Cloudflare verify rejected the token. |
 | 429 | `rate_limited` | More than 12 lead attempts per IP per hour. |
 | 500 | `routing_unconfigured` | Production owner email missing for the resolved segment. |
-| 502 | `persistence_failed` | Production Convex persistence failed after validation/routing. |
+| 502 | `persistence_failed` | Production Convex persistence failed and no notification channel delivered the lead. |
 | 502 | `notification_failed` | Production lead persisted, but neither owner email nor Slack delivered. |
 
 ### Side Effects

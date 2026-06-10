@@ -158,7 +158,9 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
         setStatus("submitted");
         toast.success(`Sent to ${routedTo.name}.`, {
           description: notificationDelivered(responseBody)
-            ? "The handoff was saved and the routing notification was delivered."
+            ? responseBody?.persisted
+              ? "The handoff was saved and the routing notification was delivered."
+              : "The handoff was delivered straight to the team."
             : "Saved locally. Owner notifications are not configured in this environment.",
         });
         return { ok: true, submitted: true, id: responseBody?.id, segment: leadState.segment, routedTo };
