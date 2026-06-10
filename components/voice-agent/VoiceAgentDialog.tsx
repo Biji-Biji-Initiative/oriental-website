@@ -319,6 +319,7 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
             <div ref={turnstile.containerRef} />
             <VoiceSessionStage
               activeTopicId={activeTopicId}
+              assistantDraft={runtime.assistantDraft}
               audioRef={audioRef}
               captured={captured}
               connectionStatus={connectionStatus}

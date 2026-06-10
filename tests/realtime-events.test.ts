@@ -673,6 +673,36 @@ describe("reduceRealtimeServerEvent", () => {
     expect(result.state.captured.email).toBe("mei@example.com");
   });
 
+  it("streams assistant captions from transcript deltas and clears them on completion", () => {
+    const first = reduceRealtimeServerEvent(
+      { type: "response.output_audio_transcript.delta", delta: "Hi, I’m " },
+      state(),
+    );
+    const second = reduceRealtimeServerEvent(
+      { type: "response.output_audio_transcript.delta", delta: "Reka." },
+      first.state,
+    );
+    expect(second.state.assistantDraft).toBe("Hi, I’m Reka.");
+
+    const done = reduceRealtimeServerEvent(
+      { type: "response.output_audio_transcript.done", transcript: "Hi, I’m Reka." },
+      second.state,
+    );
+    expect(done.state.assistantDraft).toBe("");
+    expect(done.state.transcript).toEqual([{ role: "assistant", text: "Hi, I’m Reka." }]);
+  });
+
+  it("drops captions of a cancelled response when it finishes", () => {
+    const speaking = reduceRealtimeServerEvent(
+      { type: "response.output_audio_transcript.delta", delta: "Let me tell you about the spa" },
+      state(),
+    );
+    const cancelled = reduceRealtimeServerEvent({ type: "response.done" }, speaking.state);
+
+    expect(cancelled.state.assistantDraft).toBe("");
+    expect(cancelled.state.transcript).toEqual([]);
+  });
+
   it("tracks whether an assistant response is in flight", () => {
     const started = reduceRealtimeServerEvent({ type: "response.created" }, state());
     expect(started.state.activeResponse).toBe(true);

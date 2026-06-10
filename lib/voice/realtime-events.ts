@@ -37,6 +37,8 @@ export type VoiceRuntimeState = {
   errors?: VoiceRuntimeError[];
   pendingUserTranscripts?: number;
   activeResponse?: boolean;
+  /** Streaming caption of what the assistant is saying right now. */
+  assistantDraft?: string;
 };
 
 export type RealtimeClientCommand =
@@ -122,9 +124,14 @@ export function reduceRealtimeServerEvent(
   const commands: RealtimeClientCommand[] = [];
   let state = current;
 
+  if (event.type === "response.output_audio_transcript.delta" && event.delta) {
+    state = { ...state, assistantDraft: (state.assistantDraft ?? "") + event.delta };
+  }
+
   const transcriptText = event.transcript ?? getOutputText(event.item);
   if (event.type === "response.output_audio_transcript.done" && transcriptText) {
     state = appendTranscript(state, "assistant", transcriptText);
+    state = { ...state, assistantDraft: "" };
   }
 
   if (event.type === "input_audio_buffer.committed") {
@@ -149,7 +156,8 @@ export function reduceRealtimeServerEvent(
 
   if (event.type === "response.done") {
     state = accumulateUsage(state, "response", event.response?.usage);
-    state = { ...state, activeResponse: false };
+    // Clearing the draft here also drops captions of a cancelled response.
+    state = { ...state, activeResponse: false, assistantDraft: "" };
   }
 
   if (event.type === "rate_limits.updated" && event.rate_limits) {

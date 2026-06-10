@@ -15,6 +15,7 @@ import { handoffCompletion, voiceStatusCopy } from "./voice-dialog-copy";
 
 type VoiceSessionStageProps = {
   activeTopicId: string | null;
+  assistantDraft: string;
   audioRef: RefObject<HTMLAudioElement | null>;
   captured: CapturedLead;
   connectionStatus: VoiceConnectionStatus;
@@ -29,6 +30,7 @@ type VoiceSessionStageProps = {
 
 export function VoiceSessionStage({
   activeTopicId,
+  assistantDraft,
   audioRef,
   captured,
   connectionStatus,
@@ -123,9 +125,16 @@ export function VoiceSessionStage({
           <MiniOrb size={120} />
         </div>
 
-        <p className="mt-8 max-w-2xl text-[clamp(1.8rem,3vw,2.9rem)] font-medium leading-tight text-balance">
-          What would you like to build at Oriental?
-        </p>
+        {connectionStatus === "listening" && assistantDraft ? (
+          // The transcript log is the accessible live region; this caption is visual.
+          <p aria-hidden className="mt-6 min-h-14 max-w-2xl text-balance text-base leading-7 text-white/80">
+            {captionTail(assistantDraft)}
+          </p>
+        ) : (
+          <p className="mt-8 max-w-2xl text-[clamp(1.8rem,3vw,2.9rem)] font-medium leading-tight text-balance">
+            What would you like to build at Oriental?
+          </p>
+        )}
         <p className="mt-3 max-w-xl text-sm leading-6 text-white/58">{statusCopy.detail}</p>
         <p className="mt-2 text-sm text-white/42">{selectedSegment.voiceOpener}</p>
 
@@ -193,9 +202,14 @@ export function VoiceSessionStage({
         <p className="mt-3 text-xs text-white/42">
           Speak or type anytime. Reka wraps up after 20 quiet seconds, 2.5 minutes max.
         </p>
-        {/* biome-ignore lint/a11y/useMediaCaption: Live WebRTC audio has no static caption asset; captured text appears in the transcript state. */}
+        {/* biome-ignore lint/a11y/useMediaCaption: Live WebRTC audio streams live captions above; the transcript log is the accessible record. */}
         <audio autoPlay ref={audioRef} />
       </div>
     </div>
   );
+}
+
+function captionTail(text: string, maxChars = 180) {
+  if (text.length <= maxChars) return text;
+  return `…${text.slice(-maxChars)}`;
 }

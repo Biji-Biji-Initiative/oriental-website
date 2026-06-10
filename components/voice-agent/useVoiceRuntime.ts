@@ -34,6 +34,7 @@ export function useVoiceRuntime({ initialSegment, prefillEmail, submitLead, onEn
   const [segment, setSegment] = useState<SegmentId>(initialSegment);
   const [captured, setCaptured] = useState<CapturedLead>({ ...emptyCapturedLead, email: prefillEmail ?? "" });
   const [transcript, setTranscript] = useState<VoiceTranscriptEntry[]>([]);
+  const [assistantDraft, setAssistantDraft] = useState("");
   const stateRef = useRef<VoiceRuntimeState>({ segment, captured, transcript, handledCallIds: [] });
   const callbacksRef = useRef({ submitLead, onEndVoice });
   callbacksRef.current = { submitLead, onEndVoice };
@@ -47,6 +48,7 @@ export function useVoiceRuntime({ initialSegment, prefillEmail, submitLead, onEn
     setSegment(initial.segment);
     setCaptured(nextCaptured);
     setTranscript([]);
+    setAssistantDraft("");
     stateRef.current = { segment: initial.segment, captured: nextCaptured, transcript: [], handledCallIds: [] };
   }, []);
 
@@ -94,6 +96,7 @@ export function useVoiceRuntime({ initialSegment, prefillEmail, submitLead, onEn
       setSegment(reduced.state.segment);
       setCaptured(reduced.state.captured);
       setTranscript(reduced.state.transcript);
+      setAssistantDraft(reduced.state.assistantDraft ?? "");
       const newErrors = (reduced.state.errors ?? []).slice(previousErrorCount);
       if (newErrors.some((error) => !isBenignVoiceError(error))) {
         toast.error("Voice session reported an error. The form is still available.", {
@@ -119,6 +122,7 @@ export function useVoiceRuntime({ initialSegment, prefillEmail, submitLead, onEn
 
   return {
     appendUserText,
+    assistantDraft,
     captured,
     handleRealtimeEvent,
     reset,
