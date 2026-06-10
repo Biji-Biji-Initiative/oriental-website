@@ -1,8 +1,14 @@
-import { readEnv } from "@/lib/env";
+import { readEnv, readPositiveIntEnv } from "@/lib/env";
 import type { SegmentId } from "@/lib/segments";
 import { buildVoiceInstructions, VOICE_SESSION_DEFAULTS, VOICE_TOOLS } from "@/lib/voice/profile";
 
-export async function createRealtimeClientSecret(safetyIdentifier: string, initialSegment?: SegmentId) {
+export type RealtimeDeviceProfile = "mobile" | "desktop";
+
+export async function createRealtimeClientSecret(
+  safetyIdentifier: string,
+  initialSegment?: SegmentId,
+  deviceProfile: RealtimeDeviceProfile = "desktop",
+) {
   const apiKey = readEnv("OPENAI_API_KEY");
   if (!apiKey) {
     throw new Error("openai_unconfigured");
@@ -11,6 +17,11 @@ export async function createRealtimeClientSecret(safetyIdentifier: string, initi
   const model = readEnv("OPENAI_REALTIME_MODEL", "gpt-realtime-2") ?? "gpt-realtime-2";
   const voice = readEnv("OPENAI_REALTIME_VOICE", "marin") ?? "marin";
   const speed = readRealtimeSpeed();
+  const transcriptionModel =
+    readEnv("OPENAI_REALTIME_TRANSCRIPTION_MODEL", VOICE_SESSION_DEFAULTS.transcription.model) ??
+    VOICE_SESSION_DEFAULTS.transcription.model;
+  // Phones are close-talking mics; laptops and desktops are far-field.
+  const noiseReduction = deviceProfile === "mobile" ? "near_field" : "far_field";
 
   const response = await fetch("https://api.openai.com/v1/realtime/client_secrets", {
     method: "POST",
@@ -31,7 +42,8 @@ export async function createRealtimeClientSecret(safetyIdentifier: string, initi
         audio: {
           input: {
             turn_detection: VOICE_SESSION_DEFAULTS.turnDetection,
-            transcription: { model: VOICE_SESSION_DEFAULTS.transcriptionModel },
+            transcription: { ...VOICE_SESSION_DEFAULTS.transcription, model: transcriptionModel },
+            noise_reduction: { type: noiseReduction },
           },
           output: { voice, speed },
         },
@@ -65,6 +77,14 @@ export async function createRealtimeClientSecret(safetyIdentifier: string, initi
     model,
     voice,
     speed,
+    transcription_model: transcriptionModel,
+    noise_reduction: noiseReduction,
+    // Session policy is server-tunable so the dominant UX constraints can be
+    // adjusted from Infisical without a code deploy.
+    limits: {
+      max_duration_ms: readPositiveIntEnv("VOICE_MAX_DURATION_MS", VOICE_SESSION_DEFAULTS.maxDurationMs),
+      idle_timeout_ms: readPositiveIntEnv("VOICE_IDLE_TIMEOUT_MS", VOICE_SESSION_DEFAULTS.idleTimeoutMs),
+    },
   };
 }
 

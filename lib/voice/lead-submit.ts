@@ -1,4 +1,8 @@
+import type { NotificationResult } from "@/lib/server/notifications";
+
 export const LEAD_SUBMIT_TIMEOUT_MS = 18_000;
+
+export type { NotificationResult };
 
 export type LeadSubmitResponse = {
   ok?: boolean;
@@ -9,13 +13,6 @@ export type LeadSubmitResponse = {
     email?: NotificationResult;
     slack?: NotificationResult;
   };
-};
-
-export type NotificationResult = {
-  ok?: boolean;
-  skipped?: boolean;
-  reason?: string;
-  error?: string;
 };
 
 export function notificationDelivered(response: LeadSubmitResponse | null) {

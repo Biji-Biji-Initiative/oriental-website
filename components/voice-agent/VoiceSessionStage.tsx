@@ -1,23 +1,29 @@
 "use client";
 
-import { Mic2Icon, PhoneOffIcon, RadioIcon, SparklesIcon } from "lucide-react";
-import type { RefObject } from "react";
+import { Mic2Icon, PhoneOffIcon, RadioIcon, SendIcon, SparklesIcon } from "lucide-react";
+import { type FormEvent, type RefObject, useRef, useState } from "react";
 import { MiniOrb } from "@/components/orb/MiniOrb";
 import { Button } from "@/components/ui/button";
+import { Chip } from "@/components/ui/chip";
+import { Input } from "@/components/ui/input";
 import { tourTopics } from "@/lib/content";
 import type { getSegment } from "@/lib/segments";
 import { cn } from "@/lib/utils";
 import type { CapturedLead } from "@/lib/voice/realtime-events";
 import type { VoiceCloseReason, VoiceConnectionStatus } from "./useRealtimeVoiceSession";
+import { useMicAudioLevel, useVoiceAudioLevel } from "./useVoiceAudioLevel";
 import { handoffCompletion, voiceStatusCopy } from "./voice-dialog-copy";
 
 type VoiceSessionStageProps = {
   activeTopicId: string | null;
+  assistantDraft: string;
   audioRef: RefObject<HTMLAudioElement | null>;
   captured: CapturedLead;
   connectionStatus: VoiceConnectionStatus;
+  getLocalStream: () => MediaStream | null;
   onConnect: () => void;
   onDisconnect: (reason: VoiceCloseReason) => void;
+  onSendText: (text: string) => boolean;
   onTopicToggle: (topicId: string) => void;
   selectedSegment: ReturnType<typeof getSegment>;
   status: "idle" | "submitted";
@@ -26,11 +32,14 @@ type VoiceSessionStageProps = {
 
 export function VoiceSessionStage({
   activeTopicId,
+  assistantDraft,
   audioRef,
   captured,
   connectionStatus,
+  getLocalStream,
   onConnect,
   onDisconnect,
+  onSendText,
   onTopicToggle,
   selectedSegment,
   status,
@@ -39,6 +48,17 @@ export function VoiceSessionStage({
   const activeTopic = tourTopics.find((topic) => topic.id === activeTopicId) ?? null;
   const statusCopy = voiceStatusCopy(connectionStatus);
   const completion = handoffCompletion(captured);
+  const orbRef = useRef<HTMLDivElement | null>(null);
+  const [draft, setDraft] = useState("");
+  useVoiceAudioLevel(audioRef, orbRef, connectionStatus === "listening");
+  useMicAudioLevel(getLocalStream, orbRef, connectionStatus === "listening");
+
+  const handleComposerSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const text = draft.trim();
+    if (!text) return;
+    if (onSendText(text)) setDraft("");
+  };
 
   if (status === "submitted") {
     return (
@@ -58,52 +78,67 @@ export function VoiceSessionStage({
     <div>
       <div className="mx-auto grid max-w-[min(740px,100%)] place-items-center text-center">
         <div className="flex flex-wrap justify-center gap-2">
-          <div
-            className={cn(
-              "inline-flex h-9 items-center gap-2 rounded-full border px-3 text-xs font-semibold",
-              connectionStatus === "listening"
-                ? "border-mk-horizon/45 bg-mk-horizon/14 text-mk-horizon"
-                : "border-white/12 bg-white/[0.045] text-white/62",
-            )}
-            aria-live="polite"
-          >
+          <Chip active={connectionStatus === "listening"} aria-live="polite" className="h-9">
             <RadioIcon className={cn("size-3.5", connectionStatus === "listening" && "motion-safe:animate-pulse")} />
             {statusCopy.label}
-          </div>
-          <div
-            className={cn(
-              "inline-flex h-9 items-center gap-2 rounded-full border px-3 text-xs font-semibold",
-              completion.ready
-                ? "border-mk-horizon/45 bg-mk-horizon/14 text-mk-horizon"
-                : "border-white/12 bg-white/[0.045] text-white/62",
-            )}
-          >
+          </Chip>
+          <Chip active={completion.ready} className="h-9">
             <SparklesIcon className="size-3.5" />
             {completion.completedCount}/{completion.totalCount} details
-          </div>
+          </Chip>
         </div>
 
         <div
-          className={cn(
-            "relative mt-8 grid size-44 place-items-center rounded-full bg-[radial-gradient(circle_at_35%_30%,#c9d5ec,#5c7db8_44%,#1f3f7c_68%,#100d18)] shadow-[0_0_90px_rgba(92,125,184,0.42)] sm:size-56",
-            connectionStatus === "listening" && "shadow-[0_0_120px_rgba(183,216,255,0.5)]",
-          )}
+          className="voice-orb mt-8 grid size-44 place-items-center sm:size-56"
+          data-status={connectionStatus}
+          ref={orbRef}
         >
-          <div
-            className={cn(
-              "absolute inset-[-24px] rounded-full border border-white/10",
-              connectionStatus !== "idle" && "motion-safe:animate-pulse",
-            )}
-          />
-          <div className="absolute inset-[-44px] rounded-full border border-mk-horizon/10" />
-          <MiniOrb size={120} />
+          <div aria-hidden className="voice-orb__aurora" />
+          <div aria-hidden className="voice-orb__glow" />
+          <div aria-hidden className="voice-orb__iris" />
+          <div aria-hidden className="voice-orb__ripple" />
+          <div aria-hidden className="voice-orb__ripple voice-orb__ripple--late" />
+          <div aria-hidden className="voice-orb__halo" />
+          <div aria-hidden className="voice-orb__halo voice-orb__halo--far" />
+          <div className="relative">
+            <MiniOrb size={120} />
+          </div>
         </div>
 
-        <p className="mt-8 max-w-2xl text-[clamp(1.8rem,3vw,2.9rem)] font-medium leading-tight text-balance">
-          What would you like to build at Oriental?
-        </p>
+        {connectionStatus === "listening" && assistantDraft ? (
+          // The transcript log is the accessible live region; this caption is visual.
+          <p aria-hidden className="mt-6 min-h-14 max-w-2xl text-balance text-base leading-7 text-white/80">
+            {captionTail(assistantDraft)}
+          </p>
+        ) : (
+          <p className="mt-8 max-w-2xl text-[clamp(1.8rem,3vw,2.9rem)] font-medium leading-tight text-balance">
+            What would you like to build at Oriental?
+          </p>
+        )}
         <p className="mt-3 max-w-xl text-sm leading-6 text-white/58">{statusCopy.detail}</p>
         <p className="mt-2 text-sm text-white/42">{selectedSegment.voiceOpener}</p>
+
+        {connectionStatus === "listening" ? (
+          <form className="mt-6 flex w-full max-w-xl gap-2" onSubmit={handleComposerSubmit}>
+            <Input
+              aria-label="Type a message to Reka"
+              className="rounded-full px-5"
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder="Prefer typing? Reka reads it instantly."
+              value={draft}
+              variant="glass"
+            />
+            <Button
+              aria-label="Send typed message"
+              className="size-11 rounded-full bg-white/10 text-white transition hover:bg-mk-horizon hover:text-mk-off-black disabled:opacity-40"
+              disabled={!draft.trim()}
+              size="icon"
+              type="submit"
+            >
+              <SendIcon className="size-4" />
+            </Button>
+          </form>
+        ) : null}
 
         <div className="mt-8 flex max-w-2xl flex-wrap justify-center gap-2">
           {tourTopics.map((topic) => (
@@ -123,7 +158,7 @@ export function VoiceSessionStage({
         </div>
 
         {activeTopic ? (
-          <div className="mt-5 w-full max-w-2xl rounded-[18px] border border-white/10 bg-white/[0.045] p-4 text-left shadow-[0_20px_80px_rgba(0,0,0,0.18)]">
+          <div className="mt-5 w-full max-w-2xl rounded-lg border border-white/10 bg-white/[0.045] p-4 text-left shadow-[0_20px_80px_rgba(0,0,0,0.18)]">
             <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-mk-horizon/80">
               Oriental note
             </div>
@@ -134,7 +169,7 @@ export function VoiceSessionStage({
 
         <Button
           className="mt-8 h-12 rounded-full bg-white px-7 text-sm font-semibold text-mk-off-black transition hover:bg-mk-horizon disabled:cursor-not-allowed disabled:opacity-55"
-          disabled={!turnstileReady || connectionStatus === "connecting"}
+          disabled={!turnstileReady || connectionStatus === "connecting" || connectionStatus === "requesting_mic"}
           onClick={connectionStatus === "listening" ? () => onDisconnect("manual") : onConnect}
           type="button"
         >
@@ -145,10 +180,17 @@ export function VoiceSessionStage({
           )}
           {statusCopy.button}
         </Button>
-        <p className="mt-3 text-xs text-white/42">Auto-ends after 20 seconds of inactivity or 2.5 minutes total.</p>
-        {/* biome-ignore lint/a11y/useMediaCaption: Live WebRTC audio has no static caption asset; captured text appears in the transcript state. */}
+        <p className="mt-3 text-xs text-white/42">
+          Speak or type anytime. Reka says a quick goodbye if you go quiet, and your typed details stay here.
+        </p>
+        {/* biome-ignore lint/a11y/useMediaCaption: Live WebRTC audio streams live captions above; the transcript log is the accessible record. */}
         <audio autoPlay ref={audioRef} />
       </div>
     </div>
   );
+}
+
+function captionTail(text: string, maxChars = 180) {
+  if (text.length <= maxChars) return text;
+  return `…${text.slice(-maxChars)}`;
 }

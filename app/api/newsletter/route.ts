@@ -1,8 +1,10 @@
 import type { NextRequest } from "next/server";
+import { isProductionEnv } from "@/lib/env";
 import { newsletterRequestSchema } from "@/lib/schemas";
 import { persistLead } from "@/lib/server/convex";
-import { durationSince, logInfo, logWarn } from "@/lib/server/logger";
+import { durationSince, logError, logInfo, logWarn } from "@/lib/server/logger";
 import { routeLead } from "@/lib/server/notifications";
+import { sendOpsAlert } from "@/lib/server/ops-alerts";
 import { checkRateLimit, hashIp, noStoreJson, requestIp, verifyTurnstile } from "@/lib/server/security";
 
 export const runtime = "nodejs";
@@ -52,7 +54,28 @@ export async function POST(request: NextRequest) {
     utm: parsed.data.utm,
   });
 
-  const persistence = await persistLead(lead);
+  const persistence = await persistLead(lead).catch((error) => ({
+    id: lead.id,
+    persisted: false as const,
+    reason: error instanceof Error ? error.message : "convex_failed",
+  }));
+  if (!persistence.persisted && isProductionEnv()) {
+    const reason = persistence.reason;
+    logError("newsletter.persistence_failed", {
+      requestId,
+      leadId: lead.id,
+      reason,
+      durationMs: durationSince(startedAt),
+    });
+    await sendOpsAlert({
+      event: "newsletter.persistence_failed",
+      severity: "critical",
+      summary: "A production hero email signup failed to persist to Convex.",
+      meta: { requestId, leadId: lead.id, reason },
+      fingerprint: reason,
+    });
+    return noStoreJson({ ok: false, error: "persistence_failed" }, { status: 502 });
+  }
   logInfo("newsletter.accepted", {
     requestId,
     leadId: lead.id,

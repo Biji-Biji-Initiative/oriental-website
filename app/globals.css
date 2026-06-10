@@ -32,6 +32,10 @@
   --color-mk-strategy-teal: #2d6a7a;
   --color-mk-horizon: #c9d5ec;
   --color-mk-line: rgba(16, 13, 24, 0.08);
+  --color-mk-ash: #5f5950;
+  --color-mk-blue: #2851a8;
+  --color-mk-error: #ffb4ab;
+  --color-mk-error-soft: #ffd8d2;
 
   --font-sans: var(--font-poppins), ui-sans-serif, system-ui, sans-serif;
   --font-serif: var(--font-fraunces), ui-serif, Georgia, serif;
@@ -554,5 +558,171 @@
     animation-iteration-count: 1;
     scroll-behavior: auto;
     transition-duration: 0.01ms;
+  }
+}
+
+/* Voice orb — a living node. Layered aurora, breathing, and voice-driven
+   ripples, all keyed off --voice-level (0..1) written by useVoiceAudioLevel. */
+.voice-orb {
+  position: relative;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 35% 30%, #c9d5ec, #5c7db8 44%, #1f3f7c 68%, #100d18);
+  box-shadow: 0 0 90px rgba(92, 125, 184, 0.42);
+  transform: scale(calc(1 + var(--voice-level, 0) * 0.09));
+  transition: box-shadow 0.6s ease;
+}
+
+.voice-orb[data-status="listening"] {
+  box-shadow: 0 0 120px rgba(183, 216, 255, 0.5);
+}
+
+.voice-orb__aurora {
+  position: absolute;
+  inset: -3px;
+  border-radius: 9999px;
+  background: conic-gradient(
+    from 0deg,
+    rgba(201, 213, 236, 0),
+    rgba(201, 213, 236, 0.55),
+    rgba(45, 106, 122, 0.3),
+    rgba(40, 81, 168, 0.5),
+    rgba(201, 213, 236, 0)
+  );
+  filter: blur(14px);
+  opacity: 0.45;
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+
+.voice-orb[data-status="listening"] .voice-orb__aurora,
+.voice-orb[data-status="connecting"] .voice-orb__aurora,
+.voice-orb[data-status="requesting_mic"] .voice-orb__aurora {
+  opacity: 0.7;
+}
+
+.voice-orb__glow {
+  position: absolute;
+  inset: -14px;
+  border-radius: 9999px;
+  background: rgba(201, 213, 236, 0.28);
+  filter: blur(26px);
+  opacity: calc(var(--voice-level, 0) * 0.9);
+  pointer-events: none;
+}
+
+.voice-orb__ripple {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: 1px solid rgba(201, 213, 236, 0.6);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.voice-orb__halo {
+  position: absolute;
+  inset: -24px;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  pointer-events: none;
+}
+
+.voice-orb__halo--far {
+  inset: -44px;
+  border-color: rgba(201, 213, 236, 0.1);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .voice-orb {
+    animation: voice-orb-breathe 6.5s ease-in-out infinite;
+  }
+
+  .voice-orb__aurora {
+    animation: voice-orb-aurora 16s linear infinite;
+  }
+
+  .voice-orb[data-status="listening"] .voice-orb__aurora {
+    animation-duration: 7s;
+  }
+
+  .voice-orb[data-status="connecting"] .voice-orb__aurora,
+  .voice-orb[data-status="requesting_mic"] .voice-orb__aurora {
+    animation-duration: 3.2s;
+  }
+
+  /* Ripples carry the voice: their opacity is multiplied by the live level,
+     so they surge while Reka speaks and vanish in silence. */
+  .voice-orb[data-status="listening"] .voice-orb__ripple {
+    animation: voice-orb-ripple 1.8s ease-out infinite;
+  }
+
+  .voice-orb[data-status="listening"] .voice-orb__ripple--late {
+    animation-delay: 0.9s;
+  }
+
+  .voice-orb[data-status="listening"] .voice-orb__halo {
+    animation: voice-orb-halo 5s ease-in-out infinite;
+  }
+}
+
+@keyframes voice-orb-breathe {
+  0%,
+  100% {
+    transform: scale(calc(1 + var(--voice-level, 0) * 0.09));
+  }
+  50% {
+    transform: scale(calc((1 + var(--voice-level, 0) * 0.09) * 1.018));
+  }
+}
+
+@keyframes voice-orb-aurora {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes voice-orb-ripple {
+  0% {
+    transform: scale(0.6);
+    opacity: calc(var(--voice-level, 0) * 0.6);
+  }
+  100% {
+    transform: scale(1.32);
+    opacity: 0;
+  }
+}
+
+@keyframes voice-orb-halo {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* The listening iris: an inner teal ring that swells with the visitor's own
+   voice (--user-level), so the orb visibly takes speech in while Reka's
+   ripples carry it out. */
+.voice-orb__iris {
+  position: absolute;
+  inset: 26%;
+  border-radius: 9999px;
+  border: 2px solid rgba(122, 196, 212, 0.85);
+  box-shadow: 0 0 24px rgba(122, 196, 212, 0.5);
+  transform: scale(calc(1 + var(--user-level, 0) * 0.45));
+  opacity: calc(var(--user-level, 0) * 0.9);
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+
+.voice-orb[data-status="listening"] .voice-orb__aurora {
+  filter: blur(14px) hue-rotate(calc(var(--user-level, 0) * -36deg));
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .orb-breathe {
+    animation: voice-orb-breathe 6.5s ease-in-out infinite;
   }
 }

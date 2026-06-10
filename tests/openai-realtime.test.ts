@@ -36,6 +36,9 @@ describe("createRealtimeClientSecret", () => {
       model: "gpt-realtime-2",
       voice: "marin",
       speed: 1.12,
+      transcription_model: "gpt-4o-transcribe",
+      noise_reduction: "far_field",
+      limits: { max_duration_ms: 150_000, idle_timeout_ms: 20_000 },
     });
     expect(fetchMock).toHaveBeenCalledWith(
       "https://api.openai.com/v1/realtime/client_secrets",
@@ -60,11 +63,13 @@ describe("createRealtimeClientSecret", () => {
       audio: {
         input: {
           turn_detection: {
-            type: "server_vad",
+            type: "semantic_vad",
+            eagerness: "auto",
             create_response: true,
             interrupt_response: true,
           },
-          transcription: { model: "whisper-1" },
+          transcription: { model: "gpt-4o-transcribe" },
+          noise_reduction: { type: "far_field" },
         },
         output: { voice: "marin", speed: 1.12 },
       },
@@ -77,7 +82,59 @@ describe("createRealtimeClientSecret", () => {
     });
     expect(body.session.instructions).toContain("# Role and Objective");
     expect(body.session.instructions).toContain("Initial Context");
+    expect(body.session.audio.input.transcription.prompt).toContain("Mereka");
+    expect(body.session.audio.input.transcription.prompt).toContain("Bahasa Melayu");
+    expect(body.session.audio.input.transcription.language).toBeUndefined();
     expect(body.session.tools.map((tool: { name: string }) => tool.name)).toContain("wait_for_user");
+  });
+
+  it("uses near-field noise reduction for mobile sessions", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+      Response.json({
+        client_secret: { value: "client-secret", expires_at: 123 },
+        session: { id: "sess_mobile" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await createRealtimeClientSecret("safe-user", "ai", "mobile");
+
+    expect(result.noise_reduction).toBe("near_field");
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(body.session.audio.input.noise_reduction).toEqual({ type: "near_field" });
+  });
+
+  it("serves env-tuned session limits to the client", async () => {
+    process.env.VOICE_MAX_DURATION_MS = "300000";
+    process.env.VOICE_IDLE_TIMEOUT_MS = "30000";
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+      Response.json({
+        client_secret: { value: "client-secret", expires_at: 123 },
+        session: { id: "sess_limits" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await createRealtimeClientSecret("safe-user", "ai");
+
+    expect(result.limits).toEqual({ max_duration_ms: 300_000, idle_timeout_ms: 30_000 });
+  });
+
+  it("allows overriding the transcription model from the environment", async () => {
+    process.env.OPENAI_REALTIME_TRANSCRIPTION_MODEL = "gpt-realtime-whisper";
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+      Response.json({
+        client_secret: { value: "client-secret", expires_at: 123 },
+        session: { id: "sess_stt" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await createRealtimeClientSecret("safe-user", "ai");
+
+    expect(result.transcription_model).toBe("gpt-realtime-whisper");
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(body.session.audio.input.transcription.model).toBe("gpt-realtime-whisper");
   });
 
   it("unwraps quoted Infisical model and voice values before calling OpenAI", async () => {

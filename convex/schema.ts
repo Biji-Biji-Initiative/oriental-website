@@ -83,6 +83,7 @@ export default defineSchema({
       v.object({
         eventId: v.optional(v.string()),
         message: v.string(),
+        code: v.optional(v.string()),
       }),
     ),
     rateLimits: v.array(v.any()),
@@ -90,6 +91,7 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
     submittedAt: v.optional(v.number()),
+    followedUpAt: v.optional(v.number()),
   })
     .index("by_review_id", ["reviewId"])
     .index("by_session_id", ["sessionId"])

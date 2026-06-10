@@ -62,6 +62,18 @@ export async function updateAdminLeadWorkflow(leadId: string, workflow: AdminLea
   return { ok: true as const };
 }
 
+export async function setAdminVoiceFollowUp(reviewId: string, followedUp: boolean) {
+  const client = createConvexClient();
+  if (!client) return { ok: false as const, reason: "convex_unconfigured" };
+  const result = await client.client.mutation(api.leads.setVoiceSessionFollowUp, {
+    ingestSecret: client.ingestSecret,
+    reviewId,
+    followedUp,
+  });
+  if (!result.ok) return { ok: false as const, reason: result.reason ?? "not_found" };
+  return { ok: true as const };
+}
+
 function createConvexClient() {
   const convexUrl = readEnv("CONVEX_URL") ?? readEnv("NEXT_PUBLIC_CONVEX_URL");
   const ingestSecret = readEnv("CONVEX_INGEST_SECRET");

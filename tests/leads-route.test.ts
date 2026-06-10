@@ -92,4 +92,49 @@ describe("POST /api/leads", () => {
     });
     expect(mocks.recordLeadNotificationStatus).toHaveBeenCalledWith("lead_123", body.notifications);
   });
+
+  describe("production persistence failure", () => {
+    beforeEach(() => {
+      process.env = {
+        ...process.env,
+        NODE_ENV: "production",
+        TURNSTILE_SECRET_KEY: "turnstile-secret",
+        OWNER_TECHNOLOGY: "gurpreet@example.com",
+      };
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => Response.json({ success: true, ok: true })),
+      );
+      mocks.persistLead.mockRejectedValue(new Error("convex_down"));
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("degrades to notification-only delivery instead of dropping the lead", async () => {
+      const response = await POST(request());
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body).toMatchObject({
+        ok: true,
+        persisted: false,
+        notifications: { slack: { ok: true, transport: "slack" } },
+      });
+      expect(mocks.notifySlack).toHaveBeenCalledTimes(1);
+      expect(mocks.recordLeadNotificationStatus).not.toHaveBeenCalled();
+    });
+
+    it("returns 502 only when persistence and every notification channel fail", async () => {
+      mocks.notifyOwner.mockResolvedValue({ ok: false, error: "smtp_down" });
+      mocks.notifySlack.mockResolvedValue({ ok: false, error: "slack_http_error", status: 500 });
+
+      const response = await POST(request());
+      const body = await response.json();
+
+      expect(response.status).toBe(502);
+      expect(body).toMatchObject({ ok: false, error: "persistence_failed", reason: "convex_down" });
+    });
+  });
 });

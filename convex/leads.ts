@@ -68,6 +68,7 @@ const voiceSessionValidator = v.object({
     v.object({
       eventId: v.optional(v.string()),
       message: v.string(),
+      code: v.optional(v.string()),
     }),
   ),
   rateLimits: v.array(v.any()),
@@ -237,6 +238,21 @@ export const recordVoiceSession = mutationGeneric({
       createdAt: now,
     });
     return { ok: true, id: snapshot.reviewId };
+  },
+});
+
+export const setVoiceSessionFollowUp = mutationGeneric({
+  args: { ingestSecret: v.string(), reviewId: v.string(), followedUp: v.boolean() },
+  returns: v.object({ ok: v.boolean(), reason: v.optional(v.string()) }),
+  handler: async (ctx, { ingestSecret, reviewId, followedUp }) => {
+    requireIngestSecret(ingestSecret);
+    const session = await ctx.db
+      .query("voiceSessions")
+      .withIndex("by_review_id", (query) => query.eq("reviewId", reviewId))
+      .unique();
+    if (!session) return { ok: false, reason: "not_found" };
+    await ctx.db.patch(session._id, { followedUpAt: followedUp ? Date.now() : undefined });
+    return { ok: true };
   },
 });
 

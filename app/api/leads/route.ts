@@ -70,6 +70,14 @@ export async function POST(request: NextRequest) {
     persisted: false as const,
     reason: error instanceof Error ? error.message : "convex_failed",
   }));
+  // Notifications double as an independent durability path: the owner email and
+  // Slack message carry the full lead, so they are attempted even when Convex is down.
+  const [email, slack] = await Promise.allSettled([notifyOwner(lead), notifySlack(lead)]);
+  const notifications = {
+    email: notificationResult(email, "email_failed"),
+    slack: notificationResult(slack, "slack_failed"),
+  };
+  const delivered = notifications.email.ok === true || notifications.slack.ok === true;
   if (!persistence.persisted && isProductionEnv()) {
     logError("lead.persistence_failed", {
       requestId,
@@ -77,23 +85,22 @@ export async function POST(request: NextRequest) {
       source: lead.source,
       segment: lead.segment,
       reason: persistence.reason,
+      notificationDelivered: delivered,
       durationMs: durationSince(startedAt),
     });
     await sendOpsAlert({
       event: "lead.persistence_failed",
       severity: "critical",
-      summary: "A production lead failed to persist to Convex.",
+      summary: delivered
+        ? "A production lead failed to persist to Convex; it reached the team through notifications only."
+        : "A production lead failed to persist to Convex and no notification channel delivered it.",
       meta: { requestId, leadId: lead.id, source: lead.source, segment: lead.segment, reason: persistence.reason },
       fingerprint: persistence.reason,
     });
-    return noStoreJson({ ok: false, error: "persistence_failed", reason: persistence.reason }, { status: 502 });
+    if (!delivered) {
+      return noStoreJson({ ok: false, error: "persistence_failed", reason: persistence.reason }, { status: 502 });
+    }
   }
-  const [email, slack] = await Promise.allSettled([notifyOwner(lead), notifySlack(lead)]);
-  const notifications = {
-    email: notificationResult(email, "email_failed"),
-    slack: notificationResult(slack, "slack_failed"),
-  };
-  const delivered = notifications.email.ok === true || notifications.slack.ok === true;
   if (persistence.persisted) {
     await recordLeadNotificationStatus(persistence.id, notifications).catch((error) => {
       logWarn("lead.notification_status_persist_failed", {

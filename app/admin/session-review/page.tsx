@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import type { ReactNode } from "react";
+import { AdminAutoRefresh } from "@/components/admin/AdminAutoRefresh";
 import { AdminLeadWorkflowForm } from "@/components/admin/AdminLeadWorkflowForm";
 import { AdminLoginForm } from "@/components/admin/AdminLoginForm";
+import { AdminVoiceFollowUpButton } from "@/components/admin/AdminVoiceFollowUpButton";
 import { Badge } from "@/components/admin/Badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,8 +14,10 @@ import {
   normalizeAdminLeadPriority,
   normalizeAdminLeadStatus,
 } from "@/lib/admin-workflow";
+import { getSegment } from "@/lib/segments";
 import { adminCookieName, verifyAdminSessionCookie } from "@/lib/server/admin-auth";
 import { getAdminReviewDashboard } from "@/lib/server/convex";
+import { isBenignVoiceError, type VoiceRuntimeError } from "@/lib/voice/realtime-events";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +49,10 @@ export default async function SessionReviewPage() {
     );
   }
 
+  const sessionsWithRealErrors = dashboard.data.voiceSessions.filter((session: VoiceSessionRow) =>
+    session.errors.some((error: VoiceRuntimeError) => !isBenignVoiceError(error)),
+  ).length;
+
   return (
     <AdminShell generatedAt={dashboard.data.generatedAt}>
       <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
@@ -53,7 +61,7 @@ export default async function SessionReviewPage() {
         <MetricCard label="High priority" tone="danger" value={dashboard.data.metrics.urgentLeads} />
         <MetricCard label="Notification health" suffix="%" value={dashboard.data.metrics.notificationDeliveryRate} />
         <MetricCard label="Voice submit rate" suffix="%" value={dashboard.data.metrics.voiceSubmitRate} />
-        <MetricCard label="Sessions with errors" tone="danger" value={dashboard.data.metrics.sessionsWithErrors} />
+        <MetricCard label="Sessions with errors" tone="danger" value={sessionsWithRealErrors} />
       </div>
 
       <section className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
@@ -61,7 +69,8 @@ export default async function SessionReviewPage() {
         <WorkflowPanel leads={dashboard.data.leads} />
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-2">
+      <section className="grid gap-5 xl:grid-cols-3">
+        <RecoverableVoicePanel sessions={dashboard.data.voiceSessions} />
         <PriorityPanel leads={dashboard.data.queues.highPriority} />
         <NotificationPanel leads={dashboard.data.queues.failedNotifications} />
       </section>
@@ -88,11 +97,14 @@ function AdminShell({ children, generatedAt }: { children: ReactNode; generatedA
             </p>
             {generatedAt ? <p className="mt-2 text-xs text-mk-ash">Fresh as of {formatDate(generatedAt)}</p> : null}
           </div>
-          <form action="/api/admin/logout" method="post">
-            <Button type="submit" variant="outline">
-              Sign out
-            </Button>
-          </form>
+          <div className="flex items-center gap-2">
+            <AdminAutoRefresh />
+            <form action="/api/admin/logout" method="post">
+              <Button type="submit" variant="outline">
+                Sign out
+              </Button>
+            </form>
+          </div>
         </header>
         {children}
       </div>
@@ -148,6 +160,12 @@ function WorkflowPanel({ leads }: { leads: LeadRow[] }) {
 
 function AnalyticsPanel({ data }: { data: DashboardData }) {
   const maxDaily = Math.max(...data.analytics.dailyLeads.map((day) => day.count), 1);
+  const voiceRealErrors = data.voiceSessions.filter((session: VoiceSessionRow) =>
+    session.errors.some((error: VoiceRuntimeError) => !isBenignVoiceError(error)),
+  ).length;
+  const recoverableCount = data.voiceSessions.filter(
+    (session: VoiceSessionRow) => !session.leadId && session.captured.email.trim().length > 0 && !session.followedUpAt,
+  ).length;
   return (
     <Card className="border-mk-ash/20 bg-white shadow-sm">
       <CardHeader>
@@ -191,8 +209,8 @@ function AnalyticsPanel({ data }: { data: DashboardData }) {
           <HealthBox
             label="Voice funnel"
             value={`${data.metrics.voiceSubmitRate}%`}
-            detail={`${data.analytics.voice.submitted}/${data.analytics.voice.sessions} submitted · ${data.analytics.voice.withErrors} with errors · ${data.analytics.voice.totalResponseTokens} response tokens`}
-            danger={data.analytics.voice.withErrors > 0}
+            detail={`${data.analytics.voice.submitted}/${data.analytics.voice.sessions} submitted · ${recoverableCount} recoverable · ${voiceRealErrors} with errors · ${data.analytics.voice.totalResponseTokens} response tokens`}
+            danger={voiceRealErrors > 0}
           />
         </div>
       </CardContent>
@@ -421,6 +439,88 @@ function priorityTone(priority: ReturnType<typeof normalizeAdminLeadPriority>) {
   return "blue";
 }
 
+function RecoverableVoicePanel({ sessions }: { sessions: VoiceSessionRow[] }) {
+  const unsent = sessions.filter((session) => !session.leadId && session.captured.email.trim().length > 0);
+  const recoverable = unsent.filter((session) => !session.followedUpAt);
+  const followedUp = unsent.filter((session) => Boolean(session.followedUpAt));
+  return (
+    <Card className="border-mk-ash/20 bg-white shadow-sm">
+      <CardHeader>
+        <CardTitle>Recoverable voice leads</CardTitle>
+        <CardDescription>
+          Visitors who shared contact details with Reka but never sent the handoff. Follow up before they go cold.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        {recoverable.length === 0 ? <EmptyState label="No unsent voice sessions waiting for follow-up." /> : null}
+        {recoverable.map((session) => {
+          const owner = getSegment(session.segment).routedTo.name;
+          return (
+            <article className="rounded-lg border border-mk-ash/15 p-3" key={session.reviewId}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="font-semibold">{session.captured.name || "Unnamed visitor"}</div>
+                  <div className="mt-1 break-all text-xs text-mk-ash">
+                    {session.captured.email}
+                    {session.captured.org ? ` · ${session.captured.org}` : ""}
+                  </div>
+                </div>
+                <Badge tone="amber">unsent</Badge>
+              </div>
+              <div className="mt-3 text-xs text-mk-ash">
+                {owner} · {session.segment} · {formatDate(session.updatedAt)}
+              </div>
+              {session.captured.message ? (
+                <p className="mt-2 line-clamp-3 text-sm leading-6">{session.captured.message}</p>
+              ) : null}
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <a
+                  className="inline-flex h-8 items-center rounded-full bg-mk-off-black px-4 text-xs font-semibold text-white transition hover:bg-mk-blue"
+                  href={followUpMailto(session)}
+                >
+                  Follow up by email
+                </a>
+                <AdminVoiceFollowUpButton markAs={true} reviewId={session.reviewId}>
+                  Mark followed up
+                </AdminVoiceFollowUpButton>
+              </div>
+            </article>
+          );
+        })}
+        {followedUp.length > 0 ? (
+          <div className="rounded-lg border border-mk-ash/15 bg-mk-paper/60 p-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
+              Followed up
+            </div>
+            <div className="mt-2 grid gap-2">
+              {followedUp.map((session) => (
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs" key={session.reviewId}>
+                  <span className="break-all text-mk-ash">
+                    {session.captured.name || "Unnamed visitor"} · {session.captured.email}
+                    {session.followedUpAt ? ` · ${formatDate(session.followedUpAt)}` : ""}
+                  </span>
+                  <AdminVoiceFollowUpButton markAs={false} reviewId={session.reviewId} variant="ghost">
+                    Undo
+                  </AdminVoiceFollowUpButton>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function followUpMailto(session: VoiceSessionRow) {
+  const subject = encodeURIComponent("Following up on your Oriental enquiry");
+  const greeting = session.captured.name ? `Hi ${session.captured.name},` : "Hi,";
+  const body = encodeURIComponent(
+    `${greeting}\n\nThanks for talking with Reka about Oriental. Picking up where that conversation left off —\n\n`,
+  );
+  return `mailto:${encodeURIComponent(session.captured.email)}?subject=${subject}&body=${body}`;
+}
+
 function VoiceSessionsPanel({ sessions }: { sessions: VoiceSessionRow[] }) {
   return (
     <Card className="border-mk-ash/20 bg-white shadow-sm">
@@ -432,58 +532,81 @@ function VoiceSessionsPanel({ sessions }: { sessions: VoiceSessionRow[] }) {
       </CardHeader>
       <CardContent className="grid gap-3">
         {sessions.length === 0 ? <EmptyState label="No voice review snapshots yet." /> : null}
-        {sessions.map((session) => (
-          <article className="rounded-lg border border-mk-ash/15 p-4" key={session.reviewId}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <div className="font-semibold">{session.captured.name || "Uncaptured visitor"}</div>
-                <div className="mt-1 text-xs text-mk-ash">
-                  {session.segment} · updated {formatDate(session.updatedAt)}
+        {sessions.map((session) => {
+          const realErrorCount = session.errors.filter((error: VoiceRuntimeError) => !isBenignVoiceError(error)).length;
+          const benignErrorCount = session.errors.length - realErrorCount;
+          return (
+            <article className="rounded-lg border border-mk-ash/15 p-4" key={session.reviewId}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="font-semibold">{session.captured.name || "Uncaptured visitor"}</div>
+                  <div className="mt-1 text-xs text-mk-ash">
+                    {session.segment} · updated {formatDate(session.updatedAt)}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Badge tone={session.leadId ? "green" : "neutral"}>
+                    {session.leadId ? "submitted" : session.status}
+                  </Badge>
+                  <Badge tone={realErrorCount > 0 ? "red" : "blue"}>
+                    {realErrorCount > 0
+                      ? `${realErrorCount} errors`
+                      : benignErrorCount > 0
+                        ? `${benignErrorCount} benign`
+                        : "0 errors"}
+                  </Badge>
                 </div>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <Badge tone={session.leadId ? "green" : "neutral"}>
-                  {session.leadId ? "submitted" : session.status}
-                </Badge>
-                <Badge tone={session.errors.length > 0 ? "red" : "blue"}>{session.errors.length} errors</Badge>
+              <dl className="mt-4 grid gap-2 text-xs text-mk-ash sm:grid-cols-2">
+                <div>
+                  <dt className="font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">Session</dt>
+                  <dd className="break-all">{session.sessionId}</dd>
+                </div>
+                <div>
+                  <dt className="font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">Model</dt>
+                  <dd>
+                    {[session.model, session.voice, session.speed ? `${session.speed}x` : null]
+                      .filter(Boolean)
+                      .join(" · ") || "n/a"}
+                  </dd>
+                </div>
+              </dl>
+              <div className="mt-4 grid gap-3 rounded-lg bg-mk-paper p-3 text-sm leading-6">
+                <div>
+                  <span className="font-semibold">Email:</span> {session.captured.email || "empty"}
+                </div>
+                <div>
+                  <span className="font-semibold">Organisation:</span> {session.captured.org || "empty"}
+                </div>
+                <div>
+                  <span className="font-semibold">Brief:</span> {session.captured.message || "empty"}
+                </div>
               </div>
-            </div>
-            <dl className="mt-4 grid gap-2 text-xs text-mk-ash sm:grid-cols-2">
-              <div>
-                <dt className="font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">Session</dt>
-                <dd className="break-all">{session.sessionId}</dd>
-              </div>
-              <div>
-                <dt className="font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">Model</dt>
-                <dd>
-                  {[session.model, session.voice, session.speed ? `${session.speed}x` : null]
-                    .filter(Boolean)
-                    .join(" · ") || "n/a"}
-                </dd>
-              </div>
-            </dl>
-            <div className="mt-4 grid gap-3 rounded-lg bg-mk-paper p-3 text-sm leading-6">
-              <div>
-                <span className="font-semibold">Email:</span> {session.captured.email || "empty"}
-              </div>
-              <div>
-                <span className="font-semibold">Organisation:</span> {session.captured.org || "empty"}
-              </div>
-              <div>
-                <span className="font-semibold">Brief:</span> {session.captured.message || "empty"}
-              </div>
-            </div>
-            <UsageSummary session={session} />
-            {session.errors.length > 0 ? (
-              <div className="mt-3 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-xs text-destructive">
-                {session.errors.map((error: { eventId?: string; message: string }) => (
-                  <div key={`${error.eventId ?? "error"}:${error.message}`}>{error.message}</div>
-                ))}
-              </div>
-            ) : null}
-            {session.transcript.length > 0 ? <TranscriptLog transcript={session.transcript} /> : null}
-          </article>
-        ))}
+              <UsageSummary session={session} />
+              {session.errors.length > 0 ? (
+                <div
+                  className={
+                    realErrorCount > 0
+                      ? "mt-3 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-xs"
+                      : "mt-3 rounded-lg border border-mk-ash/15 bg-mk-paper p-3 text-xs"
+                  }
+                >
+                  {session.errors.map((error: VoiceRuntimeError) => (
+                    <div
+                      className={isBenignVoiceError(error) ? "text-mk-ash" : "text-destructive"}
+                      key={`${error.eventId ?? "error"}:${error.message}`}
+                    >
+                      {error.code ? <span className="font-semibold">{error.code}: </span> : null}
+                      {error.message}
+                      {isBenignVoiceError(error) ? " (benign)" : ""}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              {session.transcript.length > 0 ? <TranscriptLog transcript={session.transcript} /> : null}
+            </article>
+          );
+        })}
       </CardContent>
     </Card>
   );

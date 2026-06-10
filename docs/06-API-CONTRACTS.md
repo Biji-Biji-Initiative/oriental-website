@@ -91,8 +91,13 @@ type LeadResponse = {
 ```
 
 `persisted: false` is possible in local development when Convex is not
-configured. Production `pnpm check-secrets` requires Convex secrets and the
-route returns `502 persistence_failed` if persistence fails.
+configured, and in production when Convex persistence fails but at least one
+notification channel delivered the lead. Notifications are an independent
+durability path: the owner email and Slack message carry the full lead, so
+they are attempted even when Convex is down, and the route only returns
+`502 persistence_failed` when persistence **and** every notification channel
+fail. Production persistence failures always page ops, including in the
+degraded-success case.
 
 ### Errors
 
@@ -102,7 +107,7 @@ route returns `502 persistence_failed` if persistence fails.
 | 403 | `turnstile_failed` | Cloudflare verify rejected the token. |
 | 429 | `rate_limited` | More than 12 lead attempts per IP per hour. |
 | 500 | `routing_unconfigured` | Production owner email missing for the resolved segment. |
-| 502 | `persistence_failed` | Production Convex persistence failed after validation/routing. |
+| 502 | `persistence_failed` | Production Convex persistence failed and no notification channel delivered the lead. |
 | 502 | `notification_failed` | Production lead persisted, but neither owner email nor Slack delivered. |
 
 ### Side Effects
@@ -154,6 +159,7 @@ type NewsletterResponse = {
 | 400 | `invalid_payload` | Zod validation failed. |
 | 403 | `turnstile_failed` | Cloudflare verify rejected the token. |
 | 429 | `rate_limited` | More than 20 newsletter attempts per IP per hour. |
+| 502 | `persistence_failed` | Production Convex persistence failed; ops is alerted. |
 
 ### Side Effects
 
@@ -200,6 +206,10 @@ type VoiceSessionResponse = {
   model: string; // default "gpt-realtime-2"
   voice: string; // source fallback "marin"; production currently "coral"
   speed: number; // source fallback 1.18; production currently 1.28; clamped to OpenAI's 0.25..1.5 range
+  transcription_model: string; // default "gpt-4o-transcribe" via OPENAI_REALTIME_TRANSCRIPTION_MODEL
+  noise_reduction: "near_field" | "far_field"; // near_field for mobile user agents, far_field otherwise
+  limits: { max_duration_ms: number; idle_timeout_ms: number }; // VOICE_MAX_DURATION_MS / VOICE_IDLE_TIMEOUT_MS, defaults 150000 / 20000
+  review: { id: string; token: string }; // signed credentials for /api/voice/debug snapshots
 };
 ```
 
@@ -209,7 +219,7 @@ type VoiceSessionResponse = {
 |---|---|---|
 | 400 | `invalid_payload` | Zod validation failed. |
 | 403 | `turnstile_failed` | Cloudflare verify rejected the token. |
-| 429 | `voice_limit_reached` | More than 3 minted sessions per IP per day. |
+| 429 | `voice_limit_reached` | More than `VOICE_SESSION_DAILY_LIMIT` (default 3) minted sessions per IP per day. |
 | 503 | `openai_unconfigured` | `OPENAI_API_KEY` missing. |
 | 502 | `openai_<status>` | OpenAI client-secret request failed. |
 | 502 | `openai_invalid_secret` | OpenAI response did not contain a usable secret. |
@@ -227,7 +237,12 @@ Server request:
 - `session.model = OPENAI_REALTIME_MODEL ?? "gpt-realtime-2"`
 - `session.output_modalities = ["audio"]`
 - `session.audio.input.turn_detection` from `VOICE_SESSION_DEFAULTS`
-- `session.audio.input.transcription.model = "whisper-1"`
+  (`semantic_vad`, `eagerness: "auto"`)
+- `session.audio.input.transcription` from `VOICE_SESSION_DEFAULTS`
+  (`gpt-4o-transcribe` with a multilingual domain prompt — no language lock; model overridable
+  via `OPENAI_REALTIME_TRANSCRIPTION_MODEL`)
+- `session.audio.input.noise_reduction.type` = `near_field` (mobile UA) or
+  `far_field` (desktop)
 - `session.audio.output.voice = OPENAI_REALTIME_VOICE ?? "marin"`
 - `session.audio.output.speed = OPENAI_REALTIME_SPEED ?? 1.18`
 - production Infisical/Coolify currently sets `OPENAI_REALTIME_VOICE=coral` and
@@ -240,10 +255,13 @@ Browser WebRTC exchange:
 - `Authorization: Bearer <client_secret.value>`
 - body is SDP offer, response body is SDP answer
 
-Client-enforced caps live in `VOICE_SESSION_DEFAULTS`:
+Client-enforced caps come from the session response `limits` (env-tunable via
+`VOICE_MAX_DURATION_MS` / `VOICE_IDLE_TIMEOUT_MS`), falling back to
+`VOICE_SESSION_DEFAULTS`:
 
-- max duration: 150 seconds
-- idle timeout: 20 seconds
+- max duration: 150 seconds by default
+- idle timeout: 20 seconds by default, with a 6-second goodbye grace window
+  (`idleGoodbyeGraceMs`) in which Reka wraps up before teardown
 
 ## Voice diagnostics and review snapshots
 
@@ -288,7 +306,7 @@ type VoiceReviewSnapshotRequest = {
     captured: { name: string; email: string; org: string; message: string };
     transcript: Array<{ role: "user" | "assistant" | "system"; text: string }>;
     usage?: RealtimeUsageSummary;
-    errors: Array<{ eventId?: string; message: string }>;
+    errors: Array<{ eventId?: string; message: string; code?: string }>;
     rateLimits: Array<Record<string, unknown>>;
     routeRequested: boolean;
     submittedAt?: number;
@@ -336,6 +354,28 @@ Errors:
 | 400 | `invalid_payload` | Zod validation failed. |
 | 401 | `missing` / `invalid` | Missing or invalid admin bearer/cookie auth. |
 | 404 | `not_found` | No Convex lead matched the route `leadId`. |
+| 503 | `unconfigured` | `ADMIN_REVIEW_TOKEN` is missing. |
+| 503 | `convex_unconfigured` / `convex_failed` | Convex env is missing or the mutation failed. |
+
+### `PATCH /api/admin/voice-sessions/[reviewId]`
+
+Bearer-token or admin-cookie protected mutation that marks a recoverable voice
+session as followed up (or moves it back to the queue). Sets or clears
+`followedUpAt` on the Convex `voiceSessions` row.
+
+```ts
+type AdminVoiceFollowUpRequest = { followedUp: boolean };
+
+type AdminVoiceFollowUpResponse = { ok: true };
+```
+
+Errors:
+
+| HTTP | `error` | Cause |
+|---|---|---|
+| 400 | `invalid_payload` | Zod validation failed. |
+| 401 | `missing` / `invalid` | Missing or invalid admin bearer/cookie auth. |
+| 404 | `not_found` | No Convex voice session matched the route `reviewId`. |
 | 503 | `unconfigured` | `ADMIN_REVIEW_TOKEN` is missing. |
 | 503 | `convex_unconfigured` / `convex_failed` | Convex env is missing or the mutation failed. |
 

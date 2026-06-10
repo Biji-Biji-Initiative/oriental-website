@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { emptyCapturedLead, reduceRealtimeServerEvent, type VoiceRuntimeState } from "@/lib/voice/realtime-events";
+import {
+  appendTypedUserMessage,
+  emptyCapturedLead,
+  isBenignVoiceError,
+  reduceRealtimeServerEvent,
+  type VoiceRuntimeState,
+} from "@/lib/voice/realtime-events";
 
 function state(overrides: Partial<VoiceRuntimeState> = {}): VoiceRuntimeState {
   return {
@@ -511,5 +517,217 @@ describe("reduceRealtimeServerEvent", () => {
       callId: "call_clear_name",
       output: { ok: true, key: "name" },
     });
+  });
+
+  it("accepts evidence-consistent identity capture while a user transcription is still pending", () => {
+    const committed = reduceRealtimeServerEvent({ type: "input_audio_buffer.committed" }, state());
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_lagging_transcript",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "asha@example.com",
+                evidence: "asha at example dot com",
+              }),
+            },
+          ],
+        },
+      },
+      committed.state,
+    );
+
+    expect(result.state.captured.email).toBe("asha@example.com");
+  });
+
+  it("still rejects evidence-inconsistent capture while a transcription is pending", () => {
+    const committed = reduceRealtimeServerEvent({ type: "input_audio_buffer.committed" }, state());
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_pending_mismatch",
+              arguments: JSON.stringify({ key: "name", value: "Alex Tan", evidence: "we want a demo lab" }),
+            },
+          ],
+        },
+      },
+      committed.state,
+    );
+
+    expect(result.state.captured.name).toBe("");
+    expect(result.commands[0]).toMatchObject({
+      output: { ok: false, error: "ungrounded_identity_capture" },
+    });
+  });
+
+  it("clears the pending transcription window once the user transcript completes", () => {
+    const committed = reduceRealtimeServerEvent({ type: "input_audio_buffer.committed" }, state());
+    const transcribed = reduceRealtimeServerEvent(
+      { type: "conversation.item.input_audio_transcription.completed", transcript: "We want a demo lab." },
+      committed.state,
+    );
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_after_transcript",
+              arguments: JSON.stringify({ key: "name", value: "Alex Tan", evidence: "Alex Tan" }),
+            },
+          ],
+        },
+      },
+      transcribed.state,
+    );
+
+    expect(result.state.pendingUserTranscripts).toBe(0);
+    expect(result.state.captured.name).toBe("");
+    expect(result.commands[0]).toMatchObject({
+      output: { ok: false, error: "ungrounded_identity_capture" },
+    });
+  });
+
+  it("captures organisation as Individual when the user says they have no organisation", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_org_individual",
+              arguments: JSON.stringify({ key: "org", value: "Individual", evidence: "no organisation, just me" }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "No organisation, just me." }] }),
+    );
+
+    expect(result.state.captured.org).toBe("Individual");
+  });
+
+  it("confirms an already-captured value without demanding fresh evidence", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_confirm_existing",
+              arguments: JSON.stringify({ key: "email", value: "asha@example.com" }),
+            },
+          ],
+        },
+      },
+      state({ captured: { ...emptyCapturedLead, email: "asha@example.com" } }),
+    );
+
+    expect(result.state.captured.email).toBe("asha@example.com");
+    expect(result.commands[0]).toMatchObject({
+      type: "function_result",
+      output: { ok: true, key: "email" },
+    });
+  });
+
+  it("grounds identity captures in messages the visitor typed into the chat", () => {
+    const typed = appendTypedUserMessage(state(), "My email is mei@example.com and I am from Future Lab.");
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_typed_email",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "mei@example.com",
+                evidence: "mei@example.com",
+              }),
+            },
+          ],
+        },
+      },
+      typed,
+    );
+
+    expect(typed.transcript).toEqual([{ role: "user", text: "My email is mei@example.com and I am from Future Lab." }]);
+    expect(result.state.captured.email).toBe("mei@example.com");
+  });
+
+  it("streams assistant captions from transcript deltas and clears them on completion", () => {
+    const first = reduceRealtimeServerEvent(
+      { type: "response.output_audio_transcript.delta", delta: "Hi, I’m " },
+      state(),
+    );
+    const second = reduceRealtimeServerEvent(
+      { type: "response.output_audio_transcript.delta", delta: "Reka." },
+      first.state,
+    );
+    expect(second.state.assistantDraft).toBe("Hi, I’m Reka.");
+
+    const done = reduceRealtimeServerEvent(
+      { type: "response.output_audio_transcript.done", transcript: "Hi, I’m Reka." },
+      second.state,
+    );
+    expect(done.state.assistantDraft).toBe("");
+    expect(done.state.transcript).toEqual([{ role: "assistant", text: "Hi, I’m Reka." }]);
+  });
+
+  it("drops captions of a cancelled response when it finishes", () => {
+    const speaking = reduceRealtimeServerEvent(
+      { type: "response.output_audio_transcript.delta", delta: "Let me tell you about the spa" },
+      state(),
+    );
+    const cancelled = reduceRealtimeServerEvent({ type: "response.done" }, speaking.state);
+
+    expect(cancelled.state.assistantDraft).toBe("");
+    expect(cancelled.state.transcript).toEqual([]);
+  });
+
+  it("tracks whether an assistant response is in flight", () => {
+    const started = reduceRealtimeServerEvent({ type: "response.created" }, state());
+    expect(started.state.activeResponse).toBe(true);
+
+    const finished = reduceRealtimeServerEvent({ type: "response.done" }, started.state);
+    expect(finished.state.activeResponse).toBe(false);
+  });
+
+  it("records error codes and classifies benign realtime errors", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "error",
+        error: { code: "response_cancel_not_active", message: "Cancellation failed: no active response found" },
+      },
+      state(),
+    );
+
+    expect(result.state.errors).toEqual([
+      {
+        eventId: undefined,
+        code: "response_cancel_not_active",
+        message: "Cancellation failed: no active response found",
+      },
+    ]);
+    expect(isBenignVoiceError(result.state.errors?.[0] ?? { message: "" })).toBe(true);
+    expect(isBenignVoiceError({ message: "Server error while processing audio" })).toBe(false);
   });
 });

@@ -1,6 +1,14 @@
 import type { CapturedLead } from "@/lib/voice/realtime-events";
 import type { VoiceCloseReason, VoiceConnectionStatus } from "./useRealtimeVoiceSession";
 
+/** Stable sonner toast ids so repeated voice events update in place instead of stacking. */
+export const voiceToastIds = {
+  close: "voice-close",
+  live: "voice-live",
+  sessionError: "voice-session-error",
+  captureWarning: "voice-capture-warning",
+} as const;
+
 export const handoffFieldSpecs = [
   { key: "name", label: "Name" },
   { key: "email", label: "Email" },
@@ -19,6 +27,13 @@ export function handoffCompletion(captured: CapturedLead) {
 }
 
 export function voiceStatusCopy(status: VoiceConnectionStatus) {
+  if (status === "requesting_mic") {
+    return {
+      label: "Mic permission",
+      detail: "Allow the microphone when your browser asks. Reka listens only while voice is on.",
+      button: "Waiting for the mic...",
+    };
+  }
   if (status === "connecting") {
     return {
       label: "Setting up",
@@ -92,6 +107,12 @@ export function voiceCloseReasonToast(reason: VoiceCloseReason) {
   }
   return null;
 }
+
+export const idleGoodbyeInstruction =
+  "The visitor has gone quiet and this voice session is about to close. As Reka, say one short, warm goodbye in a single sentence: their typed details stay in the panel and they can restart voice anytime. Do not ask a question and do not wait for a reply.";
+
+export const reconnectVoiceInstruction =
+  "The visitor reconnected to voice and the earlier conversation context was just provided. Do not repeat the opening pitch and do not greet from scratch. Acknowledge in one short sentence that you are back, then continue exactly where the conversation left off.";
 
 export const openingVoiceInstruction =
   "Start the intake now as Reka, pronounced REH-ka. Sound like a bright KL Malaysian host, not American: faster, upbeat, practical, warm. Say one short opener: we are moving into Oriental, it is a new chapter for Mereka, and we are excited to build it with the right people. Then ask what the visitor wants to build or explore. Do not explain pronunciation, tools, limitations, privacy, or the form.";

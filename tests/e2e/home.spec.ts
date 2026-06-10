@@ -105,3 +105,33 @@ test("lead form submits the latest typed handoff values", async ({ page }) => {
     },
   });
 });
+
+test("lead form surfaces a partial failure when the lead saves but notifications fail", async ({ page }) => {
+  await page.route("**/api/leads", async (route) => {
+    await route.fulfill({
+      status: 502,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: false,
+        error: "notification_failed",
+        id: "lead_partial",
+        persisted: true,
+        notifications: {
+          email: { ok: false, error: "smtp_down" },
+          slack: { ok: false, error: "slack_http_error" },
+        },
+      }),
+    });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: /Tell us why/i }).click();
+  await page.getByLabel("Name").fill("Asha");
+  await page.getByLabel("Email").fill("asha@example.com");
+  await page.getByLabel("Organisation").fill("Future Lab");
+  await page.getByLabel("What would you bring to Oriental?").fill("We want to run AI literacy demos.");
+  await page.getByRole("button", { name: "Send complete handoff" }).click();
+
+  await expect(page.getByText("Saved, but notifications need attention.")).toBeVisible();
+  await expect(page.getByLabel("Name")).toHaveValue("Asha");
+});

@@ -6,7 +6,7 @@ import type { RealtimeOutboundEvent } from "@/lib/voice/client-events";
 import { VOICE_SESSION_DEFAULTS } from "@/lib/voice/profile";
 import type { RealtimeServerEvent } from "@/lib/voice/realtime-events";
 
-export type VoiceConnectionStatus = "idle" | "connecting" | "listening";
+export type VoiceConnectionStatus = "idle" | "requesting_mic" | "connecting" | "listening";
 export type VoiceCloseReason =
   | "idle_timeout"
   | "max_duration"
@@ -37,6 +37,7 @@ type VoiceSessionResponse = {
   model?: string;
   voice?: string;
   speed?: number;
+  limits?: { max_duration_ms?: number; idle_timeout_ms?: number };
 };
 
 class VoiceConnectionFailure extends Error {
@@ -50,6 +51,8 @@ type UseRealtimeVoiceSessionArgs = {
   getTurnstileToken: () => Promise<string>;
   onClose: (reason: VoiceCloseReason) => void;
   onEvent: (event: RealtimeServerEvent, channel: RTCDataChannel) => void;
+  /** Called shortly before the idle cutoff so the agent can say a goodbye. */
+  onIdleWarning?: () => void;
   onSessionReady?: (metadata: VoiceReviewMetadata) => void;
   segment: SegmentId;
 };
@@ -59,6 +62,7 @@ export function useRealtimeVoiceSession({
   getTurnstileToken,
   onClose,
   onEvent,
+  onIdleWarning,
   onSessionReady,
   segment,
 }: UseRealtimeVoiceSessionArgs) {
@@ -67,19 +71,32 @@ export function useRealtimeVoiceSession({
   const dataChannelRef = useRef<RTCDataChannel | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const idleTimerRef = useRef<number | null>(null);
+  const idleWarningTimerRef = useRef<number | null>(null);
+  const idleClosingRef = useRef(false);
+  const connectGateRef = useRef(false);
   const maxTimerRef = useRef<number | null>(null);
+  // Session policy from the server, falling back to compiled defaults.
+  const limitsRef = useRef({
+    maxDurationMs: VOICE_SESSION_DEFAULTS.maxDurationMs,
+    idleTimeoutMs: VOICE_SESSION_DEFAULTS.idleTimeoutMs,
+  });
   const statusRef = useRef<VoiceConnectionStatus>("idle");
+  const onIdleWarningRef = useRef(onIdleWarning);
+  onIdleWarningRef.current = onIdleWarning;
 
   const clearTimers = useCallback(() => {
     if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
+    if (idleWarningTimerRef.current) window.clearTimeout(idleWarningTimerRef.current);
     if (maxTimerRef.current) window.clearTimeout(maxTimerRef.current);
     idleTimerRef.current = null;
+    idleWarningTimerRef.current = null;
     maxTimerRef.current = null;
   }, []);
 
   const teardownVoice = useCallback(
     (reason: VoiceCloseReason = "manual") => {
       clearTimers();
+      idleClosingRef.current = false;
       const channel = dataChannelRef.current;
       dataChannelRef.current = null;
       channel?.close();
@@ -99,10 +116,19 @@ export function useRealtimeVoiceSession({
   );
 
   const resetIdleTimer = useCallback(() => {
+    // While the goodbye is playing, the agent's own audio events must not extend the session.
+    if (idleClosingRef.current) return;
     if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
+    if (idleWarningTimerRef.current) window.clearTimeout(idleWarningTimerRef.current);
+    const idleTimeoutMs = limitsRef.current.idleTimeoutMs;
+    const graceMs = Math.min(VOICE_SESSION_DEFAULTS.idleGoodbyeGraceMs, idleTimeoutMs);
+    idleWarningTimerRef.current = window.setTimeout(() => {
+      idleClosingRef.current = true;
+      onIdleWarningRef.current?.();
+    }, idleTimeoutMs - graceMs);
     idleTimerRef.current = window.setTimeout(() => {
       teardownVoice("idle_timeout");
-    }, VOICE_SESSION_DEFAULTS.idleTimeoutMs);
+    }, idleTimeoutMs);
   }, [teardownVoice]);
 
   const sendClientEvents = useCallback((events: RealtimeOutboundEvent | RealtimeOutboundEvent[]) => {
@@ -118,42 +144,90 @@ export function useRealtimeVoiceSession({
     if (maxTimerRef.current) window.clearTimeout(maxTimerRef.current);
     maxTimerRef.current = window.setTimeout(() => {
       teardownVoice("max_duration");
-    }, VOICE_SESSION_DEFAULTS.maxDurationMs);
+    }, limitsRef.current.maxDurationMs);
   }, [teardownVoice]);
 
-  const connectVoice = useCallback(async () => {
-    if (connectionStatus !== "idle") return;
-    setConnectionStatus("connecting");
-    statusRef.current = "connecting";
-    try {
-      let turnstileToken = "";
-      try {
-        turnstileToken = await getTurnstileToken();
-      } catch {
-        throw new VoiceConnectionFailure("verification_failed");
-      }
+  const setStatus = useCallback((status: VoiceConnectionStatus) => {
+    setConnectionStatus(status);
+    statusRef.current = status;
+  }, []);
 
-      const sessionResponse = await fetch("/api/voice/session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ intent: segment, turnstileToken }),
-      });
-      const session = (await sessionResponse.json().catch(() => null)) as VoiceSessionResponse | null;
-      if (session?.error === "turnstile_failed") throw new VoiceConnectionFailure("verification_failed");
-      if (session?.error === "voice_limit_reached" || sessionResponse.status === 429) {
-        throw new VoiceConnectionFailure("voice_limit_reached");
-      }
-      if (!sessionResponse.ok || session?.ok !== true || !session.client_secret?.value) {
-        throw new VoiceConnectionFailure("session_failed");
-      }
+  const acquireMicStream = useCallback(async () => {
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      throw new VoiceConnectionFailure("mic_denied");
+    }
+    // The session may have been torn down while the prompt was open or after a
+    // parallel mint failure; never leave an unowned live microphone behind.
+    if (statusRef.current === "idle") {
+      for (const track of stream.getTracks()) track.stop();
+      throw new VoiceConnectionFailure("manual");
+    }
+    // Referenced immediately so teardown stops the tracks even if the
+    // session mint racing alongside fails.
+    localStreamRef.current = stream;
+    return stream;
+  }, []);
+
+  const mintVoiceSession = useCallback(async () => {
+    let turnstileToken = "";
+    try {
+      turnstileToken = await getTurnstileToken();
+    } catch {
+      throw new VoiceConnectionFailure("verification_failed");
+    }
+
+    const sessionResponse = await fetch("/api/voice/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ intent: segment, turnstileToken }),
+    });
+    const session = (await sessionResponse.json().catch(() => null)) as VoiceSessionResponse | null;
+    if (session?.error === "turnstile_failed") throw new VoiceConnectionFailure("verification_failed");
+    if (session?.error === "voice_limit_reached" || sessionResponse.status === 429) {
+      throw new VoiceConnectionFailure("voice_limit_reached");
+    }
+    const clientSecret = session?.client_secret?.value;
+    if (!sessionResponse.ok || session?.ok !== true || !clientSecret) {
+      throw new VoiceConnectionFailure("session_failed");
+    }
+    limitsRef.current = {
+      maxDurationMs: positiveOr(session.limits?.max_duration_ms, VOICE_SESSION_DEFAULTS.maxDurationMs),
+      idleTimeoutMs: positiveOr(session.limits?.idle_timeout_ms, VOICE_SESSION_DEFAULTS.idleTimeoutMs),
+    };
+    return { ...session, client_secret: { ...session.client_secret, value: clientSecret } };
+  }, [getTurnstileToken, segment]);
+
+  const connectVoice = useCallback(async () => {
+    // Guard on refs, not React state: a double-click during the permission
+    // query would otherwise start two connect flows and spend quota twice.
+    if (connectGateRef.current || statusRef.current !== "idle") return;
+    connectGateRef.current = true;
+    try {
+      const permission = await queryMicrophonePermission();
+      // Fail fast on a known denial: no token mint, no spent voice quota.
+      if (permission === "denied") throw new VoiceConnectionFailure("mic_denied");
 
       let stream: MediaStream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      } catch {
-        throw new VoiceConnectionFailure("mic_denied");
+      let session: Awaited<ReturnType<typeof mintVoiceSession>>;
+      if (permission === "granted") {
+        // Returning visitor: the mic opens silently, so mint in parallel.
+        setStatus("connecting");
+        const streamPromise = acquireMicStream();
+        // Pre-attach a handler so a late mic rejection after a mint failure
+        // cannot surface as an unhandled promise rejection.
+        streamPromise.catch(() => null);
+        [stream, session] = await Promise.all([streamPromise, mintVoiceSession()]);
+      } else {
+        // First visit: surface the browser prompt immediately, and only spend
+        // the daily voice quota once the microphone is actually granted.
+        setStatus("requesting_mic");
+        stream = await acquireMicStream();
+        setStatus("connecting");
+        session = await mintVoiceSession();
       }
-      localStreamRef.current = stream;
 
       if (session.review?.id && session.review?.token) {
         onSessionReady?.({
@@ -203,12 +277,18 @@ export function useRealtimeVoiceSession({
         }
       };
       channel.onmessage = (event) => {
-        resetIdleTimer();
+        let parsed: RealtimeServerEvent | null = null;
         try {
-          onEvent(JSON.parse(event.data) as RealtimeServerEvent, channel);
+          parsed = JSON.parse(event.data) as RealtimeServerEvent;
         } catch {
           // Non-JSON data channel messages are ignored.
         }
+        if (parsed?.type === "input_audio_buffer.speech_started") {
+          // The user came back during the goodbye window; resume the normal idle cycle.
+          idleClosingRef.current = false;
+        }
+        resetIdleTimer();
+        if (parsed) onEvent(parsed, channel);
       };
 
       const offer = await peer.createOffer();
@@ -225,16 +305,18 @@ export function useRealtimeVoiceSession({
       await peer.setRemoteDescription({ type: "answer", sdp: await sdpResponse.text() });
     } catch (error) {
       teardownVoice(error instanceof VoiceConnectionFailure ? error.reason : "error");
+    } finally {
+      connectGateRef.current = false;
     }
   }, [
+    acquireMicStream,
     armMaxTimer,
     audioRef,
-    connectionStatus,
-    getTurnstileToken,
+    mintVoiceSession,
     onEvent,
     onSessionReady,
     resetIdleTimer,
-    segment,
+    setStatus,
     teardownVoice,
   ]);
 
@@ -244,5 +326,22 @@ export function useRealtimeVoiceSession({
 
   useEffect(() => teardownVoice, [teardownVoice]);
 
-  return { connectVoice, connectionStatus, sendClientEvents, teardownVoice };
+  const getLocalStream = useCallback(() => localStreamRef.current, []);
+
+  return { connectVoice, connectionStatus, getLocalStream, sendClientEvents, teardownVoice };
+}
+
+function positiveOr(value: number | undefined, fallback: number) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+async function queryMicrophonePermission(): Promise<PermissionState> {
+  try {
+    const status = await navigator.permissions.query({ name: "microphone" as PermissionName });
+    return status.state;
+  } catch {
+    // Permissions API unavailable (e.g. Firefox for microphone): fall back to
+    // the prompt-first path, which is safe everywhere.
+    return "prompt";
+  }
 }

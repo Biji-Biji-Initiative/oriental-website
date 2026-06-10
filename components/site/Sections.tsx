@@ -83,7 +83,8 @@ export function Hero() {
           </div>
           <div className="mt-5 flex items-center gap-2 text-sm text-white/62">
             <span className="size-1.5 rounded-full bg-mk-horizon" />
-            End-to-end · private · no recordings kept · routed only to your partner&apos;s team at Mereka
+            Private · transcribed &amp; saved so the right person follows up · routed only to your partner&apos;s team
+            at Mereka
           </div>
         </div>
       </div>
@@ -137,7 +138,7 @@ export function Vision() {
             </p>
           </div>
         </div>
-        <figure className="relative mt-20 h-[520px] overflow-hidden rounded-[18px]">
+        <figure className="relative mt-20 h-[520px] overflow-hidden rounded-lg">
           <Image
             alt="Oriental Building context on Jalan Tun Perak"
             className="object-cover"

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { serializeHandoffContext, serializeRealtimeCommand, serializeResponseCreate } from "@/lib/voice/client-events";
+import {
+  serializeHandoffContext,
+  serializeRealtimeCommand,
+  serializeResponseCreate,
+  serializeTypedInterruption,
+  serializeUserText,
+} from "@/lib/voice/client-events";
 
 describe("serializeRealtimeCommand", () => {
   it("serializes function call output with event ids and optional response creation", () => {
@@ -69,6 +75,56 @@ describe("serializeRealtimeCommand", () => {
     expect(body).toContain("Name: Mei Ling");
     expect(body).toContain("Email: mei@example.com");
     expect(body).toContain("Brief: AI literacy demos for students.");
+  });
+
+  it("serializes a typed visitor message as a user conversation item", () => {
+    expect(serializeUserText("My email is mei@example.com", nextEventId(["evt_text"]))).toEqual({
+      type: "conversation.item.create",
+      event_id: "evt_text",
+      item: {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: "My email is mei@example.com" }],
+      },
+    });
+  });
+
+  it("includes the earlier conversation when a session reconnects", () => {
+    const event = serializeHandoffContext(
+      {
+        segment: "ai",
+        captured: { name: "Mei Ling", email: "", org: "", message: "" },
+      },
+      nextEventId(["evt_context"]),
+      {
+        resumedTranscript: [
+          { role: "assistant", text: "What would you like to build?" },
+          { role: "user", text: "An AI literacy lab for students." },
+        ],
+      },
+    );
+
+    const body = JSON.stringify(event);
+    expect(body).toContain("Earlier conversation before this voice session reconnected");
+    expect(body).toContain("Reka: What would you like to build?");
+    expect(body).toContain("User: An AI literacy lab for students.");
+    expect(body).toContain("Do not repeat the opening pitch");
+  });
+
+  it("omits the reconnect context block for fresh sessions", () => {
+    const event = serializeHandoffContext({
+      segment: "ai",
+      captured: { name: "", email: "", org: "", message: "" },
+    });
+
+    expect(JSON.stringify(event)).not.toContain("Earlier conversation");
+  });
+
+  it("serializes a typed interruption as cancel plus audio clear", () => {
+    expect(serializeTypedInterruption(nextEventId(["evt_cancel", "evt_clear"]))).toEqual([
+      { type: "response.cancel", event_id: "evt_cancel" },
+      { type: "output_audio_buffer.clear", event_id: "evt_clear" },
+    ]);
   });
 
   it("serializes a response.create event with optional per-response instructions", () => {
