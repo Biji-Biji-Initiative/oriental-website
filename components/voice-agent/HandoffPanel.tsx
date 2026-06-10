@@ -121,12 +121,12 @@ export function HandoffPanel({
                 <FormControl>
                   <Input
                     {...field}
-                    className={fieldClassName}
                     onChange={(event) => {
                       field.onChange(event);
                       onChange("name", event.target.value);
                     }}
                     placeholder="Your name"
+                    variant="glass"
                   />
                 </FormControl>
                 <FormMessage className={messageClassName} />
@@ -142,13 +142,13 @@ export function HandoffPanel({
                 <FormControl>
                   <Input
                     {...field}
-                    className={fieldClassName}
                     onChange={(event) => {
                       field.onChange(event);
                       onChange("email", event.target.value);
                     }}
                     placeholder="name@example.com"
                     type="email"
+                    variant="glass"
                   />
                 </FormControl>
                 <FormMessage className={messageClassName} />
@@ -164,12 +164,12 @@ export function HandoffPanel({
                 <FormControl>
                   <Input
                     {...field}
-                    className={fieldClassName}
                     onChange={(event) => {
                       field.onChange(event);
                       onChange("org", event.target.value);
                     }}
                     placeholder="Company, school, collective, or Individual"
+                    variant="glass"
                   />
                 </FormControl>
                 <FormMessage className={messageClassName} />
@@ -185,12 +185,13 @@ export function HandoffPanel({
                 <FormControl>
                   <Textarea
                     {...field}
-                    className={cn(fieldClassName, "min-h-28 resize-none py-3")}
+                    className="min-h-28 resize-none py-3"
                     onChange={(event) => {
                       field.onChange(event);
                       onChange("message", event.target.value);
                     }}
                     placeholder="A short note on the partnership, programme, tenancy, demo, or question."
+                    variant="glass"
                   />
                 </FormControl>
                 <FormDescription className="text-xs leading-5 text-white/42">
@@ -202,7 +203,7 @@ export function HandoffPanel({
           />
           {invalidCount > 0 ? (
             <div
-              className="flex gap-2 rounded-[16px] border border-[#ffb4ab]/25 bg-[#ffb4ab]/10 p-3 text-xs leading-5 text-[#ffd8d2]"
+              className="flex gap-2 rounded-[16px] border border-mk-error/25 bg-mk-error/10 p-3 text-xs leading-5 text-mk-error-soft"
               role="alert"
             >
               <TriangleAlertIcon className="mt-0.5 size-4 shrink-0" />
@@ -246,7 +247,4 @@ export function HandoffPanel({
   );
 }
 
-const fieldClassName =
-  "h-11 rounded-[16px] border-white/12 bg-white/[0.045] px-4 text-white placeholder:text-white/30 focus-visible:border-mk-horizon focus-visible:ring-mk-horizon/20 aria-invalid:border-destructive aria-invalid:ring-destructive/20";
-
-const messageClassName = "text-xs leading-5 text-[#ffb4ab]";
+const messageClassName = "text-xs leading-5 text-mk-error";

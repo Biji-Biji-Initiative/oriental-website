@@ -142,10 +142,11 @@ export function VoiceSessionStage({
           <form className="mt-6 flex w-full max-w-xl gap-2" onSubmit={handleComposerSubmit}>
             <Input
               aria-label="Type a message to Reka"
-              className="h-11 rounded-full border-white/12 bg-white/[0.045] px-5 text-white placeholder:text-white/30 focus-visible:border-mk-horizon focus-visible:ring-mk-horizon/20"
+              className="rounded-full px-5"
               onChange={(event) => setDraft(event.target.value)}
               placeholder="Prefer typing? Reka reads it instantly."
               value={draft}
+              variant="glass"
             />
             <Button
               aria-label="Send typed message"

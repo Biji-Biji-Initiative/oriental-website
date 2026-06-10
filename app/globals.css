@@ -32,6 +32,10 @@
   --color-mk-strategy-teal: #2d6a7a;
   --color-mk-horizon: #c9d5ec;
   --color-mk-line: rgba(16, 13, 24, 0.08);
+  --color-mk-ash: #5f5950;
+  --color-mk-blue: #2851a8;
+  --color-mk-error: #ffb4ab;
+  --color-mk-error-soft: #ffd8d2;
 
   --font-sans: var(--font-poppins), ui-sans-serif, system-ui, sans-serif;
   --font-serif: var(--font-fraunces), ui-serif, Georgia, serif;
