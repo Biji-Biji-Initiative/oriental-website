@@ -37,16 +37,17 @@ export function VoiceRail() {
       .filter((section): section is HTMLElement => Boolean(section));
     if (sections.length === 0) return;
 
+    // Observer callbacks only carry the entries that changed, so track all
+    // currently visible sections to avoid resetting while one is still on screen.
+    const visibility = new Map<string, number>();
     const observer = new IntersectionObserver(
       (entries) => {
-        const mostVisible = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
-        if (mostVisible) {
-          setContext(sectionContexts[mostVisible.target.id] ?? defaultContext);
-          return;
+        for (const entry of entries) {
+          if (entry.isIntersecting) visibility.set(entry.target.id, entry.intersectionRatio);
+          else visibility.delete(entry.target.id);
         }
-        if (entries.every((entry) => !entry.isIntersecting)) setContext(defaultContext);
+        const [topSection] = [...visibility.entries()].sort((a, b) => b[1] - a[1]);
+        setContext(topSection ? (sectionContexts[topSection[0]] ?? defaultContext) : defaultContext);
       },
       { rootMargin: "-30% 0px -45% 0px" },
     );

@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
     reason: error instanceof Error ? error.message : "convex_failed",
   }));
   if (!persistence.persisted && isProductionEnv()) {
-    const reason = "reason" in persistence ? persistence.reason : "convex_failed";
+    const reason = persistence.reason;
     logError("newsletter.persistence_failed", {
       requestId,
       leadId: lead.id,

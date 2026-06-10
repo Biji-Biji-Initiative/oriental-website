@@ -72,6 +72,7 @@ export function useRealtimeVoiceSession({
   const idleTimerRef = useRef<number | null>(null);
   const idleWarningTimerRef = useRef<number | null>(null);
   const idleClosingRef = useRef(false);
+  const connectGateRef = useRef(false);
   const maxTimerRef = useRef<number | null>(null);
   const statusRef = useRef<VoiceConnectionStatus>("idle");
   const onIdleWarningRef = useRef(onIdleWarning);
@@ -145,15 +146,22 @@ export function useRealtimeVoiceSession({
   }, []);
 
   const acquireMicStream = useCallback(async () => {
+    let stream: MediaStream;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      // Referenced immediately so teardown stops the tracks even if the
-      // session mint racing alongside fails.
-      localStreamRef.current = stream;
-      return stream;
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
       throw new VoiceConnectionFailure("mic_denied");
     }
+    // The session may have been torn down while the prompt was open or after a
+    // parallel mint failure; never leave an unowned live microphone behind.
+    if (statusRef.current === "idle") {
+      for (const track of stream.getTracks()) track.stop();
+      throw new VoiceConnectionFailure("manual");
+    }
+    // Referenced immediately so teardown stops the tracks even if the
+    // session mint racing alongside fails.
+    localStreamRef.current = stream;
+    return stream;
   }, []);
 
   const mintVoiceSession = useCallback(async () => {
@@ -182,7 +190,10 @@ export function useRealtimeVoiceSession({
   }, [getTurnstileToken, segment]);
 
   const connectVoice = useCallback(async () => {
-    if (connectionStatus !== "idle") return;
+    // Guard on refs, not React state: a double-click during the permission
+    // query would otherwise start two connect flows and spend quota twice.
+    if (connectGateRef.current || statusRef.current !== "idle") return;
+    connectGateRef.current = true;
     try {
       const permission = await queryMicrophonePermission();
       // Fail fast on a known denial: no token mint, no spent voice quota.
@@ -193,7 +204,11 @@ export function useRealtimeVoiceSession({
       if (permission === "granted") {
         // Returning visitor: the mic opens silently, so mint in parallel.
         setStatus("connecting");
-        [stream, session] = await Promise.all([acquireMicStream(), mintVoiceSession()]);
+        const streamPromise = acquireMicStream();
+        // Pre-attach a handler so a late mic rejection after a mint failure
+        // cannot surface as an unhandled promise rejection.
+        streamPromise.catch(() => null);
+        [stream, session] = await Promise.all([streamPromise, mintVoiceSession()]);
       } else {
         // First visit: surface the browser prompt immediately, and only spend
         // the daily voice quota once the microphone is actually granted.
@@ -279,12 +294,13 @@ export function useRealtimeVoiceSession({
       await peer.setRemoteDescription({ type: "answer", sdp: await sdpResponse.text() });
     } catch (error) {
       teardownVoice(error instanceof VoiceConnectionFailure ? error.reason : "error");
+    } finally {
+      connectGateRef.current = false;
     }
   }, [
     acquireMicStream,
     armMaxTimer,
     audioRef,
-    connectionStatus,
     mintVoiceSession,
     onEvent,
     onSessionReady,
