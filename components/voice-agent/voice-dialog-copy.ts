@@ -27,6 +27,13 @@ export function handoffCompletion(captured: CapturedLead) {
 }
 
 export function voiceStatusCopy(status: VoiceConnectionStatus) {
+  if (status === "requesting_mic") {
+    return {
+      label: "Mic permission",
+      detail: "Allow the microphone when your browser asks. Reka listens only while voice is on.",
+      button: "Waiting for the mic...",
+    };
+  }
   if (status === "connecting") {
     return {
       label: "Setting up",

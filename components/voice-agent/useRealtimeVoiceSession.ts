@@ -6,7 +6,7 @@ import type { RealtimeOutboundEvent } from "@/lib/voice/client-events";
 import { VOICE_SESSION_DEFAULTS } from "@/lib/voice/profile";
 import type { RealtimeServerEvent } from "@/lib/voice/realtime-events";
 
-export type VoiceConnectionStatus = "idle" | "connecting" | "listening";
+export type VoiceConnectionStatus = "idle" | "requesting_mic" | "connecting" | "listening";
 export type VoiceCloseReason =
   | "idle_timeout"
   | "max_duration"
@@ -139,39 +139,69 @@ export function useRealtimeVoiceSession({
     }, VOICE_SESSION_DEFAULTS.maxDurationMs);
   }, [teardownVoice]);
 
+  const setStatus = useCallback((status: VoiceConnectionStatus) => {
+    setConnectionStatus(status);
+    statusRef.current = status;
+  }, []);
+
+  const acquireMicStream = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Referenced immediately so teardown stops the tracks even if the
+      // session mint racing alongside fails.
+      localStreamRef.current = stream;
+      return stream;
+    } catch {
+      throw new VoiceConnectionFailure("mic_denied");
+    }
+  }, []);
+
+  const mintVoiceSession = useCallback(async () => {
+    let turnstileToken = "";
+    try {
+      turnstileToken = await getTurnstileToken();
+    } catch {
+      throw new VoiceConnectionFailure("verification_failed");
+    }
+
+    const sessionResponse = await fetch("/api/voice/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ intent: segment, turnstileToken }),
+    });
+    const session = (await sessionResponse.json().catch(() => null)) as VoiceSessionResponse | null;
+    if (session?.error === "turnstile_failed") throw new VoiceConnectionFailure("verification_failed");
+    if (session?.error === "voice_limit_reached" || sessionResponse.status === 429) {
+      throw new VoiceConnectionFailure("voice_limit_reached");
+    }
+    const clientSecret = session?.client_secret?.value;
+    if (!sessionResponse.ok || session?.ok !== true || !clientSecret) {
+      throw new VoiceConnectionFailure("session_failed");
+    }
+    return { ...session, client_secret: { ...session.client_secret, value: clientSecret } };
+  }, [getTurnstileToken, segment]);
+
   const connectVoice = useCallback(async () => {
     if (connectionStatus !== "idle") return;
-    setConnectionStatus("connecting");
-    statusRef.current = "connecting";
     try {
-      let turnstileToken = "";
-      try {
-        turnstileToken = await getTurnstileToken();
-      } catch {
-        throw new VoiceConnectionFailure("verification_failed");
-      }
-
-      const sessionResponse = await fetch("/api/voice/session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ intent: segment, turnstileToken }),
-      });
-      const session = (await sessionResponse.json().catch(() => null)) as VoiceSessionResponse | null;
-      if (session?.error === "turnstile_failed") throw new VoiceConnectionFailure("verification_failed");
-      if (session?.error === "voice_limit_reached" || sessionResponse.status === 429) {
-        throw new VoiceConnectionFailure("voice_limit_reached");
-      }
-      if (!sessionResponse.ok || session?.ok !== true || !session.client_secret?.value) {
-        throw new VoiceConnectionFailure("session_failed");
-      }
+      const permission = await queryMicrophonePermission();
+      // Fail fast on a known denial: no token mint, no spent voice quota.
+      if (permission === "denied") throw new VoiceConnectionFailure("mic_denied");
 
       let stream: MediaStream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      } catch {
-        throw new VoiceConnectionFailure("mic_denied");
+      let session: Awaited<ReturnType<typeof mintVoiceSession>>;
+      if (permission === "granted") {
+        // Returning visitor: the mic opens silently, so mint in parallel.
+        setStatus("connecting");
+        [stream, session] = await Promise.all([acquireMicStream(), mintVoiceSession()]);
+      } else {
+        // First visit: surface the browser prompt immediately, and only spend
+        // the daily voice quota once the microphone is actually granted.
+        setStatus("requesting_mic");
+        stream = await acquireMicStream();
+        setStatus("connecting");
+        session = await mintVoiceSession();
       }
-      localStreamRef.current = stream;
 
       if (session.review?.id && session.review?.token) {
         onSessionReady?.({
@@ -251,14 +281,15 @@ export function useRealtimeVoiceSession({
       teardownVoice(error instanceof VoiceConnectionFailure ? error.reason : "error");
     }
   }, [
+    acquireMicStream,
     armMaxTimer,
     audioRef,
     connectionStatus,
-    getTurnstileToken,
+    mintVoiceSession,
     onEvent,
     onSessionReady,
     resetIdleTimer,
-    segment,
+    setStatus,
     teardownVoice,
   ]);
 
@@ -269,4 +300,15 @@ export function useRealtimeVoiceSession({
   useEffect(() => teardownVoice, [teardownVoice]);
 
   return { connectVoice, connectionStatus, sendClientEvents, teardownVoice };
+}
+
+async function queryMicrophonePermission(): Promise<PermissionState> {
+  try {
+    const status = await navigator.permissions.query({ name: "microphone" as PermissionName });
+    return status.state;
+  } catch {
+    // Permissions API unavailable (e.g. Firefox for microphone): fall back to
+    // the prompt-first path, which is safe everywhere.
+    return "prompt";
+  }
 }

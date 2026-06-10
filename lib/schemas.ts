@@ -67,7 +67,7 @@ export const voiceReviewSnapshotSchema = z.object({
     leadId: z.string().max(160).nullable().optional(),
     segment: segmentSchema,
     status: z.enum(["idle", "submitted"]).default("idle"),
-    connectionStatus: z.enum(["idle", "connecting", "listening"]),
+    connectionStatus: z.enum(["idle", "requesting_mic", "connecting", "listening"]),
     model: z.string().max(80).optional(),
     voice: z.string().max(80).optional(),
     speed: z.number().min(0.25).max(1.5).optional(),

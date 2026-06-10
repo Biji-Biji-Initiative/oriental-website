@@ -179,7 +179,7 @@ export function VoiceSessionStage({
 
         <Button
           className="mt-8 h-12 rounded-full bg-white px-7 text-sm font-semibold text-mk-off-black transition hover:bg-mk-horizon disabled:cursor-not-allowed disabled:opacity-55"
-          disabled={!turnstileReady || connectionStatus === "connecting"}
+          disabled={!turnstileReady || connectionStatus === "connecting" || connectionStatus === "requesting_mic"}
           onClick={connectionStatus === "listening" ? () => onDisconnect("manual") : onConnect}
           type="button"
         >
