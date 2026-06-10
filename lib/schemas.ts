@@ -83,7 +83,13 @@ export const voiceReviewSnapshotSchema = z.object({
       })
       .optional(),
     errors: z
-      .array(z.object({ eventId: z.string().max(160).optional(), message: z.string().min(1).max(500) }))
+      .array(
+        z.object({
+          eventId: z.string().max(160).optional(),
+          message: z.string().min(1).max(500),
+          code: z.string().max(120).optional(),
+        }),
+      )
       .max(20)
       .default([]),
     rateLimits: z.array(z.record(z.string(), z.unknown())).max(20).default([]),

@@ -288,7 +288,7 @@ type VoiceReviewSnapshotRequest = {
     captured: { name: string; email: string; org: string; message: string };
     transcript: Array<{ role: "user" | "assistant" | "system"; text: string }>;
     usage?: RealtimeUsageSummary;
-    errors: Array<{ eventId?: string; message: string }>;
+    errors: Array<{ eventId?: string; message: string; code?: string }>;
     rateLimits: Array<Record<string, unknown>>;
     routeRequested: boolean;
     submittedAt?: number;

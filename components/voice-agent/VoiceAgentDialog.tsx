@@ -20,6 +20,7 @@ import {
 import {
   type CapturedLead,
   emptyCapturedLead,
+  isBenignVoiceError,
   type RealtimeClientCommand,
   type RealtimeServerEvent,
   reduceRealtimeServerEvent,
@@ -84,14 +85,14 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
     const copy = voiceCloseReasonToast(reason);
     if (!copy) return;
     if (copy.tone === "error") {
-      toast.error(copy.title, { description: copy.description });
+      toast.error(copy.title, { description: copy.description, id: "voice-close" });
       return;
     }
     if (copy.tone === "warning") {
-      toast.warning(copy.title, { description: copy.description });
+      toast.warning(copy.title, { description: copy.description, id: "voice-close" });
       return;
     }
-    toast.message(copy.title, { description: copy.description });
+    toast.message(copy.title, { description: copy.description, id: "voice-close" });
   }, []);
 
   const submit = useCallback(
@@ -205,14 +206,16 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
       setSegment(reduced.state.segment);
       setCaptured(reduced.state.captured);
       setTranscript(reduced.state.transcript);
-      if ((reduced.state.errors?.length ?? 0) > previousErrorCount) {
-        toast.error("Voice session reported an error. The form is still available.");
+      const newErrors = (reduced.state.errors ?? []).slice(previousErrorCount);
+      if (newErrors.some((error) => !isBenignVoiceError(error))) {
+        toast.error("Voice session reported an error. The form is still available.", { id: "voice-session-error" });
       }
       for (const command of reduced.commands) {
         if (command.type === "function_result") {
           if (command.output.error === "ungrounded_identity_capture") {
             toast.warning("Ignored an unverified contact detail.", {
               description: "Please type it in the handoff panel or say it clearly once.",
+              id: "voice-capture-warning",
             });
           }
           sendRealtimeCommand(channel, command);
@@ -278,7 +281,7 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
       openedVoiceTurnRef.current = false;
       return;
     }
-    toast.success("Voice is live.");
+    toast.success("Voice is live.", { id: "voice-live" });
     const current = { segment: stateRef.current.segment, captured: stateRef.current.captured };
     lastSyncedHandoffRef.current = handoffSyncKey(current);
     sendClientEvents([serializeHandoffContext(current), serializeResponseCreate(openingVoiceInstruction)]);

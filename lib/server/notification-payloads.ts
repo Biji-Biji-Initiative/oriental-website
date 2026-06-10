@@ -15,7 +15,8 @@ type SlackTextObject = {
 
 type SlackBlock =
   | { type: "header"; text: SlackTextObject }
-  | { type: "section"; text?: SlackTextObject; fields?: SlackTextObject[] };
+  | { type: "section"; text?: SlackTextObject; fields?: SlackTextObject[] }
+  | { type: "context"; elements: SlackTextObject[] };
 
 export type SlackLeadPayload = {
   text: string;
@@ -47,7 +48,15 @@ export function buildOwnerNotification(lead: StoredLead): OwnerNotification {
     `Reply directly to ${lead.form.email} to continue the conversation.`,
   ].join("\n");
   const metadataRows = rows
-    .map(([label, value]) => `<tr><th scope="row">${escapeHtml(label)}</th><td>${escapeHtml(value)}</td></tr>`)
+    .map(([label, value], index) => {
+      const border = index > 0 ? "border-top:1px solid #efe9df;" : "";
+      return [
+        "<tr>",
+        `<th scope="row" style="${border}text-align:left;vertical-align:top;padding:10px 24px 10px 0;color:#5a5146;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;">${escapeHtml(label)}</th>`,
+        `<td style="${border}padding:10px 0;color:#161318;font-size:15px;line-height:1.5;">${escapeHtml(value)}</td>`,
+        "</tr>",
+      ].join("");
+    })
     .join("");
   const html = `<!doctype html>
 <html lang="en">
@@ -81,8 +90,17 @@ export function buildOwnerNotification(lead: StoredLead): OwnerNotification {
                 : ""
             }
             <tr>
-              <td style="padding:24px 32px 32px;border-top:1px solid #ded7cb;color:#5a5146;font-size:14px;line-height:1.5;">
-                Reply directly to <a href="${escapeHtml(mailtoHref(lead.form.email))}" style="color:#0f4c81;">${escapeHtml(lead.form.email)}</a> to continue the conversation.
+              <td style="padding:24px 32px 32px;border-top:1px solid #ded7cb;">
+                <table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 0 14px;">
+                  <tr>
+                    <td style="border-radius:999px;background:#161318;">
+                      <a href="${escapeHtml(mailtoHref(lead.form.email))}" style="display:inline-block;padding:12px 26px;color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;border-radius:999px;">Reply to ${escapeHtml(lead.form.name)}</a>
+                    </td>
+                  </tr>
+                </table>
+                <p style="margin:0;color:#5a5146;font-size:14px;line-height:1.5;">
+                  Reply directly to <a href="${escapeHtml(mailtoHref(lead.form.email))}" style="color:#0f4c81;">${escapeHtml(lead.form.email)}</a> to continue the conversation.
+                </p>
               </td>
             </tr>
           </table>
@@ -98,21 +116,16 @@ export function buildOwnerNotification(lead: StoredLead): OwnerNotification {
 export function buildSlackPayload(lead: StoredLead): SlackLeadPayload {
   const segment = getSegment(lead.segment);
   const transcript = transcriptExcerpt(lead.transcript, 4);
-  const fields: SlackTextObject[] = [
-    { type: "mrkdwn", text: `*Segment*\n${escapeSlack(segment.label)}` },
-    { type: "mrkdwn", text: `*Source*\n${escapeSlack(sourceLabel(lead.source))}` },
-    { type: "mrkdwn", text: `*Routed to*\n${escapeSlack(lead.routedTo)}` },
-    { type: "mrkdwn", text: `*Lead ID*\n${escapeSlack(lead.id)}` },
-    { type: "mrkdwn", text: `*Name*\n${escapeSlack(lead.form.name)}` },
-    { type: "mrkdwn", text: `*Organisation*\n${escapeSlack(lead.form.org)}` },
-    { type: "mrkdwn", text: `*Email*\n${escapeSlack(lead.form.email)}` },
-  ];
+  const intro = [
+    `*${escapeSlack(lead.form.name)}* — ${escapeSlack(lead.form.org)}`,
+    `<mailto:${lead.form.email}|${escapeSlack(lead.form.email)}> · routed to *${escapeSlack(lead.routedTo)}*`,
+  ].join("\n");
   const blocks: SlackBlock[] = [
     {
       type: "header",
-      text: { type: "plain_text", text: truncate(`Oriental lead: ${segment.label}`, 150), emoji: false },
+      text: { type: "plain_text", text: truncate(`New Oriental lead · ${segment.label}`, 150), emoji: false },
     },
-    { type: "section", fields },
+    { type: "section", text: { type: "mrkdwn", text: intro } },
     { type: "section", text: { type: "mrkdwn", text: `*Brief*\n${escapeSlack(truncate(lead.form.message, 2800))}` } },
   ];
   if (transcript) {
@@ -121,6 +134,15 @@ export function buildSlackPayload(lead: StoredLead): SlackLeadPayload {
       text: { type: "mrkdwn", text: `*Conversation context*\n${escapeSlack(truncate(transcript, 2800))}` },
     });
   }
+  blocks.push({
+    type: "context",
+    elements: [
+      {
+        type: "mrkdwn",
+        text: escapeSlack(`${segment.label} · ${sourceLabel(lead.source)} · Lead ${lead.id}`),
+      },
+    ],
+  });
 
   return {
     text: `New Oriental lead for ${lead.routedTo}: ${lead.form.name} from ${lead.form.org}`,

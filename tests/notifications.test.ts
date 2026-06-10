@@ -66,12 +66,13 @@ describe("notification payload builders", () => {
     expect(payload.text).toBe("New Oriental lead for Gurpreet: Alex Tan from CogWorks <script>");
     expect(payload.blocks[0]).toMatchObject({
       type: "header",
-      text: { type: "plain_text", text: "Oriental lead: AI" },
+      text: { type: "plain_text", text: "New Oriental lead · AI" },
     });
-    expect(body).toContain("*Lead ID*\\nlead_123");
-    expect(body).toContain("*Source*\\nVoice workspace");
+    expect(body).toContain("<mailto:alex@example.com|alex@example.com>");
+    expect(body).toContain("AI · Voice workspace · Lead lead_123");
     expect(body).toContain("CogWorks &lt;script&gt;");
     expect(body).toContain("*Conversation context*");
+    expect(payload.blocks.at(-1)).toMatchObject({ type: "context" });
   });
 });
 
@@ -106,7 +107,7 @@ describe("notifySlack", () => {
     const init = fetchMock.mock.calls[0]?.[1];
     expect(init).toBeDefined();
     const payload = JSON.parse(String(init?.body));
-    expect(payload.blocks).toHaveLength(4);
+    expect(payload.blocks).toHaveLength(5);
     expect(JSON.stringify(payload)).toContain("*Brief*");
   });
 
@@ -137,7 +138,7 @@ describe("notifySlack", () => {
     const init = fetchMock.mock.calls[0]?.[1];
     const payload = JSON.parse(String(init?.body));
     expect(payload.channel).toBe("C01AVSGACFN");
-    expect(payload.blocks).toHaveLength(4);
+    expect(payload.blocks).toHaveLength(5);
   });
 
   it("returns Slack HTTP status failures without throwing", async () => {

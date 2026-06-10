@@ -24,6 +24,8 @@ export type VoiceRuntimeUsage = {
   transcriptionOutputTokens: number;
 };
 
+export type VoiceRuntimeError = { eventId?: string; message: string; code?: string };
+
 export type VoiceRuntimeState = {
   segment: SegmentId;
   captured: CapturedLead;
@@ -32,7 +34,8 @@ export type VoiceRuntimeState = {
   routeRequested?: boolean;
   usage?: VoiceRuntimeUsage;
   rateLimits?: Array<Record<string, unknown>>;
-  errors?: Array<{ eventId?: string; message: string }>;
+  errors?: VoiceRuntimeError[];
+  pendingUserTranscripts?: number;
 };
 
 export type RealtimeClientCommand =
@@ -94,6 +97,18 @@ export const emptyVoiceUsage: VoiceRuntimeUsage = {
   transcriptionOutputTokens: 0,
 };
 
+const BENIGN_VOICE_ERROR_CODES = new Set([
+  "response_cancel_not_active",
+  "conversation_already_has_active_response",
+  "input_audio_buffer_commit_empty",
+]);
+
+export function isBenignVoiceError(error: VoiceRuntimeError) {
+  if (error.code && BENIGN_VOICE_ERROR_CODES.has(error.code)) return true;
+  const message = error.message.toLowerCase();
+  return message.includes("cancellation failed") || message.includes("no active response");
+}
+
 export function reduceRealtimeServerEvent(
   event: RealtimeServerEvent,
   current: VoiceRuntimeState,
@@ -104,6 +119,17 @@ export function reduceRealtimeServerEvent(
   const transcriptText = event.transcript ?? getOutputText(event.item);
   if (event.type === "response.output_audio_transcript.done" && transcriptText) {
     state = appendTranscript(state, "assistant", transcriptText);
+  }
+
+  if (event.type === "input_audio_buffer.committed") {
+    state = { ...state, pendingUserTranscripts: (state.pendingUserTranscripts ?? 0) + 1 };
+  }
+
+  if (
+    event.type === "conversation.item.input_audio_transcription.completed" ||
+    event.type === "conversation.item.input_audio_transcription.failed"
+  ) {
+    state = { ...state, pendingUserTranscripts: Math.max(0, (state.pendingUserTranscripts ?? 0) - 1) };
   }
 
   if (event.type === "conversation.item.input_audio_transcription.completed" && event.transcript) {
@@ -127,6 +153,7 @@ export function reduceRealtimeServerEvent(
         {
           eventId: event.error?.event_id ?? event.event_id,
           message: event.error?.message ?? event.error?.code ?? "unknown",
+          code: event.error?.code,
         },
       ],
     };
@@ -178,13 +205,24 @@ function applyFunctionCall(
       }
 
       const normalizedValue = key === "org" ? normalizeOrganisation(value) : value;
-      const grounding = validateCaptureGrounding(key, normalizedValue, evidence, next.transcript);
+      const existing = next.captured[key];
+      if (key !== "message" && existing.trim() && normalizeEvidence(existing) === normalizeEvidence(normalizedValue)) {
+        output = { ok: true, key, mode: "replace", captured: next.captured };
+        break;
+      }
+
+      const grounding = validateCaptureGrounding(
+        key,
+        normalizedValue,
+        evidence,
+        next.transcript,
+        (next.pendingUserTranscripts ?? 0) > 0,
+      );
       if (!grounding.ok) {
         output = { ok: false, error: grounding.error, key, value: normalizedValue };
         break;
       }
 
-      const existing = next.captured[key];
       const nextValue =
         key === "message" && mode === "append" ? appendBrief(existing, normalizedValue) : normalizedValue;
       next = { ...next, captured: { ...next.captured, [key]: nextValue } };
@@ -344,6 +382,7 @@ function validateCaptureGrounding(
   value: string,
   evidence: string,
   transcript: VoiceTranscriptEntry[],
+  transcriptionPending: boolean,
 ): { ok: true } | { ok: false; error: string } {
   if (key === "message") return { ok: true };
   if (!evidence) return { ok: false, error: "ungrounded_identity_capture" };
@@ -355,12 +394,29 @@ function validateCaptureGrounding(
     .join(" ");
   const normalizedUserText = normalizeEvidence(recentUserText);
   const normalizedEvidence = normalizeEvidence(evidence);
-
-  if (normalizedEvidence.length < 2 || !normalizedUserText.includes(normalizedEvidence)) {
+  if (normalizedEvidence.length < 2) {
     return { ok: false, error: "ungrounded_identity_capture" };
   }
 
+  // Whisper transcription can land after the model's function call; while a user
+  // turn is still transcribing, trust evidence that is consistent with the value.
+  const evidenceGrounded = normalizedUserText.includes(normalizedEvidence);
+  if (!evidenceGrounded && !transcriptionPending) {
+    return { ok: false, error: "ungrounded_identity_capture" };
+  }
+
+  if (key === "org" && normalizeEvidence(value) === "individual") {
+    // "Individual" is our label for "no organisation"; the user never says the word itself.
+    return { ok: true };
+  }
+
   const valueForms = normalizedValueForms(key, value);
+  if (!evidenceGrounded) {
+    return valueForms.some((form) => normalizedEvidence.includes(form))
+      ? { ok: true }
+      : { ok: false, error: "ungrounded_identity_capture" };
+  }
+
   if (valueForms.some((form) => normalizedEvidence.includes(form) || normalizedUserText.includes(form))) {
     return { ok: true };
   }
