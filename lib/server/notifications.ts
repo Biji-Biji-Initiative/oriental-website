@@ -2,6 +2,7 @@ import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
 import { readEnv } from "@/lib/env";
 import type { LeadRequest } from "@/lib/schemas";
 import { getOwnerEmail, getSegment } from "@/lib/segments";
+import { errorMeta, logWarn } from "@/lib/server/logger";
 import { buildOwnerNotification, buildSlackPayload } from "@/lib/server/notification-payloads";
 import { sendSmtpMail } from "@/lib/server/smtp";
 
@@ -76,8 +77,10 @@ async function sendOwnerEmail(lead: StoredLead): Promise<NotificationResult> {
       });
       return { ok: true, transport: "smtp" };
     } catch (error) {
-      // Fall through to SESv2 when AWS credentials can carry the same message.
+      // Fall through to SESv2 when AWS credentials can carry the same message,
+      // but leave a trail so a broken SMTP path does not stay invisible.
       if (!awsRegion) throw error;
+      logWarn("notification.smtp_failed_falling_back", { leadId: lead.id, error: errorMeta(error) });
     }
   }
 
