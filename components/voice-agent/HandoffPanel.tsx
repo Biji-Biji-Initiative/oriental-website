@@ -87,7 +87,7 @@ export function HandoffPanel({
       </div>
 
       <div className="mt-5 rounded-lg border border-white/10 bg-white/[0.04] p-4">
-        <div className="text-[11px] uppercase tracking-[0.14em] text-white/42">Routing</div>
+        <div className="text-[11px] uppercase tracking-[0.14em] text-white/55">Routing</div>
         <div className="mt-1 text-sm font-semibold text-white/84">{selectedSegment.label}</div>
         <div className="mt-1 text-xs leading-5 text-white/52">
           {selectedSegment.routedTo.name} · {selectedSegment.routedTo.role}
@@ -188,7 +188,7 @@ export function HandoffPanel({
                     variant="glass"
                   />
                 </FormControl>
-                <FormDescription className="text-xs leading-5 text-white/42">
+                <FormDescription className="text-xs leading-5 text-white/55">
                   Voice can draft it; you can edit it before sending.
                 </FormDescription>
                 <FormMessage className={messageClassName} />
@@ -218,7 +218,7 @@ export function HandoffPanel({
       {transcriptTurnCount > 0 ? (
         <div className="mt-5 rounded-lg border border-white/10 bg-white/[0.04] p-4">
           <div className="flex items-center justify-between gap-3">
-            <div className="text-[11px] uppercase tracking-[0.14em] text-white/42">Live notes</div>
+            <div className="text-[11px] uppercase tracking-[0.14em] text-white/55">Live notes</div>
             <div className="text-[11px] text-white/36">{transcriptTurnCount} turns</div>
           </div>
           <div

@@ -22,7 +22,7 @@ export default function Home() {
   };
 
   return (
-    <main>
+    <main id="main-content">
       {/* biome-ignore lint/security/noDangerouslySetInnerHtml: JSON-LD is generated from local constants. */}
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       <Hero />

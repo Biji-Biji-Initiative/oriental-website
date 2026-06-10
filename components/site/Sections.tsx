@@ -114,7 +114,7 @@ export function Vision() {
             <h2 className="section-heading">
               A new chapter <em>for a historic building.</em>
             </h2>
-            <p className="mt-14 text-sm uppercase tracking-[0.14em] text-mk-off-black/45">
+            <p className="mt-14 text-sm uppercase tracking-[0.14em] text-mk-off-black/60">
               Levels 2 — 4 · Reactivation begins 2026
             </p>
           </div>
@@ -265,7 +265,7 @@ export function Footer() {
       <div className="mx-auto max-w-wrap border-t border-white/10 px-gutter py-16">
         <div className="grid gap-12 lg:grid-cols-[1.2fr_0.8fr_0.8fr]">
           <div>
-            <div className="mb-5 flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-white/42">
+            <div className="mb-5 flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-white/55">
               <span className="size-1.5 rounded-full bg-mk-horizon" />
               Get in touch
             </div>
@@ -330,7 +330,7 @@ export function Footer() {
             </ul>
           </div>
         </div>
-        <div className="mt-14 flex flex-col justify-between gap-4 border-t border-white/10 pt-6 text-sm text-white/42 md:flex-row">
+        <div className="mt-14 flex flex-col justify-between gap-4 border-t border-white/10 pt-6 text-sm text-white/55 md:flex-row">
           <span>© 2026 · Mereka × Biji-biji Initiative × CIMB</span>
           <span>Oriental Building · A new chapter for a historic Kuala Lumpur landmark</span>
         </div>

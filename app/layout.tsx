@@ -71,6 +71,12 @@ export default async function RootLayout({
   return (
     <html lang="en" className={`${poppins.variable} ${fraunces.variable} scroll-smooth antialiased`}>
       <body className="min-h-svh bg-mk-paper text-mk-off-black">
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[100] focus:rounded-full focus:bg-mk-off-black focus:px-5 focus:py-2.5 focus:text-sm focus:font-medium focus:text-white"
+        >
+          Skip to content
+        </a>
         <VoiceProvider turnstileSiteKey={turnstileSiteKey}>
           <SiteNav />
           {children}

@@ -108,6 +108,7 @@ export function SiteNav() {
             {menuOpen ? "Close" : "Menu"}
           </button>
           <button
+            aria-label="Talk to Mereka"
             className="flex items-center gap-2 rounded-full border border-white/16 bg-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] backdrop-blur transition hover:bg-white/18"
             onClick={() => voice.open()}
             type="button"

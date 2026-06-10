@@ -116,7 +116,7 @@ export function VoiceSessionStage({
           </p>
         )}
         <p className="mt-3 max-w-xl text-sm leading-6 text-white/58">{statusCopy.detail}</p>
-        <p className="mt-2 text-sm text-white/42">{selectedSegment.voiceOpener}</p>
+        <p className="mt-2 text-sm text-white/55">{selectedSegment.voiceOpener}</p>
 
         {connectionStatus === "listening" ? (
           <form className="mt-6 flex w-full max-w-xl gap-2" onSubmit={handleComposerSubmit}>
@@ -180,7 +180,7 @@ export function VoiceSessionStage({
           )}
           {statusCopy.button}
         </Button>
-        <p className="mt-3 text-xs text-white/42">
+        <p className="mt-3 text-xs text-white/55">
           Speak or type anytime. Reka says a quick goodbye if you go quiet, and your typed details stay here.
         </p>
         {/* biome-ignore lint/a11y/useMediaCaption: Live WebRTC audio streams live captions above; the transcript log is the accessible record. */}
