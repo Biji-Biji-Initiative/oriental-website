@@ -26,6 +26,7 @@ then use as reference.
 | 09 | [`09-LAUNCH-CHECKLIST.md`](./09-LAUNCH-CHECKLIST.md) | QA, Eng, PM | Pre-launch gates and post-launch monitoring |
 | 10 | [`10-ROADMAP.md`](./10-ROADMAP.md) | PM | What's deferred, sequencing, dependencies |
 | 11 | [`11-INFRASTRUCTURE.md`](./11-INFRASTRUCTURE.md) | Eng, DevOps | Coolify + Cloudflare + Infisical — deploy, secrets, DNS, monitoring |
+| 12 | [`12-CHAT-RELEASE-RUNBOOK.md`](./12-CHAT-RELEASE-RUNBOOK.md) | QA, Eng | Chat-integration release: deploy order, voice QA script, watch list |
 | ASSETS | [`ASSET-SOURCES.md`](./ASSET-SOURCES.md) | Eng, Brand | Runtime logo/favicon provenance and approval notes |
 
 ## Source of truth
