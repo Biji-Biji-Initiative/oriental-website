@@ -116,7 +116,7 @@ describe("notifySlack", () => {
     const init = fetchMock.mock.calls[0]?.[1];
     expect(init).toBeDefined();
     const payload = JSON.parse(String(init?.body));
-    expect(payload.blocks).toHaveLength(5);
+    expect(payload.blocks).toHaveLength(6);
     expect(JSON.stringify(payload)).toContain("*Brief*");
   });
 
@@ -147,7 +147,7 @@ describe("notifySlack", () => {
     const init = fetchMock.mock.calls[0]?.[1];
     const payload = JSON.parse(String(init?.body));
     expect(payload.channel).toBe("C01AVSGACFN");
-    expect(payload.blocks).toHaveLength(5);
+    expect(payload.blocks).toHaveLength(6);
   });
 
   it("retries a transient Slack failure once before succeeding", async () => {

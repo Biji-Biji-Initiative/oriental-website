@@ -315,7 +315,9 @@ export function useRealtimeVoiceSession({
 
   useEffect(() => teardownVoice, [teardownVoice]);
 
-  return { connectVoice, connectionStatus, sendClientEvents, teardownVoice };
+  const getLocalStream = useCallback(() => localStreamRef.current, []);
+
+  return { connectVoice, connectionStatus, getLocalStream, sendClientEvents, teardownVoice };
 }
 
 async function queryMicrophonePermission(): Promise<PermissionState> {

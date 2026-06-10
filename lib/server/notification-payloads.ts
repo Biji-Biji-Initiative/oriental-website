@@ -16,7 +16,8 @@ type SlackTextObject = {
 type SlackBlock =
   | { type: "header"; text: SlackTextObject }
   | { type: "section"; text?: SlackTextObject; fields?: SlackTextObject[] }
-  | { type: "context"; elements: SlackTextObject[] };
+  | { type: "context"; elements: SlackTextObject[] }
+  | { type: "divider" };
 
 export type SlackLeadPayload = {
   text: string;
@@ -122,10 +123,15 @@ export function buildOwnerNotification(lead: StoredLead): OwnerNotification {
 
 export function buildSlackPayload(lead: StoredLead): SlackLeadPayload {
   const segment = getSegment(lead.segment);
-  const transcript = transcriptExcerpt(lead.transcript, 4);
+  const conversation = lead.transcript
+    .slice(-4)
+    .map((entry) => `*${escapeSlack(speakerLabel(entry.role))}:*  ${escapeSlack(truncate(entry.text.trim(), 400))}`)
+    .filter((line) => line.length > 0)
+    .join("\n");
   const intro = [
     `*${escapeSlack(lead.form.name)}* — ${escapeSlack(lead.form.org)}`,
-    `<mailto:${lead.form.email}|${escapeSlack(lead.form.email)}> · routed to *${escapeSlack(lead.routedTo)}*`,
+    `<mailto:${lead.form.email}|${escapeSlack(lead.form.email)}>`,
+    `→ *${escapeSlack(lead.routedTo)}* · ${escapeSlack(segment.routedTo.role)}`,
   ].join("\n");
   const blocks: SlackBlock[] = [
     {
@@ -133,6 +139,7 @@ export function buildSlackPayload(lead: StoredLead): SlackLeadPayload {
       text: { type: "plain_text", text: truncate(`New Oriental lead · ${segment.label}`, 150), emoji: false },
     },
     { type: "section", text: { type: "mrkdwn", text: intro } },
+    { type: "divider" },
     {
       type: "section",
       text: {
@@ -141,10 +148,10 @@ export function buildSlackPayload(lead: StoredLead): SlackLeadPayload {
       },
     },
   ];
-  if (transcript) {
+  if (conversation) {
     blocks.push({
       type: "section",
-      text: { type: "mrkdwn", text: `*Conversation context*\n${escapeSlack(truncate(transcript, 2800))}` },
+      text: { type: "mrkdwn", text: `*Conversation context*\n${truncate(conversation, 2800)}` },
     });
   }
   blocks.push({

@@ -189,7 +189,7 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
   });
   formRef.current = form;
 
-  const { connectVoice, connectionStatus, sendClientEvents, teardownVoice } = useRealtimeVoiceSession({
+  const { connectVoice, connectionStatus, getLocalStream, sendClientEvents, teardownVoice } = useRealtimeVoiceSession({
     audioRef,
     getTurnstileToken: turnstile.execute,
     onClose: handleVoiceClose,
@@ -323,6 +323,7 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
               audioRef={audioRef}
               captured={captured}
               connectionStatus={connectionStatus}
+              getLocalStream={getLocalStream}
               onConnect={connectVoice}
               onDisconnect={teardownVoice}
               onSendText={handleSendText}

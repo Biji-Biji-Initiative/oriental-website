@@ -11,7 +11,7 @@ import type { getSegment } from "@/lib/segments";
 import { cn } from "@/lib/utils";
 import type { CapturedLead } from "@/lib/voice/realtime-events";
 import type { VoiceCloseReason, VoiceConnectionStatus } from "./useRealtimeVoiceSession";
-import { useVoiceAudioLevel } from "./useVoiceAudioLevel";
+import { useMicAudioLevel, useVoiceAudioLevel } from "./useVoiceAudioLevel";
 import { handoffCompletion, voiceStatusCopy } from "./voice-dialog-copy";
 
 type VoiceSessionStageProps = {
@@ -20,6 +20,7 @@ type VoiceSessionStageProps = {
   audioRef: RefObject<HTMLAudioElement | null>;
   captured: CapturedLead;
   connectionStatus: VoiceConnectionStatus;
+  getLocalStream: () => MediaStream | null;
   onConnect: () => void;
   onDisconnect: (reason: VoiceCloseReason) => void;
   onSendText: (text: string) => boolean;
@@ -35,6 +36,7 @@ export function VoiceSessionStage({
   audioRef,
   captured,
   connectionStatus,
+  getLocalStream,
   onConnect,
   onDisconnect,
   onSendText,
@@ -49,6 +51,7 @@ export function VoiceSessionStage({
   const orbRef = useRef<HTMLDivElement | null>(null);
   const [draft, setDraft] = useState("");
   useVoiceAudioLevel(audioRef, orbRef, connectionStatus === "listening");
+  useMicAudioLevel(getLocalStream, orbRef, connectionStatus === "listening");
 
   const handleComposerSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -92,6 +95,7 @@ export function VoiceSessionStage({
         >
           <div aria-hidden className="voice-orb__aurora" />
           <div aria-hidden className="voice-orb__glow" />
+          <div aria-hidden className="voice-orb__iris" />
           <div aria-hidden className="voice-orb__ripple" />
           <div aria-hidden className="voice-orb__ripple voice-orb__ripple--late" />
           <div aria-hidden className="voice-orb__halo" />

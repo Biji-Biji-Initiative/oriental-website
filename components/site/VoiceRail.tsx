@@ -64,7 +64,9 @@ export function VoiceRail() {
       onClick={() => voice.open(context.intent)}
       type="button"
     >
-      <MiniOrb size={30} />
+      <span className="orb-breathe inline-flex">
+        <MiniOrb size={30} />
+      </span>
       {context.label}
     </button>
   );

@@ -701,3 +701,28 @@
     opacity: 1;
   }
 }
+
+/* The listening iris: an inner teal ring that swells with the visitor's own
+   voice (--user-level), so the orb visibly takes speech in while Reka's
+   ripples carry it out. */
+.voice-orb__iris {
+  position: absolute;
+  inset: 26%;
+  border-radius: 9999px;
+  border: 2px solid rgba(122, 196, 212, 0.85);
+  box-shadow: 0 0 24px rgba(122, 196, 212, 0.5);
+  transform: scale(calc(1 + var(--user-level, 0) * 0.45));
+  opacity: calc(var(--user-level, 0) * 0.9);
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+
+.voice-orb[data-status="listening"] .voice-orb__aurora {
+  filter: blur(14px) hue-rotate(calc(var(--user-level, 0) * -36deg));
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .orb-breathe {
+    animation: voice-orb-breathe 6.5s ease-in-out infinite;
+  }
+}

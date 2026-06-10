@@ -1,18 +1,23 @@
 "use client";
 
-import { type RefObject, useEffect } from "react";
+import { type RefObject, useEffect, useRef } from "react";
+
+type StreamSource = () => MediaStream | null;
 
 /**
- * Mirrors the live output audio level onto a CSS custom property
- * (`--voice-level`, 0..1) on the target element, so the orb can breathe with
- * Reka's actual voice. Writes styles directly — no React re-renders at audio
- * frame rate — and stays inert when the user prefers reduced motion.
+ * Mirrors a live audio level onto a CSS custom property (0..1) on the target
+ * element. Writes styles directly — no React re-renders at audio frame rate —
+ * and stays inert when the user prefers reduced motion.
  */
-export function useVoiceAudioLevel(
-  audioRef: RefObject<HTMLAudioElement | null>,
+function useStreamLevel(
+  getStream: StreamSource,
   targetRef: RefObject<HTMLElement | null>,
+  cssVar: string,
   active: boolean,
 ) {
+  const getStreamRef = useRef(getStream);
+  getStreamRef.current = getStream;
+
   useEffect(() => {
     const target = targetRef.current;
     if (!active || !target) return;
@@ -40,16 +45,17 @@ export function useVoiceAudioLevel(
         let sum = 0;
         for (const value of bins) sum += value;
         const level = Math.min(1, (sum / bins.length / 255) * 2.4);
-        target.style.setProperty("--voice-level", level.toFixed(3));
+        target.style.setProperty(cssVar, level.toFixed(3));
         frame = requestAnimationFrame(tick);
       };
       tick();
     };
 
-    // The remote stream is attached asynchronously by the WebRTC ontrack
-    // handler, so poll briefly until it appears.
+    // Streams attach asynchronously (WebRTC ontrack / getUserMedia), so poll
+    // briefly until one with audio appears.
     const waitForStream = () => {
-      const stream = audioRef.current?.srcObject;
+      if (cancelled) return;
+      const stream = getStreamRef.current();
       if (stream instanceof MediaStream && stream.getAudioTracks().length > 0) {
         start(stream);
         return;
@@ -64,7 +70,33 @@ export function useVoiceAudioLevel(
       cancelAnimationFrame(frame);
       source?.disconnect();
       void context?.close().catch(() => null);
-      target.style.removeProperty("--voice-level");
+      target.style.removeProperty(cssVar);
     };
-  }, [active, audioRef, targetRef]);
+  }, [active, cssVar, targetRef]);
+}
+
+/** Reka's output level → `--voice-level`, so the orb breathes and ripples with her voice. */
+export function useVoiceAudioLevel(
+  audioRef: RefObject<HTMLAudioElement | null>,
+  targetRef: RefObject<HTMLElement | null>,
+  active: boolean,
+) {
+  useStreamLevel(
+    () => {
+      const stream = audioRef.current?.srcObject;
+      return stream instanceof MediaStream ? stream : null;
+    },
+    targetRef,
+    "--voice-level",
+    active,
+  );
+}
+
+/** The visitor's microphone level → `--user-level`, so the orb visibly listens. */
+export function useMicAudioLevel(
+  getLocalStream: StreamSource,
+  targetRef: RefObject<HTMLElement | null>,
+  active: boolean,
+) {
+  useStreamLevel(getLocalStream, targetRef, "--user-level", active);
 }
