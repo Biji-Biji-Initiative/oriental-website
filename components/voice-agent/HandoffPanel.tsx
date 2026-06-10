@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef } from "react";
 import type { UseFormReturn } from "react-hook-form";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Chip } from "@/components/ui/chip";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -56,16 +57,9 @@ export function HandoffPanel({
           <div className="text-xs uppercase tracking-[0.16em] text-white/48">Handoff details</div>
           <p className="mt-2 text-sm leading-5 text-white/58">Captured for the team that should follow up.</p>
         </div>
-        <div
-          className={cn(
-            "rounded-full border px-3 py-1 text-xs font-semibold",
-            completion.ready
-              ? "border-mk-horizon/50 bg-mk-horizon/18 text-mk-horizon"
-              : "border-white/12 bg-white/[0.045] text-white/58",
-          )}
-        >
+        <Chip active={completion.ready} className="py-1">
           {completion.completedCount}/{completion.totalCount}
-        </div>
+        </Chip>
       </div>
 
       <div className="mt-5 grid grid-cols-2 gap-2">
@@ -74,7 +68,7 @@ export function HandoffPanel({
           return (
             <div
               className={cn(
-                "flex min-h-10 items-center gap-2 rounded-[14px] border px-3 text-xs font-medium",
+                "flex min-h-10 items-center gap-2 rounded-md border px-3 text-xs font-medium",
                 complete
                   ? "border-mk-horizon/35 bg-mk-horizon/12 text-white"
                   : "border-white/10 bg-white/[0.035] text-white/46",
@@ -92,7 +86,7 @@ export function HandoffPanel({
         })}
       </div>
 
-      <div className="mt-5 rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
+      <div className="mt-5 rounded-lg border border-white/10 bg-white/[0.04] p-4">
         <div className="text-[11px] uppercase tracking-[0.14em] text-white/42">Routing</div>
         <div className="mt-1 text-sm font-semibold text-white/84">{selectedSegment.label}</div>
         <div className="mt-1 text-xs leading-5 text-white/52">
@@ -203,7 +197,7 @@ export function HandoffPanel({
           />
           {invalidCount > 0 ? (
             <div
-              className="flex gap-2 rounded-[16px] border border-mk-error/25 bg-mk-error/10 p-3 text-xs leading-5 text-mk-error-soft"
+              className="flex gap-2 rounded-lg border border-mk-error/25 bg-mk-error/10 p-3 text-xs leading-5 text-mk-error-soft"
               role="alert"
             >
               <TriangleAlertIcon className="mt-0.5 size-4 shrink-0" />
@@ -222,7 +216,7 @@ export function HandoffPanel({
       </Form>
 
       {transcriptTurnCount > 0 ? (
-        <div className="mt-5 rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
+        <div className="mt-5 rounded-lg border border-white/10 bg-white/[0.04] p-4">
           <div className="flex items-center justify-between gap-3">
             <div className="text-[11px] uppercase tracking-[0.14em] text-white/42">Live notes</div>
             <div className="text-[11px] text-white/36">{transcriptTurnCount} turns</div>

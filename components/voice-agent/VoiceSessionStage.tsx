@@ -4,6 +4,7 @@ import { Mic2Icon, PhoneOffIcon, RadioIcon, SendIcon, SparklesIcon } from "lucid
 import { type FormEvent, type RefObject, useRef, useState } from "react";
 import { MiniOrb } from "@/components/orb/MiniOrb";
 import { Button } from "@/components/ui/button";
+import { Chip } from "@/components/ui/chip";
 import { Input } from "@/components/ui/input";
 import { tourTopics } from "@/lib/content";
 import type { getSegment } from "@/lib/segments";
@@ -74,29 +75,14 @@ export function VoiceSessionStage({
     <div>
       <div className="mx-auto grid max-w-[min(740px,100%)] place-items-center text-center">
         <div className="flex flex-wrap justify-center gap-2">
-          <div
-            className={cn(
-              "inline-flex h-9 items-center gap-2 rounded-full border px-3 text-xs font-semibold",
-              connectionStatus === "listening"
-                ? "border-mk-horizon/45 bg-mk-horizon/14 text-mk-horizon"
-                : "border-white/12 bg-white/[0.045] text-white/62",
-            )}
-            aria-live="polite"
-          >
+          <Chip active={connectionStatus === "listening"} aria-live="polite" className="h-9">
             <RadioIcon className={cn("size-3.5", connectionStatus === "listening" && "motion-safe:animate-pulse")} />
             {statusCopy.label}
-          </div>
-          <div
-            className={cn(
-              "inline-flex h-9 items-center gap-2 rounded-full border px-3 text-xs font-semibold",
-              completion.ready
-                ? "border-mk-horizon/45 bg-mk-horizon/14 text-mk-horizon"
-                : "border-white/12 bg-white/[0.045] text-white/62",
-            )}
-          >
+          </Chip>
+          <Chip active={completion.ready} className="h-9">
             <SparklesIcon className="size-3.5" />
             {completion.completedCount}/{completion.totalCount} details
-          </div>
+          </Chip>
         </div>
 
         <div
@@ -178,7 +164,7 @@ export function VoiceSessionStage({
         </div>
 
         {activeTopic ? (
-          <div className="mt-5 w-full max-w-2xl rounded-[18px] border border-white/10 bg-white/[0.045] p-4 text-left shadow-[0_20px_80px_rgba(0,0,0,0.18)]">
+          <div className="mt-5 w-full max-w-2xl rounded-lg border border-white/10 bg-white/[0.045] p-4 text-left shadow-[0_20px_80px_rgba(0,0,0,0.18)]">
             <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-mk-horizon/80">
               Oriental note
             </div>

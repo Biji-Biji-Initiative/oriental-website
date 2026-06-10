@@ -11,7 +11,7 @@ const inputVariants = cva(
         default: "",
         // Dark-surface field used across the voice workspace.
         glass:
-          "h-11 rounded-[16px] border-white/12 bg-white/[0.045] px-4 text-white placeholder:text-white/30 focus-visible:border-mk-horizon focus-visible:ring-mk-horizon/20 aria-invalid:border-destructive aria-invalid:ring-destructive/20",
+          "h-11 rounded-lg border-white/12 bg-white/[0.045] px-4 text-white placeholder:text-white/30 focus-visible:border-mk-horizon focus-visible:ring-mk-horizon/20 aria-invalid:border-destructive aria-invalid:ring-destructive/20",
       },
     },
     defaultVariants: { variant: "default" },

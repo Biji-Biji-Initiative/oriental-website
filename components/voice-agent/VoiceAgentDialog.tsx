@@ -292,7 +292,7 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[94svh] w-[min(1500px,96vw)] overflow-hidden rounded-[22px] border-white/10 bg-mk-off-black p-0 text-white shadow-2xl sm:max-w-none">
+      <DialogContent className="max-h-[94svh] w-[min(1500px,96vw)] overflow-hidden rounded-xl border-white/10 bg-mk-off-black p-0 text-white shadow-2xl sm:max-w-none">
         <DialogTitle className="sr-only">Talk to Reka</DialogTitle>
         <div className="grid max-h-[94svh] grid-cols-1 overflow-y-auto lg:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_360px]">
           <aside className="border-b border-white/10 p-5 lg:row-span-2 lg:border-r lg:border-b-0 xl:row-span-1">
@@ -301,7 +301,7 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
               {segmentOptions().map((option) => (
                 <button
                   className={cn(
-                    "min-w-56 rounded-[18px] border border-white/10 p-4 text-left transition hover:border-white/28 hover:bg-white/8 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mk-horizon lg:min-w-0",
+                    "min-w-56 rounded-lg border border-white/10 p-4 text-left transition hover:border-white/28 hover:bg-white/8 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mk-horizon lg:min-w-0",
                     option.id === segment && "border-mk-horizon bg-white/10",
                   )}
                   key={option.id}

@@ -137,7 +137,7 @@ export function Vision() {
             </p>
           </div>
         </div>
-        <figure className="relative mt-20 h-[520px] overflow-hidden rounded-[18px]">
+        <figure className="relative mt-20 h-[520px] overflow-hidden rounded-lg">
           <Image
             alt="Oriental Building context on Jalan Tun Perak"
             className="object-cover"
