@@ -2,14 +2,14 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useForm } from "react-hook-form";
+import { type UseFormReturn, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { useTurnstile } from "@/components/security/useTurnstile";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { leadFormSchema } from "@/lib/schemas";
 import { getSegment, type SegmentId, segmentOptions } from "@/lib/segments";
 import { cn } from "@/lib/utils";
-import { serializeHandoffContext, serializeRealtimeCommand, serializeResponseCreate } from "@/lib/voice/client-events";
+import { serializeHandoffContext, serializeResponseCreate } from "@/lib/voice/client-events";
 import {
   fetchWithTimeout,
   LEAD_SUBMIT_TIMEOUT_MS,
@@ -17,15 +17,7 @@ import {
   leadSubmitErrorCopy,
   notificationDelivered,
 } from "@/lib/voice/lead-submit";
-import {
-  type CapturedLead,
-  emptyCapturedLead,
-  isBenignVoiceError,
-  type RealtimeClientCommand,
-  type RealtimeServerEvent,
-  reduceRealtimeServerEvent,
-  type VoiceRuntimeState,
-} from "@/lib/voice/realtime-events";
+import { type CapturedLead, emptyCapturedLead, type VoiceRuntimeState } from "@/lib/voice/realtime-events";
 import {
   buildVoiceReviewSnapshot,
   postVoiceReviewSnapshot,
@@ -38,6 +30,7 @@ import {
   type VoiceConnectionStatus,
   type VoiceReviewMetadata,
 } from "./useRealtimeVoiceSession";
+import { useVoiceRuntime } from "./useVoiceRuntime";
 import { VoiceSessionStage } from "./VoiceSessionStage";
 import { openingVoiceInstruction, voiceCloseReasonToast } from "./voice-dialog-copy";
 
@@ -50,22 +43,11 @@ type VoiceAgentDialogProps = {
 };
 
 export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstileSiteKey }: VoiceAgentDialogProps) {
-  const [segment, setSegment] = useState<SegmentId>(intent ?? "other");
-  const [captured, setCaptured] = useState<CapturedLead>({ ...emptyCapturedLead, email: prefill?.email ?? "" });
   const [status, setStatus] = useState<"idle" | "submitted">("idle");
   const [submitting, setSubmitting] = useState(false);
   const [activeTopicId, setActiveTopicId] = useState<string | null>(null);
-  const [transcript, setTranscript] = useState<Array<{ role: "assistant" | "user"; text: string }>>([]);
-  const form = useForm<CapturedLead>({
-    defaultValues: { ...emptyCapturedLead, email: prefill?.email ?? "" },
-    mode: "onChange",
-    reValidateMode: "onChange",
-    resolver: zodResolver(leadFormSchema),
-    values: captured,
-  });
   const turnstile = useTurnstile("oriental-intake", turnstileSiteKey);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const stateRef = useRef<VoiceRuntimeState>({ segment, captured, transcript });
   const submittingRef = useRef(false);
   const lastSyncedHandoffRef = useRef("");
   const openedVoiceTurnRef = useRef(false);
@@ -95,16 +77,17 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
     toast.message(copy.title, { description: copy.description, id: "voice-close" });
   }, []);
 
+  const formRef = useRef<UseFormReturn<CapturedLead> | null>(null);
+
   const submit = useCallback(
-    async (source: "form" | "voice" = "form", override?: VoiceRuntimeState): Promise<Record<string, unknown>> => {
+    async (source: "form" | "voice", leadState: VoiceRuntimeState): Promise<Record<string, unknown>> => {
       if (submittingRef.current) return { ok: false, error: "submission_in_progress" };
       submittingRef.current = true;
       setSubmitting(true);
       try {
-        const leadState = override ?? stateRef.current;
         const parsed = leadFormSchema.safeParse(leadState.captured);
         if (!parsed.success) {
-          if (source === "form") void form.trigger();
+          if (source === "form") void formRef.current?.trigger();
           toast.error("Please fix the highlighted details.", {
             description: "Name, a valid email, organisation, and a short brief are required before sending.",
           });
@@ -169,71 +152,31 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
         setSubmitting(false);
       }
     },
-    [turnstile, form, currentReviewCredentials],
+    [turnstile, currentReviewCredentials],
   );
 
-  const submitVoiceCommand = useCallback(
-    (
-      channel: RTCDataChannel,
-      command: Extract<RealtimeClientCommand, { type: "submit_voice" }>,
-      leadState: VoiceRuntimeState,
-    ) => {
-      submit("voice", leadState)
-        .then((output) => {
-          if (output.submitted !== true) {
-            stateRef.current = { ...stateRef.current, routeRequested: false };
-          }
-          sendRealtimeCommand(channel, {
-            type: "function_result",
-            callId: command.callId,
-            createResponse: output.submitted !== true,
-            output,
-          });
-        })
-        .catch(() => {
-          stateRef.current = { ...stateRef.current, routeRequested: false };
-          toast.error("Could not finish voice routing. You can still send from the handoff panel.");
-        });
-    },
-    [submit],
-  );
+  const runtime = useVoiceRuntime({
+    initialSegment: intent ?? "other",
+    prefillEmail: prefill?.email,
+    submitLead: (leadState) => submit("voice", leadState),
+    onEndVoice: () => teardownVoiceRef.current?.("manual"),
+  });
+  const { segment, captured, transcript, stateRef } = runtime;
 
-  const handleRealtimeEvent = useCallback(
-    (serverEvent: RealtimeServerEvent, channel: RTCDataChannel) => {
-      const reduced = reduceRealtimeServerEvent(serverEvent, stateRef.current);
-      const previousErrorCount = stateRef.current.errors?.length ?? 0;
-      stateRef.current = reduced.state;
-      setSegment(reduced.state.segment);
-      setCaptured(reduced.state.captured);
-      setTranscript(reduced.state.transcript);
-      const newErrors = (reduced.state.errors ?? []).slice(previousErrorCount);
-      if (newErrors.some((error) => !isBenignVoiceError(error))) {
-        toast.error("Voice session reported an error. The form is still available.", { id: "voice-session-error" });
-      }
-      for (const command of reduced.commands) {
-        if (command.type === "function_result") {
-          if (command.output.error === "ungrounded_identity_capture") {
-            toast.warning("Ignored an unverified contact detail.", {
-              description: "Please type it in the handoff panel or say it clearly once.",
-              id: "voice-capture-warning",
-            });
-          }
-          sendRealtimeCommand(channel, command);
-        }
-        if (command.type === "submit_voice") submitVoiceCommand(channel, command, reduced.state);
-        if (command.type === "end_voice") {
-          teardownVoiceRef.current?.("manual");
-        }
-      }
-    },
-    [submitVoiceCommand],
-  );
+  const form = useForm<CapturedLead>({
+    defaultValues: { ...emptyCapturedLead, email: prefill?.email ?? "" },
+    mode: "onChange",
+    reValidateMode: "onChange",
+    resolver: zodResolver(leadFormSchema),
+    values: captured,
+  });
+  formRef.current = form;
 
   const { connectVoice, connectionStatus, sendClientEvents, teardownVoice } = useRealtimeVoiceSession({
     audioRef,
     getTurnstileToken: turnstile.execute,
     onClose: handleVoiceClose,
-    onEvent: handleRealtimeEvent,
+    onEvent: runtime.handleRealtimeEvent,
     onSessionReady: (metadata) => {
       reviewRef.current = metadata;
     },
@@ -244,9 +187,7 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
 
   useEffect(() => {
     if (!open) return;
-    setSegment(intent ?? "other");
-    setCaptured({ ...emptyCapturedLead, email: prefill?.email ?? "" });
-    setTranscript([]);
+    runtime.reset({ segment: intent ?? "other", email: prefill?.email });
     setStatus("idle");
     setActiveTopicId(null);
     setSubmitting(false);
@@ -255,22 +196,7 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
     openedVoiceTurnRef.current = false;
     reviewRef.current = null;
     localReviewRef.current = null;
-    stateRef.current = {
-      segment: intent ?? "other",
-      captured: { ...emptyCapturedLead, email: prefill?.email ?? "" },
-      transcript: [],
-      handledCallIds: [],
-    };
-  }, [intent, open, prefill]);
-
-  useEffect(() => {
-    stateRef.current = {
-      ...stateRef.current,
-      segment,
-      captured,
-      transcript,
-    };
-  }, [captured, segment, transcript]);
+  }, [intent, open, prefill, runtime.reset]);
 
   useEffect(() => {
     if (status === "submitted") teardownVoice("manual");
@@ -286,7 +212,7 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
     lastSyncedHandoffRef.current = handoffSyncKey(current);
     sendClientEvents([serializeHandoffContext(current), serializeResponseCreate(openingVoiceInstruction)]);
     openedVoiceTurnRef.current = true;
-  }, [connectionStatus, sendClientEvents]);
+  }, [connectionStatus, sendClientEvents, stateRef]);
 
   useEffect(() => {
     if (connectionStatus !== "listening" || !openedVoiceTurnRef.current) return;
@@ -312,7 +238,7 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
       ).catch(() => null);
     }, 1500);
     return () => window.clearTimeout(timeout);
-  }, [captured, connectionStatus, currentReviewCredentials, open, segment, status, transcript]);
+  }, [captured, connectionStatus, currentReviewCredentials, open, segment, stateRef, status, transcript]);
 
   useEffect(() => {
     if (!open) return;
@@ -324,9 +250,6 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
   }, [onOpenChange, open]);
 
   const selectedSegment = getSegment(segment);
-  const updateCaptured = useCallback((key: keyof CapturedLead, value: string) => {
-    setCaptured((current) => ({ ...current, [key]: value }));
-  }, []);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -343,7 +266,7 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
                     option.id === segment && "border-mk-horizon bg-white/10",
                   )}
                   key={option.id}
-                  onClick={() => setSegment(option.id)}
+                  onClick={() => runtime.setSegment(option.id)}
                   type="button"
                 >
                   <div className="text-sm font-semibold">{option.label}</div>
@@ -373,7 +296,7 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
             captured={captured}
             className="lg:col-start-2 xl:col-start-auto"
             form={form}
-            onChange={updateCaptured}
+            onChange={runtime.updateCaptured}
             onSubmit={(values) =>
               submit("form", {
                 ...stateRef.current,
@@ -395,14 +318,4 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
 
 function handoffSyncKey(state: Pick<VoiceRuntimeState, "segment" | "captured">) {
   return JSON.stringify({ segment: state.segment, captured: state.captured });
-}
-
-function sendRealtimeCommand(
-  channel: RTCDataChannel,
-  command: Extract<RealtimeClientCommand, { type: "function_result" }>,
-) {
-  if (channel.readyState !== "open") return;
-  for (const event of serializeRealtimeCommand(command)) {
-    channel.send(JSON.stringify(event));
-  }
 }

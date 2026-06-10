@@ -1,6 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildOwnerNotification, buildSlackPayload } from "@/lib/server/notification-payloads";
-import { notifySlack, type StoredLead } from "@/lib/server/notifications";
+import { notifyOwner, notifySlack, type StoredLead } from "@/lib/server/notifications";
+import { sendSmtpMail } from "@/lib/server/smtp";
+
+vi.mock("@/lib/server/smtp", () => ({ sendSmtpMail: vi.fn() }));
+vi.mock("@aws-sdk/client-sesv2", () => ({
+  SESv2Client: class {
+    send = vi.fn(async () => ({}));
+  },
+  SendEmailCommand: class {},
+}));
 
 const originalEnv = process.env;
 
@@ -141,6 +150,17 @@ describe("notifySlack", () => {
     expect(payload.blocks).toHaveLength(5);
   });
 
+  it("retries a transient Slack failure once before succeeding", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("bad", { status: 500 }))
+      .mockResolvedValueOnce(new Response("ok", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(notifySlack(lead())).resolves.toEqual({ ok: true, transport: "slack" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("returns Slack HTTP status failures without throwing", async () => {
     vi.stubGlobal(
       "fetch",
@@ -160,15 +180,45 @@ describe("notifySlack", () => {
       SLACK_BOT_TOKEN: "xoxb-test",
       SLACK_CHANNEL_ID: "C01AVSGACFN",
     };
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => Response.json({ ok: false, error: "channel_not_found" })),
-    );
+    const fetchMock = vi.fn(async () => Response.json({ ok: false, error: "channel_not_found" }));
+    vi.stubGlobal("fetch", fetchMock);
 
     await expect(notifySlack(lead())).resolves.toEqual({
       ok: false,
       error: "channel_not_found",
       status: 200,
     });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("notifyOwner", () => {
+  beforeEach(() => {
+    process.env = {
+      ...originalEnv,
+      NODE_ENV: "test",
+      SES_FROM_ADDRESS: "oriental@mereka.test",
+      SMTP_USER: "smtp-user",
+      SMTP_PASSWORD: "smtp-password",
+      SMTP_HOST: "email-smtp.test.amazonaws.com",
+      AWS_REGION: "ap-southeast-1",
+    };
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+    vi.clearAllMocks();
+  });
+
+  it("falls back to SESv2 when SMTP delivery fails", async () => {
+    vi.mocked(sendSmtpMail).mockRejectedValue(new Error("smtp_down"));
+
+    await expect(notifyOwner(lead())).resolves.toEqual({ ok: true, transport: "sesv2" });
+  });
+
+  it("delivers through SMTP when it is healthy", async () => {
+    vi.mocked(sendSmtpMail).mockResolvedValue(undefined);
+
+    await expect(notifyOwner(lead())).resolves.toEqual({ ok: true, transport: "smtp" });
   });
 });
