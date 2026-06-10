@@ -123,12 +123,14 @@ export function reduceRealtimeServerEvent(
 ): { state: VoiceRuntimeState; commands: RealtimeClientCommand[] } {
   const commands: RealtimeClientCommand[] = [];
   let state = current;
+  const eventTranscript = asString(event.transcript);
 
-  if (event.type === "response.output_audio_transcript.delta" && event.delta) {
-    state = { ...state, assistantDraft: (state.assistantDraft ?? "") + event.delta };
+  if (event.type === "response.output_audio_transcript.delta") {
+    const delta = asString(event.delta);
+    if (delta) state = { ...state, assistantDraft: (state.assistantDraft ?? "") + delta };
   }
 
-  const transcriptText = event.transcript ?? getOutputText(event.item);
+  const transcriptText = eventTranscript ?? getOutputText(event.item);
   if (event.type === "response.output_audio_transcript.done" && transcriptText) {
     state = appendTranscript(state, "assistant", transcriptText);
     state = { ...state, assistantDraft: "" };
@@ -145,8 +147,8 @@ export function reduceRealtimeServerEvent(
     state = { ...state, pendingUserTranscripts: Math.max(0, (state.pendingUserTranscripts ?? 0) - 1) };
   }
 
-  if (event.type === "conversation.item.input_audio_transcription.completed" && event.transcript) {
-    state = appendTranscript(state, "user", event.transcript);
+  if (event.type === "conversation.item.input_audio_transcription.completed" && eventTranscript) {
+    state = appendTranscript(state, "user", eventTranscript);
     state = accumulateUsage(state, "transcription", event.usage);
   }
 
@@ -160,7 +162,7 @@ export function reduceRealtimeServerEvent(
     state = { ...state, activeResponse: false, assistantDraft: "" };
   }
 
-  if (event.type === "rate_limits.updated" && event.rate_limits) {
+  if (event.type === "rate_limits.updated" && Array.isArray(event.rate_limits)) {
     state = { ...state, rateLimits: event.rate_limits };
   }
 
@@ -170,16 +172,17 @@ export function reduceRealtimeServerEvent(
       errors: [
         ...(state.errors ?? []),
         {
-          eventId: event.error?.event_id ?? event.event_id,
-          message: event.error?.message ?? event.error?.code ?? "unknown",
-          code: event.error?.code,
+          eventId: asString(event.error?.event_id) ?? asString(event.event_id),
+          message: asString(event.error?.message) ?? asString(event.error?.code) ?? "unknown",
+          code: asString(event.error?.code),
         },
       ],
     };
   }
 
-  const items = event.type === "response.done" ? (event.response?.output ?? []) : [];
+  const items = event.type === "response.done" && Array.isArray(event.response?.output) ? event.response.output : [];
   for (const item of items) {
+    if (!item || typeof item !== "object") continue;
     const text = getOutputText(item);
     if (text) state = appendTranscript(state, "assistant", text);
     if (item.type === "function_call") {
@@ -196,7 +199,11 @@ function applyFunctionCall(
   item: RealtimeOutputItem,
   state: VoiceRuntimeState,
 ): { state: VoiceRuntimeState; commands: RealtimeClientCommand[] } {
-  if (!item.name || !item.call_id || state.handledCallIds?.includes(item.call_id)) {
+  if (
+    typeof item.name !== "string" ||
+    typeof item.call_id !== "string" ||
+    state.handledCallIds?.includes(item.call_id)
+  ) {
     return { state, commands: [] };
   }
 
@@ -371,10 +378,15 @@ function numberValue(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
+function asString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
 function getOutputText(item: RealtimeOutputItem | undefined) {
-  return (item?.content ?? [])
-    .map((part) => part.transcript ?? part.text)
-    .filter((text): text is string => Boolean(text))
+  const content = Array.isArray(item?.content) ? item.content : [];
+  return content
+    .map((part) => asString(part?.transcript) ?? asString(part?.text) ?? "")
+    .filter((text) => text.length > 0)
     .join("");
 }
 
