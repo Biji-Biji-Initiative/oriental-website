@@ -256,15 +256,20 @@ distinct Malaysian host. Manual QA should check:
 
 ## 9. Privacy
 
-- The microsite UI promises **"no recordings kept"**. To honour this:
-  - Audio is **not** stored. OpenAI's Realtime API may transiently buffer
-    audio; we do not log raw audio anywhere of ours.
-  - The **transcript** (text only) is stored with the Convex lead row.
-  - The user is told this at the bottom of the hero (`hero__privacy`).
-  - Privacy notice (PDPA) is linked from the voice modal footer — link target
-    TBD.
-- Confirm with legal that the current copy holds. If not, soften to
-  "transcripts kept only for follow-up, deleted after 90 days".
+Owner decision (June 2026): transcripts and session records are kept for
+follow-up. The hero copy states this plainly ("transcribed & saved so the
+right person follows up").
+
+- Audio is currently **not** stored on our side. OpenAI's Realtime API may
+  transiently buffer audio; we do not log raw audio anywhere of ours. Keeping
+  recordings is permitted under the current policy if a future need arises.
+- The **transcript** (text only) is stored with the Convex lead row, and
+  voice-session snapshots (captured fields, transcript, errors, usage) are
+  stored in `voiceSessions` — including sessions that were never submitted.
+- Following up with visitors who shared contact details in voice but did not
+  press send (the admin "Recoverable voice leads" queue) is sanctioned.
+- Privacy notice (PDPA) is linked from the voice modal footer — link target
+  TBD.
 
 ## 10. Submission
 
