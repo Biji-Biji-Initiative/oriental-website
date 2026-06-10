@@ -348,6 +348,28 @@ Errors:
 | 503 | `unconfigured` | `ADMIN_REVIEW_TOKEN` is missing. |
 | 503 | `convex_unconfigured` / `convex_failed` | Convex env is missing or the mutation failed. |
 
+### `PATCH /api/admin/voice-sessions/[reviewId]`
+
+Bearer-token or admin-cookie protected mutation that marks a recoverable voice
+session as followed up (or moves it back to the queue). Sets or clears
+`followedUpAt` on the Convex `voiceSessions` row.
+
+```ts
+type AdminVoiceFollowUpRequest = { followedUp: boolean };
+
+type AdminVoiceFollowUpResponse = { ok: true };
+```
+
+Errors:
+
+| HTTP | `error` | Cause |
+|---|---|---|
+| 400 | `invalid_payload` | Zod validation failed. |
+| 401 | `missing` / `invalid` | Missing or invalid admin bearer/cookie auth. |
+| 404 | `not_found` | No Convex voice session matched the route `reviewId`. |
+| 503 | `unconfigured` | `ADMIN_REVIEW_TOKEN` is missing. |
+| 503 | `convex_unconfigured` / `convex_failed` | Convex env is missing or the mutation failed. |
+
 ## `GET /api/health`
 
 Purpose: Coolify/container health check.
