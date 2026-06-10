@@ -194,7 +194,14 @@ lead was sent until route_to_team succeeds.
 
 ## 7. Auth & token mint
 
-The browser **never** holds the long-lived `OPENAI_API_KEY`. Flow:
+The browser **never** holds the long-lived `OPENAI_API_KEY`. The connect flow
+is permission-aware via the Permissions API: a returning visitor with a
+granted microphone runs mic acquisition and token minting in parallel; a
+first-time visitor sees the browser prompt immediately on click (with a
+dedicated `requesting_mic` stage state) and the daily voice quota is only
+spent after the mic is granted; a known denial fails fast with guidance and
+mints nothing. Browsers without microphone permission queries (Firefox) fall
+back to the prompt-first path.
 
 1. Client POSTs `/api/voice/session` with a Turnstile token.
 2. Route Handler verifies Turnstile, applies the voice rate limit, and asks

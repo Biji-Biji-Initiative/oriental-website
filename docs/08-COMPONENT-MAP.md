@@ -50,7 +50,7 @@ component-prefixed class names:
 | Voice button | `components/voice-agent/VoiceButton.tsx` | — | Opens dialog with optional segment/prefill. |
 | Dialog shell | `components/voice-agent/VoiceAgentDialog.tsx` | `Dialog`, `Form`, `Input`, `Textarea`, `Button` | Layout, lead submission, review snapshots, handoff-context sync, idle-goodbye wiring. |
 | Realtime runtime | `components/voice-agent/useVoiceRuntime.ts` | — | Owns reducer state (segment/captured/transcript), command dispatch over the data channel, typed-message append, and the voice toast policy. |
-| Voice stage | `components/voice-agent/VoiceSessionStage.tsx` | `Input`, `Button` | Orb, status chips, story cues, typed-chat composer while voice is live. |
+| Voice stage | `components/voice-agent/VoiceSessionStage.tsx` | `Input`, `Button`, `Chip` | Orb, status chips, live captions, story cues, typed-chat composer while voice is live. |
 | Handoff panel | `components/voice-agent/HandoffPanel.tsx` | `Form`, `Input`, `Textarea`, `Button` | Editable lead form, completion chips, live notes transcript. |
 | WebRTC lifecycle | `components/voice-agent/useRealtimeVoiceSession.ts` | — | Mic, peer connection, data channel, idle warning + goodbye + max timers, teardown. |
 | Audio level | `components/voice-agent/useVoiceAudioLevel.ts` | — | WebAudio analyser → `--voice-level` CSS variable on the orb; reduced-motion aware, no per-frame React renders. |
