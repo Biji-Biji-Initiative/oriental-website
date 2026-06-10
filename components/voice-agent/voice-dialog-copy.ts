@@ -1,6 +1,14 @@
 import type { CapturedLead } from "@/lib/voice/realtime-events";
 import type { VoiceCloseReason, VoiceConnectionStatus } from "./useRealtimeVoiceSession";
 
+/** Stable sonner toast ids so repeated voice events update in place instead of stacking. */
+export const voiceToastIds = {
+  close: "voice-close",
+  live: "voice-live",
+  sessionError: "voice-session-error",
+  captureWarning: "voice-capture-warning",
+} as const;
+
 export const handoffFieldSpecs = [
   { key: "name", label: "Name" },
   { key: "email", label: "Email" },

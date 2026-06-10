@@ -43,6 +43,7 @@ import {
   openingVoiceInstruction,
   reconnectVoiceInstruction,
   voiceCloseReasonToast,
+  voiceToastIds,
 } from "./voice-dialog-copy";
 
 type VoiceAgentDialogProps = {
@@ -81,14 +82,14 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
     const copy = voiceCloseReasonToast(reason);
     if (!copy) return;
     if (copy.tone === "error") {
-      toast.error(copy.title, { description: copy.description, id: "voice-close" });
+      toast.error(copy.title, { description: copy.description, id: voiceToastIds.close });
       return;
     }
     if (copy.tone === "warning") {
-      toast.warning(copy.title, { description: copy.description, id: "voice-close" });
+      toast.warning(copy.title, { description: copy.description, id: voiceToastIds.close });
       return;
     }
-    toast.message(copy.title, { description: copy.description, id: "voice-close" });
+    toast.message(copy.title, { description: copy.description, id: voiceToastIds.close });
   }, []);
 
   const formRef = useRef<UseFormReturn<CapturedLead> | null>(null);
@@ -225,7 +226,7 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
       openedVoiceTurnRef.current = false;
       return;
     }
-    toast.success("Voice is live.", { id: "voice-live" });
+    toast.success("Voice is live.", { id: voiceToastIds.live });
     const current = { segment: stateRef.current.segment, captured: stateRef.current.captured };
     const resumedTranscript = stateRef.current.transcript.slice(-12);
     lastSyncedHandoffRef.current = handoffSyncKey(current);

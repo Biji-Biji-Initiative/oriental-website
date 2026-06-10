@@ -15,6 +15,7 @@ import {
   type VoiceRuntimeState,
   type VoiceTranscriptEntry,
 } from "@/lib/voice/realtime-events";
+import { voiceToastIds } from "./voice-dialog-copy";
 
 type UseVoiceRuntimeArgs = {
   initialSegment: SegmentId;
@@ -95,14 +96,16 @@ export function useVoiceRuntime({ initialSegment, prefillEmail, submitLead, onEn
       setTranscript(reduced.state.transcript);
       const newErrors = (reduced.state.errors ?? []).slice(previousErrorCount);
       if (newErrors.some((error) => !isBenignVoiceError(error))) {
-        toast.error("Voice session reported an error. The form is still available.", { id: "voice-session-error" });
+        toast.error("Voice session reported an error. The form is still available.", {
+          id: voiceToastIds.sessionError,
+        });
       }
       for (const command of reduced.commands) {
         if (command.type === "function_result") {
           if (command.output.error === "ungrounded_identity_capture") {
             toast.warning("Ignored an unverified contact detail.", {
               description: "Please type it in the handoff panel or say it clearly once.",
-              id: "voice-capture-warning",
+              id: voiceToastIds.captureWarning,
             });
           }
           sendRealtimeCommand(channel, command);

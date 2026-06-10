@@ -200,6 +200,9 @@ type VoiceSessionResponse = {
   model: string; // default "gpt-realtime-2"
   voice: string; // source fallback "marin"; production currently "coral"
   speed: number; // source fallback 1.18; production currently 1.28; clamped to OpenAI's 0.25..1.5 range
+  transcription_model: string; // default "gpt-4o-transcribe" via OPENAI_REALTIME_TRANSCRIPTION_MODEL
+  noise_reduction: "near_field" | "far_field"; // near_field for mobile user agents, far_field otherwise
+  review: { id: string; token: string }; // signed credentials for /api/voice/debug snapshots
 };
 ```
 
@@ -227,7 +230,12 @@ Server request:
 - `session.model = OPENAI_REALTIME_MODEL ?? "gpt-realtime-2"`
 - `session.output_modalities = ["audio"]`
 - `session.audio.input.turn_detection` from `VOICE_SESSION_DEFAULTS`
-- `session.audio.input.transcription.model = "whisper-1"`
+  (`semantic_vad`, `eagerness: "auto"`)
+- `session.audio.input.transcription` from `VOICE_SESSION_DEFAULTS`
+  (`gpt-4o-transcribe` with language hint and domain prompt; model overridable
+  via `OPENAI_REALTIME_TRANSCRIPTION_MODEL`)
+- `session.audio.input.noise_reduction.type` = `near_field` (mobile UA) or
+  `far_field` (desktop)
 - `session.audio.output.voice = OPENAI_REALTIME_VOICE ?? "marin"`
 - `session.audio.output.speed = OPENAI_REALTIME_SPEED ?? 1.18`
 - production Infisical/Coolify currently sets `OPENAI_REALTIME_VOICE=coral` and
@@ -243,7 +251,8 @@ Browser WebRTC exchange:
 Client-enforced caps live in `VOICE_SESSION_DEFAULTS`:
 
 - max duration: 150 seconds
-- idle timeout: 20 seconds
+- idle timeout: 20 seconds, with a 6-second goodbye grace window
+  (`idleGoodbyeGraceMs`) in which Reka wraps up before teardown
 
 ## Voice diagnostics and review snapshots
 

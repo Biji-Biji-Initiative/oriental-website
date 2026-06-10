@@ -15,13 +15,17 @@ with Zod validation.
 | Surface | Purpose |
 |---|---|
 | **Partner rail** | Segment intent and routing owner hint. |
-| **Voice stage** | Reka voice controls, brand orb chrome, story cues, live audio state. |
+| **Voice stage** | Reka voice controls, audio-reactive orb, story cues, live audio state, and a typed-chat composer while voice is live. |
 | **Handoff panel** | Editable Name, Email, Organisation, and brief fields. |
 | **Live notes** | Recent transcript snippets for user confidence and debugging. |
 
 The design principle is: let the user talk naturally, but let them type or fix
 anything instantly. Voice-captured values populate the same form fields the user
-can edit before sending.
+can edit before sending. While voice is live, the stage also offers a chat
+composer: typed messages enter the same realtime conversation as user turns,
+interrupt an in-flight spoken response (`response.cancel` +
+`output_audio_buffer.clear`), join the transcript, and ground identity captures
+exactly like speech.
 
 ## 2. Partner segments
 
@@ -122,10 +126,16 @@ const tools = [
 
 Tool calls stream into the shared React state backing the editable shadcn form.
 For `name`, `email`, and `org`, the reducer rejects captures that are not
-grounded in recent user transcript evidence. Typed handoff values are synced
-back to the model as explicit context, so Reka can see what the user typed and
-should not ask for those fields again. Brief updates may use `mode: "append"`
-so the user can build a better story without losing earlier context.
+grounded in recent user transcript evidence. Three deliberate exceptions:
+while a user turn is still transcribing (transcription often lands after the
+model's function call), evidence that is consistent with the value is accepted;
+`org: "Individual"` is accepted with grounded evidence even though the visitor
+never says the word "Individual"; and re-capturing a value that already matches
+the typed/captured field is a silent confirmation. Typed handoff values are
+synced back to the model as explicit context, so Reka can see what the user
+typed and should not ask for those fields again. Brief updates may use
+`mode: "append"` so the user can build a better story without losing earlier
+context.
 
 ## 5. System prompt
 
@@ -175,8 +185,12 @@ lead was sent until route_to_team succeeds.
 | Speech speed | Source fallback is `1.18`; production is currently `1.28` via `OPENAI_REALTIME_SPEED`; clamped to OpenAI's supported `0.25` to `1.5` range |
 | Input audio | Browser-default mic, captured locally before token minting |
 | Session length cap | **150 seconds** client-side runtime cap; `/api/voice/session` refuses to mint a new token if the same IP exceeds 3 sessions / day in the Redis-backed limiter, with memory fallback only when Redis is unavailable |
-| Server VAD | `server_vad`, `threshold: 0.5`, `prefix_padding_ms: 300`, `silence_duration_ms: 700`, `create_response: true`, `interrupt_response: true` |
-| Modalities | Audio output with text events and tool-call events on the data channel |
+| Turn detection | `semantic_vad`, `eagerness: "auto"`, `create_response: true`, `interrupt_response: true` — the turn-detection model waits when the speaker pauses mid-thought (e.g. dictating an email) instead of cutting at a fixed silence threshold |
+| Input transcription | `gpt-4o-transcribe` by default via `OPENAI_REALTIME_TRANSCRIPTION_MODEL`, with an English `language` hint and a domain `prompt` (Mereka, Biji-biji, CIMB, Oriental, spoken-email patterns). Transcription feeds the visible transcript, review snapshots, and capture grounding; the model itself hears audio natively |
+| Noise reduction | `near_field` for mobile user agents, `far_field` for desktops, chosen at mint time in `/api/voice/session` |
+| Idle behaviour | Reka speaks a one-sentence goodbye in a grace window (`idleGoodbyeGraceMs`, 6 s) before the 20 s idle cutoff; the goodbye cannot extend the session and the visitor speaking cancels the close |
+| Reconnects | When a session starts with an existing transcript, the last turns are sent as context and Reka resumes instead of repeating the opener |
+| Modalities | Audio output with text events and tool-call events on the data channel; typed user messages are sent as `input_text` conversation items |
 
 ## 7. Auth & token mint
 
@@ -185,7 +199,8 @@ The browser **never** holds the long-lived `OPENAI_API_KEY`. Flow:
 1. Client POSTs `/api/voice/session` with a Turnstile token.
 2. Route Handler verifies Turnstile, applies the voice rate limit, and asks
    OpenAI for an ephemeral client secret.
-3. Returns `{ client_secret, expires_at, model, voice, speed }`.
+3. Returns `{ client_secret, expires_at, model, voice, speed,
+   transcription_model, noise_reduction, review }`.
 4. Client opens a WebRTC peer connection using the ephemeral token.
 5. Mic audio is streamed up; assistant audio is streamed down to an
    `<audio>` element.
@@ -202,8 +217,9 @@ See [`06-API-CONTRACTS.md`](./06-API-CONTRACTS.md) §`/api/voice/session`.
 | WebRTC ICE fails | Same — handoff form remains editable. |
 | `/api/voice/session` returns 429 | Handoff form remains editable + toast: "Voice limit reached for today." |
 | OpenAI Realtime returns 5xx | Same. Track in Coolify logs until a dedicated observability stack is added. |
-| User goes idle in voice mode | Voice tears down after 20 seconds of inactivity. The form and captured fields remain visible. |
-| Conversation reaches max duration | Voice tears down after 150 seconds. The form and captured fields remain visible. |
+| User goes idle in voice mode | Reka says a one-sentence goodbye ~6 s before the cutoff, then voice tears down after 20 seconds of inactivity. The form and captured fields remain visible. |
+| Conversation reaches max duration | Voice tears down after 150 seconds. The form and captured fields remain visible. Reconnecting resumes with recent transcript context instead of a fresh opener. |
+| Benign realtime protocol errors (e.g. cancel races) | Recorded in the session error log with codes, never surfaced as user toasts. Non-benign errors show one deduplicated toast. |
 
 ## 8.1 Conversation QA Contract
 
@@ -220,6 +236,14 @@ distinct Malaysian host. Manual QA should check:
 - She calls `end_call` when the user says bye, stop, or end voice.
 - She does not invent identity fields from overlays, account names, or old
   defaults.
+- Typing a message while she is speaking interrupts her; she addresses the
+  typed message instead of finishing the dropped sentence.
+- She mirrors Bahasa Melayu or Mandarin when the visitor uses it, and switches
+  back when they do.
+- After a reconnect she resumes the earlier conversation in one sentence rather
+  than redoing the opening pitch.
+- She uses the visitor's name sparingly once captured — confirmations and the
+  send cue, never every sentence.
 - Human ears decide whether the configured voice is Malaysian enough before a
   wider launch.
 

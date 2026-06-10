@@ -48,16 +48,21 @@ component-prefixed class names:
 |---|---|---|---|
 | Voice context | `components/voice-agent/voice-state.tsx` | — | Owns global open state and passes Turnstile site key. |
 | Voice button | `components/voice-agent/VoiceButton.tsx` | — | Opens dialog with optional segment/prefill. |
-| Dialog shell | `components/voice-agent/VoiceAgentDialog.tsx` | `Dialog`, `Form`, `Input`, `Textarea`, `Button` | Unified segment rail, voice stage, editable handoff panel, story cues, live notes, submitted state. |
-| WebRTC lifecycle | `components/voice-agent/useRealtimeVoiceSession.ts` | — | Mic, peer connection, data channel, timers, teardown. |
+| Dialog shell | `components/voice-agent/VoiceAgentDialog.tsx` | `Dialog`, `Form`, `Input`, `Textarea`, `Button` | Layout, lead submission, review snapshots, handoff-context sync, idle-goodbye wiring. |
+| Realtime runtime | `components/voice-agent/useVoiceRuntime.ts` | — | Owns reducer state (segment/captured/transcript), command dispatch over the data channel, typed-message append, and the voice toast policy. |
+| Voice stage | `components/voice-agent/VoiceSessionStage.tsx` | `Input`, `Button` | Orb, status chips, story cues, typed-chat composer while voice is live. |
+| Handoff panel | `components/voice-agent/HandoffPanel.tsx` | `Form`, `Input`, `Textarea`, `Button` | Editable lead form, completion chips, live notes transcript. |
+| WebRTC lifecycle | `components/voice-agent/useRealtimeVoiceSession.ts` | — | Mic, peer connection, data channel, idle warning + goodbye + max timers, teardown. |
+| Audio level | `components/voice-agent/useVoiceAudioLevel.ts` | — | WebAudio analyser → `--voice-level` CSS variable on the orb; reduced-motion aware, no per-frame React renders. |
 | Turnstile | `components/security/useTurnstile.ts` | — | Script/widget lifecycle and local-dev token fallback. |
-| Realtime profile | `lib/voice/profile.ts` | — | Prompt sections, tools, VAD/session defaults. |
-| Realtime reducer | `lib/voice/realtime-events.ts` | — | Pure state machine for transcripts, tool calls, route command. |
-| Client events | `lib/voice/client-events.ts` | — | Serializes `function_call_output` and optional `response.create`. |
+| Realtime profile | `lib/voice/profile.ts` | — | Prompt sections, tools, semantic-VAD/transcription/session defaults. |
+| Realtime reducer | `lib/voice/realtime-events.ts` | — | Pure state machine for transcripts, tool calls, capture grounding, error classification, route command. |
+| Client events | `lib/voice/client-events.ts` | — | Serializes tool outputs, typed user messages, typed interruptions, handoff/reconnect context, `response.create`. |
+| Review snapshots | `lib/voice/review-snapshot.ts` | — | Builds and posts signed session snapshots to `/api/voice/debug`. |
 
-The voice modal remains a single component because the segment rail, voice stage,
-editable handoff form, and submission flow share realtime state. Split only when
-a new behavior boundary emerges.
+The dialog stays one component for layout and submission; realtime behavior
+lives in `useVoiceRuntime` and the session/audio hooks. Extend those hooks
+rather than re-inlining realtime state into the dialog.
 
 ## Orb
 
