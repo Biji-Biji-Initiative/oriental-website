@@ -15,6 +15,38 @@ describe("lead request schema", () => {
     });
     expect(parsed.success).toBe(true);
   });
+
+  it("rejects transcripts beyond the 200-entry cap", () => {
+    const parsed = leadRequestSchema.safeParse({
+      source: "voice",
+      form: {
+        name: "Asha",
+        email: "asha@example.com",
+        org: "Future Lab",
+        message: "AI literacy demos.",
+      },
+      transcript: Array.from({ length: 201 }, () => ({ role: "user", text: "hello" })),
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it("bounds utm key count and value lengths", () => {
+    const base = {
+      source: "form",
+      form: {
+        name: "Asha",
+        email: "asha@example.com",
+        org: "Future Lab",
+        message: "AI literacy demos.",
+      },
+    };
+
+    const tooMany = Object.fromEntries(Array.from({ length: 21 }, (_, index) => [`k${index}`, "v"]));
+    expect(leadRequestSchema.safeParse({ ...base, utm: tooMany }).success).toBe(false);
+
+    expect(leadRequestSchema.safeParse({ ...base, utm: { source: "x".repeat(301) } }).success).toBe(false);
+    expect(leadRequestSchema.safeParse({ ...base, utm: { utm_source: "newsletter" } }).success).toBe(true);
+  });
 });
 
 describe("admin lead workflow schema", () => {

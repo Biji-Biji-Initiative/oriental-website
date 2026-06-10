@@ -17,7 +17,7 @@ import {
 import { getSegment } from "@/lib/segments";
 import { adminCookieName, verifyAdminSessionCookie } from "@/lib/server/admin-auth";
 import { getAdminReviewDashboard } from "@/lib/server/convex";
-import { isBenignVoiceError } from "@/lib/voice/realtime-events";
+import { isBenignVoiceError, type VoiceRuntimeError } from "@/lib/voice/realtime-events";
 
 export const dynamic = "force-dynamic";
 
@@ -50,7 +50,7 @@ export default async function SessionReviewPage() {
   }
 
   const sessionsWithRealErrors = dashboard.data.voiceSessions.filter((session: VoiceSessionRow) =>
-    session.errors.some((error: { eventId?: string; message: string; code?: string }) => !isBenignVoiceError(error)),
+    session.errors.some((error: VoiceRuntimeError) => !isBenignVoiceError(error)),
   ).length;
 
   return (
@@ -161,7 +161,7 @@ function WorkflowPanel({ leads }: { leads: LeadRow[] }) {
 function AnalyticsPanel({ data }: { data: DashboardData }) {
   const maxDaily = Math.max(...data.analytics.dailyLeads.map((day) => day.count), 1);
   const voiceRealErrors = data.voiceSessions.filter((session: VoiceSessionRow) =>
-    session.errors.some((error: { eventId?: string; message: string; code?: string }) => !isBenignVoiceError(error)),
+    session.errors.some((error: VoiceRuntimeError) => !isBenignVoiceError(error)),
   ).length;
   const recoverableCount = data.voiceSessions.filter(
     (session: VoiceSessionRow) => !session.leadId && session.captured.email.trim().length > 0 && !session.followedUpAt,
@@ -533,9 +533,7 @@ function VoiceSessionsPanel({ sessions }: { sessions: VoiceSessionRow[] }) {
       <CardContent className="grid gap-3">
         {sessions.length === 0 ? <EmptyState label="No voice review snapshots yet." /> : null}
         {sessions.map((session) => {
-          const realErrorCount = session.errors.filter(
-            (error: { eventId?: string; message: string; code?: string }) => !isBenignVoiceError(error),
-          ).length;
+          const realErrorCount = session.errors.filter((error: VoiceRuntimeError) => !isBenignVoiceError(error)).length;
           const benignErrorCount = session.errors.length - realErrorCount;
           return (
             <article className="rounded-lg border border-mk-ash/15 p-4" key={session.reviewId}>
@@ -593,7 +591,7 @@ function VoiceSessionsPanel({ sessions }: { sessions: VoiceSessionRow[] }) {
                       : "mt-3 rounded-lg border border-mk-ash/15 bg-mk-paper p-3 text-xs"
                   }
                 >
-                  {session.errors.map((error: { eventId?: string; message: string; code?: string }) => (
+                  {session.errors.map((error: VoiceRuntimeError) => (
                     <div
                       className={isBenignVoiceError(error) ? "text-mk-ash" : "text-destructive"}
                       key={`${error.eventId ?? "error"}:${error.message}`}

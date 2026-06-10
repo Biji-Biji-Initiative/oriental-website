@@ -3,8 +3,10 @@ import { leadSubmitErrorCopy, notificationDelivered } from "@/lib/voice/lead-sub
 
 describe("lead submit helpers", () => {
   it("detects either email or Slack notification delivery", () => {
-    expect(notificationDelivered({ notifications: { slack: { ok: true } } })).toBe(true);
-    expect(notificationDelivered({ notifications: { email: { ok: false }, slack: { skipped: true } } })).toBe(false);
+    expect(notificationDelivered({ notifications: { slack: { ok: true, transport: "slack" } } })).toBe(true);
+    expect(
+      notificationDelivered({ notifications: { email: { ok: false }, slack: { ok: false, skipped: true } } }),
+    ).toBe(false);
   });
 
   it("keeps persisted notification failures distinct from failed submissions", () => {

@@ -4,6 +4,11 @@ import { SEGMENT_IDS } from "@/lib/segments";
 
 const segmentSchema = z.enum(SEGMENT_IDS);
 
+const utmSchema = z
+  .record(z.string().max(80), z.string().max(300))
+  .refine((utm) => Object.keys(utm).length <= 20, "Too many utm entries")
+  .default({});
+
 export const transcriptEntrySchema = z.object({
   role: z.enum(["user", "assistant", "system"]).default("user"),
   text: z.string().min(1).max(4000),
@@ -20,21 +25,21 @@ export const leadRequestSchema = z.object({
   source: z.enum(["voice", "form"]),
   segment: segmentSchema.default("other"),
   form: leadFormSchema,
-  transcript: z.array(transcriptEntrySchema).default([]),
+  transcript: z.array(transcriptEntrySchema).max(200).default([]),
   turnstileToken: z.string().optional(),
-  utm: z.record(z.string(), z.string()).default({}),
+  utm: utmSchema,
 });
 
 export const newsletterRequestSchema = z.object({
   email: z.string().trim().email().max(180),
   turnstileToken: z.string().optional(),
-  utm: z.record(z.string(), z.string()).default({}),
+  utm: utmSchema,
 });
 
 export const voiceSessionRequestSchema = z.object({
   turnstileToken: z.string().optional(),
   intent: segmentSchema.optional(),
-  utm: z.record(z.string(), z.string()).default({}),
+  utm: utmSchema,
 });
 
 export const adminLoginSchema = z.object({
