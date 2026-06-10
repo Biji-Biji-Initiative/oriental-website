@@ -16,3 +16,11 @@ export function readEnv(name: string, fallback?: string) {
 export function isProductionEnv() {
   return readEnv("NODE_ENV") === "production";
 }
+
+/** Read a positive integer env value, falling back when unset or invalid. */
+export function readPositiveIntEnv(name: string, fallback: number) {
+  const raw = readEnv(name);
+  if (!raw) return fallback;
+  const value = Number.parseInt(raw, 10);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}

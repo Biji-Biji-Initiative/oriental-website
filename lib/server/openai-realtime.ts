@@ -1,4 +1,4 @@
-import { readEnv } from "@/lib/env";
+import { readEnv, readPositiveIntEnv } from "@/lib/env";
 import type { SegmentId } from "@/lib/segments";
 import { buildVoiceInstructions, VOICE_SESSION_DEFAULTS, VOICE_TOOLS } from "@/lib/voice/profile";
 
@@ -79,6 +79,12 @@ export async function createRealtimeClientSecret(
     speed,
     transcription_model: transcriptionModel,
     noise_reduction: noiseReduction,
+    // Session policy is server-tunable so the dominant UX constraints can be
+    // adjusted from Infisical without a code deploy.
+    limits: {
+      max_duration_ms: readPositiveIntEnv("VOICE_MAX_DURATION_MS", VOICE_SESSION_DEFAULTS.maxDurationMs),
+      idle_timeout_ms: readPositiveIntEnv("VOICE_IDLE_TIMEOUT_MS", VOICE_SESSION_DEFAULTS.idleTimeoutMs),
+    },
   };
 }
 

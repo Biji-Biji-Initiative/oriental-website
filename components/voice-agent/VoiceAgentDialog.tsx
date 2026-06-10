@@ -217,6 +217,11 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
     openedVoiceTurnRef.current = false;
     reviewRef.current = null;
     localReviewRef.current = null;
+    if (prefill?.mode === "form") {
+      // Hero email capture opens in form intent: land the cursor on the name field.
+      const timer = window.setTimeout(() => formRef.current?.setFocus("name"), 80);
+      return () => window.clearTimeout(timer);
+    }
   }, [intent, open, prefill, runtime.reset]);
 
   useEffect(() => {

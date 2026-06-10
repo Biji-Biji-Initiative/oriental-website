@@ -181,7 +181,7 @@ export function VoiceSessionStage({
           {statusCopy.button}
         </Button>
         <p className="mt-3 text-xs text-white/42">
-          Speak or type anytime. Reka wraps up after 20 quiet seconds, 2.5 minutes max.
+          Speak or type anytime. Reka says a quick goodbye if you go quiet, and your typed details stay here.
         </p>
         {/* biome-ignore lint/a11y/useMediaCaption: Live WebRTC audio streams live captions above; the transcript log is the accessible record. */}
         <audio autoPlay ref={audioRef} />

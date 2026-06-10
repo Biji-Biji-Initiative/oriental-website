@@ -38,6 +38,7 @@ describe("createRealtimeClientSecret", () => {
       speed: 1.12,
       transcription_model: "gpt-4o-transcribe",
       noise_reduction: "far_field",
+      limits: { max_duration_ms: 150_000, idle_timeout_ms: 20_000 },
     });
     expect(fetchMock).toHaveBeenCalledWith(
       "https://api.openai.com/v1/realtime/client_secrets",
@@ -101,6 +102,22 @@ describe("createRealtimeClientSecret", () => {
     expect(result.noise_reduction).toBe("near_field");
     const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
     expect(body.session.audio.input.noise_reduction).toEqual({ type: "near_field" });
+  });
+
+  it("serves env-tuned session limits to the client", async () => {
+    process.env.VOICE_MAX_DURATION_MS = "300000";
+    process.env.VOICE_IDLE_TIMEOUT_MS = "30000";
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+      Response.json({
+        client_secret: { value: "client-secret", expires_at: 123 },
+        session: { id: "sess_limits" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await createRealtimeClientSecret("safe-user", "ai");
+
+    expect(result.limits).toEqual({ max_duration_ms: 300_000, idle_timeout_ms: 30_000 });
   });
 
   it("allows overriding the transcription model from the environment", async () => {

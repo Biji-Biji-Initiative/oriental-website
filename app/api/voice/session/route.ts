@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { readPositiveIntEnv } from "@/lib/env";
 import { voiceSessionRequestSchema } from "@/lib/schemas";
 import { durationSince, errorMeta, logError, logInfo, logWarn } from "@/lib/server/logger";
 import { createRealtimeClientSecret, type RealtimeDeviceProfile } from "@/lib/server/openai-realtime";
@@ -27,7 +28,8 @@ export async function POST(request: NextRequest) {
     return noStoreJson({ ok: false, error: "turnstile_failed" }, { status: 403 });
   }
 
-  const limit = await checkRateLimit(`voice:${ipHash}`, 3, 24 * 60 * 60 * 1000);
+  const dailyLimit = readPositiveIntEnv("VOICE_SESSION_DAILY_LIMIT", 3);
+  const limit = await checkRateLimit(`voice:${ipHash}`, dailyLimit, 24 * 60 * 60 * 1000);
   if (!limit.ok) {
     logWarn("voice_session.rate_limited", {
       requestId,

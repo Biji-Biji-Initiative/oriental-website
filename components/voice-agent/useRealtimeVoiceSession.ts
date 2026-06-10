@@ -37,6 +37,7 @@ type VoiceSessionResponse = {
   model?: string;
   voice?: string;
   speed?: number;
+  limits?: { max_duration_ms?: number; idle_timeout_ms?: number };
 };
 
 class VoiceConnectionFailure extends Error {
@@ -74,6 +75,11 @@ export function useRealtimeVoiceSession({
   const idleClosingRef = useRef(false);
   const connectGateRef = useRef(false);
   const maxTimerRef = useRef<number | null>(null);
+  // Session policy from the server, falling back to compiled defaults.
+  const limitsRef = useRef({
+    maxDurationMs: VOICE_SESSION_DEFAULTS.maxDurationMs,
+    idleTimeoutMs: VOICE_SESSION_DEFAULTS.idleTimeoutMs,
+  });
   const statusRef = useRef<VoiceConnectionStatus>("idle");
   const onIdleWarningRef = useRef(onIdleWarning);
   onIdleWarningRef.current = onIdleWarning;
@@ -114,14 +120,15 @@ export function useRealtimeVoiceSession({
     if (idleClosingRef.current) return;
     if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
     if (idleWarningTimerRef.current) window.clearTimeout(idleWarningTimerRef.current);
-    const graceMs = Math.min(VOICE_SESSION_DEFAULTS.idleGoodbyeGraceMs, VOICE_SESSION_DEFAULTS.idleTimeoutMs);
+    const idleTimeoutMs = limitsRef.current.idleTimeoutMs;
+    const graceMs = Math.min(VOICE_SESSION_DEFAULTS.idleGoodbyeGraceMs, idleTimeoutMs);
     idleWarningTimerRef.current = window.setTimeout(() => {
       idleClosingRef.current = true;
       onIdleWarningRef.current?.();
-    }, VOICE_SESSION_DEFAULTS.idleTimeoutMs - graceMs);
+    }, idleTimeoutMs - graceMs);
     idleTimerRef.current = window.setTimeout(() => {
       teardownVoice("idle_timeout");
-    }, VOICE_SESSION_DEFAULTS.idleTimeoutMs);
+    }, idleTimeoutMs);
   }, [teardownVoice]);
 
   const sendClientEvents = useCallback((events: RealtimeOutboundEvent | RealtimeOutboundEvent[]) => {
@@ -137,7 +144,7 @@ export function useRealtimeVoiceSession({
     if (maxTimerRef.current) window.clearTimeout(maxTimerRef.current);
     maxTimerRef.current = window.setTimeout(() => {
       teardownVoice("max_duration");
-    }, VOICE_SESSION_DEFAULTS.maxDurationMs);
+    }, limitsRef.current.maxDurationMs);
   }, [teardownVoice]);
 
   const setStatus = useCallback((status: VoiceConnectionStatus) => {
@@ -186,6 +193,10 @@ export function useRealtimeVoiceSession({
     if (!sessionResponse.ok || session?.ok !== true || !clientSecret) {
       throw new VoiceConnectionFailure("session_failed");
     }
+    limitsRef.current = {
+      maxDurationMs: positiveOr(session.limits?.max_duration_ms, VOICE_SESSION_DEFAULTS.maxDurationMs),
+      idleTimeoutMs: positiveOr(session.limits?.idle_timeout_ms, VOICE_SESSION_DEFAULTS.idleTimeoutMs),
+    };
     return { ...session, client_secret: { ...session.client_secret, value: clientSecret } };
   }, [getTurnstileToken, segment]);
 
@@ -318,6 +329,10 @@ export function useRealtimeVoiceSession({
   const getLocalStream = useCallback(() => localStreamRef.current, []);
 
   return { connectVoice, connectionStatus, getLocalStream, sendClientEvents, teardownVoice };
+}
+
+function positiveOr(value: number | undefined, fallback: number) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
 async function queryMicrophonePermission(): Promise<PermissionState> {

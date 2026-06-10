@@ -68,6 +68,20 @@ describe("POST /api/voice/session", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
+  it("honours VOICE_SESSION_DAILY_LIMIT overrides", async () => {
+    process.env.VOICE_SESSION_DAILY_LIMIT = "1";
+    const fetchMock = mockOpenAiFetch();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const first = await POST(request({ intent: "technology", turnstileToken: "local-dev" }));
+    expect(first.status).toBe(200);
+
+    const limited = await POST(request({ intent: "technology", turnstileToken: "local-dev" }));
+    expect(limited.status).toBe(429);
+    expect(await json(limited)).toMatchObject({ ok: false, error: "voice_limit_reached" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("does not spend daily voice quota on failed Turnstile checks", async () => {
     process.env.TURNSTILE_SECRET_KEY = "turnstile-secret";
     let turnstileOk = false;

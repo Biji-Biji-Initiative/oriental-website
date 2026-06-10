@@ -208,6 +208,7 @@ type VoiceSessionResponse = {
   speed: number; // source fallback 1.18; production currently 1.28; clamped to OpenAI's 0.25..1.5 range
   transcription_model: string; // default "gpt-4o-transcribe" via OPENAI_REALTIME_TRANSCRIPTION_MODEL
   noise_reduction: "near_field" | "far_field"; // near_field for mobile user agents, far_field otherwise
+  limits: { max_duration_ms: number; idle_timeout_ms: number }; // VOICE_MAX_DURATION_MS / VOICE_IDLE_TIMEOUT_MS, defaults 150000 / 20000
   review: { id: string; token: string }; // signed credentials for /api/voice/debug snapshots
 };
 ```
@@ -218,7 +219,7 @@ type VoiceSessionResponse = {
 |---|---|---|
 | 400 | `invalid_payload` | Zod validation failed. |
 | 403 | `turnstile_failed` | Cloudflare verify rejected the token. |
-| 429 | `voice_limit_reached` | More than 3 minted sessions per IP per day. |
+| 429 | `voice_limit_reached` | More than `VOICE_SESSION_DAILY_LIMIT` (default 3) minted sessions per IP per day. |
 | 503 | `openai_unconfigured` | `OPENAI_API_KEY` missing. |
 | 502 | `openai_<status>` | OpenAI client-secret request failed. |
 | 502 | `openai_invalid_secret` | OpenAI response did not contain a usable secret. |
@@ -254,10 +255,12 @@ Browser WebRTC exchange:
 - `Authorization: Bearer <client_secret.value>`
 - body is SDP offer, response body is SDP answer
 
-Client-enforced caps live in `VOICE_SESSION_DEFAULTS`:
+Client-enforced caps come from the session response `limits` (env-tunable via
+`VOICE_MAX_DURATION_MS` / `VOICE_IDLE_TIMEOUT_MS`), falling back to
+`VOICE_SESSION_DEFAULTS`:
 
-- max duration: 150 seconds
-- idle timeout: 20 seconds, with a 6-second goodbye grace window
+- max duration: 150 seconds by default
+- idle timeout: 20 seconds by default, with a 6-second goodbye grace window
   (`idleGoodbyeGraceMs`) in which Reka wraps up before teardown
 
 ## Voice diagnostics and review snapshots
