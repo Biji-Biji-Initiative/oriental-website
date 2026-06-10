@@ -36,6 +36,7 @@ export type VoiceRuntimeState = {
   rateLimits?: Array<Record<string, unknown>>;
   errors?: VoiceRuntimeError[];
   pendingUserTranscripts?: number;
+  activeResponse?: boolean;
 };
 
 export type RealtimeClientCommand =
@@ -142,8 +143,13 @@ export function reduceRealtimeServerEvent(
     state = accumulateUsage(state, "transcription", event.usage);
   }
 
+  if (event.type === "response.created") {
+    state = { ...state, activeResponse: true };
+  }
+
   if (event.type === "response.done") {
     state = accumulateUsage(state, "response", event.response?.usage);
+    state = { ...state, activeResponse: false };
   }
 
   if (event.type === "rate_limits.updated" && event.rate_limits) {

@@ -673,6 +673,14 @@ describe("reduceRealtimeServerEvent", () => {
     expect(result.state.captured.email).toBe("mei@example.com");
   });
 
+  it("tracks whether an assistant response is in flight", () => {
+    const started = reduceRealtimeServerEvent({ type: "response.created" }, state());
+    expect(started.state.activeResponse).toBe(true);
+
+    const finished = reduceRealtimeServerEvent({ type: "response.done" }, started.state);
+    expect(finished.state.activeResponse).toBe(false);
+  });
+
   it("records error codes and classifies benign realtime errors", () => {
     const result = reduceRealtimeServerEvent(
       {

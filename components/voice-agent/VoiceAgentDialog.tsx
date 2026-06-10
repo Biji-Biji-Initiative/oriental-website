@@ -13,6 +13,7 @@ import {
   type RealtimeOutboundEvent,
   serializeHandoffContext,
   serializeResponseCreate,
+  serializeTypedInterruption,
   serializeUserText,
 } from "@/lib/voice/client-events";
 import {
@@ -237,11 +238,16 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
 
   const handleSendText = useCallback(
     (text: string) => {
-      const sent = sendClientEvents([serializeUserText(text), serializeResponseCreate()]);
+      const events: RealtimeOutboundEvent[] = [
+        ...(stateRef.current.activeResponse ? serializeTypedInterruption() : []),
+        serializeUserText(text),
+        serializeResponseCreate(),
+      ];
+      const sent = sendClientEvents(events);
       if (sent) runtime.appendUserText(text);
       return sent;
     },
-    [runtime.appendUserText, sendClientEvents],
+    [runtime.appendUserText, sendClientEvents, stateRef],
   );
 
   useEffect(() => {

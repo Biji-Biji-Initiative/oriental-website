@@ -190,7 +190,9 @@ export function VoiceSessionStage({
           )}
           {statusCopy.button}
         </Button>
-        <p className="mt-3 text-xs text-white/42">Auto-ends after 20 seconds of inactivity or 2.5 minutes total.</p>
+        <p className="mt-3 text-xs text-white/42">
+          Speak or type anytime. Reka wraps up after 20 quiet seconds, 2.5 minutes max.
+        </p>
         {/* biome-ignore lint/a11y/useMediaCaption: Live WebRTC audio has no static caption asset; captured text appears in the transcript state. */}
         <audio autoPlay ref={audioRef} />
       </div>

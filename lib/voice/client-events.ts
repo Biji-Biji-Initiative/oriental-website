@@ -26,7 +26,9 @@ export type RealtimeOutboundEvent =
       response?: {
         instructions?: string;
       };
-    };
+    }
+  | { type: "response.cancel"; event_id: string }
+  | { type: "output_audio_buffer.clear"; event_id: string };
 
 type EventIdFactory = () => string;
 
@@ -52,6 +54,17 @@ export function serializeRealtimeCommand(
   }
 
   return events;
+}
+
+/**
+ * Stop the in-flight assistant response and clear queued WebRTC audio so a
+ * typed message interrupts Reka the same way speech does.
+ */
+export function serializeTypedInterruption(createEventId: EventIdFactory = defaultEventId): RealtimeOutboundEvent[] {
+  return [
+    { type: "response.cancel", event_id: createEventId() },
+    { type: "output_audio_buffer.clear", event_id: createEventId() },
+  ];
 }
 
 export function serializeUserText(text: string, createEventId: EventIdFactory = defaultEventId): RealtimeOutboundEvent {

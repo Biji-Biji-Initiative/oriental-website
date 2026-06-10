@@ -3,6 +3,7 @@ import {
   serializeHandoffContext,
   serializeRealtimeCommand,
   serializeResponseCreate,
+  serializeTypedInterruption,
   serializeUserText,
 } from "@/lib/voice/client-events";
 
@@ -117,6 +118,13 @@ describe("serializeRealtimeCommand", () => {
     });
 
     expect(JSON.stringify(event)).not.toContain("Earlier conversation");
+  });
+
+  it("serializes a typed interruption as cancel plus audio clear", () => {
+    expect(serializeTypedInterruption(nextEventId(["evt_cancel", "evt_clear"]))).toEqual([
+      { type: "response.cancel", event_id: "evt_cancel" },
+      { type: "output_audio_buffer.clear", event_id: "evt_clear" },
+    ]);
   });
 
   it("serializes a response.create event with optional per-response instructions", () => {
