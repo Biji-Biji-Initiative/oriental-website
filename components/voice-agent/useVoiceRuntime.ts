@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import type { SegmentId } from "@/lib/segments";
 import { serializeRealtimeCommand } from "@/lib/voice/client-events";
 import {
+  appendTypedUserMessage,
   type CapturedLead,
   emptyCapturedLead,
   isBenignVoiceError,
@@ -50,6 +51,11 @@ export function useVoiceRuntime({ initialSegment, prefillEmail, submitLead, onEn
 
   const updateCaptured = useCallback((key: keyof CapturedLead, value: string) => {
     setCaptured((current) => ({ ...current, [key]: value }));
+  }, []);
+
+  const appendUserText = useCallback((text: string) => {
+    stateRef.current = appendTypedUserMessage(stateRef.current, text);
+    setTranscript(stateRef.current.transcript);
   }, []);
 
   const submitVoiceCommand = useCallback(
@@ -109,6 +115,7 @@ export function useVoiceRuntime({ initialSegment, prefillEmail, submitLead, onEn
   );
 
   return {
+    appendUserText,
     captured,
     handleRealtimeEvent,
     reset,

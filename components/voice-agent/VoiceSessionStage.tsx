@@ -1,14 +1,16 @@
 "use client";
 
-import { Mic2Icon, PhoneOffIcon, RadioIcon, SparklesIcon } from "lucide-react";
-import type { RefObject } from "react";
+import { Mic2Icon, PhoneOffIcon, RadioIcon, SendIcon, SparklesIcon } from "lucide-react";
+import { type FormEvent, type RefObject, useRef, useState } from "react";
 import { MiniOrb } from "@/components/orb/MiniOrb";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { tourTopics } from "@/lib/content";
 import type { getSegment } from "@/lib/segments";
 import { cn } from "@/lib/utils";
 import type { CapturedLead } from "@/lib/voice/realtime-events";
 import type { VoiceCloseReason, VoiceConnectionStatus } from "./useRealtimeVoiceSession";
+import { useVoiceAudioLevel } from "./useVoiceAudioLevel";
 import { handoffCompletion, voiceStatusCopy } from "./voice-dialog-copy";
 
 type VoiceSessionStageProps = {
@@ -18,6 +20,7 @@ type VoiceSessionStageProps = {
   connectionStatus: VoiceConnectionStatus;
   onConnect: () => void;
   onDisconnect: (reason: VoiceCloseReason) => void;
+  onSendText: (text: string) => boolean;
   onTopicToggle: (topicId: string) => void;
   selectedSegment: ReturnType<typeof getSegment>;
   status: "idle" | "submitted";
@@ -31,6 +34,7 @@ export function VoiceSessionStage({
   connectionStatus,
   onConnect,
   onDisconnect,
+  onSendText,
   onTopicToggle,
   selectedSegment,
   status,
@@ -39,6 +43,16 @@ export function VoiceSessionStage({
   const activeTopic = tourTopics.find((topic) => topic.id === activeTopicId) ?? null;
   const statusCopy = voiceStatusCopy(connectionStatus);
   const completion = handoffCompletion(captured);
+  const orbRef = useRef<HTMLDivElement | null>(null);
+  const [draft, setDraft] = useState("");
+  useVoiceAudioLevel(audioRef, orbRef, connectionStatus === "listening");
+
+  const handleComposerSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const text = draft.trim();
+    if (!text) return;
+    if (onSendText(text)) setDraft("");
+  };
 
   if (status === "submitted") {
     return (
@@ -88,7 +102,17 @@ export function VoiceSessionStage({
             "relative mt-8 grid size-44 place-items-center rounded-full bg-[radial-gradient(circle_at_35%_30%,#c9d5ec,#5c7db8_44%,#1f3f7c_68%,#100d18)] shadow-[0_0_90px_rgba(92,125,184,0.42)] sm:size-56",
             connectionStatus === "listening" && "shadow-[0_0_120px_rgba(183,216,255,0.5)]",
           )}
+          ref={orbRef}
+          style={{
+            transform: "scale(calc(1 + var(--voice-level, 0) * 0.09))",
+            transition: "transform 120ms ease-out",
+          }}
         >
+          <div
+            aria-hidden
+            className="absolute inset-[-12px] rounded-full bg-mk-horizon/25 blur-2xl"
+            style={{ opacity: "calc(var(--voice-level, 0) * 0.9)" }}
+          />
           <div
             className={cn(
               "absolute inset-[-24px] rounded-full border border-white/10",
@@ -104,6 +128,27 @@ export function VoiceSessionStage({
         </p>
         <p className="mt-3 max-w-xl text-sm leading-6 text-white/58">{statusCopy.detail}</p>
         <p className="mt-2 text-sm text-white/42">{selectedSegment.voiceOpener}</p>
+
+        {connectionStatus === "listening" ? (
+          <form className="mt-6 flex w-full max-w-xl gap-2" onSubmit={handleComposerSubmit}>
+            <Input
+              aria-label="Type a message to Reka"
+              className="h-11 rounded-full border-white/12 bg-white/[0.045] px-5 text-white placeholder:text-white/30 focus-visible:border-mk-horizon focus-visible:ring-mk-horizon/20"
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder="Prefer typing? Reka reads it instantly."
+              value={draft}
+            />
+            <Button
+              aria-label="Send typed message"
+              className="size-11 rounded-full bg-white/10 text-white transition hover:bg-mk-horizon hover:text-mk-off-black disabled:opacity-40"
+              disabled={!draft.trim()}
+              size="icon"
+              type="submit"
+            >
+              <SendIcon className="size-4" />
+            </Button>
+          </form>
+        ) : null}
 
         <div className="mt-8 flex max-w-2xl flex-wrap justify-center gap-2">
           {tourTopics.map((topic) => (

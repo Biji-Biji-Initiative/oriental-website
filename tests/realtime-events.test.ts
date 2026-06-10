@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  appendTypedUserMessage,
   emptyCapturedLead,
   isBenignVoiceError,
   reduceRealtimeServerEvent,
@@ -643,6 +644,33 @@ describe("reduceRealtimeServerEvent", () => {
       type: "function_result",
       output: { ok: true, key: "email" },
     });
+  });
+
+  it("grounds identity captures in messages the visitor typed into the chat", () => {
+    const typed = appendTypedUserMessage(state(), "My email is mei@example.com and I am from Future Lab.");
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_typed_email",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "mei@example.com",
+                evidence: "mei@example.com",
+              }),
+            },
+          ],
+        },
+      },
+      typed,
+    );
+
+    expect(typed.transcript).toEqual([{ role: "user", text: "My email is mei@example.com and I am from Future Lab." }]);
+    expect(result.state.captured.email).toBe("mei@example.com");
   });
 
   it("records error codes and classifies benign realtime errors", () => {

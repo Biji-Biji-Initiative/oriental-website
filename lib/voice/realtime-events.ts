@@ -109,6 +109,11 @@ export function isBenignVoiceError(error: VoiceRuntimeError) {
   return message.includes("cancellation failed") || message.includes("no active response");
 }
 
+/** Record a message the visitor typed into the live chat as a user transcript turn. */
+export function appendTypedUserMessage(state: VoiceRuntimeState, text: string): VoiceRuntimeState {
+  return appendTranscript(state, "user", text);
+}
+
 export function reduceRealtimeServerEvent(
   event: RealtimeServerEvent,
   current: VoiceRuntimeState,

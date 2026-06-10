@@ -13,6 +13,7 @@ import {
   type RealtimeOutboundEvent,
   serializeHandoffContext,
   serializeResponseCreate,
+  serializeUserText,
 } from "@/lib/voice/client-events";
 import {
   fetchWithTimeout,
@@ -36,7 +37,12 @@ import {
 } from "./useRealtimeVoiceSession";
 import { useVoiceRuntime } from "./useVoiceRuntime";
 import { VoiceSessionStage } from "./VoiceSessionStage";
-import { idleGoodbyeInstruction, openingVoiceInstruction, voiceCloseReasonToast } from "./voice-dialog-copy";
+import {
+  idleGoodbyeInstruction,
+  openingVoiceInstruction,
+  reconnectVoiceInstruction,
+  voiceCloseReasonToast,
+} from "./voice-dialog-copy";
 
 type VoiceAgentDialogProps = {
   open: boolean;
@@ -220,10 +226,23 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
     }
     toast.success("Voice is live.", { id: "voice-live" });
     const current = { segment: stateRef.current.segment, captured: stateRef.current.captured };
+    const resumedTranscript = stateRef.current.transcript.slice(-12);
     lastSyncedHandoffRef.current = handoffSyncKey(current);
-    sendClientEvents([serializeHandoffContext(current), serializeResponseCreate(openingVoiceInstruction)]);
+    sendClientEvents([
+      serializeHandoffContext(current, undefined, resumedTranscript.length > 0 ? { resumedTranscript } : {}),
+      serializeResponseCreate(resumedTranscript.length > 0 ? reconnectVoiceInstruction : openingVoiceInstruction),
+    ]);
     openedVoiceTurnRef.current = true;
   }, [connectionStatus, sendClientEvents, stateRef]);
+
+  const handleSendText = useCallback(
+    (text: string) => {
+      const sent = sendClientEvents([serializeUserText(text), serializeResponseCreate()]);
+      if (sent) runtime.appendUserText(text);
+      return sent;
+    },
+    [runtime.appendUserText, sendClientEvents],
+  );
 
   useEffect(() => {
     if (connectionStatus !== "listening" || !openedVoiceTurnRef.current) return;
@@ -296,6 +315,7 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
               connectionStatus={connectionStatus}
               onConnect={connectVoice}
               onDisconnect={teardownVoice}
+              onSendText={handleSendText}
               onTopicToggle={(topicId) => setActiveTopicId((current) => (current === topicId ? null : topicId))}
               selectedSegment={selectedSegment}
               status={status}

@@ -1,5 +1,5 @@
 import { getSegment } from "@/lib/segments";
-import type { RealtimeClientCommand, VoiceRuntimeState } from "@/lib/voice/realtime-events";
+import type { RealtimeClientCommand, VoiceRuntimeState, VoiceTranscriptEntry } from "@/lib/voice/realtime-events";
 
 export type RealtimeOutboundEvent =
   | {
@@ -54,12 +54,26 @@ export function serializeRealtimeCommand(
   return events;
 }
 
+export function serializeUserText(text: string, createEventId: EventIdFactory = defaultEventId): RealtimeOutboundEvent {
+  return {
+    type: "conversation.item.create",
+    event_id: createEventId(),
+    item: {
+      type: "message",
+      role: "user",
+      content: [{ type: "input_text", text }],
+    },
+  };
+}
+
 export function serializeHandoffContext(
   state: Pick<VoiceRuntimeState, "segment" | "captured">,
   createEventId: EventIdFactory = defaultEventId,
+  options: { resumedTranscript?: VoiceTranscriptEntry[] } = {},
 ): RealtimeOutboundEvent {
   const segment = getSegment(state.segment);
   const field = (value: string) => (value.trim() ? value.trim() : "[empty]");
+  const resumed = options.resumedTranscript ?? [];
   return {
     type: "conversation.item.create",
     event_id: createEventId(),
@@ -80,6 +94,14 @@ export function serializeHandoffContext(
             `Email: ${field(state.captured.email)}`,
             `Organisation: ${field(state.captured.org)}`,
             `Brief: ${field(state.captured.message)}`,
+            ...(resumed.length > 0
+              ? [
+                  "",
+                  "[Earlier conversation before this voice session reconnected:]",
+                  ...resumed.map((entry) => `${entry.role === "assistant" ? "Reka" : "User"}: ${entry.text}`),
+                  "Continue from this context. Do not repeat the opening pitch and do not re-ask anything already answered.",
+                ]
+              : []),
           ].join("\n"),
         },
       ],
