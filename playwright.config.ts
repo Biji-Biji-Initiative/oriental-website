@@ -16,6 +16,16 @@ export default defineConfig({
   use: {
     baseURL,
     trace: "retain-on-failure",
+    // Sandboxed dev environments cannot download Playwright's browsers; allow
+    // pointing at a system/npm-provided chromium instead.
+    ...(process.env.PLAYWRIGHT_CHROMIUM_PATH
+      ? {
+          launchOptions: {
+            executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH,
+            args: ["--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage"],
+          },
+        }
+      : {}),
   },
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },

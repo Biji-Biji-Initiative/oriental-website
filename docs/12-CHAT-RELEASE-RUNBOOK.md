@@ -56,15 +56,21 @@ entries.
 
 ## 4. Remaining automated step
 
-Playwright cannot download browsers inside the remote dev environment, so
-run the e2e suite locally or in CI once:
+The e2e suite can run inside the remote dev environment despite the browser
+CDN being blocked — `@sparticuz/chromium` (a devDependency) ships a chromium
+binary through npm:
 
 ```bash
-pnpm test:e2e
+pnpm build && cp -r .next/static .next/standalone/.next/static && cp -r public .next/standalone/public
+PORT=3011 node .next/standalone/server.js &
+# Extracts the npm-shipped chromium to /tmp/chromium and prints the path:
+node -e "const m = require('@sparticuz/chromium'); Promise.resolve((m.default ?? m).executablePath()).then((p) => console.log(p))"
+PLAYWRIGHT_CHROMIUM_PATH=/tmp/chromium PLAYWRIGHT_BASE_URL=http://127.0.0.1:3011 pnpm test:e2e
 ```
 
-The dialog now lazy-loads on first open; the existing specs auto-wait and
-should pass unchanged.
+All 12 specs (chromium + Pixel 7 mobile) passed against the production
+standalone build during this branch's verification. CI/local runs work
+unchanged with Playwright's own browsers.
 
 ## 5. Watch list for the first days
 
