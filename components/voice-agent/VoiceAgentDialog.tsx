@@ -295,7 +295,7 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
       <DialogContent className="max-h-[94svh] w-[min(1500px,96vw)] overflow-hidden rounded-xl border-white/10 bg-mk-off-black p-0 text-white shadow-2xl sm:max-w-none">
         <DialogTitle className="sr-only">Talk to Reka</DialogTitle>
         <div className="grid max-h-[94svh] grid-cols-1 overflow-y-auto lg:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_360px]">
-          <aside className="border-b border-white/10 p-5 lg:row-span-2 lg:border-r lg:border-b-0 xl:row-span-1">
+          <aside className="order-2 border-t border-white/10 p-5 lg:order-none lg:row-span-2 lg:border-t-0 lg:border-r xl:row-span-1">
             <div className="mb-5 text-xs uppercase tracking-[0.16em] text-white/48">Partner type</div>
             <div className="flex gap-3 overflow-x-auto pb-2 lg:flex-col lg:overflow-visible">
               {segmentOptions().map((option) => (
@@ -315,7 +315,7 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
             </div>
           </aside>
 
-          <main className="min-w-0 border-t border-white/10 p-5 sm:p-8 lg:border-t-0">
+          <main className="order-1 min-w-0 p-5 sm:p-8 lg:order-none">
             <div ref={turnstile.containerRef} />
             <VoiceSessionStage
               activeTopicId={activeTopicId}
@@ -335,7 +335,7 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
 
           <HandoffPanel
             captured={captured}
-            className="lg:col-start-2 xl:col-start-auto"
+            className="order-3 lg:order-none lg:col-start-2 xl:col-start-auto"
             form={form}
             onChange={runtime.updateCaptured}
             onSubmit={(values) =>

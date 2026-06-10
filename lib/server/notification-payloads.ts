@@ -49,58 +49,65 @@ export function buildOwnerNotification(lead: StoredLead): OwnerNotification {
   ].join("\n");
   const metadataRows = rows
     .map(([label, value], index) => {
-      const border = index > 0 ? "border-top:1px solid #efe9df;" : "";
+      const border = index > 0 ? "border-top:1px solid #e9e4da;" : "";
       return [
         "<tr>",
-        `<th scope="row" style="${border}text-align:left;vertical-align:top;padding:10px 24px 10px 0;color:#5a5146;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;">${escapeHtml(label)}</th>`,
-        `<td style="${border}padding:10px 0;color:#161318;font-size:15px;line-height:1.5;">${escapeHtml(value)}</td>`,
+        `<th scope="row" style="${border}text-align:left;vertical-align:top;padding:11px 24px 11px 0;color:#5f5950;font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;white-space:nowrap;">${escapeHtml(label)}</th>`,
+        `<td style="${border}padding:11px 0;color:#100d18;font-size:15px;line-height:1.5;">${escapeHtml(value)}</td>`,
         "</tr>",
       ].join("");
     })
     .join("");
   const html = `<!doctype html>
 <html lang="en">
-  <body style="margin:0;background:#f6f1e8;color:#161318;font-family:Arial,Helvetica,sans-serif;">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f6f1e8;padding:32px 16px;">
+  <body style="margin:0;background:#f4f1ea;color:#100d18;font-family:Arial,Helvetica,sans-serif;">
+    <div style="display:none;max-height:0;overflow:hidden;">${escapeHtml(lead.form.name)} (${escapeHtml(lead.form.org)}) — ${escapeHtml(segment.label.toLowerCase())} enquiry for Oriental.</div>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f1ea;padding:36px 16px;">
       <tr>
         <td align="center">
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:680px;background:#fff;border:1px solid #ded7cb;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;">
             <tr>
-              <td style="padding:32px 32px 20px;">
-                <p style="margin:0 0 12px;color:#5a5146;font-size:12px;letter-spacing:.16em;text-transform:uppercase;">Oriental partner intake</p>
-                <h1 style="margin:0;color:#161318;font-size:28px;line-height:1.2;font-weight:600;">${escapeHtml(segment.label)} lead from ${escapeHtml(lead.form.org)}</h1>
+              <td style="background:#100d18;border-radius:20px 20px 0 0;padding:28px 36px 26px;">
+                <p style="margin:0;color:#c9d5ec;font-size:11px;font-weight:700;letter-spacing:.28em;text-transform:uppercase;">Oriental &#183; Partner Intake</p>
+                <h1 style="margin:14px 0 0;color:#ffffff;font-family:Georgia,'Times New Roman',serif;font-size:30px;line-height:1.25;font-weight:400;">${escapeHtml(lead.form.name)} <span style="color:#c9d5ec;">&#8212;</span> ${escapeHtml(lead.form.org)}</h1>
+                <p style="margin:10px 0 0;color:rgba(255,255,255,.64);font-size:14px;line-height:1.5;">A new ${escapeHtml(segment.label.toLowerCase())} conversation, routed to ${escapeHtml(lead.routedTo)}.</p>
               </td>
             </tr>
             <tr>
-              <td style="padding:0 32px 24px;">
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;font-size:15px;line-height:1.5;">
+              <td style="background:#ffffff;border-left:1px solid #e3ddd2;border-right:1px solid #e3ddd2;padding:28px 36px 8px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;">
                   ${metadataRows}
                 </table>
               </td>
             </tr>
             <tr>
-              <td style="padding:0 32px 24px;">
-                <h2 style="margin:0 0 10px;font-size:14px;letter-spacing:.12em;text-transform:uppercase;color:#5a5146;">Brief</h2>
-                <div style="font-size:16px;line-height:1.6;color:#161318;">${htmlParagraph(lead.form.message)}</div>
+              <td style="background:#ffffff;border-left:1px solid #e3ddd2;border-right:1px solid #e3ddd2;padding:20px 36px 8px;">
+                <p style="margin:0 0 10px;color:#5f5950;font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;">What they would bring</p>
+                <div style="border-left:3px solid #c9d5ec;padding:4px 0 4px 18px;font-family:Georgia,'Times New Roman',serif;font-size:17px;line-height:1.65;color:#100d18;">${htmlParagraph(lead.form.message)}</div>
               </td>
             </tr>
             ${
               transcript
-                ? `<tr><td style="padding:0 32px 24px;"><h2 style="margin:0 0 10px;font-size:14px;letter-spacing:.12em;text-transform:uppercase;color:#5a5146;">Conversation context</h2><div style="font-size:14px;line-height:1.6;color:#3d352f;background:#f6f1e8;border:1px solid #ded7cb;padding:16px;">${htmlParagraph(transcript)}</div></td></tr>`
+                ? `<tr><td style="background:#ffffff;border-left:1px solid #e3ddd2;border-right:1px solid #e3ddd2;padding:20px 36px 8px;"><p style="margin:0 0 10px;color:#5f5950;font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;">From the conversation</p><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f1ea;border-radius:14px;"><tr><td style="padding:14px 18px;">${transcriptHtml(lead.transcript)}</td></tr></table></td></tr>`
                 : ""
             }
             <tr>
-              <td style="padding:24px 32px 32px;border-top:1px solid #ded7cb;">
+              <td style="background:#ffffff;border:1px solid #e3ddd2;border-top:0;border-radius:0 0 20px 20px;padding:24px 36px 30px;">
                 <table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 0 14px;">
                   <tr>
-                    <td style="border-radius:999px;background:#161318;">
-                      <a href="${escapeHtml(mailtoHref(lead.form.email))}" style="display:inline-block;padding:12px 26px;color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;border-radius:999px;">Reply to ${escapeHtml(lead.form.name)}</a>
+                    <td style="border-radius:999px;background:#1f3f7c;">
+                      <a href="${escapeHtml(mailtoHref(lead.form.email))}" style="display:inline-block;padding:13px 28px;color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;border-radius:999px;">Reply to ${escapeHtml(lead.form.name)}</a>
                     </td>
                   </tr>
                 </table>
-                <p style="margin:0;color:#5a5146;font-size:14px;line-height:1.5;">
-                  Reply directly to <a href="${escapeHtml(mailtoHref(lead.form.email))}" style="color:#0f4c81;">${escapeHtml(lead.form.email)}</a> to continue the conversation.
+                <p style="margin:0;color:#5f5950;font-size:13px;line-height:1.6;">
+                  Replies go straight to <a href="${escapeHtml(mailtoHref(lead.form.email))}" style="color:#1f3f7c;">${escapeHtml(lead.form.email)}</a>. They were promised a follow-up within two working days.
                 </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:18px 36px 0;text-align:center;">
+                <p style="margin:0;color:#9b948a;font-size:11px;letter-spacing:.08em;">MEREKA &#183; ORIENTAL BUILDING, KUALA LUMPUR &#183; OPENING 2027</p>
               </td>
             </tr>
           </table>
@@ -126,7 +133,13 @@ export function buildSlackPayload(lead: StoredLead): SlackLeadPayload {
       text: { type: "plain_text", text: truncate(`New Oriental lead · ${segment.label}`, 150), emoji: false },
     },
     { type: "section", text: { type: "mrkdwn", text: intro } },
-    { type: "section", text: { type: "mrkdwn", text: `*Brief*\n${escapeSlack(truncate(lead.form.message, 2800))}` } },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*Brief*\n>${escapeSlack(truncate(lead.form.message, 2800)).replaceAll("\n", "\n>")}`,
+      },
+    },
   ];
   if (transcript) {
     blocks.push({
@@ -139,7 +152,7 @@ export function buildSlackPayload(lead: StoredLead): SlackLeadPayload {
     elements: [
       {
         type: "mrkdwn",
-        text: escapeSlack(`${segment.label} · ${sourceLabel(lead.source)} · Lead ${lead.id}`),
+        text: escapeSlack(`✦ ${segment.label} · ${sourceLabel(lead.source)} · Lead ${lead.id}`),
       },
     ],
   });
@@ -168,6 +181,17 @@ function speakerLabel(role: StoredLead["transcript"][number]["role"]): string {
   if (role === "assistant") return "Mereka";
   if (role === "system") return "System";
   return "User";
+}
+
+function transcriptHtml(transcript: StoredLead["transcript"], maxEntries = 6): string {
+  return transcript
+    .slice(-maxEntries)
+    .map((entry) => {
+      const isReka = entry.role === "assistant";
+      const labelColor = isReka ? "#1f3f7c" : "#5f5950";
+      return `<p style="margin:0 0 8px;font-size:14px;line-height:1.6;color:#3d3830;"><span style="font-weight:700;letter-spacing:.04em;color:${labelColor};">${escapeHtml(speakerLabel(entry.role))}</span>&nbsp;&nbsp;${escapeHtml(entry.text.trim())}</p>`;
+    })
+    .join("");
 }
 
 function htmlParagraph(value: string): string {

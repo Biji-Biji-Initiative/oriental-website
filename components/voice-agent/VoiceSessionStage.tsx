@@ -86,29 +86,19 @@ export function VoiceSessionStage({
         </div>
 
         <div
-          className={cn(
-            "relative mt-8 grid size-44 place-items-center rounded-full bg-[radial-gradient(circle_at_35%_30%,#c9d5ec,#5c7db8_44%,#1f3f7c_68%,#100d18)] shadow-[0_0_90px_rgba(92,125,184,0.42)] sm:size-56",
-            connectionStatus === "listening" && "shadow-[0_0_120px_rgba(183,216,255,0.5)]",
-          )}
+          className="voice-orb mt-8 grid size-44 place-items-center sm:size-56"
+          data-status={connectionStatus}
           ref={orbRef}
-          style={{
-            transform: "scale(calc(1 + var(--voice-level, 0) * 0.09))",
-            transition: "transform 120ms ease-out",
-          }}
         >
-          <div
-            aria-hidden
-            className="absolute inset-[-12px] rounded-full bg-mk-horizon/25 blur-2xl"
-            style={{ opacity: "calc(var(--voice-level, 0) * 0.9)" }}
-          />
-          <div
-            className={cn(
-              "absolute inset-[-24px] rounded-full border border-white/10",
-              connectionStatus !== "idle" && "motion-safe:animate-pulse",
-            )}
-          />
-          <div className="absolute inset-[-44px] rounded-full border border-mk-horizon/10" />
-          <MiniOrb size={120} />
+          <div aria-hidden className="voice-orb__aurora" />
+          <div aria-hidden className="voice-orb__glow" />
+          <div aria-hidden className="voice-orb__ripple" />
+          <div aria-hidden className="voice-orb__ripple voice-orb__ripple--late" />
+          <div aria-hidden className="voice-orb__halo" />
+          <div aria-hidden className="voice-orb__halo voice-orb__halo--far" />
+          <div className="relative">
+            <MiniOrb size={120} />
+          </div>
         </div>
 
         {connectionStatus === "listening" && assistantDraft ? (

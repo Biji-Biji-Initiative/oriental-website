@@ -67,7 +67,7 @@ describe("createRealtimeClientSecret", () => {
             create_response: true,
             interrupt_response: true,
           },
-          transcription: { model: "gpt-4o-transcribe", language: "en" },
+          transcription: { model: "gpt-4o-transcribe" },
           noise_reduction: { type: "far_field" },
         },
         output: { voice: "marin", speed: 1.12 },
@@ -82,6 +82,8 @@ describe("createRealtimeClientSecret", () => {
     expect(body.session.instructions).toContain("# Role and Objective");
     expect(body.session.instructions).toContain("Initial Context");
     expect(body.session.audio.input.transcription.prompt).toContain("Mereka");
+    expect(body.session.audio.input.transcription.prompt).toContain("Bahasa Melayu");
+    expect(body.session.audio.input.transcription.language).toBeUndefined();
     expect(body.session.tools.map((tool: { name: string }) => tool.name)).toContain("wait_for_user");
   });
 

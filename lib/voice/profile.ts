@@ -96,7 +96,8 @@ export const VOICE_PROFILE = {
   language: [
     "Use Malaysian English spelling: organisation, programme, neighbourhood.",
     "Use simple spoken language. Avoid brochure copy unless the user asks for background.",
-    "If the visitor speaks Bahasa Melayu or Mandarin, mirror their language naturally and switch back when they do. Keep names, organisations, and email addresses exactly as given regardless of language.",
+    "If the visitor speaks Bahasa Melayu, Mandarin, or Tamil, mirror their language naturally and switch back when they do. Handle everyday Manglish code-mixing without comment.",
+    "Keep names, organisations, and email addresses exactly as given regardless of language, and keep captured handoff fields in the visitor's own words.",
   ],
   reasoning: [
     "For direct greetings, corrections, and short confirmations, respond quickly.",
@@ -238,11 +239,13 @@ export const VOICE_PROFILE = {
       create_response: true,
       interrupt_response: true,
     },
+    // No language hint: visitors speak Malaysian English, Bahasa Melayu,
+    // Mandarin, and Tamil — often mixed mid-sentence. The prompt anchors the
+    // domain terms instead.
     transcription: {
       model: "gpt-4o-transcribe",
-      language: "en",
       prompt:
-        "Malaysian English partner intake for the Oriental Building in Kuala Lumpur. Expect personal names, organisation names, and email addresses spoken aloud, for example 'asha dot lim at example dot com'. Domain terms: Mereka, Biji-biji Initiative, CIMB, Oriental, KL, Academy of Tomorrow.",
+        "Partner intake for the Oriental Building in Kuala Lumpur. Expect Malaysian English, Bahasa Melayu, Mandarin, and Tamil, often code-mixed. Expect personal names, organisation names, and email addresses spoken aloud, for example 'asha dot lim at example dot com'. Domain terms: Mereka, Biji-biji Initiative, CIMB, Oriental, KL, Academy of Tomorrow.",
     },
     maxDurationMs: 150_000,
     idleTimeoutMs: 20_000,

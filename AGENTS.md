@@ -95,6 +95,7 @@ docs/                     # handover specs — reference, not auto-synced to cod
 | Voice persona, guardrails, tool descriptions, VAD/transcription/timeouts | `lib/voice/profile.ts` |
 | Realtime protocol / transcript state machine / capture grounding | `lib/voice/realtime-events.ts` + `tests/realtime-events.test.ts` |
 | Voice UI / WebRTC wiring | `components/voice-agent/useRealtimeVoiceSession.ts`, `useVoiceRuntime.ts`, `VoiceAgentDialog.tsx`, `VoiceSessionStage.tsx` |
+| Voice orb look & motion | `components/voice-agent/VoiceSessionStage.tsx`, `.voice-orb*` in `app/globals.css`, level source in `useVoiceAudioLevel.ts` |
 | Session token + server session config | `app/api/voice/session/route.ts`, `lib/server/openai-realtime.ts` |
 | Admin session review | `app/admin/session-review/page.tsx`, `app/api/admin/*`, `components/admin/*` |
 | Sentry setup | `sentry.*.config.ts`, `instrumentation.ts`, `instrumentation-client.ts`, `next.config.ts` |

@@ -238,7 +238,7 @@ Server request:
 - `session.audio.input.turn_detection` from `VOICE_SESSION_DEFAULTS`
   (`semantic_vad`, `eagerness: "auto"`)
 - `session.audio.input.transcription` from `VOICE_SESSION_DEFAULTS`
-  (`gpt-4o-transcribe` with language hint and domain prompt; model overridable
+  (`gpt-4o-transcribe` with a multilingual domain prompt — no language lock; model overridable
   via `OPENAI_REALTIME_TRANSCRIPTION_MODEL`)
 - `session.audio.input.noise_reduction.type` = `near_field` (mobile UA) or
   `far_field` (desktop)
