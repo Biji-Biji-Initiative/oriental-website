@@ -50,13 +50,13 @@ export const metadata: Metadata = {
     description: siteMeta.description,
     url: siteMeta.url,
     siteName: "Oriental Building",
-    images: ["/assets/og-image.svg"],
+    images: [{ url: "/assets/og-image.png", width: 1200, height: 630, alt: siteMeta.title }],
   },
   twitter: {
     card: "summary_large_image",
     title: siteMeta.title,
     description: siteMeta.description,
-    images: ["/assets/og-image.svg"],
+    images: ["/assets/og-image.png"],
   },
 };
 
@@ -71,6 +71,12 @@ export default async function RootLayout({
   return (
     <html lang="en" className={`${poppins.variable} ${fraunces.variable} scroll-smooth antialiased`}>
       <body className="min-h-svh bg-mk-paper text-mk-off-black">
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[100] focus:rounded-full focus:bg-mk-off-black focus:px-5 focus:py-2.5 focus:text-sm focus:font-medium focus:text-white"
+        >
+          Skip to content
+        </a>
         <VoiceProvider turnstileSiteKey={turnstileSiteKey}>
           <SiteNav />
           {children}

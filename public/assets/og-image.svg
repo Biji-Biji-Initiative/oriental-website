@@ -25,10 +25,10 @@
     <text x="80" y="370" font-size="120" fill="none" stroke="rgba(255,255,255,0.85)" stroke-width="1.5">Oriental.</text>
   </g>
 
-  <g font-family="Fraunces, Georgia, serif" font-style="italic" font-weight="300">
-    <text x="80" y="492" font-size="120" fill="#5c7db8">A future</text>
-    <text x="520" y="492" font-size="120" fill="#ffffff" font-family="Poppins, sans-serif" font-style="normal" font-weight="800" letter-spacing="-3">we build together.</text>
-  </g>
+  <text x="80" y="486" font-size="78">
+    <tspan font-family="Fraunces, Georgia, serif" font-style="italic" font-weight="300" fill="#5c7db8">A future </tspan>
+    <tspan font-family="Poppins, sans-serif" font-weight="800" letter-spacing="-2" fill="#ffffff" dx="14">we build together.</tspan>
+  </text>
 
   
   <g font-family="Poppins, sans-serif" fill="rgba(255,255,255,0.55)" font-size="22" letter-spacing="5" font-weight="500">
