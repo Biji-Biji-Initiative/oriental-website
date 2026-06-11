@@ -38,6 +38,9 @@ export function useVoiceRuntime({ initialSegment, prefillEmail, submitLead, onEn
   const stateRef = useRef<VoiceRuntimeState>({ segment, captured, transcript, handledCallIds: [] });
   const callbacksRef = useRef({ submitLead, onEndVoice });
   callbacksRef.current = { submitLead, onEndVoice };
+  // The model retries a rejected capture on its own; only bother the visitor
+  // when the same field keeps failing.
+  const ungroundedRejectionsRef = useRef(0);
 
   useEffect(() => {
     stateRef.current = { ...stateRef.current, segment, captured, transcript };
@@ -49,6 +52,7 @@ export function useVoiceRuntime({ initialSegment, prefillEmail, submitLead, onEn
     setCaptured(nextCaptured);
     setTranscript([]);
     setAssistantDraft("");
+    ungroundedRejectionsRef.current = 0;
     stateRef.current = { segment: initial.segment, captured: nextCaptured, transcript: [], handledCallIds: [] };
   }, []);
 
@@ -106,10 +110,13 @@ export function useVoiceRuntime({ initialSegment, prefillEmail, submitLead, onEn
       for (const command of reduced.commands) {
         if (command.type === "function_result") {
           if (command.output.error === "ungrounded_identity_capture") {
-            toast.warning("Ignored an unverified contact detail.", {
-              description: "Please type it in the handoff panel or say it clearly once.",
-              id: voiceToastIds.captureWarning,
-            });
+            ungroundedRejectionsRef.current += 1;
+            if (ungroundedRejectionsRef.current >= 2) {
+              toast.warning("Reka didn't catch one detail.", {
+                description: "Say it once more, or type it straight into the handoff panel.",
+                id: voiceToastIds.captureWarning,
+              });
+            }
           }
           sendRealtimeCommand(channel, command);
         }

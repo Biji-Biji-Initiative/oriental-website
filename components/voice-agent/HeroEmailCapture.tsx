@@ -98,7 +98,9 @@ export function HeroEmailCapture() {
           {busy ? "Saving..." : "Keep me posted →"}
         </button>
       </div>
-      <div ref={turnstile.containerRef} className="sr-only" />
+      {/* Cloudflare expands this slot only when it needs a human check; it must
+          stay visibly rendered (sr-only clips the challenge to one pixel). */}
+      <div ref={turnstile.containerRef} className="hero-email__turnstile" />
       {error ? (
         <p className="hero-email__error" id="hero-email-error">
           {error}

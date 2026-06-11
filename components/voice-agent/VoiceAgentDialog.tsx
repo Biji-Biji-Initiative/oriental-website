@@ -321,7 +321,9 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
           </aside>
 
           <main className="order-1 min-w-0 p-5 sm:p-8 lg:order-none">
-            <div ref={turnstile.containerRef} />
+            {/* Turnstile renders here only when Cloudflare requires interaction;
+                keep it a centred, visible slot rather than an unstyled div. */}
+            <div className="flex justify-center" ref={turnstile.containerRef} />
             <VoiceSessionStage
               activeTopicId={activeTopicId}
               assistantDraft={runtime.assistantDraft}
@@ -329,6 +331,7 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
               captured={captured}
               connectionStatus={connectionStatus}
               getLocalStream={getLocalStream}
+              lastAssistantLine={transcript.findLast((entry) => entry.role === "assistant")?.text ?? ""}
               onConnect={connectVoice}
               onDisconnect={teardownVoice}
               onSendText={handleSendText}

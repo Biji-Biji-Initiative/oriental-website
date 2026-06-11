@@ -413,6 +413,81 @@ describe("reduceRealtimeServerEvent", () => {
     expect(result.state.captured.email).toBe("asha.lim+ai@example.com");
   });
 
+  it("accepts an organisation when ASR spelling drifts from what the model heard", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_org_asr_drift",
+              arguments: JSON.stringify({
+                key: "org",
+                value: "Khazanah Nasional",
+                evidence: "Khazanah Nasional",
+              }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "I'm calling from Cazana Nasional about the demo lab." }] }),
+    );
+
+    expect(result.state.captured.org).toBe("Khazanah Nasional");
+  });
+
+  it("still rejects an organisation with no resemblance to anything the user said", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_org_invented",
+              arguments: JSON.stringify({ key: "org", value: "Petronas", evidence: "sure can" }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "sure can, let's do that" }] }),
+    );
+
+    expect(result.state.captured.org).toBe("");
+    expect(result.commands).toEqual([
+      {
+        type: "function_result",
+        callId: "call_org_invented",
+        createResponse: true,
+        output: { ok: false, error: "ungrounded_identity_capture", key: "org", value: "Petronas" },
+      },
+    ]);
+  });
+
+  it("accepts a name when the transcript spells it differently but recognisably", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_name_asr_drift",
+              arguments: JSON.stringify({ key: "name", value: "Gurpreet Singh", evidence: "Gurpreet Singh" }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "My name is Gurprit Sing." }] }),
+    );
+
+    expect(result.state.captured.name).toBe("Gurpreet Singh");
+  });
+
   it("appends brief updates when the model marks the message capture as additive", () => {
     const result = reduceRealtimeServerEvent(
       {

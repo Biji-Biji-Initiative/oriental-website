@@ -408,6 +408,20 @@ function toCapturedKey(value: unknown): keyof CapturedLead | null {
   return value === "name" || value === "email" || value === "org" || value === "message" ? value : null;
 }
 
+/**
+ * How much ASR spelling drift grounding tolerates per key, as a fraction of
+ * the evidence length. The realtime model hears audio directly while the
+ * transcript comes from a separate ASR pass, so proper nouns routinely
+ * diverge ("Khazanah" vs "Cazana"). Email stays strictest because a wrong
+ * email breaks the follow-up; organisation is most forgiving because the
+ * handoff panel shows it and the visitor can edit it.
+ */
+const GROUNDING_TOLERANCE: Record<Exclude<keyof CapturedLead, "message">, number> = {
+  email: 0.13,
+  name: 0.25,
+  org: 0.34,
+};
+
 function validateCaptureGrounding(
   key: keyof CapturedLead,
   value: string,
@@ -417,6 +431,7 @@ function validateCaptureGrounding(
 ): { ok: true } | { ok: false; error: string } {
   if (key === "message") return { ok: true };
   if (!evidence) return { ok: false, error: "ungrounded_identity_capture" };
+  const tolerance = GROUNDING_TOLERANCE[key];
 
   const recentUserText = transcript
     .filter((entry) => entry.role === "user")
@@ -431,7 +446,7 @@ function validateCaptureGrounding(
 
   // Whisper transcription can land after the model's function call; while a user
   // turn is still transcribing, trust evidence that is consistent with the value.
-  const evidenceGrounded = normalizedUserText.includes(normalizedEvidence);
+  const evidenceGrounded = approxIncludes(normalizedUserText, normalizedEvidence, tolerance);
   if (!evidenceGrounded && !transcriptionPending) {
     return { ok: false, error: "ungrounded_identity_capture" };
   }
@@ -443,12 +458,17 @@ function validateCaptureGrounding(
 
   const valueForms = normalizedValueForms(key, value);
   if (!evidenceGrounded) {
-    return valueForms.some((form) => normalizedEvidence.includes(form))
+    return valueForms.some((form) => approxIncludes(normalizedEvidence, form, tolerance))
       ? { ok: true }
       : { ok: false, error: "ungrounded_identity_capture" };
   }
 
-  if (valueForms.some((form) => normalizedEvidence.includes(form) || normalizedUserText.includes(form))) {
+  if (
+    valueForms.some(
+      (form) =>
+        approxIncludes(normalizedEvidence, form, tolerance) || approxIncludes(normalizedUserText, form, tolerance),
+    )
+  ) {
     return { ok: true };
   }
 
@@ -461,6 +481,36 @@ function validateCaptureGrounding(
   }
 
   return { ok: false, error: "ungrounded_identity_capture" };
+}
+
+/** Exact containment, falling back to tolerance-bounded approximate containment. */
+function approxIncludes(haystack: string, needle: string, tolerance: number) {
+  if (!needle) return false;
+  if (haystack.includes(needle)) return true;
+  // Below 4 characters a single edit can turn one word into another; stay exact.
+  if (needle.length < 4) return false;
+  const maxEdits = Math.max(1, Math.floor(needle.length * tolerance));
+  return approxSubstringDistance(haystack, needle) <= maxEdits;
+}
+
+/**
+ * Smallest edit distance between `needle` and any substring of `haystack`
+ * (semi-global alignment: skipped haystack prefix/suffix is free).
+ */
+function approxSubstringDistance(haystack: string, needle: string): number {
+  if (!needle.length) return 0;
+  if (!haystack.length) return needle.length;
+  let previous: number[] = new Array(haystack.length + 1).fill(0);
+  let current: number[] = new Array(haystack.length + 1).fill(0);
+  for (let i = 1; i <= needle.length; i += 1) {
+    current[0] = i;
+    for (let j = 1; j <= haystack.length; j += 1) {
+      const substitution = (previous[j - 1] ?? 0) + (needle[i - 1] === haystack[j - 1] ? 0 : 1);
+      current[j] = Math.min((previous[j] ?? 0) + 1, (current[j - 1] ?? 0) + 1, substitution);
+    }
+    [previous, current] = [current, previous];
+  }
+  return previous.reduce((min, cell) => Math.min(min, cell), needle.length);
 }
 
 function normalizedValueForms(key: keyof CapturedLead, value: string) {
@@ -516,7 +566,7 @@ function hasRecentOrganisationEvidence(form: string, transcript: VoiceTranscript
   return transcript
     .filter((entry) => entry.role === "user")
     .slice(-8)
-    .some((entry) => normalizeEvidence(entry.text).includes(form));
+    .some((entry) => approxIncludes(normalizeEvidence(entry.text), form, GROUNDING_TOLERANCE.org));
 }
 
 function normalizeEvidence(value: string) {
