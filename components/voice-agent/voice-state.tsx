@@ -21,17 +21,32 @@ type VoiceContextValue = {
 
 const VoiceContext = createContext<VoiceContextValue | null>(null);
 
-export function VoiceProvider({
-  children,
-  turnstileSiteKey,
-}: {
-  children: React.ReactNode;
-  turnstileSiteKey?: string;
-}) {
+export function VoiceProvider({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [intent, setIntent] = useState<SegmentId | undefined>();
   const [prefill, setPrefill] = useState<{ email?: string; mode?: VoiceMode } | undefined>();
+  const [turnstileSiteKey, setTurnstileSiteKey] = useState<string | undefined>();
+
+  // The site key is fetched at runtime (not server-rendered) so the pages stay
+  // statically prerendered and the key stays rotatable without a rebuild.
+  useEffect(() => {
+    let cancelled = false;
+    const load = async (attempt: number) => {
+      try {
+        const response = await fetch("/api/client-config");
+        if (!response.ok) throw new Error(`client_config_${response.status}`);
+        const config: { turnstileSiteKey?: string | null } = await response.json();
+        if (!cancelled) setTurnstileSiteKey(config.turnstileSiteKey || undefined);
+      } catch {
+        if (!cancelled && attempt < 3) window.setTimeout(() => void load(attempt + 1), 1_000 * (attempt + 1));
+      }
+    };
+    void load(0);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const openVoice = useCallback((nextIntent?: SegmentId, nextPrefill?: { email?: string; mode?: VoiceMode }) => {
     setIntent(nextIntent);

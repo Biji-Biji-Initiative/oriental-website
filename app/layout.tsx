@@ -1,12 +1,10 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
-import { connection } from "next/server";
 import { SiteNav } from "@/components/site/SiteNav";
 import { VoiceRail } from "@/components/site/VoiceRail";
 import { Toaster } from "@/components/ui/sonner";
 import { VoiceProvider } from "@/components/voice-agent/voice-state";
 import { siteMeta } from "@/lib/content";
-import { readEnv } from "@/lib/env";
 import "./globals.css";
 
 const poppins = localFont({
@@ -60,14 +58,11 @@ export const metadata: Metadata = {
   },
 };
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  await connection();
-  const turnstileSiteKey = readEnv("TURNSTILE_SITE_KEY") || readEnv("NEXT_PUBLIC_TURNSTILE_SITE_KEY");
-
   return (
     <html lang="en" className={`${poppins.variable} ${fraunces.variable} scroll-smooth antialiased`}>
       <body className="min-h-svh bg-mk-paper text-mk-off-black">
@@ -77,7 +72,7 @@ export default async function RootLayout({
         >
           Skip to content
         </a>
-        <VoiceProvider turnstileSiteKey={turnstileSiteKey}>
+        <VoiceProvider>
           <SiteNav />
           {children}
           <VoiceRail />

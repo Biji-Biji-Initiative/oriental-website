@@ -397,6 +397,23 @@ type HealthResponse = {
 The route does not ping Convex or OpenAI. It proves the Next server can respond
 and exposes enough version/config signal for Coolify smoke checks.
 
+## `GET /api/client-config`
+
+Purpose: public, non-secret runtime configuration for the browser. Pages are
+statically prerendered, so values that must stay rotatable without a rebuild
+(the Turnstile site key) are fetched from here by `VoiceProvider` after
+hydration instead of being rendered into the HTML.
+
+### Response `200`
+
+```ts
+type ClientConfigResponse = {
+  turnstileSiteKey: string | null; // null when Turnstile is not configured
+};
+```
+
+Never add secrets to this route — everything it returns ships to every visitor.
+
 ## Cross-Cutting Concerns
 
 ### Rate Limiting
