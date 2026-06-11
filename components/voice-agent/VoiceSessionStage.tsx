@@ -21,6 +21,8 @@ type VoiceSessionStageProps = {
   captured: CapturedLead;
   connectionStatus: VoiceConnectionStatus;
   getLocalStream: () => MediaStream | null;
+  /** Last completed assistant utterance, shown when no draft is streaming. */
+  lastAssistantLine: string;
   onConnect: () => void;
   onDisconnect: (reason: VoiceCloseReason) => void;
   onSendText: (text: string) => boolean;
@@ -37,6 +39,7 @@ export function VoiceSessionStage({
   captured,
   connectionStatus,
   getLocalStream,
+  lastAssistantLine,
   onConnect,
   onDisconnect,
   onSendText,
@@ -105,10 +108,15 @@ export function VoiceSessionStage({
           </div>
         </div>
 
-        {connectionStatus === "listening" && assistantDraft ? (
+        {connectionStatus === "listening" && (assistantDraft || lastAssistantLine) ? (
           // The transcript log is the accessible live region; this caption is visual.
-          <p aria-hidden className="mt-6 min-h-14 max-w-2xl text-balance text-base leading-7 text-white/80">
-            {captionTail(assistantDraft)}
+          // The last completed line stays up between turns so the visitor can
+          // re-read the question instead of watching it vanish mid-thought.
+          <p
+            aria-hidden
+            className="mt-6 min-h-14 w-full max-w-2xl whitespace-normal break-words text-pretty text-base leading-7 text-white/85"
+          >
+            {captionTail(assistantDraft || lastAssistantLine)}
           </p>
         ) : (
           <p className="mt-8 max-w-2xl text-[clamp(1.8rem,3vw,2.9rem)] font-medium leading-tight text-balance">
@@ -190,7 +198,10 @@ export function VoiceSessionStage({
   );
 }
 
-function captionTail(text: string, maxChars = 180) {
+function captionTail(text: string, maxChars = 220) {
   if (text.length <= maxChars) return text;
-  return `…${text.slice(-maxChars)}`;
+  const tail = text.slice(-maxChars);
+  const firstSpace = tail.indexOf(" ");
+  // Drop the leading word fragment so the caption never starts mid-word.
+  return `…${firstSpace > 0 && firstSpace < 40 ? tail.slice(firstSpace + 1) : tail}`;
 }

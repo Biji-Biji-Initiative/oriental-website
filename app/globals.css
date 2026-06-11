@@ -445,6 +445,11 @@
     @apply mt-2 text-sm text-white/90;
   }
 
+  /* Turnstile slot: zero footprint until Cloudflare expands a challenge into it. */
+  .hero-email__turnstile {
+    @apply flex justify-center;
+  }
+
   .hero-email--done {
     @apply flex items-start gap-3.5 rounded-2xl border border-[rgba(56,213,123,0.35)] bg-[rgba(56,213,123,0.1)] px-4 py-3.5;
   }
