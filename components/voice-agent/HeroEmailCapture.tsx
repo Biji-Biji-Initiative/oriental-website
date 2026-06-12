@@ -1,14 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { useTurnstile } from "@/components/security/useTurnstile";
+import { useTurnstileToken } from "@/components/security/TurnstileProvider";
 import { useVoice } from "@/components/voice-agent/voice-state";
 
 const emailPattern = /^\S+@\S+\.\S+$/;
 
 export function HeroEmailCapture() {
   const voice = useVoice();
-  const turnstile = useTurnstile("oriental-newsletter", voice.turnstileSiteKey);
+  const turnstile = useTurnstileToken();
   const [email, setEmail] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
@@ -25,7 +25,7 @@ export function HeroEmailCapture() {
     setError("");
     let turnstileToken = "";
     try {
-      turnstileToken = await turnstile.execute();
+      turnstileToken = await turnstile.getToken();
     } catch {
       setBusy(false);
       setError("Could not verify this browser. Try again or email team@mereka.io.");
@@ -98,9 +98,6 @@ export function HeroEmailCapture() {
           {busy ? "Saving..." : "Keep me posted →"}
         </button>
       </div>
-      {/* Cloudflare expands this slot only when it needs a human check; it must
-          stay visibly rendered (sr-only clips the challenge to one pixel). */}
-      <div ref={turnstile.containerRef} className="hero-email__turnstile" />
       {error ? (
         <p className="hero-email__error" id="hero-email-error">
           {error}

@@ -1,7 +1,7 @@
 "use client";
 
 import { Mic2Icon, PhoneOffIcon, RadioIcon, SendIcon, SparklesIcon } from "lucide-react";
-import { type FormEvent, type RefObject, useRef, useState } from "react";
+import { type FormEvent, type RefObject, useEffect, useRef, useState } from "react";
 import { MiniOrb } from "@/components/orb/MiniOrb";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
@@ -53,6 +53,7 @@ export function VoiceSessionStage({
   const completion = handoffCompletion(captured);
   const orbRef = useRef<HTMLDivElement | null>(null);
   const [draft, setDraft] = useState("");
+  const micPermission = useMicrophonePermissionState();
   useVoiceAudioLevel(audioRef, orbRef, connectionStatus === "listening");
   useMicAudioLevel(getLocalStream, orbRef, connectionStatus === "listening");
 
@@ -189,13 +190,42 @@ export function VoiceSessionStage({
           {statusCopy.button}
         </Button>
         <p className="mt-3 text-xs text-white/55">
-          Speak or type anytime. Reka says a quick goodbye if you go quiet, and your typed details stay here.
+          {micPermission === "prompt" && connectionStatus === "idle"
+            ? "Your browser will ask for the microphone once — choose “Allow while visiting” so it never asks again."
+            : "Speak or type anytime. Reka says a quick goodbye if you go quiet, and your typed details stay here."}
         </p>
         {/* biome-ignore lint/a11y/useMediaCaption: Live WebRTC audio streams live captions above; the transcript log is the accessible record. */}
         <audio autoPlay ref={audioRef} />
       </div>
     </div>
   );
+}
+
+/**
+ * Live microphone permission state, so the stage can warn first-timers that a
+ * browser prompt is coming (and coach the persistent grant). Returns null when
+ * the Permissions API cannot answer (e.g. Firefox) — no hint is shown.
+ */
+function useMicrophonePermissionState() {
+  const [state, setState] = useState<PermissionState | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    let status: PermissionStatus | null = null;
+    navigator.permissions
+      ?.query({ name: "microphone" as PermissionName })
+      .then((result) => {
+        if (cancelled) return;
+        status = result;
+        setState(result.state);
+        result.onchange = () => setState(result.state);
+      })
+      .catch(() => null);
+    return () => {
+      cancelled = true;
+      if (status) status.onchange = null;
+    };
+  }, []);
+  return state;
 }
 
 function captionTail(text: string, maxChars = 220) {

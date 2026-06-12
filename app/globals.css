@@ -445,9 +445,12 @@
     @apply mt-2 text-sm text-white/90;
   }
 
-  /* Turnstile slot: zero footprint until Cloudflare expands a challenge into it. */
-  .hero-email__turnstile {
-    @apply flex justify-center;
+  /* Page-level Turnstile slot: zero footprint until Cloudflare expands a
+     challenge into it. Fixed above everything (including the voice dialog at
+     z-50) and pointer-events restored so the checkbox stays clickable under
+     Radix's modal body lock. */
+  .turnstile-anchor {
+    @apply pointer-events-auto fixed bottom-4 left-1/2 z-[140] -translate-x-1/2;
   }
 
   .hero-email--done {

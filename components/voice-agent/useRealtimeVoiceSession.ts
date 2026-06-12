@@ -31,7 +31,7 @@ export type VoiceReviewMetadata = {
 type VoiceSessionResponse = {
   ok?: boolean;
   error?: string;
-  client_secret?: { value?: string };
+  client_secret?: { value?: string; expires_at?: number };
   session_id?: string;
   review?: { id?: string; token?: string };
   model?: string;
@@ -200,6 +200,62 @@ export function useRealtimeVoiceSession({
     return { ...session, client_secret: { ...session.client_secret, value: clientSecret } };
   }, [getTurnstileToken, segment]);
 
+  type MintedSession = Awaited<ReturnType<typeof mintVoiceSession>>;
+  const prewarmedRef = useRef<{ session: MintedSession; mintedAt: number } | null>(null);
+  const prewarmPromiseRef = useRef<Promise<void> | null>(null);
+
+  const takePrewarmedSession = useCallback((): MintedSession | null => {
+    const cached = prewarmedRef.current;
+    if (!cached) return null;
+    prewarmedRef.current = null;
+    // expires_at is unix seconds from OpenAI; leave headroom for the SDP
+    // handshake. Fall back to the documented 300s TTL when it is absent.
+    const expiresAtMs =
+      cached.session.client_secret.expires_at && cached.session.client_secret.expires_at > 0
+        ? cached.session.client_secret.expires_at * 1000
+        : cached.mintedAt + 270_000;
+    return expiresAtMs > Date.now() + 20_000 ? cached.session : null;
+  }, []);
+
+  /**
+   * Mint the ephemeral session while the visitor is still reading the dialog,
+   * so the tap on "start" only pays for the microphone and the WebRTC
+   * handshake. Failures stay silent — the tap path re-mints and surfaces them.
+   */
+  const prewarmVoiceSession = useCallback(() => {
+    if (statusRef.current !== "idle") return;
+    if (prewarmPromiseRef.current) return;
+    const cached = prewarmedRef.current;
+    if (cached) {
+      const stillFresh =
+        (cached.session.client_secret.expires_at && cached.session.client_secret.expires_at > 0
+          ? cached.session.client_secret.expires_at * 1000
+          : cached.mintedAt + 270_000) >
+        Date.now() + 30_000;
+      if (stillFresh) return;
+      prewarmedRef.current = null;
+    }
+    prewarmPromiseRef.current = mintVoiceSession()
+      .then((session) => {
+        prewarmedRef.current = { session, mintedAt: Date.now() };
+      })
+      .catch(() => null)
+      .then(() => {
+        prewarmPromiseRef.current = null;
+      });
+  }, [mintVoiceSession]);
+
+  const obtainVoiceSession = useCallback(async (): Promise<MintedSession> => {
+    const cached = takePrewarmedSession();
+    if (cached) return cached;
+    if (prewarmPromiseRef.current) {
+      await prewarmPromiseRef.current;
+      const settled = takePrewarmedSession();
+      if (settled) return settled;
+    }
+    return mintVoiceSession();
+  }, [mintVoiceSession, takePrewarmedSession]);
+
   const connectVoice = useCallback(async () => {
     // Guard on refs, not React state: a double-click during the permission
     // query would otherwise start two connect flows and spend quota twice.
@@ -211,7 +267,7 @@ export function useRealtimeVoiceSession({
       if (permission === "denied") throw new VoiceConnectionFailure("mic_denied");
 
       let stream: MediaStream;
-      let session: Awaited<ReturnType<typeof mintVoiceSession>>;
+      let session: MintedSession;
       if (permission === "granted") {
         // Returning visitor: the mic opens silently, so mint in parallel.
         setStatus("connecting");
@@ -219,14 +275,15 @@ export function useRealtimeVoiceSession({
         // Pre-attach a handler so a late mic rejection after a mint failure
         // cannot surface as an unhandled promise rejection.
         streamPromise.catch(() => null);
-        [stream, session] = await Promise.all([streamPromise, mintVoiceSession()]);
+        [stream, session] = await Promise.all([streamPromise, obtainVoiceSession()]);
       } else {
         // First visit: surface the browser prompt immediately, and only spend
-        // the daily voice quota once the microphone is actually granted.
+        // the daily voice quota once the microphone is actually granted —
+        // unless a prewarmed session already spent it.
         setStatus("requesting_mic");
         stream = await acquireMicStream();
         setStatus("connecting");
-        session = await mintVoiceSession();
+        session = await obtainVoiceSession();
       }
 
       if (session.review?.id && session.review?.token) {
@@ -312,7 +369,7 @@ export function useRealtimeVoiceSession({
     acquireMicStream,
     armMaxTimer,
     audioRef,
-    mintVoiceSession,
+    obtainVoiceSession,
     onEvent,
     onSessionReady,
     resetIdleTimer,
@@ -328,7 +385,7 @@ export function useRealtimeVoiceSession({
 
   const getLocalStream = useCallback(() => localStreamRef.current, []);
 
-  return { connectVoice, connectionStatus, getLocalStream, sendClientEvents, teardownVoice };
+  return { connectVoice, connectionStatus, getLocalStream, prewarmVoiceSession, sendClientEvents, teardownVoice };
 }
 
 function positiveOr(value: number | undefined, fallback: number) {
