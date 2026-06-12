@@ -56,7 +56,7 @@ export function SiteNav() {
       if (event.code === "Escape") setMenuOpen(false);
       if (event.code === "Space" && event.target === document.body && !menuOpen) {
         event.preventDefault();
-        voice.open();
+        voice.open(undefined, { autoStart: true });
       }
     };
     window.addEventListener("keydown", handler);
@@ -110,7 +110,9 @@ export function SiteNav() {
           <button
             aria-label="Talk to Mereka"
             className="flex items-center gap-2 rounded-full border border-white/16 bg-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] backdrop-blur transition hover:bg-white/18"
-            onClick={() => voice.open()}
+            onClick={() => voice.open(undefined, { autoStart: true })}
+            onFocus={voice.prewarm}
+            onPointerEnter={voice.prewarm}
             type="button"
           >
             <MiniOrb size={24} />
@@ -137,7 +139,7 @@ export function SiteNav() {
               className="site-nav__mobile-voice"
               onClick={() => {
                 closeMenu();
-                voice.open();
+                voice.open(undefined, { autoStart: true });
               }}
               type="button"
             >

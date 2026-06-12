@@ -37,8 +37,8 @@ export function voiceStatusCopy(status: VoiceConnectionStatus) {
   if (status === "connecting") {
     return {
       label: "Setting up",
-      detail: "Preparing a live voice line with Reka.",
-      button: "Setting up...",
+      detail: "Reka is picking up — she'll greet you in a second.",
+      button: "Connecting...",
     };
   }
   if (status === "listening") {
@@ -114,5 +114,10 @@ export const idleGoodbyeInstruction =
 export const reconnectVoiceInstruction =
   "The visitor reconnected to voice and the earlier conversation context was just provided. Do not repeat the opening pitch and do not greet from scratch. Acknowledge in one short sentence that you are back, then continue exactly where the conversation left off.";
 
-export const openingVoiceInstruction =
+const openingVoiceInstructionBase =
   "Start the intake now as Reka, pronounced REH-ka. Sound like a bright KL Malaysian host, not American: faster, upbeat, practical, warm. Say one short opener: we are moving into Oriental, it is a new chapter for Mereka, and we are excited to build it with the right people. Then ask what the visitor wants to build or explore. Do not explain pronunciation, tools, limitations, privacy, or the form.";
+
+export function openingVoiceInstruction(knownVisitor: boolean) {
+  if (!knownVisitor) return openingVoiceInstructionBase;
+  return `${openingVoiceInstructionBase} The handoff context already carries details remembered from this visitor's earlier handoff: greet them back warmly by name if a name is present, treat them as a returning partner, and never re-ask details that are already filled in.`;
+}

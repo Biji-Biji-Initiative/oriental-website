@@ -31,7 +31,13 @@ export function EcosystemGrid() {
           Designed for educators, creatives, organisations, communities, entrepreneurs, and future-focused
           collaborators.
         </p>
-        <button className="voice-cta" onClick={() => voice.open()} type="button">
+        <button
+          className="voice-cta"
+          onClick={() => voice.open(undefined, { autoStart: true })}
+          onFocus={voice.prewarm}
+          onPointerEnter={voice.prewarm}
+          type="button"
+        >
           <span className="voice-cta__orb">
             <MiniOrb size={32} />
           </span>

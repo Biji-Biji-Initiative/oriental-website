@@ -10,6 +10,8 @@ type VoiceButtonProps = ComponentPropsWithoutRef<"button"> & {
   intent?: SegmentId;
   prefill?: { email?: string; mode?: "voice" | "form" };
   orb?: boolean;
+  /** Talk CTAs default to starting Reka on the same tap; pass false to just open the workspace. */
+  autoStart?: boolean;
 };
 
 export function VoiceButton({
@@ -18,19 +20,23 @@ export function VoiceButton({
   intent,
   prefill,
   orb = true,
+  autoStart = true,
   type = "button",
   ...props
 }: VoiceButtonProps) {
   const voice = useVoice();
+  const startsVoice = autoStart && prefill?.mode !== "form";
   return (
     <button
       className={cn(
         "group inline-flex items-center gap-3 rounded-full border border-white/20 bg-white px-4 py-3 text-left text-sm font-semibold text-mk-off-black shadow-[0_18px_60px_rgba(0,0,0,0.22)] transition hover:-translate-y-0.5 hover:bg-mk-horizon focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-mk-anchor-blue",
         className,
       )}
-      onClick={() => voice.open(intent, prefill)}
+      onClick={() => voice.open(intent, { ...prefill, autoStart: startsVoice })}
       type={type}
       {...props}
+      onFocus={startsVoice ? voice.prewarm : undefined}
+      onPointerEnter={startsVoice ? voice.prewarm : undefined}
     >
       {orb ? <MiniOrb /> : null}
       {children}

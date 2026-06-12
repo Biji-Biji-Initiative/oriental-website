@@ -17,6 +17,7 @@ import {
   serializeTypedInterruption,
   serializeUserText,
 } from "@/lib/voice/client-events";
+import { recallHandoff, rememberHandoff } from "@/lib/voice/handoff-memory";
 import {
   fetchWithTimeout,
   LEAD_SUBMIT_TIMEOUT_MS,
@@ -31,6 +32,7 @@ import {
   type VoiceReviewCredentials,
 } from "@/lib/voice/review-snapshot";
 import { HandoffPanel } from "./HandoffPanel";
+import { playLiveChime } from "./live-chime";
 import {
   useRealtimeVoiceSession,
   type VoiceCloseReason,
@@ -51,10 +53,12 @@ type VoiceAgentDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   intent?: SegmentId;
-  prefill?: { email?: string; mode?: "voice" | "form" };
+  prefill?: { email?: string; mode?: "voice" | "form"; autoStart?: boolean };
+  /** Bumped on talk-CTA hover/focus: pre-mint a session before the tap. */
+  prewarmSignal?: number;
 };
 
-export function VoiceAgentDialog({ open, onOpenChange, intent, prefill }: VoiceAgentDialogProps) {
+export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, prewarmSignal }: VoiceAgentDialogProps) {
   const [status, setStatus] = useState<"idle" | "submitted">("idle");
   const [submitting, setSubmitting] = useState(false);
   const [activeTopicId, setActiveTopicId] = useState<string | null>(null);
@@ -143,6 +147,7 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill }: VoiceA
           };
         }
         const routedTo = getSegment(leadState.segment).routedTo;
+        rememberHandoff(parsed.data, leadState.segment);
         if (source === "voice") {
           const review = currentReviewCredentials();
           if (review) {
@@ -209,7 +214,15 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill }: VoiceA
 
   useEffect(() => {
     if (!open) return;
-    runtime.reset({ segment: intent ?? "other", email: prefill?.email });
+    // Returning visitors are greeted like known partners: identity fields and
+    // segment come back from local memory; the brief always starts fresh.
+    const remembered = recallHandoff();
+    runtime.reset({
+      segment: intent ?? remembered?.segment ?? "other",
+      email: prefill?.email || remembered?.email,
+      name: remembered?.name,
+      org: remembered?.org,
+    });
     setStatus("idle");
     setActiveTopicId(null);
     setSubmitting(false);
@@ -238,18 +251,65 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill }: VoiceA
     prewarmVoiceSession();
   }, [open, prefill, prewarmVoiceSession]);
 
+  // Hover/focus on a talk CTA, before any click: same warm-up, earlier.
+  useEffect(() => {
+    if (!prewarmSignal) return;
+    preconnect("https://api.openai.com");
+    prewarmVoiceSession();
+  }, [prewarmSignal, prewarmVoiceSession]);
+
+  // Direct-talk CTAs: the tap that opened the dialog already meant "talk", so
+  // connect immediately — unless the mic is knowingly blocked, in which case
+  // the workspace opens quietly for typing instead of yelling an error.
+  const autoStartedRef = useRef(false);
+  useEffect(() => {
+    if (!open) {
+      autoStartedRef.current = false;
+      return;
+    }
+    if (!prefill?.autoStart || autoStartedRef.current || status !== "idle") return;
+    autoStartedRef.current = true;
+    let cancelled = false;
+    const start = () => {
+      if (!cancelled) connectVoice();
+    };
+    if (navigator.permissions?.query) {
+      navigator.permissions
+        .query({ name: "microphone" as PermissionName })
+        .then((result) => {
+          if (result.state !== "denied") start();
+        })
+        .catch(start);
+    } else {
+      start();
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [open, prefill, status, connectVoice]);
+
+  // Closing the workspace must always release the microphone — a live mic
+  // behind a closed dialog is a privacy bug, not a resumable session.
+  useEffect(() => {
+    if (!open) teardownVoiceRef.current?.("manual");
+  }, [open]);
+
   useEffect(() => {
     if (connectionStatus !== "listening") {
       openedVoiceTurnRef.current = false;
       return;
     }
-    toast.success("Voice is live.", { id: voiceToastIds.live });
+    // The chime is the "she's live" cue — presence you hear, not another toast.
+    playLiveChime();
     const current = { segment: stateRef.current.segment, captured: stateRef.current.captured };
     const resumedTranscript = stateRef.current.transcript.slice(-12);
+    const knownVisitor = current.captured.name.trim().length > 0 || current.captured.org.trim().length > 0;
     lastSyncedHandoffRef.current = handoffSyncKey(current);
     sendClientEvents([
       serializeHandoffContext(current, undefined, resumedTranscript.length > 0 ? { resumedTranscript } : {}),
-      serializeResponseCreate(resumedTranscript.length > 0 ? reconnectVoiceInstruction : openingVoiceInstruction),
+      serializeResponseCreate(
+        resumedTranscript.length > 0 ? reconnectVoiceInstruction : openingVoiceInstruction(knownVisitor),
+      ),
     ]);
     openedVoiceTurnRef.current = true;
   }, [connectionStatus, sendClientEvents, stateRef]);
