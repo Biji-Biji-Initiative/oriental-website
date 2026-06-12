@@ -46,8 +46,13 @@ export function useVoiceRuntime({ initialSegment, prefillEmail, submitLead, onEn
     stateRef.current = { ...stateRef.current, segment, captured, transcript };
   }, [captured, segment, transcript]);
 
-  const reset = useCallback((initial: { segment: SegmentId; email?: string }) => {
-    const nextCaptured = { ...emptyCapturedLead, email: initial.email ?? "" };
+  const reset = useCallback((initial: { segment: SegmentId; email?: string; name?: string; org?: string }) => {
+    const nextCaptured = {
+      ...emptyCapturedLead,
+      email: initial.email ?? "",
+      name: initial.name ?? "",
+      org: initial.org ?? "",
+    };
     setSegment(initial.segment);
     setCaptured(nextCaptured);
     setTranscript([]);
