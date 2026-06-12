@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import { TurnstileProvider } from "@/components/security/TurnstileProvider";
 import { SiteNav } from "@/components/site/SiteNav";
 import { VoiceRail } from "@/components/site/VoiceRail";
 import { Toaster } from "@/components/ui/sonner";
@@ -66,18 +67,23 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${poppins.variable} ${fraunces.variable} scroll-smooth antialiased`}>
       <body className="min-h-svh bg-mk-paper text-mk-off-black">
+        {/* Warm the TLS connections the voice flow depends on while the visitor
+            is still reading; React hoists these into <head>. */}
+        <link href="https://challenges.cloudflare.com" rel="preconnect" />
         <a
           href="#main-content"
           className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[100] focus:rounded-full focus:bg-mk-off-black focus:px-5 focus:py-2.5 focus:text-sm focus:font-medium focus:text-white"
         >
           Skip to content
         </a>
-        <VoiceProvider>
-          <SiteNav />
-          {children}
-          <VoiceRail />
-          <Toaster />
-        </VoiceProvider>
+        <TurnstileProvider>
+          <VoiceProvider>
+            <SiteNav />
+            {children}
+            <VoiceRail />
+            <Toaster />
+          </VoiceProvider>
+        </TurnstileProvider>
       </body>
     </html>
   );

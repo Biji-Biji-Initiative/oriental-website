@@ -28,7 +28,9 @@ export async function POST(request: NextRequest) {
     return noStoreJson({ ok: false, error: "turnstile_failed" }, { status: 403 });
   }
 
-  const dailyLimit = readPositiveIntEnv("VOICE_SESSION_DAILY_LIMIT", 3);
+  // Opening the voice dialog pre-mints a session (never-connected secrets just
+  // expire), so the budget must cover browsing behaviour, not only real calls.
+  const dailyLimit = readPositiveIntEnv("VOICE_SESSION_DAILY_LIMIT", 8);
   const limit = await checkRateLimit(`voice:${ipHash}`, dailyLimit, 24 * 60 * 60 * 1000);
   if (!limit.ok) {
     logWarn("voice_session.rate_limited", {

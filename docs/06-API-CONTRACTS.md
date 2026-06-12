@@ -219,7 +219,7 @@ type VoiceSessionResponse = {
 |---|---|---|
 | 400 | `invalid_payload` | Zod validation failed. |
 | 403 | `turnstile_failed` | Cloudflare verify rejected the token. |
-| 429 | `voice_limit_reached` | More than `VOICE_SESSION_DAILY_LIMIT` (default 3) minted sessions per IP per day. |
+| 429 | `voice_limit_reached` | More than `VOICE_SESSION_DAILY_LIMIT` (default 8) minted sessions per IP per day — opening the voice dialog pre-mints one, so the budget covers browsing, not only connected calls. |
 | 503 | `openai_unconfigured` | `OPENAI_API_KEY` missing. |
 | 502 | `openai_<status>` | OpenAI client-secret request failed. |
 | 502 | `openai_invalid_secret` | OpenAI response did not contain a usable secret. |

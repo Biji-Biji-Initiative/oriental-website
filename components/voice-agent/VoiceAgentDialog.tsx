@@ -2,9 +2,10 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { preconnect } from "react-dom";
 import { type UseFormReturn, useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { useTurnstile } from "@/components/security/useTurnstile";
+import { useTurnstileToken } from "@/components/security/TurnstileProvider";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { leadFormSchema } from "@/lib/schemas";
 import { getSegment, type SegmentId, segmentOptions } from "@/lib/segments";
@@ -51,14 +52,13 @@ type VoiceAgentDialogProps = {
   onOpenChange: (open: boolean) => void;
   intent?: SegmentId;
   prefill?: { email?: string; mode?: "voice" | "form" };
-  turnstileSiteKey?: string;
 };
 
-export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstileSiteKey }: VoiceAgentDialogProps) {
+export function VoiceAgentDialog({ open, onOpenChange, intent, prefill }: VoiceAgentDialogProps) {
   const [status, setStatus] = useState<"idle" | "submitted">("idle");
   const [submitting, setSubmitting] = useState(false);
   const [activeTopicId, setActiveTopicId] = useState<string | null>(null);
-  const turnstile = useTurnstile("oriental-intake", turnstileSiteKey);
+  const turnstile = useTurnstileToken();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const submittingRef = useRef(false);
   const lastSyncedHandoffRef = useRef("");
@@ -110,7 +110,7 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
         }
         let turnstileToken = "";
         try {
-          turnstileToken = await turnstile.execute();
+          turnstileToken = await turnstile.getToken();
         } catch {
           toast.error("Could not verify this browser. Try again in a moment.");
           return { ok: false, error: "turnstile_unavailable" };
@@ -189,19 +189,20 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
   });
   formRef.current = form;
 
-  const { connectVoice, connectionStatus, getLocalStream, sendClientEvents, teardownVoice } = useRealtimeVoiceSession({
-    audioRef,
-    getTurnstileToken: turnstile.execute,
-    onClose: handleVoiceClose,
-    onEvent: runtime.handleRealtimeEvent,
-    onIdleWarning: () => {
-      sendClientEventsRef.current?.(serializeResponseCreate(idleGoodbyeInstruction));
-    },
-    onSessionReady: (metadata) => {
-      reviewRef.current = metadata;
-    },
-    segment,
-  });
+  const { connectVoice, connectionStatus, getLocalStream, prewarmVoiceSession, sendClientEvents, teardownVoice } =
+    useRealtimeVoiceSession({
+      audioRef,
+      getTurnstileToken: turnstile.getToken,
+      onClose: handleVoiceClose,
+      onEvent: runtime.handleRealtimeEvent,
+      onIdleWarning: () => {
+        sendClientEventsRef.current?.(serializeResponseCreate(idleGoodbyeInstruction));
+      },
+      onSessionReady: (metadata) => {
+        reviewRef.current = metadata;
+      },
+      segment,
+    });
   teardownVoiceRef.current = teardownVoice;
   sendClientEventsRef.current = sendClientEvents;
   connectionStatusRef.current = connectionStatus;
@@ -227,6 +228,15 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
   useEffect(() => {
     if (status === "submitted") teardownVoice("manual");
   }, [status, teardownVoice]);
+
+  // The dialog opening IS the intent signal: warm the TLS connection and mint
+  // the ephemeral session while the visitor reads, so the start tap only pays
+  // for the microphone and the WebRTC handshake.
+  useEffect(() => {
+    if (!open || prefill?.mode === "form") return;
+    preconnect("https://api.openai.com");
+    prewarmVoiceSession();
+  }, [open, prefill, prewarmVoiceSession]);
 
   useEffect(() => {
     if (connectionStatus !== "listening") {
@@ -321,9 +331,6 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, turnstil
           </aside>
 
           <main className="order-1 min-w-0 p-5 sm:p-8 lg:order-none">
-            {/* Turnstile renders here only when Cloudflare requires interaction;
-                keep it a centred, visible slot rather than an unstyled div. */}
-            <div className="flex justify-center" ref={turnstile.containerRef} />
             <VoiceSessionStage
               activeTopicId={activeTopicId}
               assistantDraft={runtime.assistantDraft}

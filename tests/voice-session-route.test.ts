@@ -46,6 +46,7 @@ describe("POST /api/voice/session", () => {
   });
 
   it("does not spend daily voice quota on invalid payloads", async () => {
+    process.env.VOICE_SESSION_DAILY_LIMIT = "3";
     const fetchMock = mockOpenAiFetch();
     vi.stubGlobal("fetch", fetchMock);
 
@@ -83,6 +84,7 @@ describe("POST /api/voice/session", () => {
   });
 
   it("does not spend daily voice quota on failed Turnstile checks", async () => {
+    process.env.VOICE_SESSION_DAILY_LIMIT = "3";
     process.env.TURNSTILE_SECRET_KEY = "turnstile-secret";
     let turnstileOk = false;
     const fetchMock = vi.fn(async (url: string | URL | Request) => {
