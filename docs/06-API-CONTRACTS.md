@@ -192,6 +192,7 @@ open a WebRTC session without receiving `OPENAI_API_KEY`.
 type VoiceSessionRequest = {
   turnstileToken?: string;
   intent?: Segment;
+  variant?: string; // QA voice variant id; resolved server-side, unknown ids fall back to the env default
   utm?: Record<string, string>;
 };
 ```
@@ -204,8 +205,10 @@ type VoiceSessionResponse = {
   client_secret: { value: string; expires_at: number };
   session_id: string;
   model: string; // default "gpt-realtime-2"
-  voice: string; // source fallback "marin"; production currently "coral"
+  voice: string; // source fallback "marin"; production currently "coral"; a selected variant overrides this
   speed: number; // source fallback 1.18; production currently 1.28; clamped to OpenAI's 0.25..1.5 range
+  variant: string | null; // resolved voice variant id, or null when none selected
+
   transcription_model: string; // default "gpt-4o-transcribe" via OPENAI_REALTIME_TRANSCRIPTION_MODEL
   noise_reduction: "near_field" | "far_field"; // near_field for mobile user agents, far_field otherwise
   limits: { max_duration_ms: number; idle_timeout_ms: number }; // VOICE_MAX_DURATION_MS / VOICE_IDLE_TIMEOUT_MS, defaults 150000 / 20000

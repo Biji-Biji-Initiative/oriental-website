@@ -4,6 +4,7 @@ import { TurnstileProvider } from "@/components/security/TurnstileProvider";
 import { SiteNav } from "@/components/site/SiteNav";
 import { VoiceRail } from "@/components/site/VoiceRail";
 import { Toaster } from "@/components/ui/sonner";
+import { VoiceVariantPicker } from "@/components/voice-agent/VoiceVariantPicker";
 import { VoiceProvider } from "@/components/voice-agent/voice-state";
 import { siteMeta } from "@/lib/content";
 import "./globals.css";
@@ -81,6 +82,7 @@ export default function RootLayout({
             <SiteNav />
             {children}
             <VoiceRail />
+            <VoiceVariantPicker />
             <Toaster />
           </VoiceProvider>
         </TurnstileProvider>

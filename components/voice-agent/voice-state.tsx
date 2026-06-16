@@ -15,11 +15,16 @@ type VoiceMode = "voice" | "form";
 
 export type VoicePrefill = { email?: string; mode?: VoiceMode; autoStart?: boolean };
 
+const VOICE_VARIANT_STORAGE_KEY = "oriental.voiceVariant";
+
 type VoiceContextValue = {
   open: (intent?: SegmentId, prefill?: VoicePrefill) => void;
   close: () => void;
   /** Hover/focus on a talk CTA: mount the dialog and pre-mint a session so the tap is instant. */
   prewarm: () => void;
+  /** QA voice variant id (undefined = env default), set by the floating picker. */
+  voiceVariant: string | undefined;
+  setVoiceVariant: (variantId: string | undefined) => void;
 };
 
 const VoiceContext = createContext<VoiceContextValue | null>(null);
@@ -30,6 +35,27 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   const [intent, setIntent] = useState<SegmentId | undefined>();
   const [prefill, setPrefill] = useState<VoicePrefill | undefined>();
   const [prewarmSignal, setPrewarmSignal] = useState(0);
+  const [voiceVariant, setVoiceVariantState] = useState<string | undefined>();
+
+  // Persist the team's QA pick so it survives reloads during a tasting session.
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(VOICE_VARIANT_STORAGE_KEY);
+      if (stored) setVoiceVariantState(stored);
+    } catch {
+      // localStorage unavailable (private mode / SSR) — fall back to env default.
+    }
+  }, []);
+
+  const setVoiceVariant = useCallback((variantId: string | undefined) => {
+    setVoiceVariantState(variantId);
+    try {
+      if (variantId) window.localStorage.setItem(VOICE_VARIANT_STORAGE_KEY, variantId);
+      else window.localStorage.removeItem(VOICE_VARIANT_STORAGE_KEY);
+    } catch {
+      // Non-fatal: the in-memory selection still applies for this session.
+    }
+  }, []);
 
   const openVoice = useCallback((nextIntent?: SegmentId, nextPrefill?: VoicePrefill) => {
     setIntent(nextIntent);
@@ -53,7 +79,10 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     return () => window.clearTimeout(timer);
   }, []);
 
-  const value = useMemo(() => ({ open: openVoice, close, prewarm }), [openVoice, close, prewarm]);
+  const value = useMemo(
+    () => ({ open: openVoice, close, prewarm, voiceVariant, setVoiceVariant }),
+    [openVoice, close, prewarm, voiceVariant, setVoiceVariant],
+  );
 
   return (
     <VoiceContext.Provider value={value}>
@@ -65,6 +94,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
           open={open}
           prefill={prefill}
           prewarmSignal={prewarmSignal}
+          voiceVariant={voiceVariant}
         />
       ) : null}
     </VoiceContext.Provider>

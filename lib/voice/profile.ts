@@ -270,13 +270,18 @@ export const VOICE_PROFILE = {
   },
 } satisfies VoiceProfile;
 
-export function buildVoiceInstructions(profile: VoiceProfile = VOICE_PROFILE, initialSegment?: SegmentId) {
+export function buildVoiceInstructions(
+  profile: VoiceProfile = VOICE_PROFILE,
+  initialSegment?: SegmentId,
+  personaNote?: string,
+) {
   const initial = initialSegment ? SEGMENTS[initialSegment] : null;
   return [
     section("Role and Objective", profile.roleAndObjective),
     section("Accent and Delivery", profile.accentAndDelivery),
     section("Website and Project Context", profile.siteContext),
     section("Personality and Tone", profile.personalityAndTone),
+    personaNote ? section("Voice Variant Tuning", [personaNote]) : "",
     section("Sample Phrases", profile.samplePhrases),
     section("Language", profile.language),
     section("Reasoning", profile.reasoning),
