@@ -116,7 +116,7 @@ describe("createRealtimeClientSecret", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await createRealtimeClientSecret("safe-user", "ai", "desktop", "malay-warm");
+    const result = await createRealtimeClientSecret("safe-user", "technology", "desktop", "malay-warm");
 
     expect(result.variant).toBe("malay-warm");
     expect(result.voice).toBe("coral");
@@ -136,7 +136,7 @@ describe("createRealtimeClientSecret", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await createRealtimeClientSecret("safe-user", "ai", "desktop", "does-not-exist");
+    const result = await createRealtimeClientSecret("safe-user", "technology", "desktop", "does-not-exist");
 
     expect(result.variant).toBeNull();
     expect(result.voice).toBe("marin");
