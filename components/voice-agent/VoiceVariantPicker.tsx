@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
-import { DEFAULT_VOICE_VARIANT_ID, VOICE_VARIANTS } from "@/lib/voice/variants";
+import { VOICE_VARIANTS } from "@/lib/voice/variants";
 import { useVoice } from "./voice-state";
 
 /**
@@ -30,7 +30,8 @@ export function VoiceVariantPicker() {
 
   if (!enabled) return null;
 
-  const activeId = voiceVariant ?? DEFAULT_VOICE_VARIANT_ID;
+  // No selection = the site default voice (env) is used; don't fake-highlight one.
+  const activeLabel = voiceVariant ? labelFor(voiceVariant) : "Site default";
 
   if (collapsed) {
     return (
@@ -39,7 +40,7 @@ export function VoiceVariantPicker() {
         onClick={() => setCollapsed(false)}
         type="button"
       >
-        🎙 Voice: {labelFor(activeId)}
+        🎙 Voice: {activeLabel}
       </button>
     );
   }
@@ -61,8 +62,22 @@ export function VoiceVariantPicker() {
         </button>
       </header>
       <div className="grid gap-1.5">
+        <button
+          aria-pressed={!voiceVariant}
+          className={cn(
+            "rounded-xl border px-3 py-2 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mk-horizon",
+            !voiceVariant
+              ? "border-mk-horizon/50 bg-mk-horizon/15"
+              : "border-white/10 bg-white/[0.04] hover:border-white/25 hover:bg-white/[0.08]",
+          )}
+          onClick={() => setVoiceVariant(undefined)}
+          type="button"
+        >
+          <div className="text-sm font-semibold">Site default</div>
+          <div className="mt-0.5 text-xs leading-4 text-white/55">The currently shipped voice (env).</div>
+        </button>
         {VOICE_VARIANTS.map((variant) => {
-          const active = variant.id === activeId;
+          const active = variant.id === voiceVariant;
           return (
             <button
               aria-pressed={active}

@@ -93,7 +93,7 @@ docs/                     # handover specs — reference, not auto-synced to cod
 | Nav active section underline | `components/site/SiteNav.tsx`, `.site-nav__link--active` |
 | Partner segments, openers, routing labels | `lib/segments.ts` |
 | Voice persona, guardrails, tool descriptions, VAD/transcription/timeouts | `lib/voice/profile.ts` |
-| Voice A/B variants (timbre/speed/persona) + QA picker | `lib/voice/variants.ts`, `components/voice-agent/VoiceVariantPicker.tsx`; flag `VOICE_VARIANT_PICKER` |
+| Voice A/B variants (distinct Malaysian registers: voice/speed/persona) + QA picker | `lib/voice/variants.ts`, `components/voice-agent/VoiceVariantPicker.tsx`; flag `VOICE_VARIANT_PICKER` |
 | Realtime protocol / transcript state machine / capture grounding | `lib/voice/realtime-events.ts` + `tests/realtime-events.test.ts` |
 | Voice UI / WebRTC wiring | `components/voice-agent/useRealtimeVoiceSession.ts`, `useVoiceRuntime.ts`, `VoiceAgentDialog.tsx`, `VoiceSessionStage.tsx` |
 | Voice orb look & motion | `components/voice-agent/VoiceSessionStage.tsx`, `.voice-orb*` in `app/globals.css`, level source in `useVoiceAudioLevel.ts` |

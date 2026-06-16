@@ -14,10 +14,17 @@ describe("voice variants catalog", () => {
       expect(variant.voice.length).toBeGreaterThan(0);
       expect(variant.speed).toBeGreaterThanOrEqual(0.25);
       expect(variant.speed).toBeLessThanOrEqual(1.5);
-      // Persona tuning must not restate the name or accent the base profile owns.
-      expect(variant.personaNote.length).toBeGreaterThan(0);
-      expect(variant.personaNote).not.toMatch(/Malaysian|accent|你好|Reka/i);
+      // Persona notes retune register, so they reference Manglish/Bahasa freely,
+      // but must not restate the name — the base profile owns Reka's identity.
+      expect(variant.personaNote.length).toBeGreaterThan(40);
+      expect(variant.personaNote).not.toMatch(/\bReka\b/);
     }
+  });
+
+  it("gives every variant a distinct register, voice, and persona", () => {
+    expect(new Set(VOICE_VARIANTS.map((variant) => variant.voice)).size).toBe(VOICE_VARIANTS.length);
+    expect(new Set(VOICE_VARIANTS.map((variant) => variant.personaNote)).size).toBe(VOICE_VARIANTS.length);
+    expect(new Set(VOICE_VARIANTS.map((variant) => variant.speed)).size).toBe(VOICE_VARIANTS.length);
   });
 
   it("resolves known ids and rejects everything else", () => {

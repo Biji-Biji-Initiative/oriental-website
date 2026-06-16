@@ -116,13 +116,13 @@ describe("createRealtimeClientSecret", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await createRealtimeClientSecret("safe-user", "ai", "desktop", "coral-warm");
+    const result = await createRealtimeClientSecret("safe-user", "ai", "desktop", "malay-warm");
 
-    expect(result.variant).toBe("coral-warm");
+    expect(result.variant).toBe("malay-warm");
     expect(result.voice).toBe("coral");
-    expect(result.speed).toBe(1.12);
+    expect(result.speed).toBe(1.06);
     const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
-    expect(body.session.audio.output).toEqual({ voice: "coral", speed: 1.12 });
+    expect(body.session.audio.output).toEqual({ voice: "coral", speed: 1.06 });
     expect(body.session.instructions).toContain("# Voice Variant Tuning");
   });
 
