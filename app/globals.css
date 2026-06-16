@@ -254,50 +254,80 @@
     @apply mt-3 inline-flex items-center text-[12.5px] font-semibold tracking-wide text-mk-anchor-blue transition group-hover:translate-x-0.5 group-hover:text-mk-vivid-blue;
   }
 
-  .timeline {
-    @apply relative mt-16 grid gap-8 border-t border-mk-off-black/12 lg:grid-cols-3 lg:gap-0;
+  .timeline-table {
+    @apply mt-16 overflow-hidden rounded-lg border border-mk-off-black/12;
   }
 
-  .timeline::before {
-    content: "";
-    @apply absolute top-[-3px] left-0 h-[5px] bg-mk-anchor-blue transition-[width] duration-500 ease-out;
-    width: 33.33%;
+  .timeline-table table {
+    @apply w-full border-collapse text-left;
   }
 
-  .timeline[data-progress="2"]::before {
-    width: 66.66%;
+  .timeline-table thead th {
+    @apply bg-mk-off-black px-6 py-4 text-[12px] font-semibold tracking-[0.16em] text-white uppercase;
   }
 
-  .timeline[data-progress="3"]::before {
-    width: 100%;
+  .timeline-table tbody tr {
+    @apply border-t border-mk-off-black/10;
   }
 
-  .timeline-step {
-    @apply relative cursor-pointer border-0 bg-transparent p-0 pt-9 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-mk-anchor-blue lg:pr-8;
+  .timeline-table tbody th {
+    @apply px-6 py-5 text-[16px] font-bold tracking-tight text-mk-off-black;
   }
 
-  .timeline-step__marker {
-    @apply absolute top-[-8px] left-0 size-3 rounded-full border-2 border-mk-anchor-blue bg-mk-paper transition-colors;
+  .timeline-table tbody td {
+    @apply px-6 py-5 text-[15.5px] text-mk-off-black/68;
   }
 
-  .timeline-step--done .timeline-step__marker {
-    @apply bg-mk-anchor-blue;
+  .faq-item__summary {
+    @apply flex cursor-pointer list-none items-center justify-between gap-6 py-5 text-[17px] font-semibold tracking-tight text-mk-off-black transition-colors hover:text-mk-anchor-blue;
   }
 
-  .timeline-step__year {
-    @apply text-[clamp(36px,5vw,56px)] font-extrabold leading-none tracking-tight text-mk-anchor-blue;
+  .faq-item__summary::-webkit-details-marker {
+    display: none;
   }
 
-  .timeline-step__phase {
-    @apply mt-3 text-[11px] font-semibold tracking-[0.28em] text-mk-anchor-blue uppercase;
+  .faq-item__icon {
+    @apply flex size-6 shrink-0 items-center justify-center rounded-full border border-mk-off-black/20 text-lg leading-none text-mk-anchor-blue transition-transform duration-200;
   }
 
-  .timeline-step__label {
-    @apply mt-4 text-[22px] font-bold tracking-tight text-mk-off-black;
+  .faq-item[open] .faq-item__icon {
+    @apply rotate-45;
   }
 
-  .timeline-step__copy {
-    @apply mt-3 max-w-[36ch] text-[15.5px] leading-normal text-mk-off-black/64;
+  .faq-item__body {
+    @apply space-y-4 pr-8 pb-6 text-[15.5px] leading-7 text-mk-off-black/72;
+  }
+
+  .faq-item__body ul {
+    @apply grid list-disc gap-2 pl-5 marker:text-mk-anchor-blue;
+  }
+
+  .faq-item__note {
+    @apply rounded-lg border border-mk-off-black/10 bg-white/60 px-4 py-3 text-[14.5px] text-mk-off-black/66;
+  }
+
+  .faq-item__table {
+    @apply overflow-hidden rounded-lg border border-mk-off-black/12;
+  }
+
+  .faq-item__table table {
+    @apply w-full border-collapse text-left;
+  }
+
+  .faq-item__table thead th {
+    @apply bg-mk-off-black px-5 py-3 text-[12px] font-semibold tracking-[0.14em] text-white uppercase;
+  }
+
+  .faq-item__table tbody tr {
+    @apply border-t border-mk-off-black/10;
+  }
+
+  .faq-item__table tbody th {
+    @apply px-5 py-3 font-semibold text-mk-off-black;
+  }
+
+  .faq-item__table tbody td {
+    @apply px-5 py-3 text-mk-off-black/68;
   }
 
   .site-nav__link::after {
@@ -309,12 +339,8 @@
     @apply scale-x-100;
   }
 
-  .eco-lede {
-    @apply mt-8 max-w-[64ch] text-[17px] leading-[1.55] text-white/70;
-  }
-
   .eco-grid {
-    @apply mt-14 grid border-t border-l border-white/12 lg:grid-cols-5;
+    @apply mt-14 grid border-t border-l border-white/12 sm:grid-cols-2 lg:grid-cols-4;
   }
 
   .eco-cell {
@@ -395,30 +421,6 @@
 
   .partner-card__arrow {
     @apply inline-block transition-transform group-hover:translate-x-1;
-  }
-
-  .partners-relevant {
-    @apply mt-20 grid gap-9 border-t border-white/10 pt-9 lg:grid-cols-[280px_1fr] lg:gap-14;
-  }
-
-  .partners-relevant__head {
-    @apply text-[17px] font-semibold tracking-tight text-white;
-  }
-
-  .partners-relevant__body ul {
-    @apply m-0 grid list-none gap-3.5 p-0 md:grid-cols-2 md:gap-x-8;
-  }
-
-  .partners-relevant__body li {
-    @apply flex items-start gap-3 text-[14.5px] leading-normal text-white/80;
-  }
-
-  .partners-relevant__dot {
-    @apply mt-2 size-1.5 shrink-0 rounded-full bg-mk-horizon;
-  }
-
-  .partners-relevant__note {
-    @apply mt-3.5 max-w-[60ch] rounded-xl border border-white/8 bg-white/[0.04] px-[18px] py-3.5 text-[13.5px] leading-normal text-white/65;
   }
 
   .hero-email {
@@ -519,10 +521,6 @@
     @apply w-full justify-center;
   }
 
-  .partners-relevant {
-    @apply grid-cols-1;
-  }
-
   .facilities-pillar {
     @apply grid-cols-[44px_1fr_auto] gap-4 px-1 py-4;
   }
@@ -533,18 +531,6 @@
 
   .facilities-pillar__name {
     @apply text-lg;
-  }
-
-  .timeline::before {
-    display: none;
-  }
-
-  .timeline-step {
-    @apply border-l-2 border-l-mk-anchor-blue pl-6;
-  }
-
-  .timeline-step__marker {
-    @apply top-6 -left-[9px];
   }
 }
 

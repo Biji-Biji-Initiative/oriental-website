@@ -47,6 +47,8 @@ export async function POST(request: NextRequest) {
       name: "Newsletter subscriber",
       email: parsed.data.email,
       org: "Unknown",
+      phone: "",
+      website: "",
       message: "Requested Oriental Building updates from the hero email capture.",
     },
     transcript: [],

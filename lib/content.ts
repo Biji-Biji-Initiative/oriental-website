@@ -3,7 +3,7 @@ import type { SegmentId } from "@/lib/segments";
 export const siteMeta = {
   title: "Oriental · A future we build together",
   description:
-    "Oriental Building — a historic Kuala Lumpur landmark, reactivated as a home for future learning, technology, creativity, and community. Mereka, Biji-biji Initiative, CIMB, and partners are shaping Levels 2 to 4 before the building opens in 2027.",
+    "Oriental Building — a historic Kuala Lumpur landmark, reactivated as a home for future learning, technology, creativity, and community. Mereka, Biji-biji Initiative, and partners are shaping Levels 2 to 4 before the building opens in 2027.",
   url: "https://oriental.mereka.io",
   email: "team@mereka.io",
 };
@@ -25,26 +25,20 @@ export const ecosystemCells = [
   },
   {
     number: "02",
-    intent: "community" as SegmentId,
-    title: "Creative Studios & Collaboration Spaces",
-    description: "Making, designing, teaching, prototyping, production, and project-based work.",
-  },
-  {
-    number: "03",
     intent: "technology" as SegmentId,
     title: "Technology Showcase & Demo Spaces",
     description:
       "Hands-on experiences with AI, digital tools, future skills, digital trust, and emerging technologies.",
   },
   {
-    number: "04",
+    number: "03",
     intent: "education" as SegmentId,
     title: "Workshops & Future Skills Programmes",
     description:
       "Youth development, professional upskilling, entrepreneurship, creative learning, and community education.",
   },
   {
-    number: "05",
+    number: "04",
     intent: "community" as SegmentId,
     title: "Innovation & Social Impact Initiatives",
     description:
@@ -53,14 +47,12 @@ export const ecosystemCells = [
 ] as const;
 
 export const audiences = [
-  "Students & youth",
-  "Social enterprises & NGOs",
-  "MSMEs & working professionals",
-  "Creative practitioners & cultural communities",
-  "Ageing & community groups",
-  "Educators & programme operators",
-  "Technology & innovation partners",
-  "Institutions & mission-aligned tenants",
+  "Students and Youths",
+  "Impact Organisations",
+  "Working Professionals",
+  "Creative Community",
+  "Entrepreneurs and SMEs",
+  "Community Groups and Seniors",
 ] as const;
 
 export const pillars = [
@@ -72,7 +64,7 @@ export const pillars = [
   {
     name: "Digital Trust, AI Literacy & Inclusion",
     description: "Making technology understandable, usable, and relevant across communities.",
-    intent: "ai" as SegmentId,
+    intent: "technology" as SegmentId,
   },
   {
     name: "NGO & Social Enterprise Capability Building",
@@ -104,7 +96,7 @@ export const spaces = [
   },
   {
     number: "02",
-    title: "Academy of Tomorrow Learning Studios",
+    title: "Applied Workshops",
     description:
       "Flexible studios for future skills training, entrepreneurship programmes, youth development, creative workshops, professional upskilling, and recurring classes.",
     cta: "Bring a Learning Programme",
@@ -129,15 +121,6 @@ export const spaces = [
     intent: "technology" as SegmentId,
     image: "/assets/05-sustainability-workshop.png",
   },
-  {
-    number: "05",
-    title: "Social Enterprise & Innovation Spaces",
-    description:
-      "Collaborative work, incubation, and partnership spaces for social enterprises, NGOs, startups, and impact-driven organisations.",
-    cta: "Discuss an Innovation Space",
-    intent: "community" as SegmentId,
-    image: "/assets/20-ngo-finance-guild.png",
-  },
 ] as const;
 
 export const partners = [
@@ -155,21 +138,12 @@ export const partners = [
     tag: "EDUCATION",
     title: "Education & Programme Partners",
     description:
-      "Academic institutions, training providers, social enterprises, and learning organisations that want to deliver future-facing, impact-driven programmes.",
+      "Academic institutions, training providers, social enterprises, and teams running workshops, trainings, or recurring programmes who want to deliver future-facing, impact-driven learning in a professional, ready-to-use space.",
     cta: "Propose a Learning Partnership",
     intent: "education" as SegmentId,
   },
   {
     number: "03",
-    tag: "PROGRAMME",
-    title: "Programme & Activation Partners",
-    description:
-      "Teams running workshops, trainings, talks, forums, exhibitions, screenings, showcases, cultural activations, or recurring public programmes.",
-    cta: "Bring a Programme Here",
-    intent: "programme" as SegmentId,
-  },
-  {
-    number: "04",
     tag: "TECHNOLOGY",
     title: "Technology & Innovation Partners",
     description:
@@ -178,7 +152,7 @@ export const partners = [
     intent: "technology" as SegmentId,
   },
   {
-    number: "05",
+    number: "04",
     tag: "COMMUNITY",
     title: "Community & Cultural Partners",
     description:
@@ -188,36 +162,22 @@ export const partners = [
   },
 ] as const;
 
-export const relevantIf = [
-  "Host recurring programmes in the city centre",
-  "Reach students, youth, MSMEs, NGOs, creatives, or community groups",
-  "Showcase technology in a human, hands-on way",
-  "Build public trust around AI, digital tools, and future skills",
-  "Contribute to a heritage-led civic and cultural activation",
-  "Shape the partner mix before the building opens",
-] as const;
-
 export const timelineSteps = [
   {
-    year: "2026",
-    phase: "Phase 01",
-    label: "Co-design & Partnerships",
-    description:
-      "Shaping the vision, partner mix, spatial planning, programme models, commercial pathways, and ecosystem opportunities for Levels 2 to 4 of Oriental Building.",
+    phase: "Launch Public Partner Interest Call",
+    timeline: "June – July 2026",
   },
   {
-    year: "2026–27",
-    phase: "Phase 02",
-    label: "Renovation & Early Activation",
-    description:
-      "Transforming the space into a future-ready education, technology, creative, and community hub, with early pilots and partner-led activations helping shape what comes next.",
+    phase: "Partnership Exploration",
+    timeline: "June – Dec 2026",
   },
   {
-    year: "2027",
-    phase: "Phase 03",
-    label: "Opening & Public Programmes",
-    description:
-      "Opening with collaborations, workshops, events, exhibitions, technology showcases, cultural activations, and community-driven programmes.",
+    phase: "Renovation and Early Activation",
+    timeline: "Sept – Dec 2026",
+  },
+  {
+    phase: "Building Operations",
+    timeline: "Jan 2027",
   },
 ] as const;
 
@@ -238,7 +198,8 @@ export const tourTopics = [
     id: "timeline",
     label: "Timeline",
     blurb: "How we get there",
-    script: "2026 is planning and co-design, 2026 to 2027 is renovation, and 2027 is public opening.",
+    script:
+      "Partner interest opens mid-2026, partnership exploration and renovation run through the year, and building operations begin January 2027.",
   },
   {
     id: "heritage",

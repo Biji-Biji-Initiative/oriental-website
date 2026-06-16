@@ -117,7 +117,7 @@ export function VoiceAgentDialog({
         if (!parsed.success) {
           if (source === "form") void formRef.current?.trigger();
           toast.error("Please fix the highlighted details.", {
-            description: "Name, a valid email, organisation, and a short brief are required before sending.",
+            description: "A valid email is required before sending — everything else is optional.",
           });
           return { ok: false, error: "invalid_lead", details: parsed.error.flatten() };
         }

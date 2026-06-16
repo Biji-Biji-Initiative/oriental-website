@@ -10,6 +10,8 @@ describe("lead request schema", () => {
         name: "Asha",
         email: "asha@example.com",
         org: "Future Lab",
+        phone: "",
+        website: "",
         message: "We want to run public AI literacy demos with community groups.",
       },
     });
@@ -23,6 +25,8 @@ describe("lead request schema", () => {
         name: "Asha",
         email: "asha@example.com",
         org: "Future Lab",
+        phone: "",
+        website: "",
         message: "AI literacy demos.",
       },
       transcript: Array.from({ length: 201 }, () => ({ role: "user", text: "hello" })),
@@ -37,6 +41,8 @@ describe("lead request schema", () => {
         name: "Asha",
         email: "asha@example.com",
         org: "Future Lab",
+        phone: "",
+        website: "",
         message: "AI literacy demos.",
       },
     };

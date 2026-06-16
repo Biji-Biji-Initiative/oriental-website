@@ -51,11 +51,13 @@ describe("serializeRealtimeCommand", () => {
   it("serializes typed handoff context as a user conversation item", () => {
     const event = serializeHandoffContext(
       {
-        segment: "ai",
+        segment: "technology",
         captured: {
           name: "Mei Ling",
           email: "mei@example.com",
           org: "Future Lab",
+          phone: "",
+          website: "",
           message: "AI literacy demos for students.",
         },
       },
@@ -92,8 +94,8 @@ describe("serializeRealtimeCommand", () => {
   it("includes the earlier conversation when a session reconnects", () => {
     const event = serializeHandoffContext(
       {
-        segment: "ai",
-        captured: { name: "Mei Ling", email: "", org: "", message: "" },
+        segment: "technology",
+        captured: { name: "Mei Ling", email: "", org: "", phone: "", website: "", message: "" },
       },
       nextEventId(["evt_context"]),
       {
@@ -113,8 +115,8 @@ describe("serializeRealtimeCommand", () => {
 
   it("omits the reconnect context block for fresh sessions", () => {
     const event = serializeHandoffContext({
-      segment: "ai",
-      captured: { name: "", email: "", org: "", message: "" },
+      segment: "technology",
+      captured: { name: "", email: "", org: "", phone: "", website: "", message: "" },
     });
 
     expect(JSON.stringify(event)).not.toContain("Earlier conversation");

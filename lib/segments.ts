@@ -1,15 +1,6 @@
 import { readEnv } from "@/lib/env";
 
-export const SEGMENT_IDS = [
-  "tenancy",
-  "education",
-  "programme",
-  "technology",
-  "ai",
-  "cultural",
-  "community",
-  "other",
-] as const;
+export const SEGMENT_IDS = ["tenancy", "education", "programme", "technology", "community", "other"] as const;
 
 export type SegmentId = (typeof SEGMENT_IDS)[number];
 
@@ -30,10 +21,10 @@ export const SEGMENTS = {
   tenancy: {
     id: "tenancy",
     label: "Tenancy",
-    blurb: "Long-term space for studios & enterprises",
+    blurb: "Long-term space for organisations & enterprises",
     routedTo: { name: "Chewi", role: "Tenancy Lead", hue: 1 },
-    prompt: "Tell us about your studio or enterprise, and the kind of space you need.",
-    voiceOpener: "So, long-term space at Oriental. Tell me about your studio or enterprise.",
+    prompt: "Tell us about your organisation or enterprise, and the kind of space you need.",
+    voiceOpener: "So, long-term space at Oriental. Tell me about your organisation or enterprise.",
   },
   education: {
     id: "education",
@@ -54,26 +45,10 @@ export const SEGMENTS = {
   technology: {
     id: "technology",
     label: "Technology",
-    blurb: "Showcase tools & embed demos",
+    blurb: "Showcase tools, demos & AI experiences",
     routedTo: { name: "Gurpreet", role: "Innovation Lead", hue: 3 },
-    prompt: "What tools or technologies would you showcase? Hands-on demos?",
-    voiceOpener: "Tech partnership. Tell me about the tools you would showcase.",
-  },
-  ai: {
-    id: "ai",
-    label: "AI",
-    blurb: "AI labs, agents, literacy & applied research",
-    routedTo: { name: "Gurpreet", role: "Innovation Lead", hue: 3 },
-    prompt: "Are you bringing an AI lab, an agent product, a literacy programme, or applied research?",
-    voiceOpener: "AI. Tell me what you would bring: a lab, an agent product, literacy work?",
-  },
-  cultural: {
-    id: "cultural",
-    label: "Cultural",
-    blurb: "Exhibitions, residencies, performances",
-    routedTo: { name: "AVI", role: "Culture Curator", hue: 4 },
-    prompt: "What kind of cultural work? Exhibitions, performances, residencies?",
-    voiceOpener: "Cultural work. Tell me what you would bring.",
+    prompt: "What tools, technologies, or AI experiences would you showcase? Hands-on demos?",
+    voiceOpener: "Tech partnership. Tell me about the tools or AI experiences you would showcase.",
   },
   community: {
     id: "community",
@@ -86,7 +61,7 @@ export const SEGMENTS = {
   other: {
     id: "other",
     label: "Other",
-    blurb: "Press, investor, or just exploring",
+    blurb: "Media, investor, or just exploring",
     routedTo: { name: "Nadia", role: "Partnerships", hue: 6 },
     prompt: "Tell us how you would like to be involved, or just say hi.",
     voiceOpener: "Tell me what brought you here today.",

@@ -56,8 +56,8 @@ describe("golden voice session", () => {
         value: "AI literacy workshops; wants a demo lab.",
       }),
     );
-    step(functionCall("call_segment", "set_partner_type", { segment: "ai" }));
-    expect(state.segment).toBe("ai");
+    step(functionCall("call_segment", "set_partner_type", { segment: "technology" }));
+    expect(state.segment).toBe("technology");
     expect(state.captured.message).toContain("AI literacy");
 
     // The transcription race: the visitor says their name and email, the
@@ -91,12 +91,12 @@ describe("golden voice session", () => {
     expect(state.assistantDraft).toBe("");
 
     // "Send it" — all fields present, the reducer hands the UI a submit command.
-    const route = step(functionCall("call_route", "route_to_team", { segment: "ai" }));
+    const route = step(functionCall("call_route", "route_to_team", { segment: "technology" }));
     expect(state.routeRequested).toBe(true);
-    expect(route.commands).toEqual([{ type: "submit_voice", callId: "call_route", segment: "ai" }]);
+    expect(route.commands).toEqual([{ type: "submit_voice", callId: "call_route", segment: "technology" }]);
 
     // A duplicate route attempt is refused without a second submission.
-    const duplicate = step(functionCall("call_route_again", "route_to_team", { segment: "ai" }));
+    const duplicate = step(functionCall("call_route_again", "route_to_team", { segment: "technology" }));
     expect(duplicate.commands[0]).toMatchObject({
       type: "function_result",
       output: { ok: false, error: "route_already_requested" },

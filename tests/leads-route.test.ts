@@ -38,6 +38,8 @@ function request() {
         name: "Asha",
         email: "asha@example.com",
         org: "Future Lab",
+        phone: "",
+        website: "",
         message: "We want to run public AI literacy demos.",
       },
       transcript: [{ role: "user", text: "We want to run public AI literacy demos." }],

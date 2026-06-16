@@ -1,11 +1,11 @@
 "use client";
 
-import { ArrowUpRight, Building2, Cpu, FlaskConical, Sparkles, UsersRound } from "lucide-react";
+import { ArrowUpRight, Cpu, FlaskConical, Sparkles, UsersRound } from "lucide-react";
 import { MiniOrb } from "@/components/orb/MiniOrb";
 import { useVoice } from "@/components/voice-agent/voice-state";
 import { ecosystemCells } from "@/lib/content";
 
-const icons = [UsersRound, Building2, Cpu, Sparkles, FlaskConical];
+const icons = [UsersRound, Cpu, Sparkles, FlaskConical];
 
 export function EcosystemGrid() {
   const voice = useVoice();

@@ -89,6 +89,8 @@ describe("reduceRealtimeServerEvent", () => {
           name: "Asha",
           email: "asha@example.com",
           org: "Future Lab",
+          phone: "",
+          website: "",
           message: "We want to run public AI literacy demos.",
         },
       }),
@@ -120,6 +122,8 @@ describe("reduceRealtimeServerEvent", () => {
           name: "Asha",
           email: "asha@example.com",
           org: "Future Lab",
+          phone: "",
+          website: "",
           message: "We want to run public AI literacy demos.",
         },
       }),
@@ -162,8 +166,8 @@ describe("reduceRealtimeServerEvent", () => {
           ok: false,
           ready: false,
           segment: "education",
-          missingFields: ["email", "org", "message"],
-          missingFieldLabels: ["email", "organisation", "brief"],
+          missingFields: ["email"],
+          missingFieldLabels: ["email"],
           captured: { ...emptyCapturedLead, name: "Asha" },
         },
       },
@@ -185,7 +189,16 @@ describe("reduceRealtimeServerEvent", () => {
           ],
         },
       },
-      state({ captured: { name: "Asha", email: "   ", org: "Future Lab", message: "AI literacy demos." } }),
+      state({
+        captured: {
+          name: "Asha",
+          email: "   ",
+          org: "Future Lab",
+          phone: "",
+          website: "",
+          message: "AI literacy demos.",
+        },
+      }),
     );
 
     expect(result.commands[0]).toMatchObject({
@@ -215,8 +228,8 @@ describe("reduceRealtimeServerEvent", () => {
       output: {
         ok: true,
         ready: false,
-        missingFields: ["email", "org"],
-        missingFieldLabels: ["email", "organisation"],
+        missingFields: ["email"],
+        missingFieldLabels: ["email"],
         routeRequested: false,
       },
     });
