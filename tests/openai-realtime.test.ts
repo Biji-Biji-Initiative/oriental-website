@@ -28,7 +28,7 @@ describe("createRealtimeClientSecret", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await createRealtimeClientSecret("safe-user", "ai");
+    const result = await createRealtimeClientSecret("safe-user", "technology");
 
     expect(result).toEqual({
       client_secret: { value: "client-secret", expires_at: 123 },
@@ -97,7 +97,7 @@ describe("createRealtimeClientSecret", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await createRealtimeClientSecret("safe-user", "ai", "mobile");
+    const result = await createRealtimeClientSecret("safe-user", "technology", "mobile");
 
     expect(result.noise_reduction).toBe("near_field");
     const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
@@ -115,7 +115,7 @@ describe("createRealtimeClientSecret", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await createRealtimeClientSecret("safe-user", "ai");
+    const result = await createRealtimeClientSecret("safe-user", "technology");
 
     expect(result.limits).toEqual({ max_duration_ms: 300_000, idle_timeout_ms: 30_000 });
   });
@@ -130,7 +130,7 @@ describe("createRealtimeClientSecret", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await createRealtimeClientSecret("safe-user", "ai");
+    const result = await createRealtimeClientSecret("safe-user", "technology");
 
     expect(result.transcription_model).toBe("gpt-realtime-whisper");
     const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
@@ -148,7 +148,7 @@ describe("createRealtimeClientSecret", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await createRealtimeClientSecret("safe-user", "ai");
+    const result = await createRealtimeClientSecret("safe-user", "technology");
 
     expect(result.model).toBe("gpt-realtime-2");
     expect(result.voice).toBe("marin");
@@ -169,7 +169,7 @@ describe("createRealtimeClientSecret", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await createRealtimeClientSecret("safe-user", "ai");
+    const result = await createRealtimeClientSecret("safe-user", "technology");
 
     expect(result.model).toBe("gpt-realtime-2");
     expect(result.voice).toBe("marin");
@@ -190,7 +190,7 @@ describe("createRealtimeClientSecret", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await createRealtimeClientSecret("safe-user", "ai");
+    const result = await createRealtimeClientSecret("safe-user", "technology");
 
     expect(result.speed).toBe(1.5);
     const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));

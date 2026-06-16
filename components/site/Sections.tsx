@@ -20,12 +20,6 @@ const footerPartners = [
     logo: "/assets/brand/biji-biji/biji-biji-logo-white.svg",
     logoClassName: "size-8",
   },
-  {
-    name: "CIMB",
-    detail: "Strategic partner",
-    logo: "/assets/brand/cimb/cimb-symbol.svg",
-    logoClassName: "size-8",
-  },
 ] as const;
 
 export function Hero() {
@@ -65,9 +59,8 @@ export function Hero() {
             <em className="font-serif font-light">A future</em> we build together.
           </h1>
           <p className="mt-8 max-w-3xl text-lg leading-8 text-white/78 md:text-xl">
-            Mereka, Biji-biji Initiative, CIMB, and partners are shaping Levels 2 to 4 of Oriental Building into a
-            shared hub for future learning, technology, creativity, culture, and community — in the heart of Kuala
-            Lumpur.
+            Mereka, Biji-biji Initiative, and partners are shaping Levels 2 to 4 of Oriental Building into a shared hub
+            for future learning, technology, creativity, culture, and community — in the heart of Kuala Lumpur.
           </p>
           <div className="mt-9 flex flex-col gap-5">
             <VoiceButton className="w-fit">
@@ -120,21 +113,16 @@ export function Vision() {
           </div>
           <div className="space-y-6 text-lg leading-8 text-mk-off-black/74">
             <p className="text-2xl leading-10 text-mk-off-black">
-              For years, Mereka has brought communities, educators, creators, organisations, and changemakers together
-              through programmes rooted in creativity, collaboration, learning, and social impact. Now, that work is
-              entering a new chapter.
+              For years, Mereka has brought creators, innovators, communities, and changemakers together through
+              programmes rooted in creativity, technology, collaboration, and social impact. Now, that work is entering
+              a new chapter.
             </p>
             <p>
               The vision is to reactivate Levels 2 to 4 of Oriental Building as a city-centre platform for future
-              education, public programmes, technology showcases, creative production, and community engagement.
-            </p>
-            <p>
-              This is not simply a relocation. It is a chance to turn heritage into active infrastructure for what Kuala
-              Lumpur needs next: places to learn, make, test, gather, and collaborate across generations and
-              disciplines.
+              education, public programmes, technology showcases, and community engagement.
             </p>
             <p className="font-serif text-2xl font-light italic text-mk-anchor-blue">
-              A place where people, ideas, and partnerships do not just meet — they become real.
+              A place where people, ideas, and partnerships meet and become real.
             </p>
           </div>
         </div>
@@ -165,12 +153,8 @@ export function Ecosystem() {
           03 — The Ecosystem
         </span>
         <h2 className="section-heading max-w-5xl text-white">
-          Spaces for learning, making, <em>gathering, & testing new ideas.</em>
+          Spaces for growing skills, <em>creating solutions, and driving tech-adoption.</em>
         </h2>
-        <p className="eco-lede">
-          The planned ecosystem brings together flexible spaces, public programming, and partner-led activations across
-          education, technology, creativity, culture, and social impact.
-        </p>
         <EcosystemGrid />
       </div>
     </section>
@@ -245,9 +229,9 @@ export function Closing() {
           <br />a move.
         </h2>
         <p className="mt-8 max-w-3xl text-lg leading-8 text-white/70">
-          Mereka is not just changing address. Together with Biji-biji Initiative, CIMB, and partners, we are shaping a
-          new public-facing home for future education in Kuala Lumpur — one that connects heritage, learning,
-          technology, creativity, and community under one roof.
+          Mereka is not just changing address. Together with Biji-biji Initiative and partners, we are shaping a new
+          public-facing home for future education in Kuala Lumpur — one that connects heritage, learning, technology,
+          creativity, and community under one roof.
         </p>
         <p className="mt-8 max-w-3xl font-serif text-3xl font-light italic leading-tight text-mk-horizon">
           If you have a programme, space, technology, community, institution, or idea that belongs in this story — now
@@ -287,6 +271,12 @@ export function Footer() {
                 Or · Talk to Mereka
               </VoiceButton>
             </div>
+            <a
+              className="mt-5 inline-block text-sm text-white/58 underline-offset-4 transition hover:text-white hover:underline"
+              href="/faq"
+            >
+              Read the partner & tenant FAQ →
+            </a>
           </div>
           <div>
             <div className="footer-tag">Location</div>
@@ -331,7 +321,7 @@ export function Footer() {
           </div>
         </div>
         <div className="mt-14 flex flex-col justify-between gap-4 border-t border-white/10 pt-6 text-sm text-white/55 md:flex-row">
-          <span>© 2026 · Mereka × Biji-biji Initiative × CIMB</span>
+          <span>© 2026 · Mereka × Biji-biji Initiative</span>
           <span>Oriental Building · A new chapter for a historic Kuala Lumpur landmark</span>
         </div>
       </div>

@@ -96,6 +96,9 @@ export function SiteNav() {
               {label}
             </a>
           ))}
+          <a className="site-nav__link relative transition hover:text-white" href="/faq">
+            FAQ
+          </a>
         </nav>
         <div className="flex items-center gap-2">
           <button
@@ -135,6 +138,9 @@ export function SiteNav() {
                 {label}
               </a>
             ))}
+            <a className="site-nav__mobile-link" href="/faq" onClick={closeMenu}>
+              FAQ
+            </a>
             <button
               className="site-nav__mobile-voice"
               onClick={() => {

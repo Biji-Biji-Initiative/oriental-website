@@ -13,7 +13,7 @@ const review = {
 
 function state(overrides: Partial<VoiceRuntimeState> = {}): VoiceRuntimeState {
   return {
-    segment: "ai",
+    segment: "technology",
     captured: { ...emptyCapturedLead, name: "Asha" },
     transcript: [{ role: "user", text: "I want to run an AI literacy demo." }],
     ...overrides,
@@ -30,7 +30,7 @@ describe("voice review snapshots", () => {
     ).toMatchObject({
       sessionId: "sess_123",
       leadId: "lead_123",
-      segment: "ai",
+      segment: "technology",
       status: "submitted",
       connectionStatus: "listening",
       model: "gpt-realtime-2",

@@ -17,7 +17,7 @@ function lead(overrides: Partial<StoredLead> = {}): StoredLead {
   return {
     id: "lead_123",
     source: "voice",
-    segment: "ai",
+    segment: "technology",
     form: {
       name: "Alex Tan",
       email: "alex@example.com",
@@ -50,10 +50,10 @@ describe("notification payload builders", () => {
   it("builds owner email copy with routing metadata and transcript context", () => {
     const notification = buildOwnerNotification(lead());
 
-    expect(notification.subject).toBe("[Oriental] AI lead from CogWorks <script>");
+    expect(notification.subject).toBe("[Oriental] Technology lead from CogWorks <script>");
     expect(notification.text).toContain("Lead ID: lead_123");
     expect(notification.text).toContain("Source: Voice workspace");
-    expect(notification.text).toContain("Segment: AI (ai)");
+    expect(notification.text).toContain("Segment: Technology (technology)");
     expect(notification.text).toContain("Routed to: Gurpreet");
     expect(notification.text).toContain("Mereka: What brought you here today?");
     expect(notification.text).toContain("Reply directly to alex@example.com");
@@ -75,10 +75,10 @@ describe("notification payload builders", () => {
     expect(payload.text).toBe("New Oriental lead for Gurpreet: Alex Tan from CogWorks <script>");
     expect(payload.blocks[0]).toMatchObject({
       type: "header",
-      text: { type: "plain_text", text: "New Oriental lead · AI" },
+      text: { type: "plain_text", text: "New Oriental lead · Technology" },
     });
     expect(body).toContain("<mailto:alex@example.com|alex@example.com>");
-    expect(body).toContain("AI · Voice workspace · Lead lead_123");
+    expect(body).toContain("Technology · Voice workspace · Lead lead_123");
     expect(body).toContain("CogWorks &lt;script&gt;");
     expect(body).toContain("*Conversation context*");
     expect(payload.blocks.at(-1)).toMatchObject({ type: "context" });

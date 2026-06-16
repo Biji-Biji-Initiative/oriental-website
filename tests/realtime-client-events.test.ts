@@ -51,7 +51,7 @@ describe("serializeRealtimeCommand", () => {
   it("serializes typed handoff context as a user conversation item", () => {
     const event = serializeHandoffContext(
       {
-        segment: "ai",
+        segment: "technology",
         captured: {
           name: "Mei Ling",
           email: "mei@example.com",
@@ -92,7 +92,7 @@ describe("serializeRealtimeCommand", () => {
   it("includes the earlier conversation when a session reconnects", () => {
     const event = serializeHandoffContext(
       {
-        segment: "ai",
+        segment: "technology",
         captured: { name: "Mei Ling", email: "", org: "", message: "" },
       },
       nextEventId(["evt_context"]),
@@ -113,7 +113,7 @@ describe("serializeRealtimeCommand", () => {
 
   it("omits the reconnect context block for fresh sessions", () => {
     const event = serializeHandoffContext({
-      segment: "ai",
+      segment: "technology",
       captured: { name: "", email: "", org: "", message: "" },
     });
 
