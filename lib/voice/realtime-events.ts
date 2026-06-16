@@ -4,6 +4,8 @@ export type CapturedLead = {
   name: string;
   email: string;
   org: string;
+  phone: string;
+  website: string;
   message: string;
 };
 
@@ -86,7 +88,14 @@ export type RealtimeServerEvent = {
   response?: { output?: RealtimeOutputItem[]; usage?: RealtimeUsage };
 };
 
-export const emptyCapturedLead: CapturedLead = { name: "", email: "", org: "", message: "" };
+export const emptyCapturedLead: CapturedLead = {
+  name: "",
+  email: "",
+  org: "",
+  phone: "",
+  website: "",
+  message: "",
+};
 
 export const emptyVoiceUsage: VoiceRuntimeUsage = {
   responseCount: 0,
@@ -232,7 +241,11 @@ function applyFunctionCall(
 
       const normalizedValue = key === "org" ? normalizeOrganisation(value) : value;
       const existing = next.captured[key];
-      if (key !== "message" && existing.trim() && normalizeEvidence(existing) === normalizeEvidence(normalizedValue)) {
+      if (
+        !FREE_TEXT_CAPTURE_KEYS.has(key) &&
+        existing.trim() &&
+        normalizeEvidence(existing) === normalizeEvidence(normalizedValue)
+      ) {
         output = { ok: true, key, mode: "replace", captured: next.captured };
         break;
       }
@@ -405,8 +418,21 @@ function toSegmentId(value: unknown): SegmentId | null {
 }
 
 function toCapturedKey(value: unknown): keyof CapturedLead | null {
-  return value === "name" || value === "email" || value === "org" || value === "message" ? value : null;
+  return value === "name" ||
+    value === "email" ||
+    value === "org" ||
+    value === "phone" ||
+    value === "website" ||
+    value === "message"
+    ? value
+    : null;
 }
+
+/** Fields the model captures verbatim without identity grounding. */
+const FREE_TEXT_CAPTURE_KEYS = new Set<keyof CapturedLead>(["message", "phone", "website"]);
+
+/** Only a reachable email is required to route; everything else is optional. */
+const REQUIRED_CAPTURED_FIELDS: Array<keyof CapturedLead> = ["email"];
 
 /**
  * How much ASR spelling drift grounding tolerates per key, as a fraction of
@@ -416,7 +442,7 @@ function toCapturedKey(value: unknown): keyof CapturedLead | null {
  * email breaks the follow-up; organisation is most forgiving because the
  * handoff panel shows it and the visitor can edit it.
  */
-const GROUNDING_TOLERANCE: Record<Exclude<keyof CapturedLead, "message">, number> = {
+const GROUNDING_TOLERANCE: Record<"email" | "name" | "org", number> = {
   email: 0.13,
   name: 0.25,
   org: 0.34,
@@ -429,7 +455,7 @@ function validateCaptureGrounding(
   transcript: VoiceTranscriptEntry[],
   transcriptionPending: boolean,
 ): { ok: true } | { ok: false; error: string } {
-  if (key === "message") return { ok: true };
+  if (key === "message" || key === "phone" || key === "website") return { ok: true };
   if (!evidence) return { ok: false, error: "ungrounded_identity_capture" };
   const tolerance = GROUNDING_TOLERANCE[key];
 
@@ -578,13 +604,15 @@ function normalizeEvidence(value: string) {
 }
 
 function getMissingFields(captured: CapturedLead) {
-  return (Object.keys(capturedFieldLabels) as Array<keyof CapturedLead>).filter((key) => !captured[key].trim());
+  return REQUIRED_CAPTURED_FIELDS.filter((key) => !captured[key].trim());
 }
 
 const capturedFieldLabels: Record<keyof CapturedLead, string> = {
   name: "name",
   email: "email",
   org: "organisation",
+  phone: "phone",
+  website: "website or socials",
   message: "brief",
 };
 

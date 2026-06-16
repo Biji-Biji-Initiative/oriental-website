@@ -25,16 +25,16 @@ type Segment =
   | "education"
   | "programme"
   | "technology"
-  | "ai"
-  | "cultural"
   | "community"
   | "other";
 
 type LeadForm = {
-  name: string;    // trim, 2..120
-  email: string;   // trim, email, max 180
-  org: string;     // trim, 2..180
-  message: string; // trim, 8..2500
+  email: string;   // trim, email, max 180 — the only required field
+  name: string;    // trim, max 120 — may be empty
+  org: string;     // trim, max 180 — may be empty
+  phone: string;   // trim, max 60 — optional, may be empty
+  website: string; // trim, max 300 — optional, may be empty
+  message: string; // trim, max 2500 — may be empty
 };
 ```
 
@@ -173,6 +173,8 @@ Newsletter writes use the same Convex mutation as full leads:
     name: "Newsletter subscriber",
     email,
     org: "Unknown",
+    phone: "",
+    website: "",
     message: "Keep me posted about Oriental Building."
   },
   transcript: []
@@ -303,7 +305,7 @@ type VoiceReviewSnapshotRequest = {
     model?: string;
     voice?: string;
     speed?: number;
-    captured: { name: string; email: string; org: string; message: string };
+    captured: { name: string; email: string; org: string; phone: string; website: string; message: string };
     transcript: Array<{ role: "user" | "assistant" | "system"; text: string }>;
     usage?: RealtimeUsageSummary;
     errors: Array<{ eventId?: string; message: string; code?: string }>;

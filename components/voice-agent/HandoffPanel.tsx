@@ -101,7 +101,7 @@ export function HandoffPanel({
             (values) => onSubmit(values),
             () => {
               toast.error("Please fix the highlighted details.", {
-                description: "The handoff needs a name, valid email, organisation, and short brief.",
+                description: "The handoff just needs a valid email — everything else is optional.",
               });
             },
           )}
@@ -172,10 +172,59 @@ export function HandoffPanel({
           />
           <FormField
             control={form.control}
+            name="phone"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-white/78">
+                  Phone <span className="text-white/40">· optional</span>
+                </FormLabel>
+                <FormControl>
+                  <Input
+                    {...field}
+                    onChange={(event) => {
+                      field.onChange(event);
+                      onChange("phone", event.target.value);
+                    }}
+                    placeholder="+60 ..."
+                    type="tel"
+                    variant="glass"
+                  />
+                </FormControl>
+                <FormMessage className={messageClassName} />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="website"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-white/78">
+                  Website / Socials <span className="text-white/40">· optional</span>
+                </FormLabel>
+                <FormControl>
+                  <Input
+                    {...field}
+                    onChange={(event) => {
+                      field.onChange(event);
+                      onChange("website", event.target.value);
+                    }}
+                    placeholder="yoursite.com or @handle"
+                    variant="glass"
+                  />
+                </FormControl>
+                <FormMessage className={messageClassName} />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
             name="message"
             render={({ field }) => (
               <FormItem>
-                <FormLabel className="text-white/78">What would you bring to Oriental?</FormLabel>
+                <FormLabel className="text-white/78">
+                  What would you bring to Oriental? <span className="text-white/40">· optional</span>
+                </FormLabel>
                 <FormControl>
                   <Textarea
                     {...field}

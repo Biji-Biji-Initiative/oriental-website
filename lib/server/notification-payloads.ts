@@ -27,16 +27,18 @@ export type SlackLeadPayload = {
 export function buildOwnerNotification(lead: StoredLead): OwnerNotification {
   const segment = getSegment(lead.segment);
   const transcript = transcriptExcerpt(lead.transcript);
-  const rows = [
+  const rows: Array<[string, string]> = [
     ["Lead ID", lead.id],
     ["Source", sourceLabel(lead.source)],
     ["Segment", `${segment.label} (${segment.id})`],
     ["Routed to", lead.routedTo],
-    ["Name", lead.form.name],
+    ["Name", lead.form.name || "—"],
     ["Email", lead.form.email],
-    ["Organisation", lead.form.org],
-  ] satisfies Array<[string, string]>;
-  const subject = `[Oriental] ${segment.label} lead from ${lead.form.org}`;
+    ["Organisation", lead.form.org || "—"],
+  ];
+  if (lead.form.phone) rows.push(["Phone", lead.form.phone]);
+  if (lead.form.website) rows.push(["Website / Socials", lead.form.website]);
+  const subject = `[Oriental] ${segment.label} lead from ${lead.form.org || lead.form.name || "a new partner"}`;
   const text = [
     "New Oriental partner intake",
     "",
@@ -128,11 +130,14 @@ export function buildSlackPayload(lead: StoredLead): SlackLeadPayload {
     .map((entry) => `*${escapeSlack(speakerLabel(entry.role))}:*  ${escapeSlack(truncate(entry.text.trim(), 400))}`)
     .filter((line) => line.length > 0)
     .join("\n");
-  const intro = [
-    `*${escapeSlack(lead.form.name)}* — ${escapeSlack(lead.form.org)}`,
+  const contactLines = [
+    `*${escapeSlack(lead.form.name || "New partner")}*${lead.form.org ? ` — ${escapeSlack(lead.form.org)}` : ""}`,
     `<mailto:${lead.form.email}|${escapeSlack(lead.form.email)}>`,
-    `→ *${escapeSlack(lead.routedTo)}* · ${escapeSlack(segment.routedTo.role)}`,
-  ].join("\n");
+  ];
+  if (lead.form.phone) contactLines.push(`Phone: ${escapeSlack(lead.form.phone)}`);
+  if (lead.form.website) contactLines.push(`Web/Socials: ${escapeSlack(lead.form.website)}`);
+  contactLines.push(`→ *${escapeSlack(lead.routedTo)}* · ${escapeSlack(segment.routedTo.role)}`);
+  const intro = contactLines.join("\n");
   const blocks: SlackBlock[] = [
     {
       type: "header",
@@ -165,7 +170,7 @@ export function buildSlackPayload(lead: StoredLead): SlackLeadPayload {
   });
 
   return {
-    text: `New Oriental lead for ${lead.routedTo}: ${lead.form.name} from ${lead.form.org}`,
+    text: `New Oriental lead for ${lead.routedTo}: ${lead.form.name || "a new partner"}${lead.form.org ? ` from ${lead.form.org}` : ""}`,
     blocks,
   };
 }

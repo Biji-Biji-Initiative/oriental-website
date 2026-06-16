@@ -25,6 +25,8 @@ const leadValidator = v.object({
     name: v.string(),
     email: v.string(),
     org: v.string(),
+    phone: v.optional(v.string()),
+    website: v.optional(v.string()),
     message: v.string(),
   }),
   transcript: transcriptValidator,
@@ -36,6 +38,8 @@ const capturedValidator = v.object({
   name: v.string(),
   email: v.string(),
   org: v.string(),
+  phone: v.optional(v.string()),
+  website: v.optional(v.string()),
   message: v.string(),
 });
 
@@ -101,6 +105,8 @@ export const createLead = mutationGeneric({
       name: lead.form.name,
       email: lead.form.email,
       org: lead.form.org,
+      phone: lead.form.phone,
+      website: lead.form.website,
       message: lead.form.message,
       transcript: lead.transcript,
       utm: lead.utm,

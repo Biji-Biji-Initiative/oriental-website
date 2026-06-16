@@ -11,6 +11,8 @@ export default defineSchema({
     name: v.string(),
     email: v.string(),
     org: v.string(),
+    phone: v.optional(v.string()),
+    website: v.optional(v.string()),
     message: v.string(),
     transcript: v.array(
       v.object({
@@ -58,6 +60,8 @@ export default defineSchema({
       name: v.string(),
       email: v.string(),
       org: v.string(),
+      phone: v.optional(v.string()),
+      website: v.optional(v.string()),
       message: v.string(),
     }),
     transcript: v.array(

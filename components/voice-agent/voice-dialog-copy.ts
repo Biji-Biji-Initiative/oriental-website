@@ -16,12 +16,15 @@ export const handoffFieldSpecs = [
   { key: "message", label: "Brief" },
 ] as const satisfies ReadonlyArray<{ key: keyof CapturedLead; label: string }>;
 
+/** Only a valid email is required to send; the rest keep the handoff low-friction. */
+const requiredHandoffKeys = ["email"] as const satisfies ReadonlyArray<keyof CapturedLead>;
+
 export function handoffCompletion(captured: CapturedLead) {
   const completed = handoffFieldSpecs.filter((field) => captured[field.key].trim().length > 0);
   return {
     completedCount: completed.length,
     totalCount: handoffFieldSpecs.length,
-    ready: completed.length === handoffFieldSpecs.length,
+    ready: requiredHandoffKeys.every((key) => captured[key].trim().length > 0),
     completedKeys: new Set(completed.map((field) => field.key)),
   };
 }

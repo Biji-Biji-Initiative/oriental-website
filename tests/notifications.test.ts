@@ -22,6 +22,8 @@ function lead(overrides: Partial<StoredLead> = {}): StoredLead {
       name: "Alex Tan",
       email: "alex@example.com",
       org: "CogWorks <script>",
+      phone: "",
+      website: "",
       message: "We want to run AI literacy demos.\nAlso exploring agent labs.",
     },
     transcript: [

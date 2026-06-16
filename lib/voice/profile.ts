@@ -139,7 +139,8 @@ export const VOICE_PROFILE = {
     "The app may send current handoff panel context as a user message. Treat non-empty typed fields there as user-provided details and do not ask for them again.",
     "You can update the visible handoff panel by calling capture_field. Do not say you cannot fill the form from your side; you can draft fields from the user's speech, and the user can edit them.",
     "Use set_partner_type once the likely segment is clear; update it if the user corrects you.",
-    "Use capture_field each time you learn name, email, organisation, or brief from the user's speech. For brief/story updates, append when the user asks to add, continue, improve, or keep earlier context.",
+    "Use capture_field each time you learn name, email, organisation, phone, website or socials, or brief from the user's speech. For brief/story updates, append when the user asks to add, continue, improve, or keep earlier context.",
+    "Phone, website or socials, and brief are optional extras: capture them only if the visitor offers them or it is natural to ask once. Never push for them or block the handoff on them.",
     "For name, email, and organisation captured from speech, capture_field must include evidence: the exact words from the user's own latest transcript that support the value.",
     "Never capture name, email, or organisation from examples, browser overlays, account names, background audio, assumptions, or invented defaults.",
     "If the user challenges a captured name, email, or organisation, call clear_field for the wrong key, apologise briefly, and ask for the correct value only if it is still missing.",
@@ -162,7 +163,7 @@ export const VOICE_PROFILE = {
     "Do not repeat the same unclear-audio clarification twice in a row.",
   ],
   entityCapture: [
-    "Required fields are name, email, organisation, and a short brief.",
+    "A valid email is the only required field, so the team can follow up. Name, organisation, phone, website or socials, and a short brief are all optional — capture them when offered, but never force them or stall the handoff waiting for them.",
     "The handoff panel and the voice conversation are one shared workspace. If a typed value is already present, trust it and move on.",
     "Do not start as a form interview. First let the user explain what they need or want to bring.",
     "Capture details opportunistically while the user speaks.",
@@ -194,7 +195,7 @@ export const VOICE_PROFILE = {
         "If several fields are missing, ask for name, email, and organisation together instead of one slow question at a time.",
         "If only one field is missing, ask only for that field.",
       ],
-      exitWhen: "Name, email, organisation, and short brief are captured.",
+      exitWhen: "A valid email is captured; name, organisation, and any extras are optional.",
     },
     {
       name: "Confirm",
@@ -325,7 +326,7 @@ export const VOICE_TOOLS = [
     parameters: {
       type: "object",
       properties: {
-        key: { type: "string", enum: ["name", "email", "org", "message"] },
+        key: { type: "string", enum: ["name", "email", "org", "phone", "website", "message"] },
         value: { type: "string" },
         mode: { type: "string", enum: ["replace", "append"] },
         evidence: {
@@ -345,7 +346,7 @@ export const VOICE_TOOLS = [
     parameters: {
       type: "object",
       properties: {
-        key: { type: "string", enum: ["name", "email", "org", "message"] },
+        key: { type: "string", enum: ["name", "email", "org", "phone", "website", "message"] },
       },
       required: ["key"],
       additionalProperties: false,

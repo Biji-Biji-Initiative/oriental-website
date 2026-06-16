@@ -17,7 +17,7 @@ describe("voice profile", () => {
     expect(prompt).toContain("call route_to_team immediately");
     expect(prompt).toContain("call end_call");
     expect(prompt).toContain("not grounded");
-    expect(prompt).toContain("Required fields are name, email, organisation, and a short brief.");
+    expect(prompt).toContain("A valid email is the only required field");
     expect(prompt).toContain("Never invent prices.");
     expect(prompt).toContain("tenancy: Tenancy -> Chewi, Tenancy Lead");
   });

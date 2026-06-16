@@ -15,10 +15,14 @@ export const transcriptEntrySchema = z.object({
 });
 
 export const leadFormSchema = z.object({
-  name: z.string().trim().min(2, "Add your name").max(120),
+  // Only a valid email is enforced so the team can follow up; every other field
+  // may be left empty to keep the handoff low-friction.
   email: z.string().trim().email("Use a valid email").max(180),
-  org: z.string().trim().min(2, "Add your organisation").max(180),
-  message: z.string().trim().min(8, "Share a little more").max(2500),
+  name: z.string().trim().max(120),
+  org: z.string().trim().max(180),
+  phone: z.string().trim().max(60),
+  website: z.string().trim().max(300),
+  message: z.string().trim().max(2500),
 });
 
 export const leadRequestSchema = z.object({
@@ -75,6 +79,8 @@ export const voiceReviewSnapshotSchema = z.object({
       name: z.string().max(120).default(""),
       email: z.string().max(180).default(""),
       org: z.string().max(180).default(""),
+      phone: z.string().max(60).default(""),
+      website: z.string().max(300).default(""),
       message: z.string().max(2500).default(""),
     }),
     transcript: z.array(transcriptEntrySchema).max(120).default([]),

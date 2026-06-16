@@ -100,7 +100,7 @@ function assertInvariants(state: VoiceRuntimeState) {
     expect(typeof entry.text).toBe("string");
     expect(entry.text.length).toBeGreaterThan(0);
   }
-  expect(Object.keys(state.captured).sort()).toEqual(["email", "message", "name", "org"]);
+  expect(Object.keys(state.captured).sort()).toEqual(["email", "message", "name", "org", "phone", "website"]);
   for (const value of Object.values(state.captured)) expect(typeof value).toBe("string");
   const callIds = state.handledCallIds ?? [];
   expect(new Set(callIds).size).toBe(callIds.length);

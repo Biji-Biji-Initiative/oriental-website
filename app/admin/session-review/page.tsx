@@ -578,6 +578,16 @@ function VoiceSessionsPanel({ sessions }: { sessions: VoiceSessionRow[] }) {
                 <div>
                   <span className="font-semibold">Organisation:</span> {session.captured.org || "empty"}
                 </div>
+                {session.captured.phone ? (
+                  <div>
+                    <span className="font-semibold">Phone:</span> {session.captured.phone}
+                  </div>
+                ) : null}
+                {session.captured.website ? (
+                  <div>
+                    <span className="font-semibold">Website / Socials:</span> {session.captured.website}
+                  </div>
+                ) : null}
                 <div>
                   <span className="font-semibold">Brief:</span> {session.captured.message || "empty"}
                 </div>
