@@ -135,3 +135,29 @@ test("lead form surfaces a partial failure when the lead saves but notifications
   await expect(page.getByText("Saved, but notifications need attention.")).toBeVisible();
   await expect(page.getByLabel("Name")).toHaveValue("Asha");
 });
+
+test("voice variant picker stays hidden unless the QA flag is served", async ({ page }) => {
+  // Default config (no flag): the floating QA picker must not render for visitors.
+  await page.route("**/api/client-config", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ turnstileSiteKey: null, voiceVariantPicker: false }),
+    });
+  });
+  await page.goto("/");
+  await expect(page.getByRole("region", { name: /Voice variant picker/i })).toHaveCount(0);
+});
+
+test("voice variant picker appears and switches voice when flagged on", async ({ page }) => {
+  await page.route("**/api/client-config", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ turnstileSiteKey: null, voiceVariantPicker: true }),
+    });
+  });
+  await page.goto("/");
+  const picker = page.getByRole("region", { name: /Voice variant picker/i });
+  await expect(picker).toBeVisible();
+  await picker.getByRole("button", { name: /Reka · Warm/i }).click();
+  await expect(picker.getByRole("button", { name: /Reka · Warm/i })).toHaveAttribute("aria-pressed", "true");
+});

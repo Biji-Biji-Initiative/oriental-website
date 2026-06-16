@@ -1,6 +1,7 @@
 import { readEnv, readPositiveIntEnv } from "@/lib/env";
 import type { SegmentId } from "@/lib/segments";
 import { buildVoiceInstructions, VOICE_SESSION_DEFAULTS, VOICE_TOOLS } from "@/lib/voice/profile";
+import { getVoiceVariant } from "@/lib/voice/variants";
 
 export type RealtimeDeviceProfile = "mobile" | "desktop";
 
@@ -8,6 +9,7 @@ export async function createRealtimeClientSecret(
   safetyIdentifier: string,
   initialSegment?: SegmentId,
   deviceProfile: RealtimeDeviceProfile = "desktop",
+  variantId?: string,
 ) {
   const apiKey = readEnv("OPENAI_API_KEY");
   if (!apiKey) {
@@ -15,8 +17,12 @@ export async function createRealtimeClientSecret(
   }
 
   const model = readEnv("OPENAI_REALTIME_MODEL", "gpt-realtime-2") ?? "gpt-realtime-2";
-  const voice = readEnv("OPENAI_REALTIME_VOICE", "marin") ?? "marin";
-  const speed = readRealtimeSpeed();
+  // A selected variant overrides voice/speed/persona; otherwise fall back to the
+  // env-configured production defaults. Voice and persona are never taken from
+  // the client directly — only a server-resolved variant from the catalog.
+  const variant = getVoiceVariant(variantId);
+  const voice = variant?.voice ?? readEnv("OPENAI_REALTIME_VOICE", "marin") ?? "marin";
+  const speed = variant ? clampRealtimeSpeed(variant.speed) : readRealtimeSpeed();
   const transcriptionModel =
     readEnv("OPENAI_REALTIME_TRANSCRIPTION_MODEL", VOICE_SESSION_DEFAULTS.transcription.model) ??
     VOICE_SESSION_DEFAULTS.transcription.model;
@@ -35,7 +41,7 @@ export async function createRealtimeClientSecret(
       session: {
         type: "realtime",
         model,
-        instructions: buildVoiceInstructions(undefined, initialSegment),
+        instructions: buildVoiceInstructions(undefined, initialSegment, variant?.personaNote),
         output_modalities: ["audio"],
         reasoning: { effort: VOICE_SESSION_DEFAULTS.reasoningEffort },
         truncation: VOICE_SESSION_DEFAULTS.truncation,
@@ -77,6 +83,7 @@ export async function createRealtimeClientSecret(
     model,
     voice,
     speed,
+    variant: variant?.id ?? null,
     transcription_model: transcriptionModel,
     noise_reduction: noiseReduction,
     // Session policy is server-tunable so the dominant UX constraints can be
@@ -88,9 +95,12 @@ export async function createRealtimeClientSecret(
   };
 }
 
-function readRealtimeSpeed() {
-  const raw = readEnv("OPENAI_REALTIME_SPEED", "1.18") ?? "1.18";
-  const speed = Number(raw);
+function clampRealtimeSpeed(speed: number) {
   if (!Number.isFinite(speed)) return 1.18;
   return Math.min(1.5, Math.max(0.25, speed));
+}
+
+function readRealtimeSpeed() {
+  const raw = readEnv("OPENAI_REALTIME_SPEED", "1.18") ?? "1.18";
+  return clampRealtimeSpeed(Number(raw));
 }

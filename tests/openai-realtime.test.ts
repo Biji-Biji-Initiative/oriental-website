@@ -36,6 +36,7 @@ describe("createRealtimeClientSecret", () => {
       model: "gpt-realtime-2",
       voice: "marin",
       speed: 1.12,
+      variant: null,
       transcription_model: "gpt-4o-transcribe",
       noise_reduction: "far_field",
       limits: { max_duration_ms: 150_000, idle_timeout_ms: 20_000 },
@@ -102,6 +103,45 @@ describe("createRealtimeClientSecret", () => {
     expect(result.noise_reduction).toBe("near_field");
     const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
     expect(body.session.audio.input.noise_reduction).toEqual({ type: "near_field" });
+  });
+
+  it("applies a selected voice variant's voice, speed, and persona", async () => {
+    process.env.OPENAI_REALTIME_VOICE = "marin";
+    process.env.OPENAI_REALTIME_SPEED = "1.18";
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+      Response.json({
+        client_secret: { value: "client-secret", expires_at: 123 },
+        session: { id: "sess_variant" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await createRealtimeClientSecret("safe-user", "ai", "desktop", "coral-warm");
+
+    expect(result.variant).toBe("coral-warm");
+    expect(result.voice).toBe("coral");
+    expect(result.speed).toBe(1.12);
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(body.session.audio.output).toEqual({ voice: "coral", speed: 1.12 });
+    expect(body.session.instructions).toContain("# Voice Variant Tuning");
+  });
+
+  it("falls back to the env voice when the variant id is unknown", async () => {
+    process.env.OPENAI_REALTIME_VOICE = "marin";
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+      Response.json({
+        client_secret: { value: "client-secret", expires_at: 123 },
+        session: { id: "sess_unknown_variant" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await createRealtimeClientSecret("safe-user", "ai", "desktop", "does-not-exist");
+
+    expect(result.variant).toBeNull();
+    expect(result.voice).toBe("marin");
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(body.session.instructions).not.toContain("# Voice Variant Tuning");
   });
 
   it("serves env-tuned session limits to the client", async () => {

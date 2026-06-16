@@ -39,6 +39,9 @@ export const newsletterRequestSchema = z.object({
 export const voiceSessionRequestSchema = z.object({
   turnstileToken: z.string().optional(),
   intent: segmentSchema.optional(),
+  // Voice A/B variant id; resolved against the server-side catalog (unknown ids
+  // fall back to the env default). Never carries voice/persona data itself.
+  variant: z.string().max(64).optional(),
   utm: utmSchema,
 });
 

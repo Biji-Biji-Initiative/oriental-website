@@ -45,7 +45,12 @@ export async function POST(request: NextRequest) {
 
   try {
     const deviceProfile = detectDeviceProfile(request.headers.get("user-agent"));
-    const secret = await createRealtimeClientSecret(hashIp(ip, "openai-safety"), parsed.data.intent, deviceProfile);
+    const secret = await createRealtimeClientSecret(
+      hashIp(ip, "openai-safety"),
+      parsed.data.intent,
+      deviceProfile,
+      parsed.data.variant,
+    );
     const review = createVoiceReviewCredentials();
     logInfo("voice_session.created", {
       requestId,
@@ -54,6 +59,7 @@ export async function POST(request: NextRequest) {
       model: secret.model,
       voice: secret.voice,
       speed: secret.speed,
+      variant: secret.variant ?? "default",
       transcriptionModel: secret.transcription_model,
       noiseReduction: secret.noise_reduction,
       deviceProfile,

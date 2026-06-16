@@ -26,6 +26,7 @@ export type VoiceReviewMetadata = {
   model?: string;
   voice?: string;
   speed?: number;
+  variant?: string | null;
 };
 
 type VoiceSessionResponse = {
@@ -37,6 +38,7 @@ type VoiceSessionResponse = {
   model?: string;
   voice?: string;
   speed?: number;
+  variant?: string | null;
   limits?: { max_duration_ms?: number; idle_timeout_ms?: number };
 };
 
@@ -55,6 +57,8 @@ type UseRealtimeVoiceSessionArgs = {
   onIdleWarning?: () => void;
   onSessionReady?: (metadata: VoiceReviewMetadata) => void;
   segment: SegmentId;
+  /** Optional QA voice variant id, resolved server-side at mint time. */
+  variant?: string;
 };
 
 export function useRealtimeVoiceSession({
@@ -65,6 +69,7 @@ export function useRealtimeVoiceSession({
   onIdleWarning,
   onSessionReady,
   segment,
+  variant,
 }: UseRealtimeVoiceSessionArgs) {
   const [connectionStatus, setConnectionStatus] = useState<VoiceConnectionStatus>("idle");
   const connectionRef = useRef<RTCPeerConnection | null>(null);
@@ -83,6 +88,10 @@ export function useRealtimeVoiceSession({
   const statusRef = useRef<VoiceConnectionStatus>("idle");
   const onIdleWarningRef = useRef(onIdleWarning);
   onIdleWarningRef.current = onIdleWarning;
+  // Read at mint time (not a mint dep) so changing the variant never rebuilds
+  // the connect machinery; the prewarm cache is invalidated on mismatch instead.
+  const variantRef = useRef(variant);
+  variantRef.current = variant;
 
   const clearTimers = useCallback(() => {
     if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
@@ -182,7 +191,7 @@ export function useRealtimeVoiceSession({
     const sessionResponse = await fetch("/api/voice/session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ intent: segment, turnstileToken }),
+      body: JSON.stringify({ intent: segment, turnstileToken, variant: variantRef.current }),
     });
     const session = (await sessionResponse.json().catch(() => null)) as VoiceSessionResponse | null;
     if (session?.error === "turnstile_failed") throw new VoiceConnectionFailure("verification_failed");
@@ -201,13 +210,16 @@ export function useRealtimeVoiceSession({
   }, [getTurnstileToken, segment]);
 
   type MintedSession = Awaited<ReturnType<typeof mintVoiceSession>>;
-  const prewarmedRef = useRef<{ session: MintedSession; mintedAt: number } | null>(null);
+  const prewarmedRef = useRef<{ session: MintedSession; mintedAt: number; variant: string | undefined } | null>(null);
   const prewarmPromiseRef = useRef<Promise<void> | null>(null);
 
   const takePrewarmedSession = useCallback((): MintedSession | null => {
     const cached = prewarmedRef.current;
     if (!cached) return null;
     prewarmedRef.current = null;
+    // A session prewarmed under a different voice variant is stale for the
+    // current selection — discard it so the new voice is honoured.
+    if (cached.variant !== variantRef.current) return null;
     // expires_at is unix seconds from OpenAI; leave headroom for the SDP
     // handshake. Fall back to the documented 300s TTL when it is absent.
     const expiresAtMs =
@@ -228,16 +240,18 @@ export function useRealtimeVoiceSession({
     const cached = prewarmedRef.current;
     if (cached) {
       const stillFresh =
+        cached.variant === variantRef.current &&
         (cached.session.client_secret.expires_at && cached.session.client_secret.expires_at > 0
           ? cached.session.client_secret.expires_at * 1000
           : cached.mintedAt + 270_000) >
-        Date.now() + 30_000;
+          Date.now() + 30_000;
       if (stillFresh) return;
       prewarmedRef.current = null;
     }
+    const variantAtMint = variantRef.current;
     prewarmPromiseRef.current = mintVoiceSession()
       .then((session) => {
-        prewarmedRef.current = { session, mintedAt: Date.now() };
+        prewarmedRef.current = { session, mintedAt: Date.now(), variant: variantAtMint };
       })
       .catch(() => null)
       .then(() => {
@@ -294,6 +308,7 @@ export function useRealtimeVoiceSession({
           model: session.model,
           voice: session.voice,
           speed: session.speed,
+          variant: session.variant ?? null,
         });
       }
 

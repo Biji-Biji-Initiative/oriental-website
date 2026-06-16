@@ -56,9 +56,18 @@ type VoiceAgentDialogProps = {
   prefill?: { email?: string; mode?: "voice" | "form"; autoStart?: boolean };
   /** Bumped on talk-CTA hover/focus: pre-mint a session before the tap. */
   prewarmSignal?: number;
+  /** QA voice variant id, threaded to the session mint. */
+  voiceVariant?: string;
 };
 
-export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, prewarmSignal }: VoiceAgentDialogProps) {
+export function VoiceAgentDialog({
+  open,
+  onOpenChange,
+  intent,
+  prefill,
+  prewarmSignal,
+  voiceVariant,
+}: VoiceAgentDialogProps) {
   const [status, setStatus] = useState<"idle" | "submitted">("idle");
   const [submitting, setSubmitting] = useState(false);
   const [activeTopicId, setActiveTopicId] = useState<string | null>(null);
@@ -207,6 +216,7 @@ export function VoiceAgentDialog({ open, onOpenChange, intent, prefill, prewarmS
         reviewRef.current = metadata;
       },
       segment,
+      variant: voiceVariant,
     });
   teardownVoiceRef.current = teardownVoice;
   sendClientEventsRef.current = sendClientEvents;
