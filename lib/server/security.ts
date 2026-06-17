@@ -21,7 +21,13 @@ function isLocalDevelopmentIp(ip: string) {
   return ip === "localhost" || ip === "::1" || ip === "127.0.0.1" || ip.startsWith("127.");
 }
 
+function turnstileRequired() {
+  return readEnv("TURNSTILE_ENFORCEMENT") === "required";
+}
+
 export async function verifyTurnstile(token: string | undefined, ip: string) {
+  if (!turnstileRequired()) return true;
+
   if (!isProductionEnv() && token === "local-dev" && isLocalDevelopmentIp(ip)) {
     return true;
   }

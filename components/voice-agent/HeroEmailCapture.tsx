@@ -1,14 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useTurnstileToken } from "@/components/security/TurnstileProvider";
 import { useVoice } from "@/components/voice-agent/voice-state";
 
 const emailPattern = /^\S+@\S+\.\S+$/;
 
 export function HeroEmailCapture() {
   const voice = useVoice();
-  const turnstile = useTurnstileToken();
   const [email, setEmail] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
@@ -23,18 +21,10 @@ export function HeroEmailCapture() {
     }
     setBusy(true);
     setError("");
-    let turnstileToken = "";
-    try {
-      turnstileToken = await turnstile.getToken();
-    } catch {
-      setBusy(false);
-      setError("Could not verify this browser. Try again or email team@mereka.io.");
-      return;
-    }
     const response = await fetch("/api/newsletter", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: value, turnstileToken }),
+      body: JSON.stringify({ email: value }),
     }).catch(() => null);
     setBusy(false);
     if (!response?.ok) {
@@ -90,11 +80,7 @@ export function HeroEmailCapture() {
           type="email"
           value={email}
         />
-        <button
-          className="hero-email__submit"
-          disabled={busy || !turnstile.ready || !emailPattern.test(email.trim())}
-          type="submit"
-        >
+        <button className="hero-email__submit" disabled={busy || !emailPattern.test(email.trim())} type="submit">
           {busy ? "Saving..." : "Keep me posted →"}
         </button>
       </div>

@@ -101,6 +101,103 @@
 }
 
 @layer components {
+  .hero-section {
+    min-height: 100svh;
+  }
+
+  .hero-shell {
+    min-height: 100svh;
+    padding-top: clamp(6rem, 12svh, 8rem);
+    padding-bottom: clamp(2rem, 8svh, 4.5rem);
+  }
+
+  .hero-copy {
+    width: min(100%, 64rem);
+  }
+
+  .hero-kicker {
+    @apply mb-4 flex items-center gap-3 text-xs font-medium uppercase text-white/70;
+    letter-spacing: 0;
+  }
+
+  .hero-title {
+    @apply max-w-[64rem] text-[3.25rem] font-extrabold leading-[0.92] tracking-normal text-balance text-white sm:text-[4.25rem] md:text-[5rem] lg:text-[5.25rem] xl:text-[5.75rem] 2xl:text-[6.25rem];
+  }
+
+  .hero-title__outline {
+    color: transparent;
+    -webkit-text-stroke: 1.15px rgba(255, 255, 255, 0.72);
+  }
+
+  .hero-title__script {
+    @apply font-serif font-light;
+  }
+
+  .hero-lede {
+    @apply mt-5 max-w-2xl text-[15.5px] leading-7 text-white/78 sm:mt-6 sm:text-lg sm:leading-8 lg:mt-7;
+  }
+
+  .hero-actions {
+    @apply mt-6 flex w-full max-w-xl flex-col gap-4 lg:mt-7;
+  }
+
+  .hero-voice-button {
+    @apply w-full max-w-xl justify-between sm:w-fit sm:justify-start;
+  }
+
+  .hero-voice-button__key {
+    @apply hidden shrink-0 rounded-full bg-mk-off-black px-2 py-1 text-[10px] text-white sm:inline-flex;
+  }
+
+  .hero-private {
+    @apply mt-4 flex max-w-2xl items-start gap-2 text-xs leading-5 text-white/62 sm:text-sm;
+  }
+
+  .hero-corner {
+    letter-spacing: 0;
+  }
+
+  @media (max-height: 900px) and (min-width: 768px) {
+    .hero-private,
+    .hero-corner--bottom {
+      display: none;
+    }
+  }
+
+  @media (max-height: 780px) and (min-width: 768px) {
+    .hero-shell {
+      padding-top: 5.25rem;
+      padding-bottom: 2rem;
+    }
+
+    .hero-title {
+      font-size: 5rem;
+    }
+
+    .hero-lede {
+      margin-top: 1.125rem;
+      font-size: 1rem;
+      line-height: 1.6;
+    }
+
+    .hero-actions {
+      margin-top: 1.25rem;
+      gap: 0.875rem;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .hero-shell {
+      align-items: flex-start;
+      padding-top: 6.25rem;
+      padding-bottom: 2rem;
+    }
+
+    .hero-title {
+      max-width: 9.6ch;
+    }
+  }
+
   .section-num {
     @apply inline-flex items-center gap-3 text-xs font-medium uppercase tracking-[0.16em] text-mk-off-black/60;
   }
@@ -400,35 +497,28 @@
   }
 
   .hero-email {
-    @apply max-w-xl text-white;
+    @apply w-full max-w-xl text-white;
   }
 
   .hero-email__label {
-    @apply mb-2 block text-xs font-medium tracking-[0.14em] text-white/72 uppercase;
+    @apply mb-2 block text-xs font-medium text-white/72 uppercase;
+    letter-spacing: 0;
   }
 
   .hero-email__row {
-    @apply flex items-stretch rounded-full border border-white/14 bg-white/[0.06] p-1 backdrop-blur-md transition focus-within:border-white/45 focus-within:bg-white/[0.09];
+    @apply flex flex-col items-stretch gap-1 rounded-[1.65rem] border border-white/14 bg-white/[0.06] p-1 backdrop-blur-md transition focus-within:border-white/45 focus-within:bg-white/[0.09] sm:flex-row sm:rounded-full;
   }
 
   .hero-email__row input {
-    @apply min-w-0 flex-1 appearance-none border-0 bg-transparent px-5 py-3.5 text-base font-medium text-white outline-none placeholder:text-white/40;
+    @apply min-w-0 flex-1 appearance-none border-0 bg-transparent px-4 py-3 text-[15px] font-medium text-white outline-none placeholder:text-white/40 sm:px-5 sm:py-3.5 sm:text-base;
   }
 
   .hero-email__submit {
-    @apply shrink-0 cursor-pointer rounded-full border-0 bg-white px-5 py-3 text-[13.5px] font-semibold text-mk-off-black transition enabled:hover:bg-mk-horizon enabled:hover:text-white disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/40;
+    @apply w-full shrink-0 cursor-pointer rounded-full border-0 bg-white px-5 py-3 text-[13.5px] font-semibold text-mk-off-black transition enabled:hover:bg-mk-horizon enabled:hover:text-white disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/40 sm:w-auto;
   }
 
   .hero-email__error {
     @apply mt-2 text-sm text-white/90;
-  }
-
-  /* Page-level Turnstile slot: zero footprint until Cloudflare expands a
-     challenge into it. Fixed above everything (including the voice dialog at
-     z-50) and pointer-events restored so the checkbox stays clickable under
-     Radix's modal body lock. */
-  .turnstile-anchor {
-    @apply pointer-events-auto fixed bottom-4 left-1/2 z-[140] -translate-x-1/2;
   }
 
   .hero-email--done {

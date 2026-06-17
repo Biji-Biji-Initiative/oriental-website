@@ -4,7 +4,7 @@ import { voiceSessionRequestSchema } from "@/lib/schemas";
 import { durationSince, errorMeta, logError, logInfo, logWarn } from "@/lib/server/logger";
 import { createRealtimeClientSecret, type RealtimeDeviceProfile } from "@/lib/server/openai-realtime";
 import { sendOpsAlert } from "@/lib/server/ops-alerts";
-import { checkRateLimit, hashIp, noStoreJson, requestIp, verifyTurnstile } from "@/lib/server/security";
+import { checkRateLimit, hashIp, noStoreJson, requestIp } from "@/lib/server/security";
 import { createVoiceReviewCredentials } from "@/lib/server/voice-review-token";
 
 export const runtime = "nodejs";
@@ -22,14 +22,8 @@ export async function POST(request: NextRequest) {
     return noStoreJson({ ok: false, error: "invalid_payload", details: parsed.error.flatten() }, { status: 400 });
   }
 
-  const turnstileOk = await verifyTurnstile(parsed.data.turnstileToken, ip);
-  if (!turnstileOk) {
-    logWarn("voice_session.turnstile_failed", { requestId, ipHash, durationMs: durationSince(startedAt) });
-    return noStoreJson({ ok: false, error: "turnstile_failed" }, { status: 403 });
-  }
-
-  // Opening the voice dialog pre-mints a session (never-connected secrets just
-  // expire), so the budget must cover browsing behaviour, not only real calls.
+  // Page-load prewarming mints a short-lived session before a real call starts,
+  // so the budget covers browsing behaviour, not only connected calls.
   const dailyLimit = readPositiveIntEnv("VOICE_SESSION_DAILY_LIMIT", 8);
   const limit = await checkRateLimit(`voice:${ipHash}`, dailyLimit, 24 * 60 * 60 * 1000);
   if (!limit.ok) {

@@ -80,13 +80,6 @@ export function voiceCloseReasonToast(reason: VoiceCloseReason) {
       description: "You can still send the handoff from the panel.",
     };
   }
-  if (reason === "verification_failed") {
-    return {
-      tone: "error" as const,
-      title: "Could not verify this browser.",
-      description: "Refresh and try again in a moment.",
-    };
-  }
   if (reason === "disconnected") {
     return {
       tone: "warning" as const,

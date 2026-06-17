@@ -5,7 +5,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { preconnect } from "react-dom";
 import { type UseFormReturn, useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { useTurnstileToken } from "@/components/security/TurnstileProvider";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { leadFormSchema } from "@/lib/schemas";
 import { getSegment, type SegmentId, segmentOptions } from "@/lib/segments";
@@ -71,7 +70,6 @@ export function VoiceAgentDialog({
   const [status, setStatus] = useState<"idle" | "submitted">("idle");
   const [submitting, setSubmitting] = useState(false);
   const [activeTopicId, setActiveTopicId] = useState<string | null>(null);
-  const turnstile = useTurnstileToken();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const submittingRef = useRef(false);
   const lastSyncedHandoffRef = useRef("");
@@ -121,13 +119,6 @@ export function VoiceAgentDialog({
           });
           return { ok: false, error: "invalid_lead", details: parsed.error.flatten() };
         }
-        let turnstileToken = "";
-        try {
-          turnstileToken = await turnstile.getToken();
-        } catch {
-          toast.error("Could not verify this browser. Try again in a moment.");
-          return { ok: false, error: "turnstile_unavailable" };
-        }
         const response = await fetchWithTimeout(
           "/api/leads",
           {
@@ -138,7 +129,6 @@ export function VoiceAgentDialog({
               segment: leadState.segment,
               form: parsed.data,
               transcript: leadState.transcript,
-              turnstileToken,
               utm: {},
             }),
           },
@@ -183,7 +173,7 @@ export function VoiceAgentDialog({
         setSubmitting(false);
       }
     },
-    [turnstile, currentReviewCredentials],
+    [currentReviewCredentials],
   );
 
   const runtime = useVoiceRuntime({
@@ -206,7 +196,6 @@ export function VoiceAgentDialog({
   const { connectVoice, connectionStatus, getLocalStream, prewarmVoiceSession, sendClientEvents, teardownVoice } =
     useRealtimeVoiceSession({
       audioRef,
-      getTurnstileToken: turnstile.getToken,
       onClose: handleVoiceClose,
       onEvent: runtime.handleRealtimeEvent,
       onIdleWarning: () => {
@@ -416,7 +405,6 @@ export function VoiceAgentDialog({
               onTopicToggle={(topicId) => setActiveTopicId((current) => (current === topicId ? null : topicId))}
               selectedSegment={selectedSegment}
               status={status}
-              turnstileReady={turnstile.ready}
             />
           </main>
 
@@ -433,7 +421,7 @@ export function VoiceAgentDialog({
                 transcript,
               })
             }
-            ready={turnstile.ready}
+            ready={true}
             selectedSegment={selectedSegment}
             submitting={submitting}
             transcript={transcript}

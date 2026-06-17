@@ -2,10 +2,12 @@
 
 import dynamic from "next/dynamic";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { preconnect } from "react-dom";
 import type { SegmentId } from "@/lib/segments";
+import { DEFAULT_VOICE_VARIANT_ID } from "@/lib/voice/variants";
 
 // The dialog pulls in the whole voice stack (forms, zod, realtime runtime), so
-// it is split out of the layout bundle and only mounted on first open.
+// it is split out of the layout bundle and mounted shortly after first paint.
 const VoiceAgentDialog = dynamic(
   () => import("@/components/voice-agent/VoiceAgentDialog").then((module) => module.VoiceAgentDialog),
   { ssr: false },
@@ -16,13 +18,15 @@ type VoiceMode = "voice" | "form";
 export type VoicePrefill = { email?: string; mode?: VoiceMode; autoStart?: boolean };
 
 const VOICE_VARIANT_STORAGE_KEY = "oriental.voiceVariant";
+const VOICE_VARIANT_COOKIE = "oriental_voice_variant";
+const VOICE_VARIANT_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 
 type VoiceContextValue = {
   open: (intent?: SegmentId, prefill?: VoicePrefill) => void;
   close: () => void;
-  /** Hover/focus on a talk CTA: mount the dialog and pre-mint a session so the tap is instant. */
+  /** Mount the dialog and pre-mint a Realtime session so the next tap is faster. */
   prewarm: () => void;
-  /** QA voice variant id (undefined = env default), set by the floating picker. */
+  /** Selected Reka voice register, persisted in this browser. */
   voiceVariant: string | undefined;
   setVoiceVariant: (variantId: string | undefined) => void;
 };
@@ -35,23 +39,27 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   const [intent, setIntent] = useState<SegmentId | undefined>();
   const [prefill, setPrefill] = useState<VoicePrefill | undefined>();
   const [prewarmSignal, setPrewarmSignal] = useState(0);
-  const [voiceVariant, setVoiceVariantState] = useState<string | undefined>();
+  const [voiceVariant, setVoiceVariantState] = useState<string | undefined>(DEFAULT_VOICE_VARIANT_ID);
 
-  // Persist the team's QA pick so it survives reloads during a tasting session.
+  // Persist the visitor's voice pick so it survives reloads and return visits.
   useEffect(() => {
     try {
-      const stored = window.localStorage.getItem(VOICE_VARIANT_STORAGE_KEY);
-      if (stored) setVoiceVariantState(stored);
+      const stored = window.localStorage.getItem(VOICE_VARIANT_STORAGE_KEY) || readCookie(VOICE_VARIANT_COOKIE);
+      const nextVariant = stored || DEFAULT_VOICE_VARIANT_ID;
+      setVoiceVariantState(nextVariant);
+      window.localStorage.setItem(VOICE_VARIANT_STORAGE_KEY, nextVariant);
+      writeVoiceVariantCookie(nextVariant);
     } catch {
-      // localStorage unavailable (private mode / SSR) — fall back to env default.
+      // localStorage/cookies unavailable — the in-memory default still applies.
     }
   }, []);
 
   const setVoiceVariant = useCallback((variantId: string | undefined) => {
-    setVoiceVariantState(variantId);
+    const nextVariant = variantId || DEFAULT_VOICE_VARIANT_ID;
+    setVoiceVariantState(nextVariant);
     try {
-      if (variantId) window.localStorage.setItem(VOICE_VARIANT_STORAGE_KEY, variantId);
-      else window.localStorage.removeItem(VOICE_VARIANT_STORAGE_KEY);
+      window.localStorage.setItem(VOICE_VARIANT_STORAGE_KEY, nextVariant);
+      writeVoiceVariantCookie(nextVariant);
     } catch {
       // Non-fatal: the in-memory selection still applies for this session.
     }
@@ -71,11 +79,15 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     setPrewarmSignal((signal) => signal + 1);
   }, []);
 
-  // Warm the dialog chunk shortly after first paint so the first open feels instant.
+  // Load the dialog bundle and mint a Realtime client secret shortly after
+  // first paint. Microphone access still only starts from a user action.
   useEffect(() => {
     const timer = window.setTimeout(() => {
+      preconnect("https://api.openai.com");
+      setMounted(true);
       void import("@/components/voice-agent/VoiceAgentDialog");
-    }, 2_500);
+      setPrewarmSignal((signal) => signal + 1);
+    }, 650);
     return () => window.clearTimeout(timer);
   }, []);
 
@@ -99,6 +111,21 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       ) : null}
     </VoiceContext.Provider>
   );
+}
+
+function readCookie(name: string) {
+  const prefix = `${name}=`;
+  return document.cookie
+    .split(";")
+    .map((entry) => entry.trim())
+    .find((entry) => entry.startsWith(prefix))
+    ?.slice(prefix.length);
+}
+
+function writeVoiceVariantCookie(variantId: string) {
+  const secure = window.location.protocol === "https:" ? "; Secure" : "";
+  // biome-ignore lint/suspicious/noDocumentCookie: first-party preference cookie; Cookie Store API is not universal.
+  document.cookie = `${VOICE_VARIANT_COOKIE}=${encodeURIComponent(variantId)}; Path=/; Max-Age=${VOICE_VARIANT_COOKIE_MAX_AGE}; SameSite=Lax${secure}`;
 }
 
 export function useVoice() {

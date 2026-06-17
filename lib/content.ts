@@ -92,7 +92,7 @@ export const spaces = [
       "The social heart of the building — open, welcoming, and active throughout the day. Designed for casual collaboration, exhibitions, networking, community gatherings, and the moments between programmes where new connections begin.",
     cta: "Explore the Commons",
     intent: "community" as SegmentId,
-    image: "/assets/81_agora_world_cafe_evening_openai_4e792ccfe15d_20260504-213415_0.png",
+    image: "/assets/spaces/public-commons-community-lounge.jpg",
   },
   {
     number: "02",
@@ -110,7 +110,7 @@ export const spaces = [
       "Modular spaces for talks, forums, screenings, product showcases, performances, launches, exhibitions, and public discussions.",
     cta: "Host an Event or Activation",
     intent: "programme" as SegmentId,
-    image: "/assets/16-buy-social-showcase.png",
+    image: "/assets/spaces/flexible-event-spaces-forum.jpg",
   },
   {
     number: "04",

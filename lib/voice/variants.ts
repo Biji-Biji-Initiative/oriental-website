@@ -14,8 +14,7 @@
  *
  * This module is the single source of truth: the server resolves the selected
  * id when minting a session (so voice/speed/persona are never client-supplied),
- * and the floating picker renders the same list. Gate the picker with the
- * runtime flag `VOICE_VARIANT_PICKER=true`.
+ * and the visitor-facing picker renders the same list.
  */
 export type VoiceVariant = {
   id: string;

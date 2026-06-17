@@ -25,13 +25,13 @@ const footerPartners = [
 export function Hero() {
   return (
     <section
-      className="relative grid min-h-svh overflow-hidden bg-mk-off-black text-white"
+      className="hero-section relative grid min-h-[100svh] overflow-hidden bg-mk-off-black text-white"
       data-screen-label="01 Hero"
       id="top"
     >
       <Image
         alt=""
-        className="absolute inset-0 h-full w-full object-cover object-[62%_center] opacity-60 saturate-[0.8]"
+        className="absolute inset-0 h-full w-full object-cover object-[58%_center] opacity-60 saturate-[0.8] md:object-[62%_center]"
         fill
         priority
         sizes="100vw"
@@ -42,43 +42,48 @@ export function Hero() {
       <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:72px_72px] opacity-24" />
       <HeroCorner className="left-5 top-24 md:left-9" lines={["Oriental Building", "Jalan Tun Perak · Kuala Lumpur"]} />
       <HeroCorner className="right-5 top-24 text-right md:right-9" lines={["Levels Two–Four", "Opening 2027"]} />
-      <HeroCorner className="bottom-10 left-5 md:left-9" lines={["Status", "Partner conversations now open"]} />
       <HeroCorner
-        className="bottom-10 right-5 text-right md:right-9"
+        className="hero-corner--bottom bottom-10 left-5 md:left-9"
+        lines={["Status", "Partner conversations now open"]}
+      />
+      <HeroCorner
+        className="hero-corner--bottom bottom-10 right-5 text-right md:right-9"
         lines={["oriental.mereka.io", "A founding invitation"]}
       />
-      <div className="relative z-10 mx-auto flex w-full max-w-wrap items-center px-gutter py-32">
-        <div className="max-w-4xl">
-          <div className="mb-6 flex items-center gap-3 text-xs font-medium uppercase tracking-[0.16em] text-white/70">
+      <div className="hero-shell relative z-10 mx-auto flex w-full max-w-wrap items-center px-gutter">
+        <div className="hero-copy">
+          <div className="hero-kicker">
             <span className="size-2 rounded-full bg-mk-horizon" />A new chapter for a historic building
           </div>
-          <h1 className="text-[clamp(48px,8vw,126px)] font-extrabold leading-[0.94] tracking-normal">
-            Reimagining
-            <br />
-            <span className="text-transparent [-webkit-text-stroke:1.2px_rgba(255,255,255,0.72)]">Oriental.</span>
-            <br />
-            <em className="font-serif font-light">A future</em> we build together.
+          <h1 className="hero-title">
+            <span className="block">Reimagining</span>
+            <span className="hero-title__outline block">Oriental.</span>
+            <span className="block">
+              <em className="hero-title__script">A future</em>
+            </span>
+            <span className="block">we build together.</span>
           </h1>
-          <p className="mt-8 max-w-2xl text-lg leading-8 text-white/78 md:text-xl">
+          <p className="hero-lede">
             Mereka, Biji-biji Initiative, and partners are shaping Levels 2 to 4 of Oriental Building into a shared hub
             for future learning, technology, creativity, culture, and community — in the heart of Kuala Lumpur.
           </p>
-          <div className="mt-9 flex flex-col gap-5">
-            <VoiceButton className="w-fit">
-              <span>
+          <div className="hero-actions">
+            <VoiceButton className="hero-voice-button">
+              <span className="min-w-0">
                 Tell us why you&apos;re here
                 <span className="block text-xs font-normal text-mk-off-black/58">
                   Speak or type — Mereka will route you to the right team
                 </span>
               </span>
-              <span className="rounded-full bg-mk-off-black px-2 py-1 text-[10px] text-white">SPACE</span>
+              <span className="hero-voice-button__key">SPACE</span>
             </VoiceButton>
             <HeroEmailCapture />
           </div>
-          <div className="mt-5 flex items-center gap-2 text-sm text-white/62">
-            <span className="size-1.5 rounded-full bg-mk-horizon" />
-            Private · transcribed &amp; saved so the right person follows up · routed only to your partner&apos;s team
-            at Mereka
+          <div className="hero-private">
+            <span className="size-1.5 shrink-0 rounded-full bg-mk-horizon" />
+            <span>
+              Private · transcribed and saved so the right person follows up · routed only to your partner&apos;s team
+            </span>
           </div>
         </div>
       </div>
@@ -88,7 +93,7 @@ export function Hero() {
 
 function HeroCorner({ className, lines }: { className?: string; lines: [string, string] }) {
   return (
-    <div className={cn("absolute z-10 hidden text-xs uppercase tracking-[0.15em] text-white/68 md:block", className)}>
+    <div className={cn("hero-corner absolute z-10 hidden text-xs uppercase text-white/68 md:block", className)}>
       <div className="text-white">{lines[0]}</div>
       <div className="mt-1 text-white/48">{lines[1]}</div>
     </div>

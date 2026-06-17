@@ -136,28 +136,19 @@ test("lead form surfaces a partial failure when the lead saves but notifications
   await expect(page.getByLabel("Name")).toHaveValue("Asha");
 });
 
-test("voice variant picker stays hidden unless the QA flag is served", async ({ page }) => {
-  // Default config (no flag): the floating QA picker must not render for visitors.
-  await page.route("**/api/client-config", async (route) => {
-    await route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({ turnstileSiteKey: null, voiceVariantPicker: false }),
-    });
-  });
+test("voice variant picker appears, switches voice, and persists the selection", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("region", { name: /Voice variant picker/i })).toHaveCount(0);
-});
-
-test("voice variant picker appears and switches voice when flagged on", async ({ page }) => {
-  await page.route("**/api/client-config", async (route) => {
-    await route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({ turnstileSiteKey: null, voiceVariantPicker: true }),
-    });
-  });
-  await page.goto("/");
-  const picker = page.getByRole("region", { name: /Voice variant picker/i });
+  const picker = page.getByRole("region", { name: /Choose Reka voice/i });
   await expect(picker).toBeVisible();
-  await picker.getByRole("button", { name: /Reka · Warm/i }).click();
-  await expect(picker.getByRole("button", { name: /Reka · Warm/i })).toHaveAttribute("aria-pressed", "true");
+  const warmButton = picker.getByRole("button", { name: /^Warm\b/ });
+  await warmButton.click();
+  await expect(warmButton).toHaveAttribute("aria-pressed", "true");
+  await expect
+    .poll(async () =>
+      page.evaluate(() => ({
+        stored: window.localStorage.getItem("oriental.voiceVariant"),
+        cookie: document.cookie,
+      })),
+    )
+    .toMatchObject({ stored: "malay-warm", cookie: expect.stringContaining("oriental_voice_variant=malay-warm") });
 });

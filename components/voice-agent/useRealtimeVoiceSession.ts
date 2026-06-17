@@ -12,7 +12,6 @@ export type VoiceCloseReason =
   | "max_duration"
   | "manual"
   | "error"
-  | "verification_failed"
   | "voice_limit_reached"
   | "mic_denied"
   | "session_failed"
@@ -50,7 +49,6 @@ class VoiceConnectionFailure extends Error {
 
 type UseRealtimeVoiceSessionArgs = {
   audioRef: RefObject<HTMLAudioElement | null>;
-  getTurnstileToken: () => Promise<string>;
   onClose: (reason: VoiceCloseReason) => void;
   onEvent: (event: RealtimeServerEvent, channel: RTCDataChannel) => void;
   /** Called shortly before the idle cutoff so the agent can say a goodbye. */
@@ -63,7 +61,6 @@ type UseRealtimeVoiceSessionArgs = {
 
 export function useRealtimeVoiceSession({
   audioRef,
-  getTurnstileToken,
   onClose,
   onEvent,
   onIdleWarning,
@@ -181,20 +178,12 @@ export function useRealtimeVoiceSession({
   }, []);
 
   const mintVoiceSession = useCallback(async () => {
-    let turnstileToken = "";
-    try {
-      turnstileToken = await getTurnstileToken();
-    } catch {
-      throw new VoiceConnectionFailure("verification_failed");
-    }
-
     const sessionResponse = await fetch("/api/voice/session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ intent: segment, turnstileToken, variant: variantRef.current }),
+      body: JSON.stringify({ intent: segment, variant: variantRef.current }),
     });
     const session = (await sessionResponse.json().catch(() => null)) as VoiceSessionResponse | null;
-    if (session?.error === "turnstile_failed") throw new VoiceConnectionFailure("verification_failed");
     if (session?.error === "voice_limit_reached" || sessionResponse.status === 429) {
       throw new VoiceConnectionFailure("voice_limit_reached");
     }
@@ -207,7 +196,7 @@ export function useRealtimeVoiceSession({
       idleTimeoutMs: positiveOr(session.limits?.idle_timeout_ms, VOICE_SESSION_DEFAULTS.idleTimeoutMs),
     };
     return { ...session, client_secret: { ...session.client_secret, value: clientSecret } };
-  }, [getTurnstileToken, segment]);
+  }, [segment]);
 
   type MintedSession = Awaited<ReturnType<typeof mintVoiceSession>>;
   const prewarmedRef = useRef<{ session: MintedSession; mintedAt: number; variant: string | undefined } | null>(null);
@@ -230,38 +219,33 @@ export function useRealtimeVoiceSession({
   }, []);
 
   /**
-   * Mint the ephemeral session only for returning visitors whose microphone is
-   * already granted. First-time visitors should see and accept the browser mic
-   * prompt before we spend daily voice quota or create an OpenAI session.
+   * Mint the ephemeral session in the background so the user's first click does
+   * not wait on OpenAI client-secret creation. Microphone access is still only
+   * requested from the explicit start action.
    */
   const prewarmVoiceSession = useCallback(() => {
     if (statusRef.current !== "idle") return;
     if (prewarmPromiseRef.current) return;
-    void queryMicrophonePermission()
-      .then((permission) => {
-        if (permission !== "granted" || statusRef.current !== "idle" || prewarmPromiseRef.current) return;
-        const cached = prewarmedRef.current;
-        if (cached) {
-          const stillFresh =
-            cached.variant === variantRef.current &&
-            (cached.session.client_secret.expires_at && cached.session.client_secret.expires_at > 0
-              ? cached.session.client_secret.expires_at * 1000
-              : cached.mintedAt + 270_000) >
-              Date.now() + 30_000;
-          if (stillFresh) return;
-          prewarmedRef.current = null;
-        }
-        const variantAtMint = variantRef.current;
-        prewarmPromiseRef.current = mintVoiceSession()
-          .then((session) => {
-            prewarmedRef.current = { session, mintedAt: Date.now(), variant: variantAtMint };
-          })
-          .catch(() => null)
-          .then(() => {
-            prewarmPromiseRef.current = null;
-          });
+    const cached = prewarmedRef.current;
+    if (cached) {
+      const stillFresh =
+        cached.variant === variantRef.current &&
+        (cached.session.client_secret.expires_at && cached.session.client_secret.expires_at > 0
+          ? cached.session.client_secret.expires_at * 1000
+          : cached.mintedAt + 270_000) >
+          Date.now() + 30_000;
+      if (stillFresh) return;
+      prewarmedRef.current = null;
+    }
+    const variantAtMint = variantRef.current;
+    prewarmPromiseRef.current = mintVoiceSession()
+      .then((session) => {
+        prewarmedRef.current = { session, mintedAt: Date.now(), variant: variantAtMint };
       })
-      .catch(() => null);
+      .catch(() => null)
+      .then(() => {
+        prewarmPromiseRef.current = null;
+      });
   }, [mintVoiceSession]);
 
   const obtainVoiceSession = useCallback(async (): Promise<MintedSession> => {

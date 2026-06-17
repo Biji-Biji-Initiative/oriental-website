@@ -1,5 +1,3 @@
-import { readEnv } from "@/lib/env";
-
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -12,9 +10,8 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   return Response.json(
     {
-      turnstileSiteKey: readEnv("TURNSTILE_SITE_KEY") || readEnv("NEXT_PUBLIC_TURNSTILE_SITE_KEY") || null,
-      // QA-only: floating voice variant picker for the team to A/B Reka's voice.
-      voiceVariantPicker: readEnv("VOICE_VARIANT_PICKER") === "true",
+      turnstileSiteKey: null,
+      voiceVariantPicker: true,
     },
     { headers: { "Cache-Control": "no-store" } },
   );
