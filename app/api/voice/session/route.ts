@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
 
   // Page-load prewarming mints a short-lived session before a real call starts,
   // so the budget covers browsing behaviour, not only connected calls.
-  const dailyLimit = readPositiveIntEnv("VOICE_SESSION_DAILY_LIMIT", 8);
+  const dailyLimit = readPositiveIntEnv("VOICE_SESSION_DAILY_LIMIT", 80);
   const limit = await checkRateLimit(`voice:${ipHash}`, dailyLimit, 24 * 60 * 60 * 1000);
   if (!limit.ok) {
     logWarn("voice_session.rate_limited", {
