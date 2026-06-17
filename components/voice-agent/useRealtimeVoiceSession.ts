@@ -26,6 +26,10 @@ export type VoiceReviewMetadata = {
   voice?: string;
   speed?: number;
   variant?: string | null;
+  prewarmedAt?: number;
+  connectStartedAt?: number;
+  connectedAt?: number;
+  firstEventAt?: number;
 };
 
 type VoiceSessionResponse = {
@@ -201,6 +205,25 @@ export function useRealtimeVoiceSession({
   type MintedSession = Awaited<ReturnType<typeof mintVoiceSession>>;
   const prewarmedRef = useRef<{ session: MintedSession; mintedAt: number; variant: string | undefined } | null>(null);
   const prewarmPromiseRef = useRef<Promise<void> | null>(null);
+  const activePrewarmedAtRef = useRef<number | undefined>(undefined);
+  const firstEventAtRef = useRef<number | undefined>(undefined);
+
+  const emitSessionReady = useCallback(
+    (session: MintedSession, extras: Omit<Partial<VoiceReviewMetadata>, "id" | "token" | "sessionId"> = {}) => {
+      if (!session.review?.id || !session.review?.token) return;
+      onSessionReady?.({
+        id: session.review.id,
+        token: session.review.token,
+        sessionId: session.session_id ?? session.review.id,
+        model: session.model,
+        voice: session.voice,
+        speed: session.speed,
+        variant: session.variant ?? null,
+        ...extras,
+      });
+    },
+    [onSessionReady],
+  );
 
   const takePrewarmedSession = useCallback((): MintedSession | null => {
     const cached = prewarmedRef.current;
@@ -215,7 +238,9 @@ export function useRealtimeVoiceSession({
       cached.session.client_secret.expires_at && cached.session.client_secret.expires_at > 0
         ? cached.session.client_secret.expires_at * 1000
         : cached.mintedAt + 270_000;
-    return expiresAtMs > Date.now() + 20_000 ? cached.session : null;
+    if (expiresAtMs <= Date.now() + 20_000) return null;
+    activePrewarmedAtRef.current = cached.mintedAt;
+    return cached.session;
   }, []);
 
   /**
@@ -240,13 +265,15 @@ export function useRealtimeVoiceSession({
     const variantAtMint = variantRef.current;
     prewarmPromiseRef.current = mintVoiceSession()
       .then((session) => {
-        prewarmedRef.current = { session, mintedAt: Date.now(), variant: variantAtMint };
+        const mintedAt = Date.now();
+        prewarmedRef.current = { session, mintedAt, variant: variantAtMint };
+        emitSessionReady(session, { prewarmedAt: mintedAt });
       })
       .catch(() => null)
       .then(() => {
         prewarmPromiseRef.current = null;
       });
-  }, [mintVoiceSession]);
+  }, [emitSessionReady, mintVoiceSession]);
 
   const obtainVoiceSession = useCallback(async (): Promise<MintedSession> => {
     const cached = takePrewarmedSession();
@@ -256,6 +283,7 @@ export function useRealtimeVoiceSession({
       const settled = takePrewarmedSession();
       if (settled) return settled;
     }
+    activePrewarmedAtRef.current = undefined;
     return mintVoiceSession();
   }, [mintVoiceSession, takePrewarmedSession]);
 
@@ -264,6 +292,8 @@ export function useRealtimeVoiceSession({
     // query would otherwise start two connect flows and spend quota twice.
     if (connectGateRef.current || statusRef.current !== "idle") return;
     connectGateRef.current = true;
+    const connectStartedAt = Date.now();
+    firstEventAtRef.current = undefined;
     try {
       const permission = await queryMicrophonePermission();
       // Fail fast on a known denial: no token mint, no spent voice quota.
@@ -289,17 +319,7 @@ export function useRealtimeVoiceSession({
         session = await obtainVoiceSession();
       }
 
-      if (session.review?.id && session.review?.token) {
-        onSessionReady?.({
-          id: session.review.id,
-          token: session.review.token,
-          sessionId: session.session_id ?? session.review.id,
-          model: session.model,
-          voice: session.voice,
-          speed: session.speed,
-          variant: session.variant ?? null,
-        });
-      }
+      emitSessionReady(session, { prewarmedAt: activePrewarmedAtRef.current, connectStartedAt });
 
       const peer = new RTCPeerConnection();
       connectionRef.current = peer;
@@ -327,6 +347,11 @@ export function useRealtimeVoiceSession({
       channel.onopen = () => {
         setConnectionStatus("listening");
         statusRef.current = "listening";
+        emitSessionReady(session, {
+          prewarmedAt: activePrewarmedAtRef.current,
+          connectStartedAt,
+          connectedAt: Date.now(),
+        });
         resetIdleTimer();
         armMaxTimer();
       };
@@ -347,6 +372,14 @@ export function useRealtimeVoiceSession({
         if (parsed?.type === "input_audio_buffer.speech_started") {
           // The user came back during the goodbye window; resume the normal idle cycle.
           idleClosingRef.current = false;
+        }
+        if (!firstEventAtRef.current) {
+          firstEventAtRef.current = Date.now();
+          emitSessionReady(session, {
+            prewarmedAt: activePrewarmedAtRef.current,
+            connectStartedAt,
+            firstEventAt: firstEventAtRef.current,
+          });
         }
         resetIdleTimer();
         if (parsed) onEvent(parsed, channel);
@@ -373,9 +406,9 @@ export function useRealtimeVoiceSession({
     acquireMicStream,
     armMaxTimer,
     audioRef,
+    emitSessionReady,
     obtainVoiceSession,
     onEvent,
-    onSessionReady,
     resetIdleTimer,
     setStatus,
     teardownVoice,

@@ -68,6 +68,11 @@ export default async function SessionReviewPage() {
         <MetricCard label="Notification health" suffix="%" value={dashboard.data.metrics.notificationDeliveryRate} />
         <MetricCard label="Voice submit rate" suffix="%" value={dashboard.data.metrics.voiceSubmitRate} />
         <MetricCard
+          detail={`${dashboard.data.metrics.connectedSessions}/${dashboard.data.metrics.engagedSessions} engaged connected · ${dashboard.data.metrics.prewarmedSessions} prewarmed`}
+          label="Voice readiness"
+          value={dashboard.data.metrics.connectedSessions}
+        />
+        <MetricCard
           detail={`${recoverableVoiceSessions(dashboard.data.voiceSessions).length} recoverable`}
           label="Sessions with errors"
           tone="danger"
@@ -232,7 +237,7 @@ function AnalyticsPanel({ data }: { data: DashboardData }) {
           <HealthBox
             label="Voice funnel"
             value={`${data.metrics.voiceSubmitRate}%`}
-            detail={`${data.analytics.voice.submitted}/${data.analytics.voice.sessions} submitted · ${recoverableCount} recoverable · ${voiceRealErrors} with errors · ${data.analytics.voice.totalResponseTokens} response tokens`}
+            detail={`${data.analytics.voice.submitted}/${data.analytics.voice.engaged || data.analytics.voice.sessions} engaged submitted · ${data.analytics.voice.connected} connected · ${data.analytics.voice.prewarmed} prewarmed · ${recoverableCount} recoverable · ${voiceRealErrors} with errors · ${data.analytics.voice.totalResponseTokens} response tokens`}
             danger={voiceRealErrors > 0}
           />
         </div>
@@ -280,6 +285,14 @@ function WorkflowLeadCard({ lead }: { lead: LeadRow }) {
         </div>
       </dl>
       <LeadContactChips lead={lead} />
+      {lead.voiceReviewId ? (
+        <a
+          className="mt-3 inline-flex rounded-full border border-mk-blue/20 bg-mk-blue/5 px-3 py-1.5 text-xs font-semibold text-mk-blue transition hover:border-mk-blue/45 hover:bg-mk-blue/10"
+          href={`#${voiceSessionAnchorId(lead.voiceReviewId)}`}
+        >
+          Open source voice session · {lead.voiceVariant || "default"}
+        </a>
+      ) : null}
       <p className="mt-4 whitespace-pre-wrap rounded-lg bg-white p-3 text-sm leading-6">{lead.message}</p>
       {lead.workflowNote ? (
         <p className="mt-3 rounded-lg bg-mk-horizon/15 p-3 text-xs text-mk-ash">{lead.workflowNote}</p>
@@ -701,7 +714,11 @@ function VoiceSessionsPanel({ sessions }: { sessions: VoiceSessionRow[] }) {
           const realErrorCount = session.errors.filter((error: VoiceRuntimeError) => !isBenignVoiceError(error)).length;
           const benignErrorCount = session.errors.length - realErrorCount;
           return (
-            <article className="rounded-lg border border-mk-ash/15 p-4" key={session.reviewId}>
+            <article
+              className="rounded-lg border border-mk-ash/15 p-4"
+              id={voiceSessionAnchorId(session.reviewId)}
+              key={session.reviewId}
+            >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <div className="font-semibold">{session.captured.name || "Uncaptured visitor"}</div>
@@ -714,6 +731,11 @@ function VoiceSessionsPanel({ sessions }: { sessions: VoiceSessionRow[] }) {
                     {session.leadId ? "submitted" : session.status}
                   </Badge>
                   {session.variant ? <Badge tone="blue">{session.variant}</Badge> : null}
+                  {session.prewarmedAt ? <Badge tone="neutral">prewarmed</Badge> : null}
+                  {session.connectedAt ? <Badge tone="green">connected</Badge> : null}
+                  {session.closeReason ? (
+                    <Badge tone={closeReasonTone(session.closeReason)}>{session.closeReason}</Badge>
+                  ) : null}
                   {session.routeRequested ? <Badge tone="amber">route requested</Badge> : null}
                   <Badge tone={realErrorCount > 0 ? "red" : "blue"}>
                     {realErrorCount > 0
@@ -747,6 +769,7 @@ function VoiceSessionsPanel({ sessions }: { sessions: VoiceSessionRow[] }) {
                 </div>
               </dl>
               <SessionQualityFlags session={session} realErrorCount={realErrorCount} />
+              <SessionLifecycle session={session} />
               <div className="mt-4 grid gap-3 rounded-lg bg-mk-paper p-3 text-sm leading-6">
                 <div>
                   <span className="font-semibold">Email:</span> {session.captured.email || "empty"}
@@ -815,12 +838,16 @@ function UsageSummary({ session }: { session: VoiceSessionRow }) {
 function VoiceQaRollup({ sessions }: { sessions: VoiceSessionRow[] }) {
   if (sessions.length === 0) return null;
   const variantRows = summarizeVoiceVariants(sessions);
+  const prewarmed = sessions.filter((session) => session.prewarmedAt).length;
+  const connected = sessions.filter((session) => session.connectedAt).length;
   return (
     <div className="grid gap-3 rounded-lg border border-mk-ash/15 bg-mk-paper/70 p-3 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)]">
       <div>
         <div className="text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">QA summary</div>
         <div className="mt-3 grid gap-2 text-xs text-mk-ash sm:grid-cols-2 lg:grid-cols-1">
           <div>{sessions.length} snapshots reviewed</div>
+          <div>{prewarmed} page-load prewarms</div>
+          <div>{connected} sessions reached live audio</div>
           <div>{sessions.filter((session) => Boolean(session.leadId)).length} submitted handoffs</div>
           <div>{recoverableVoiceSessions(sessions).length} recoverable unsent leads</div>
           <div>{sessions.filter((session) => session.routeRequested).length} route requests</div>
@@ -834,6 +861,7 @@ function VoiceQaRollup({ sessions }: { sessions: VoiceSessionRow[] }) {
               <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Voice</th>
               <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Sessions</th>
               <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Submit</th>
+              <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Connect</th>
               <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Errors</th>
               <th className="py-2 font-semibold uppercase tracking-[0.12em]">Tokens</th>
             </tr>
@@ -845,6 +873,7 @@ function VoiceQaRollup({ sessions }: { sessions: VoiceSessionRow[] }) {
                 <td className="py-2 pr-3">{row.voice}</td>
                 <td className="py-2 pr-3">{row.sessions}</td>
                 <td className="py-2 pr-3">{row.submitRate}%</td>
+                <td className="py-2 pr-3">{row.connectRate}%</td>
                 <td className={row.errorSessions > 0 ? "py-2 pr-3 text-destructive" : "py-2 pr-3"}>
                   {row.errorSessions}
                 </td>
@@ -854,6 +883,48 @@ function VoiceQaRollup({ sessions }: { sessions: VoiceSessionRow[] }) {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+function SessionLifecycle({ session }: { session: VoiceSessionRow }) {
+  const rows = [
+    { label: "Prewarm", value: session.prewarmedAt ? formatDate(session.prewarmedAt) : "--" },
+    { label: "Connect start", value: session.connectStartedAt ? formatDate(session.connectStartedAt) : "--" },
+    {
+      label: "Prewarm head start",
+      value:
+        session.prewarmedAt && session.connectStartedAt
+          ? formatDuration(session.connectStartedAt - session.prewarmedAt)
+          : "--",
+    },
+    {
+      label: "Time to live",
+      value:
+        session.connectStartedAt && session.connectedAt
+          ? formatDuration(session.connectedAt - session.connectStartedAt)
+          : "--",
+    },
+    {
+      label: "First event",
+      value:
+        session.connectedAt && session.firstEventAt
+          ? formatDuration(session.firstEventAt - session.connectedAt)
+          : session.firstEventAt
+            ? formatDate(session.firstEventAt)
+            : "--",
+    },
+    { label: "Closed", value: session.closedAt ? formatDate(session.closedAt) : "--" },
+  ];
+
+  return (
+    <div className="mt-3 grid gap-2 rounded-lg border border-mk-ash/15 bg-white p-3 text-xs text-mk-ash sm:grid-cols-3 xl:grid-cols-6">
+      {rows.map((row) => (
+        <div key={row.label}>
+          <div className="font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">{row.label}</div>
+          <div className="mt-1">{row.value}</div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -869,6 +940,8 @@ function SessionQualityFlags({ session, realErrorCount }: { session: VoiceSessio
         {roles.user}/{roles.assistant} visitor/reka
       </Badge>
       {realErrorCount > 0 ? <Badge tone="red">review error</Badge> : null}
+      {session.prewarmedAt && !session.connectStartedAt ? <Badge tone="neutral">prewarm only</Badge> : null}
+      {session.connectStartedAt && !session.connectedAt ? <Badge tone="amber">did not connect</Badge> : null}
       {!session.leadId && session.captured.email.trim().length > 0 ? <Badge tone="amber">recoverable</Badge> : null}
     </div>
   );
@@ -957,6 +1030,7 @@ function summarizeVoiceVariants(sessions: VoiceSessionRow[]) {
       voice: string;
       sessions: number;
       submitted: number;
+      connected: number;
       errorSessions: number;
       responseTokens: number;
     }
@@ -965,16 +1039,45 @@ function summarizeVoiceVariants(sessions: VoiceSessionRow[]) {
     const variant = session.variant || "default";
     const voice = session.voice || "unknown";
     const key = `${variant}:${voice}`;
-    const row = rows.get(key) ?? { variant, voice, sessions: 0, submitted: 0, errorSessions: 0, responseTokens: 0 };
+    const row = rows.get(key) ?? {
+      variant,
+      voice,
+      sessions: 0,
+      submitted: 0,
+      connected: 0,
+      errorSessions: 0,
+      responseTokens: 0,
+    };
     row.sessions += 1;
     row.submitted += session.leadId ? 1 : 0;
+    row.connected += session.connectedAt ? 1 : 0;
     row.errorSessions += session.errors.some((error: VoiceRuntimeError) => !isBenignVoiceError(error)) ? 1 : 0;
     row.responseTokens += session.usage?.responseTokens ?? 0;
     rows.set(key, row);
   }
   return [...rows.values()]
-    .map((row) => ({ ...row, submitRate: Math.round((row.submitted / row.sessions) * 100) }))
+    .map((row) => ({
+      ...row,
+      submitRate: Math.round((row.submitted / row.sessions) * 100),
+      connectRate: Math.round((row.connected / row.sessions) * 100),
+    }))
     .sort((left, right) => right.sessions - left.sessions || right.errorSessions - left.errorSessions);
+}
+
+function voiceSessionAnchorId(reviewId: string) {
+  return `voice-${reviewId.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+}
+
+function closeReasonTone(reason: string): "neutral" | "blue" | "green" | "red" | "amber" {
+  if (reason === "manual" || reason === "idle_timeout" || reason === "max_duration") return "neutral";
+  if (reason === "voice_limit_reached" || reason === "mic_denied") return "amber";
+  return "red";
+}
+
+function formatDuration(ms: number | undefined) {
+  if (typeof ms !== "number" || !Number.isFinite(ms) || ms < 0) return "--";
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)}s`;
 }
 
 function formatDate(value: number) {

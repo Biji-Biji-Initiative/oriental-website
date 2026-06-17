@@ -81,6 +81,9 @@ export function VoiceAgentDialog({
     null,
   );
   const connectionStatusRef = useRef<VoiceConnectionStatus>("idle");
+  const postCloseSnapshotRef = useRef<((reason: VoiceCloseReason) => void) | null>(null);
+  const prewarmSnapshotIdsRef = useRef<Set<string>>(new Set());
+  const [reviewMetadata, setReviewMetadata] = useState<VoiceReviewMetadata | null>(null);
 
   const currentReviewCredentials = useCallback((): VoiceReviewCredentials | null => {
     if (reviewRef.current) return reviewRef.current;
@@ -90,6 +93,7 @@ export function VoiceAgentDialog({
   }, []);
 
   const handleVoiceClose = useCallback((reason: VoiceCloseReason) => {
+    postCloseSnapshotRef.current?.(reason);
     const copy = voiceCloseReasonToast(reason);
     if (!copy) return;
     if (copy.tone === "error") {
@@ -129,6 +133,7 @@ export function VoiceAgentDialog({
               segment: leadState.segment,
               form: parsed.data,
               transcript: leadState.transcript,
+              ...(source === "voice" ? buildVoiceLeadMetadata(currentReviewCredentials()) : {}),
               utm: {},
             }),
           },
@@ -202,7 +207,10 @@ export function VoiceAgentDialog({
         sendClientEventsRef.current?.(serializeResponseCreate(idleGoodbyeInstruction));
       },
       onSessionReady: (metadata) => {
-        reviewRef.current = metadata;
+        const current = reviewRef.current;
+        const next = current?.id === metadata.id ? { ...current, ...metadata } : metadata;
+        reviewRef.current = next;
+        setReviewMetadata(next);
       },
       segment,
       variant: voiceVariant,
@@ -229,6 +237,7 @@ export function VoiceAgentDialog({
     lastSyncedHandoffRef.current = "";
     openedVoiceTurnRef.current = false;
     reviewRef.current = null;
+    setReviewMetadata(null);
     localReviewRef.current = null;
     if (prefill?.mode === "form") {
       // Hero email capture opens in form intent: land the cursor on the name field.
@@ -340,19 +349,36 @@ export function VoiceAgentDialog({
     return () => window.clearTimeout(timeout);
   }, [captured, connectionStatus, segment, sendClientEvents]);
 
-  useEffect(() => {
-    if (!open) return;
-    const review = currentReviewCredentials();
-    if (!review) return;
-    const snapshotState = { ...stateRef.current, segment, captured, transcript };
-    const timeout = window.setTimeout(() => {
+  const postReviewSnapshot = useCallback(
+    (overrides: Parameters<typeof buildVoiceReviewSnapshot>[3] = {}, options: { allowLocalReview?: boolean } = {}) => {
+      const review =
+        options.allowLocalReview === false ? (reviewRef.current ?? localReviewRef.current) : currentReviewCredentials();
+      if (!review) return;
+      const snapshotState = { ...stateRef.current, segment, captured, transcript };
       void postVoiceReviewSnapshot(
         review,
-        buildVoiceReviewSnapshot(review, snapshotState, connectionStatus, { status }),
+        buildVoiceReviewSnapshot(review, snapshotState, connectionStatusRef.current, overrides),
       ).catch(() => null);
-    }, 1500);
+    },
+    [captured, currentReviewCredentials, segment, stateRef, transcript],
+  );
+
+  postCloseSnapshotRef.current = (reason: VoiceCloseReason) => {
+    postReviewSnapshot({ status, closeReason: reason, closedAt: Date.now() }, { allowLocalReview: false });
+  };
+
+  useEffect(() => {
+    if (open || !reviewMetadata?.prewarmedAt || prewarmSnapshotIdsRef.current.has(reviewMetadata.id)) return;
+    prewarmSnapshotIdsRef.current.add(reviewMetadata.id);
+    const timeout = window.setTimeout(() => postReviewSnapshot({ status: "idle" }), 200);
     return () => window.clearTimeout(timeout);
-  }, [captured, connectionStatus, currentReviewCredentials, open, segment, stateRef, status, transcript]);
+  }, [open, postReviewSnapshot, reviewMetadata]);
+
+  useEffect(() => {
+    if (!open) return;
+    const timeout = window.setTimeout(() => postReviewSnapshot({ status }), 1500);
+    return () => window.clearTimeout(timeout);
+  }, [open, postReviewSnapshot, status]);
 
   useEffect(() => {
     if (!open) return;
@@ -434,4 +460,16 @@ export function VoiceAgentDialog({
 
 function handoffSyncKey(state: Pick<VoiceRuntimeState, "segment" | "captured">) {
   return JSON.stringify({ segment: state.segment, captured: state.captured });
+}
+
+function buildVoiceLeadMetadata(review: VoiceReviewCredentials | null) {
+  if (!review) return {};
+  return {
+    voiceReviewId: review.id,
+    voiceSessionId: review.sessionId,
+    voiceVariant: review.variant ?? undefined,
+    voiceModel: review.model,
+    voiceName: review.voice,
+    voiceSpeed: review.speed,
+  };
 }

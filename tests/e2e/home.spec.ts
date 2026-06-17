@@ -1,5 +1,27 @@
 import { expect, test } from "@playwright/test";
 
+test.beforeEach(async ({ page }) => {
+  await page.route("**/api/voice/session", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        client_secret: { value: "e2e-client-secret", expires_at: Math.floor(Date.now() / 1000) + 300 },
+        session_id: "sess_e2e",
+        review: {
+          id: "5a8c25b1-cd50-4e47-89bf-84947c805add",
+          token: "review-token-that-is-long-enough-for-e2e",
+        },
+        model: "gpt-realtime-2",
+        voice: "marin",
+        speed: 1.22,
+        variant: "kl-polished",
+        limits: { max_duration_ms: 240000, idle_timeout_ms: 45000 },
+      }),
+    });
+  });
+});
+
 test("renders the Oriental microsite and opens the collaborative intake workspace", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /Reimagining/i })).toBeVisible();
@@ -138,11 +160,12 @@ test("lead form surfaces a partial failure when the lead saves but notifications
 
 test("voice variant picker appears, switches voice, and persists the selection", async ({ page }) => {
   await page.goto("/");
+  await page.getByRole("button", { name: /Choose Reka voice/i }).click();
   const picker = page.getByRole("region", { name: /Choose Reka voice/i });
   await expect(picker).toBeVisible();
   const warmButton = picker.getByRole("button", { name: /^Warm\b/ });
   await warmButton.click();
-  await expect(warmButton).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: /Current voice: Reka · Warm/i })).toBeVisible();
   await expect
     .poll(async () =>
       page.evaluate(() => ({
@@ -151,4 +174,19 @@ test("voice variant picker appears, switches voice, and persists the selection",
       })),
     )
     .toMatchObject({ stored: "malay-warm", cookie: expect.stringContaining("oriental_voice_variant=malay-warm") });
+});
+
+test("voice prewarms on page load without Turnstile and with the selected variant", async ({ page }) => {
+  const voiceSessionBodies: unknown[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/api/voice/session")) {
+      voiceSessionBodies.push(request.postDataJSON());
+    }
+  });
+
+  await page.goto("/");
+
+  await expect.poll(() => voiceSessionBodies.length).toBeGreaterThan(0);
+  expect(voiceSessionBodies[0]).toMatchObject({ intent: "other", variant: "kl-polished" });
+  expect(JSON.stringify(voiceSessionBodies[0])).not.toContain("turnstile");
 });

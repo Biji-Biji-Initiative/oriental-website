@@ -10,6 +10,10 @@ const review = {
   voice: "marin",
   speed: 1.18,
   variant: "kl-polished",
+  prewarmedAt: 1000,
+  connectStartedAt: 2000,
+  connectedAt: 2400,
+  firstEventAt: 3100,
 };
 
 function state(overrides: Partial<VoiceRuntimeState> = {}): VoiceRuntimeState {
@@ -27,6 +31,8 @@ describe("voice review snapshots", () => {
       buildVoiceReviewSnapshot(review, state({ routeRequested: true }), "listening", {
         leadId: "lead_123",
         submittedAt: 1234,
+        closeReason: "manual",
+        closedAt: 4500,
       }),
     ).toMatchObject({
       sessionId: "sess_123",
@@ -34,6 +40,12 @@ describe("voice review snapshots", () => {
       segment: "technology",
       status: "submitted",
       connectionStatus: "listening",
+      closeReason: "manual",
+      prewarmedAt: 1000,
+      connectStartedAt: 2000,
+      connectedAt: 2400,
+      firstEventAt: 3100,
+      closedAt: 4500,
       model: "gpt-realtime-2",
       voice: "marin",
       speed: 1.18,

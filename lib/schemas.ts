@@ -31,6 +31,12 @@ export const leadRequestSchema = z.object({
   form: leadFormSchema,
   transcript: z.array(transcriptEntrySchema).max(200).default([]),
   turnstileToken: z.string().optional(),
+  voiceReviewId: z.string().uuid().optional(),
+  voiceSessionId: z.string().max(160).optional(),
+  voiceVariant: z.string().max(64).optional(),
+  voiceModel: z.string().max(80).optional(),
+  voiceName: z.string().max(80).optional(),
+  voiceSpeed: z.number().min(0.25).max(1.5).optional(),
   utm: utmSchema,
 });
 
@@ -75,6 +81,24 @@ export const voiceReviewSnapshotSchema = z.object({
     segment: segmentSchema,
     status: z.enum(["idle", "submitted"]).default("idle"),
     connectionStatus: z.enum(["idle", "requesting_mic", "connecting", "listening"]),
+    closeReason: z
+      .enum([
+        "idle_timeout",
+        "max_duration",
+        "manual",
+        "error",
+        "voice_limit_reached",
+        "mic_denied",
+        "session_failed",
+        "webrtc_failed",
+        "disconnected",
+      ])
+      .optional(),
+    prewarmedAt: z.number().optional(),
+    connectStartedAt: z.number().optional(),
+    connectedAt: z.number().optional(),
+    firstEventAt: z.number().optional(),
+    closedAt: z.number().optional(),
     model: z.string().max(80).optional(),
     voice: z.string().max(80).optional(),
     speed: z.number().min(0.25).max(1.5).optional(),

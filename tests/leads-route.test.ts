@@ -43,6 +43,12 @@ function request() {
         message: "We want to run public AI literacy demos.",
       },
       transcript: [{ role: "user", text: "We want to run public AI literacy demos." }],
+      voiceReviewId: "5a8c25b1-cd50-4e47-89bf-84947c805add",
+      voiceSessionId: "sess_123",
+      voiceVariant: "kl-polished",
+      voiceModel: "gpt-realtime-2",
+      voiceName: "marin",
+      voiceSpeed: 1.22,
       turnstileToken: "local-dev",
       utm: {},
     }),
@@ -93,6 +99,16 @@ describe("POST /api/leads", () => {
       },
     });
     expect(mocks.recordLeadNotificationStatus).toHaveBeenCalledWith("lead_123", body.notifications);
+    expect(mocks.persistLead).toHaveBeenCalledWith(
+      expect.objectContaining({
+        voiceReviewId: "5a8c25b1-cd50-4e47-89bf-84947c805add",
+        voiceSessionId: "sess_123",
+        voiceVariant: "kl-polished",
+        voiceModel: "gpt-realtime-2",
+        voiceName: "marin",
+        voiceSpeed: 1.22,
+      }),
+    );
   });
 
   describe("production persistence failure", () => {

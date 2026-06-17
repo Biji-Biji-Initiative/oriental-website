@@ -10,13 +10,23 @@ export type VoiceReviewCredentials = VoiceReviewSnapshotRequest["review"] & {
   voice?: string;
   speed?: number;
   variant?: string | null;
+  prewarmedAt?: number;
+  connectStartedAt?: number;
+  connectedAt?: number;
+  firstEventAt?: number;
 };
 
 export function buildVoiceReviewSnapshot(
   review: VoiceReviewCredentials,
   state: VoiceRuntimeState,
   connectionStatus: VoiceReviewConnectionStatus,
-  overrides: { leadId?: string | null; status?: VoiceReviewStatus; submittedAt?: number } = {},
+  overrides: {
+    leadId?: string | null;
+    status?: VoiceReviewStatus;
+    submittedAt?: number;
+    closeReason?: VoiceReviewSnapshotRequest["snapshot"]["closeReason"];
+    closedAt?: number;
+  } = {},
 ): VoiceReviewSnapshotRequest["snapshot"] {
   return {
     sessionId: review.sessionId ?? review.id,
@@ -24,6 +34,12 @@ export function buildVoiceReviewSnapshot(
     segment: state.segment,
     status: overrides.status ?? (overrides.submittedAt ? "submitted" : "idle"),
     connectionStatus,
+    closeReason: overrides.closeReason,
+    prewarmedAt: review.prewarmedAt,
+    connectStartedAt: review.connectStartedAt,
+    connectedAt: review.connectedAt,
+    firstEventAt: review.firstEventAt,
+    closedAt: overrides.closedAt,
     model: review.model,
     voice: review.voice,
     speed: review.speed,

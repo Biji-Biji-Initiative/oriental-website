@@ -18,6 +18,30 @@ describe("lead request schema", () => {
     expect(parsed.success).toBe(true);
   });
 
+  it("accepts voice review linkage metadata on submitted voice leads", () => {
+    const parsed = leadRequestSchema.safeParse({
+      source: "voice",
+      segment: "technology",
+      voiceReviewId: "5a8c25b1-cd50-4e47-89bf-84947c805add",
+      voiceSessionId: "sess_123",
+      voiceVariant: "kl-polished",
+      voiceModel: "gpt-realtime-2",
+      voiceName: "marin",
+      voiceSpeed: 1.22,
+      form: {
+        name: "Asha",
+        email: "asha@example.com",
+        org: "Future Lab",
+        phone: "",
+        website: "",
+        message: "We want to run public AI literacy demos.",
+      },
+      transcript: [{ role: "user", text: "hello" }],
+    });
+
+    expect(parsed.success).toBe(true);
+  });
+
   it("rejects transcripts beyond the 200-entry cap", () => {
     const parsed = leadRequestSchema.safeParse({
       source: "voice",

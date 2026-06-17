@@ -30,6 +30,12 @@ const leadValidator = v.object({
     message: v.string(),
   }),
   transcript: transcriptValidator,
+  voiceReviewId: v.optional(v.string()),
+  voiceSessionId: v.optional(v.string()),
+  voiceVariant: v.optional(v.string()),
+  voiceModel: v.optional(v.string()),
+  voiceName: v.optional(v.string()),
+  voiceSpeed: v.optional(v.number()),
   turnstileToken: v.optional(v.string()),
   utm: v.record(v.string(), v.string()),
 });
@@ -62,6 +68,12 @@ const voiceSessionValidator = v.object({
   segment: v.string(),
   status: v.string(),
   connectionStatus: v.string(),
+  closeReason: v.optional(v.string()),
+  prewarmedAt: v.optional(v.number()),
+  connectStartedAt: v.optional(v.number()),
+  connectedAt: v.optional(v.number()),
+  firstEventAt: v.optional(v.number()),
+  closedAt: v.optional(v.number()),
   model: v.optional(v.string()),
   voice: v.optional(v.string()),
   speed: v.optional(v.number()),
@@ -110,6 +122,12 @@ export const createLead = mutationGeneric({
       website: lead.form.website,
       message: lead.form.message,
       transcript: lead.transcript,
+      ...(lead.voiceReviewId ? { voiceReviewId: lead.voiceReviewId } : {}),
+      ...(lead.voiceSessionId ? { voiceSessionId: lead.voiceSessionId } : {}),
+      ...(lead.voiceVariant ? { voiceVariant: lead.voiceVariant } : {}),
+      ...(lead.voiceModel ? { voiceModel: lead.voiceModel } : {}),
+      ...(lead.voiceName ? { voiceName: lead.voiceName } : {}),
+      ...(typeof lead.voiceSpeed === "number" ? { voiceSpeed: lead.voiceSpeed } : {}),
       utm: lead.utm,
       status: "new",
       priority: "normal",
@@ -222,6 +240,12 @@ export const recordVoiceSession = mutationGeneric({
       segment: snapshot.segment,
       status: snapshot.status,
       connectionStatus: snapshot.connectionStatus,
+      ...(snapshot.closeReason ? { closeReason: snapshot.closeReason } : {}),
+      ...(typeof snapshot.prewarmedAt === "number" ? { prewarmedAt: snapshot.prewarmedAt } : {}),
+      ...(typeof snapshot.connectStartedAt === "number" ? { connectStartedAt: snapshot.connectStartedAt } : {}),
+      ...(typeof snapshot.connectedAt === "number" ? { connectedAt: snapshot.connectedAt } : {}),
+      ...(typeof snapshot.firstEventAt === "number" ? { firstEventAt: snapshot.firstEventAt } : {}),
+      ...(typeof snapshot.closedAt === "number" ? { closedAt: snapshot.closedAt } : {}),
       captured: snapshot.captured,
       transcript: snapshot.transcript,
       errors: snapshot.errors,
@@ -292,6 +316,9 @@ export const reviewDashboard = queryGeneric({
     const activeLeads = leads.filter((lead) => !["qualified", "archived"].includes(lead.status)).length;
     const urgentLeads = leads.filter((lead) => lead.priority === "urgent" || lead.priority === "high").length;
     const sessionsWithErrors = voiceSessions.filter((session) => session.errors.length > 0).length;
+    const prewarmedSessions = voiceSessions.filter((session) => typeof session.prewarmedAt === "number").length;
+    const connectedSessions = voiceSessions.filter((session) => typeof session.connectedAt === "number").length;
+    const engagedSessions = voiceSessions.filter(isEngagedVoiceSession);
     const submittedSessions = voiceSessions.filter((session) => Boolean(session.leadId)).length;
     const totalResponseTokens = voiceSessions.reduce((sum, session) => sum + (session.usage?.responseTokens ?? 0), 0);
     return {
@@ -307,10 +334,13 @@ export const reviewDashboard = queryGeneric({
         urgentLeads,
         qualifiedLeads: leads.filter((lead) => lead.status === "qualified").length,
         reviewedSessions: voiceSessions.length,
+        prewarmedSessions,
+        engagedSessions: engagedSessions.length,
+        connectedSessions,
         sessionsWithErrors,
         submittedSessions,
         notificationDeliveryRate: percent(notificationDelivered, leads.length),
-        voiceSubmitRate: percent(submittedSessions, voiceSessions.length),
+        voiceSubmitRate: percent(submittedSessions, engagedSessions.length || voiceSessions.length),
       },
       analytics: {
         sourceCounts: countBy(leads, (lead) => lead.source),
@@ -325,6 +355,9 @@ export const reviewDashboard = queryGeneric({
         },
         voice: {
           sessions: voiceSessions.length,
+          prewarmed: prewarmedSessions,
+          engaged: engagedSessions.length,
+          connected: connectedSessions,
           submitted: submittedSessions,
           withErrors: sessionsWithErrors,
           routeRequested: voiceSessions.filter((session) => session.routeRequested).length,
@@ -356,6 +389,25 @@ function dailyLeadCounts(leads: Array<{ createdAt: number }>, now: number) {
   });
   const counts = countBy(leads, (lead) => formatter.format(lead.createdAt));
   return days.map((date) => ({ date, count: counts[date] ?? 0 }));
+}
+
+function isEngagedVoiceSession(session: {
+  leadId?: string | null;
+  connectStartedAt?: number;
+  connectedAt?: number;
+  closedAt?: number;
+  transcript: Array<unknown>;
+  captured: { email: string; message: string };
+}) {
+  return Boolean(
+    session.leadId ||
+      typeof session.connectStartedAt === "number" ||
+      typeof session.connectedAt === "number" ||
+      typeof session.closedAt === "number" ||
+      session.transcript.length > 0 ||
+      session.captured.email.trim() ||
+      session.captured.message.trim(),
+  );
 }
 
 function percent(numerator: number, denominator: number) {
