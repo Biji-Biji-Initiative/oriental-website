@@ -85,33 +85,30 @@ Institutions & mission-aligned tenants.
 4. MSME & Livelihood Resilience
 5. Health, Ageing & Community Wellbeing
 
-**Highlight spaces (5):**
+**Highlight spaces (4):**
 
 | # | Title | Routes to segment | Image |
 |---|---|---|---|
-| 01 | Public Commons & Community Lounge | `community` | `81_agora_world_cafe_evening_*.png` |
+| 01 | Public Commons & Community Lounge | `community` | `spaces/public-commons-community-lounge.jpg` |
 | 02 | Academy of Tomorrow Learning Studios | `education` | `2026-05-04-05-academy-tomorrow-2-v2.png` |
-| 03 | Flexible Event Spaces | `programme` | `16-buy-social-showcase.png` |
-| 04 | Technology Showcase & Demo Lab | `technology` | `05-sustainability-workshop.png` |
-| 05 | Social Enterprise & Innovation Spaces | `community` | `20-ngo-finance-guild.png` |
+| 03 | Flexible Event Spaces | `programme` | `spaces/flexible-event-spaces-forum.jpg` |
+| 04 | Social Enterprise & Innovation Spaces | `tenancy` | `16-buy-social-showcase.png` |
 
-CTA per space — see `microsite.jsx` `Facilities.spaces[].cta`.
+CTA per space — see `lib/content.ts` `spaces[].cta`.
 
 ## Section 05 — Partners
 
 Eyebrow: `05 — Call for Partners & Tenants`. H2: `Let's build this together.`
 
-Five partner archetypes. Each is a card with a tag, title, description, and a
-per-segment CTA — full strings in `microsite.jsx` `<Partners>` `partners`
+Three core partner and tenant categories. Each is a card with a tag, title,
+description, and per-segment CTA — full strings in `lib/content.ts` `partners`
 array.
 
 | # | Tag | Title | CTA | Intent |
 |---|---|---|---|---|
 | 01 | TENANCY | Mission-Aligned Tenants | Discuss Tenancy | `tenancy` |
 | 02 | EDUCATION | Education & Programme Partners | Propose a Learning Partnership | `education` |
-| 03 | PROGRAMME | Programme & Activation Partners | Bring a Programme Here | `programme` |
-| 04 | TECHNOLOGY | Technology & Innovation Partners | Explore a Technology Showcase | `technology` |
-| 05 | COMMUNITY | Community & Cultural Partners | Explore a Community Activation | `community` |
+| 03 | TECHNOLOGY | Technology & Innovation Partners | Explore a Technology Showcase | `technology` |
 
 **"Especially relevant if you want to" list (6):**
 - Host recurring programmes in the city centre

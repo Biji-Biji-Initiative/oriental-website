@@ -125,7 +125,10 @@ is unblocked.
   `prefers-reduced-motion`, alt text on photo content.
 - **Cost** — OpenAI Realtime is metered. Cap budget via session length
   limit (150s current client cap), 20s idle timeout, and the per-IP voice
-  limiter (3 minted sessions/day) backed by Redis in production.
+  limiter (`VOICE_SESSION_DAILY_LIMIT`, default 80) backed by Redis in production.
+  Page load may import the voice bundle, but Realtime session pre-minting happens
+  only for returning visitors with granted microphone permission or after a
+  first-time visitor grants access.
 
 ## 10. Release plan
 

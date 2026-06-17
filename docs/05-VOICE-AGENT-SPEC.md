@@ -183,8 +183,8 @@ lead was sent until route_to_team succeeds.
 | Model | `gpt-realtime-2` by default via `OPENAI_REALTIME_MODEL` |
 | Voice | Source fallback is `marin`; production is currently `coral` via `OPENAI_REALTIME_VOICE` |
 | Speech speed | Source fallback is `1.18`; production is currently `1.28` via `OPENAI_REALTIME_SPEED`; clamped to OpenAI's supported `0.25` to `1.5` range |
-| Input audio | Browser-default mic, captured locally before token minting |
-| Session length cap | **150 seconds** client-side runtime cap; `/api/voice/session` refuses to mint a new token if the same IP exceeds 3 sessions / day in the Redis-backed limiter, with memory fallback only when Redis is unavailable |
+| Input audio | Browser-default mic; page load imports the voice bundle and preconnects, but Realtime token minting happens only for returning visitors with granted mic permission or after a first-time visitor grants mic access |
+| Session length cap | **150 seconds** client-side runtime cap; `/api/voice/session` refuses to mint a new token if the same IP exceeds `VOICE_SESSION_DAILY_LIMIT` (default 80) in the Redis-backed limiter, with memory fallback only when Redis is unavailable |
 | Turn detection | `semantic_vad`, `eagerness: "auto"`, `create_response: true`, `interrupt_response: true` — the turn-detection model waits when the speaker pauses mid-thought (e.g. dictating an email) instead of cutting at a fixed silence threshold |
 | Input transcription | `gpt-4o-transcribe` by default via `OPENAI_REALTIME_TRANSCRIPTION_MODEL`, with a multilingual domain `prompt` covering Malaysian English, Bahasa Melayu, Mandarin, and Tamil plus spoken-email patterns and brand terms. Transcription feeds the visible transcript, review snapshots, and capture grounding; the model itself hears audio natively |
 | Noise reduction | `near_field` for mobile user agents, `far_field` for desktops, chosen at mint time in `/api/voice/session` |
@@ -203,9 +203,8 @@ spent after the mic is granted; a known denial fails fast with guidance and
 mints nothing. Browsers without microphone permission queries (Firefox) fall
 back to the prompt-first path.
 
-1. Client POSTs `/api/voice/session` with a Turnstile token.
-2. Route Handler verifies Turnstile, applies the voice rate limit, and asks
-   OpenAI for an ephemeral client secret.
+1. Client POSTs `/api/voice/session` with the intended partner segment and selected voice variant; no Turnstile token is required for voice start.
+2. Route Handler applies the voice rate limit and asks OpenAI for an ephemeral client secret plus signed voice review credentials.
 3. Returns `{ client_secret, expires_at, model, voice, speed,
    transcription_model, noise_reduction, review }`.
 4. Client opens a WebRTC peer connection using the ephemeral token.
@@ -213,6 +212,7 @@ back to the prompt-first path.
    `<audio>` element.
 6. Tool-call deltas arrive via the data channel and are reduced into
    `captured` state.
+7. Voice lead handoff submits the signed review credential back to `/api/leads`; the server verifies it as the voice anti-abuse proof and strips the token before persistence or notifications.
 
 See [`06-API-CONTRACTS.md`](./06-API-CONTRACTS.md) §`/api/voice/session`.
 

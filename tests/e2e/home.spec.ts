@@ -25,6 +25,7 @@ test.beforeEach(async ({ page }) => {
 test("renders the Oriental microsite and opens the collaborative intake workspace", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /Reimagining/i })).toBeVisible();
+  await page.waitForTimeout(900);
   await page.getByRole("button", { name: /Tell us why/i }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await expect(page.getByText("Handoff details")).toBeVisible();
@@ -43,6 +44,70 @@ test("mobile menu opens sections and closes after navigation", async ({ page }) 
   await page.getByRole("link", { name: "Spaces" }).click();
   await expect(page.getByRole("navigation", { name: "Mobile section menu" })).toBeHidden();
   await expect(page.locator("#facilities")).toBeInViewport();
+});
+
+test("hero fits the first viewport and leaves the next section visible", async ({ page }) => {
+  const viewports = [
+    { width: 375, height: 667 },
+    { width: 390, height: 844 },
+    { width: 1366, height: 768 },
+    { width: 1440, height: 900 },
+  ];
+
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    await expect(page.getByRole("heading", { name: /Reimagining/i })).toBeVisible();
+    const metrics = await page.evaluate(() => {
+      const hero = document.querySelector(".hero-section")?.getBoundingClientRect();
+      const next = document.querySelector("#vision")?.getBoundingClientRect();
+      return {
+        heroBottom: Math.round(hero?.bottom ?? 0),
+        nextTop: Math.round(next?.top ?? 0),
+        viewportHeight: window.innerHeight,
+        horizontalOverflow: Math.max(0, document.body.scrollWidth - document.documentElement.clientWidth),
+      };
+    });
+
+    expect(metrics.horizontalOverflow).toBe(0);
+    expect(metrics.heroBottom).toBeLessThanOrEqual(metrics.viewportHeight - 8);
+    expect(metrics.nextTop).toBeLessThanOrEqual(metrics.viewportHeight - 8);
+  }
+});
+
+test("short desktop hero hides bottom corner labels", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await page.goto("/");
+
+  const visibleBottomCorners = await page
+    .locator(".hero-corner--bottom")
+    .evaluateAll((corners) => corners.filter((corner) => window.getComputedStyle(corner).display !== "none").length);
+
+  expect(visibleBottomCorners).toBe(0);
+});
+
+test("facilities use the current supplied space images and aligned labels", async ({ page }) => {
+  await page.goto("/#facilities");
+
+  await expect(page.getByRole("button", { name: /Public Commons & Community Lounge/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Academy of Tomorrow Learning Studios/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Flexible Event Spaces/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Social Enterprise & Innovation Spaces/i })).toBeVisible();
+
+  const imageSources = await page
+    .locator("#facilities img")
+    .evaluateAll((images) =>
+      images.map((image) =>
+        decodeURIComponent((image as HTMLImageElement).currentSrc || (image as HTMLImageElement).src),
+      ),
+    );
+
+  expect(imageSources).toEqual(
+    expect.arrayContaining([
+      expect.stringContaining("/assets/spaces/public-commons-community-lounge"),
+      expect.stringContaining("/assets/spaces/flexible-event-spaces-forum"),
+    ]),
+  );
 });
 
 test("timeline responds to keyboard focus", async ({ page }) => {
@@ -176,8 +241,36 @@ test("voice variant picker appears, switches voice, and persists the selection",
     .toMatchObject({ stored: "malay-warm", cookie: expect.stringContaining("oriental_voice_variant=malay-warm") });
 });
 
-test("voice prewarms on page load without Turnstile and with the selected variant", async ({ page }) => {
+test("page-load voice warmup does not mint a session before microphone permission", async ({ page }) => {
   const voiceSessionBodies: unknown[] = [];
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "permissions", {
+      configurable: true,
+      value: {
+        query: async (descriptor: PermissionDescriptor) =>
+          ({ state: descriptor.name === "microphone" ? "prompt" : "granted" }) as PermissionStatus,
+      },
+    });
+  });
+  page.on("request", (request) => {
+    if (request.url().includes("/api/voice/session")) {
+      voiceSessionBodies.push(request.postDataJSON());
+    }
+  });
+
+  await page.goto("/");
+  await page.waitForTimeout(1200);
+
+  expect(voiceSessionBodies).toHaveLength(0);
+});
+
+test("voice prewarms on page load for returning microphone permission without Turnstile", async ({
+  page,
+  context,
+  baseURL,
+}) => {
+  const voiceSessionBodies: unknown[] = [];
+  await context.grantPermissions(["microphone"], { origin: baseURL ?? "http://localhost:3000" });
   page.on("request", (request) => {
     if (request.url().includes("/api/voice/session")) {
       voiceSessionBodies.push(request.postDataJSON());

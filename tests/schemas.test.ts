@@ -23,6 +23,7 @@ describe("lead request schema", () => {
       source: "voice",
       segment: "technology",
       voiceReviewId: "5a8c25b1-cd50-4e47-89bf-84947c805add",
+      voiceReviewToken: "5a8c25b1-cd50-4e47-89bf-84947c805add.1799999999999.signature",
       voiceSessionId: "sess_123",
       voiceVariant: "kl-polished",
       voiceModel: "gpt-realtime-2",

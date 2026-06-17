@@ -1,11 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { timelineSteps } from "@/lib/content";
 import { cn } from "@/lib/utils";
 
 export function Timeline() {
   const [active, setActive] = useState(1);
+
+  useEffect(() => {
+    const focusedStep = document.activeElement?.closest<HTMLButtonElement>(".timeline-step[data-step]");
+    const focusedIndex = Number(focusedStep?.dataset.step);
+    if (Number.isInteger(focusedIndex)) {
+      setActive(focusedIndex + 1);
+    }
+  }, []);
 
   return (
     <section className="bg-mk-paper py-section" data-screen-label="06 Timeline" id="timeline">
@@ -21,6 +29,7 @@ export function Timeline() {
           {timelineSteps.map((step, index) => (
             <button
               className={cn("timeline-step", index < active && "timeline-step--done")}
+              data-step={index}
               key={step.phase}
               onFocus={() => setActive(index + 1)}
               onMouseEnter={() => setActive(index + 1)}

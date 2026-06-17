@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { POST } from "@/app/api/leads/route";
+import { createVoiceReviewCredentials } from "@/lib/server/voice-review-token";
 
 const mocks = vi.hoisted(() => ({
   persistLead: vi.fn(),
@@ -24,34 +25,39 @@ vi.mock("@/lib/server/notifications", async (importOriginal) => {
 
 const originalEnv = process.env;
 
-function request() {
+function leadBody(overrides: Record<string, unknown> = {}) {
+  return {
+    source: "voice",
+    segment: "technology",
+    form: {
+      name: "Asha",
+      email: "asha@example.com",
+      org: "Future Lab",
+      phone: "",
+      website: "",
+      message: "We want to run public AI literacy demos.",
+    },
+    transcript: [{ role: "user", text: "We want to run public AI literacy demos." }],
+    voiceReviewId: "5a8c25b1-cd50-4e47-89bf-84947c805add",
+    voiceSessionId: "sess_123",
+    voiceVariant: "kl-polished",
+    voiceModel: "gpt-realtime-2",
+    voiceName: "marin",
+    voiceSpeed: 1.22,
+    turnstileToken: "local-dev",
+    utm: {},
+    ...overrides,
+  };
+}
+
+function request(overrides: Record<string, unknown> = {}, ip = "127.0.0.1") {
   return new Request("http://127.0.0.1/api/leads", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-forwarded-for": "127.0.0.1",
+      "x-forwarded-for": ip,
     },
-    body: JSON.stringify({
-      source: "voice",
-      segment: "technology",
-      form: {
-        name: "Asha",
-        email: "asha@example.com",
-        org: "Future Lab",
-        phone: "",
-        website: "",
-        message: "We want to run public AI literacy demos.",
-      },
-      transcript: [{ role: "user", text: "We want to run public AI literacy demos." }],
-      voiceReviewId: "5a8c25b1-cd50-4e47-89bf-84947c805add",
-      voiceSessionId: "sess_123",
-      voiceVariant: "kl-polished",
-      voiceModel: "gpt-realtime-2",
-      voiceName: "marin",
-      voiceSpeed: 1.22,
-      turnstileToken: "local-dev",
-      utm: {},
-    }),
+    body: JSON.stringify(leadBody(overrides)),
   }) as never;
 }
 
@@ -71,6 +77,7 @@ describe("POST /api/leads", () => {
   afterEach(() => {
     process.env = originalEnv;
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("returns a successful local response instead of crashing when persistence fails outside production", async () => {
@@ -109,6 +116,70 @@ describe("POST /api/leads", () => {
         voiceSpeed: 1.22,
       }),
     );
+    expect(mocks.persistLead.mock.calls[0]?.[0]).not.toHaveProperty("voiceReviewToken");
+  });
+
+  it("accepts signed voice leads without a Cloudflare token when Turnstile enforcement is required", async () => {
+    process.env.TURNSTILE_ENFORCEMENT = "required";
+    process.env.TURNSTILE_SECRET_KEY = "turnstile-secret";
+    const review = createVoiceReviewCredentials();
+    const fetchMock = vi.fn(async () => Response.json({ success: false }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await POST(
+      request(
+        {
+          turnstileToken: undefined,
+          voiceReviewId: review.id,
+          voiceReviewToken: review.token,
+        },
+        "203.0.113.10",
+      ),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({ ok: true });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(mocks.persistLead.mock.calls[0]?.[0]).not.toHaveProperty("voiceReviewToken");
+  });
+
+  it("rejects unsigned voice leads when Turnstile enforcement is required and no token is present", async () => {
+    process.env.TURNSTILE_ENFORCEMENT = "required";
+    process.env.TURNSTILE_SECRET_KEY = "turnstile-secret";
+
+    const response = await POST(request({ turnstileToken: undefined }, "203.0.113.10"));
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body).toMatchObject({ ok: false, error: "turnstile_failed" });
+    expect(mocks.persistLead).not.toHaveBeenCalled();
+  });
+
+  it("still requires Turnstile for form leads when enforcement is required", async () => {
+    process.env.TURNSTILE_ENFORCEMENT = "required";
+    process.env.TURNSTILE_SECRET_KEY = "turnstile-secret";
+
+    const response = await POST(
+      request(
+        {
+          source: "form",
+          turnstileToken: undefined,
+          voiceReviewId: undefined,
+          voiceSessionId: undefined,
+          voiceVariant: undefined,
+          voiceModel: undefined,
+          voiceName: undefined,
+          voiceSpeed: undefined,
+        },
+        "203.0.113.10",
+      ),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body).toMatchObject({ ok: false, error: "turnstile_failed" });
+    expect(mocks.persistLead).not.toHaveBeenCalled();
   });
 
   describe("production persistence failure", () => {

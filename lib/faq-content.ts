@@ -168,7 +168,7 @@ export const faqSections: FaqSection[] = [
       {
         q: "How do we express our interest?",
         a: [
-          "Fill in the expression of interest form on this page. It covers your organisation type, space requirements, operating needs, budget range, and how you see yourself contributing to the ecosystem. Our team will follow up after reviewing your submission.",
+          "Start a conversation from any Talk to Mereka CTA or expression of interest flow on the homepage. It covers your organisation type, space requirements, operating needs, budget range, and how you see yourself contributing to the ecosystem. Our team will follow up after reviewing your submission.",
         ],
       },
       {

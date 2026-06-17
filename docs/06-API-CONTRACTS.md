@@ -38,9 +38,11 @@ type LeadForm = {
 };
 ```
 
-Turnstile is verified server-side for every intake POST. In local development,
-when `TURNSTILE_SECRET_KEY` is absent, loopback hosts can use the
-`local-dev` token emitted by `useTurnstile()`.
+Turnstile is verified server-side for form/newsletter intake only when
+`TURNSTILE_ENFORCEMENT=required`. Voice starts use the `/api/voice/session` rate
+limit, and voice lead handoff proves session origin with signed review
+credentials returned by the session route. In local development, when
+`TURNSTILE_SECRET_KEY` is absent, loopback hosts can use the `local-dev` token.
 
 ## `POST /api/leads`
 
@@ -58,6 +60,13 @@ type LeadRequest = {
     text: string; // 1..4000
   }>;
   turnstileToken?: string;
+  voiceReviewId?: string; // voice only: signed review id from /api/voice/session
+  voiceReviewToken?: string; // voice only: verification token, stripped before persistence
+  voiceSessionId?: string;
+  voiceVariant?: string;
+  voiceModel?: string;
+  voiceName?: string;
+  voiceSpeed?: number;
   utm?: Record<string, string>;
 };
 ```
@@ -192,9 +201,8 @@ open a WebRTC session without receiving `OPENAI_API_KEY`.
 
 ```ts
 type VoiceSessionRequest = {
-  turnstileToken?: string;
   intent?: Segment;
-  variant?: string; // QA voice variant id; resolved server-side, unknown ids fall back to the env default
+  variant?: string; // voice variant id; resolved server-side, unknown ids fall back to the env default
   utm?: Record<string, string>;
 };
 ```
@@ -223,15 +231,13 @@ type VoiceSessionResponse = {
 | HTTP | `error` | Cause |
 |---|---|---|
 | 400 | `invalid_payload` | Zod validation failed. |
-| 403 | `turnstile_failed` | Cloudflare verify rejected the token. |
-| 429 | `voice_limit_reached` | More than `VOICE_SESSION_DAILY_LIMIT` (default 8) minted sessions per IP per day — opening the voice dialog pre-mints one, so the budget covers browsing, not only connected calls. |
+| 429 | `voice_limit_reached` | More than `VOICE_SESSION_DAILY_LIMIT` (default 80) minted sessions per IP per day. Page load imports the voice bundle and preconnects; Realtime session pre-minting only happens for returning visitors whose browser already has microphone permission, or after first-time visitors grant microphone access. |
 | 503 | `openai_unconfigured` | `OPENAI_API_KEY` missing. |
 | 502 | `openai_<status>` | OpenAI client-secret request failed. |
 | 502 | `openai_invalid_secret` | OpenAI response did not contain a usable secret. |
 
-Invalid payloads and failed Turnstile checks do **not** spend the strict
-3-per-day voice session quota. The quota is checked after Turnstile and before
-the OpenAI client-secret request.
+Invalid payloads do **not** spend the voice session quota. The quota is checked
+before the OpenAI client-secret request.
 
 ### OpenAI Realtime Contract
 
@@ -405,15 +411,14 @@ and exposes enough version/config signal for Coolify smoke checks.
 ## `GET /api/client-config`
 
 Purpose: public, non-secret runtime configuration for the browser. Pages are
-statically prerendered, so values that must stay rotatable without a rebuild
-(the Turnstile site key) are fetched from here by `VoiceProvider` after
-hydration instead of being rendered into the HTML.
+statically prerendered, so public feature flags can be fetched without a rebuild.
 
 ### Response `200`
 
 ```ts
 type ClientConfigResponse = {
-  turnstileSiteKey: string | null; // null when Turnstile is not configured
+  turnstileSiteKey: string | null; // currently null; Turnstile UI is disabled on this microsite
+  voiceVariantPicker: boolean;
 };
 ```
 
@@ -432,7 +437,7 @@ degraded fallback for local development or Redis outages.
 |---|---|
 | `/api/leads` | 12 / hour / IP |
 | `/api/newsletter` | 20 / hour / IP |
-| `/api/voice/session` | 3 minted sessions / day / IP |
+| `/api/voice/session` | `VOICE_SESSION_DAILY_LIMIT` minted sessions / day / IP; default 80 |
 
 429 responses currently do not include `Retry-After`.
 

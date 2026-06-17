@@ -10,7 +10,7 @@ Next.js 16 microsite for the Oriental Building partner-intake launch. The site t
 - Tailwind CSS 4 and shadcn/ui primitives
 - Convex for lead and lead-event persistence
 - OpenAI Realtime client-secret minting via `/api/voice/session`
-- Cloudflare Turnstile, Redis-backed rate limiting with memory fallback, SES/SMTP, and Slack Web API notifications
+- Optional Cloudflare Turnstile enforcement for form/newsletter posts, Redis-backed rate limiting with memory fallback, SES/SMTP, and Slack Web API notifications
 - Sentry error tracking, Slack ops alerts, and a token-gated internal session review dashboard
 - Docker standalone runtime for Coolify (`oriental.mereka.io`)
 

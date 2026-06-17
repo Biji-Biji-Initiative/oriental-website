@@ -20,7 +20,14 @@ describe("voice profile", () => {
     expect(prompt).toContain("A valid email is the only required field");
     expect(prompt).toContain("# Website Knowledge Base");
     expect(prompt).toContain("Academy of Tomorrow learning studios");
+    expect(prompt).toContain("Academy of Tomorrow Learning Studios");
+    expect(prompt).toContain("Social Enterprise & Innovation Spaces");
+    expect(prompt).toContain("Mission-Aligned Tenants");
+    expect(prompt).toContain("Education & Programme Partners");
+    expect(prompt).toContain("Technology & Innovation Partners");
     expect(prompt).toContain("Type A: 250–300 sq ft");
+    expect(prompt).toContain("Furniture or workstations");
+    expect(prompt).toContain("A 2-month deposit is required");
     expect(prompt).toContain("Full floor: ~2,800–3,000 sq ft");
     expect(prompt).toContain("Public Programme & Event Spaces");
     expect(prompt).toContain("Launch Public Partner Interest Call: June – July 2026");

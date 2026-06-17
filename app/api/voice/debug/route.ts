@@ -2,6 +2,7 @@ import { isProductionEnv } from "@/lib/env";
 import { type VoiceReviewSnapshotRequest, voiceReviewSnapshotSchema } from "@/lib/schemas";
 import { persistVoiceReviewSnapshot } from "@/lib/server/convex";
 import { logInfo, logWarn } from "@/lib/server/logger";
+import { sendOpsAlert } from "@/lib/server/ops-alerts";
 import { noStoreJson } from "@/lib/server/security";
 import { verifyVoiceReviewCredentials } from "@/lib/server/voice-review-token";
 
@@ -35,10 +36,20 @@ export async function POST(request: Request) {
   logVoiceSessionHealth(parsed.data.review.id, parsed.data.snapshot);
   const persistence = verified ? await persistVoiceReviewSnapshot(snapshot).catch(() => null) : null;
   if (verified && persistence?.ok !== true) {
+    const reason = persistence?.reason ?? "unknown";
     logWarn("voice_review.persistence_failed", {
       reviewId: parsed.data.review.id,
-      reason: persistence?.reason ?? "unknown",
+      reason,
     });
+    if (isProductionEnv()) {
+      await sendOpsAlert({
+        event: "voice_review.persistence_failed",
+        severity: "error",
+        summary: "A verified voice review snapshot failed to persist to Convex.",
+        meta: { reviewId: parsed.data.review.id, sessionId: parsed.data.snapshot.sessionId, reason },
+        fingerprint: reason,
+      });
+    }
   }
   entries.unshift({
     id: crypto.randomUUID(),

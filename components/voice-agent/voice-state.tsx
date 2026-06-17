@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { preconnect } from "react-dom";
 import type { SegmentId } from "@/lib/segments";
-import { DEFAULT_VOICE_VARIANT_ID } from "@/lib/voice/variants";
+import { DEFAULT_VOICE_VARIANT_ID, VOICE_VARIANT_IDS } from "@/lib/voice/variants";
 
 // The dialog pulls in the whole voice stack (forms, zod, realtime runtime), so
 // it is split out of the layout bundle and mounted shortly after first paint.
@@ -45,7 +45,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     try {
       const stored = window.localStorage.getItem(VOICE_VARIANT_STORAGE_KEY) || readCookie(VOICE_VARIANT_COOKIE);
-      const nextVariant = stored || DEFAULT_VOICE_VARIANT_ID;
+      const nextVariant = normalizeVoiceVariant(stored);
       setVoiceVariantState(nextVariant);
       window.localStorage.setItem(VOICE_VARIANT_STORAGE_KEY, nextVariant);
       writeVoiceVariantCookie(nextVariant);
@@ -55,7 +55,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const setVoiceVariant = useCallback((variantId: string | undefined) => {
-    const nextVariant = variantId || DEFAULT_VOICE_VARIANT_ID;
+    const nextVariant = normalizeVoiceVariant(variantId);
     setVoiceVariantState(nextVariant);
     try {
       window.localStorage.setItem(VOICE_VARIANT_STORAGE_KEY, nextVariant);
@@ -79,8 +79,9 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     setPrewarmSignal((signal) => signal + 1);
   }, []);
 
-  // Load the dialog bundle and mint a Realtime client secret shortly after
-  // first paint. Microphone access still only starts from a user action.
+  // Load the dialog bundle shortly after first paint. The prewarm signal only
+  // mints a Realtime session for returning visitors whose browser already has
+  // microphone permission; first-time visitors spend no voice quota until consent.
   useEffect(() => {
     const timer = window.setTimeout(() => {
       preconnect("https://api.openai.com");
@@ -120,6 +121,11 @@ function readCookie(name: string) {
     .map((entry) => entry.trim())
     .find((entry) => entry.startsWith(prefix))
     ?.slice(prefix.length);
+}
+
+function normalizeVoiceVariant(variantId: string | null | undefined) {
+  const decoded = variantId ? decodeURIComponent(variantId) : undefined;
+  return decoded && (VOICE_VARIANT_IDS as readonly string[]).includes(decoded) ? decoded : DEFAULT_VOICE_VARIANT_ID;
 }
 
 function writeVoiceVariantCookie(variantId: string) {

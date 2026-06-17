@@ -32,6 +32,7 @@ export const leadRequestSchema = z.object({
   transcript: z.array(transcriptEntrySchema).max(200).default([]),
   turnstileToken: z.string().optional(),
   voiceReviewId: z.string().uuid().optional(),
+  voiceReviewToken: z.string().min(20).max(500).optional(),
   voiceSessionId: z.string().max(160).optional(),
   voiceVariant: z.string().max(64).optional(),
   voiceModel: z.string().max(80).optional(),

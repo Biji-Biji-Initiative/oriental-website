@@ -41,18 +41,19 @@ TLS terminates at Cloudflare and the origin should remain Full Strict.
 
 ### Turnstile
 
-Turnstile protects:
+Turnstile protects form-style intake only when `TURNSTILE_ENFORCEMENT=required`:
 
-- `POST /api/leads`
+- `POST /api/leads` for unsigned form submissions
 - `POST /api/newsletter`
-- `POST /api/voice/session`
+
+Voice start is intentionally not behind Turnstile. `/api/voice/session` uses Redis-backed rate limiting, and voice lead handoff proves session origin with signed review credentials returned by the session route.
 
 Runtime details:
 
-- client hook: `components/security/useTurnstile.ts`
+- client shim: `components/security/TurnstileProvider.tsx` currently returns an empty token because Turnstile UI is disabled for this microsite
 - server verifier: `verifyTurnstile()` in `lib/server/security.ts`
 - local loopback fallback: `local-dev` token when no site key is configured
-- production: `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY` are required
+- production: set `TURNSTILE_ENFORCEMENT=required` only if Cloudflare verification is deliberately re-enabled for form/newsletter paths
 
 ### WAF / Cache
 

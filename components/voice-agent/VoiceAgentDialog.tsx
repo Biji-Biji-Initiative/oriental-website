@@ -342,6 +342,7 @@ export function VoiceAgentDialog({
       void postVoiceReviewSnapshot(
         review,
         buildVoiceReviewSnapshot(review, snapshotState, connectionStatusRef.current, overrides),
+        { keepalive: Boolean(overrides.closedAt) },
       ).catch(() => null);
     },
     [captured, currentReviewCredentials, segment, stateRef, transcript],
@@ -450,6 +451,7 @@ function buildVoiceLeadMetadata(review: VoiceReviewCredentials | null) {
   if (!review) return {};
   return {
     voiceReviewId: review.id,
+    voiceReviewToken: review.token,
     voiceSessionId: review.sessionId,
     voiceVariant: review.variant ?? undefined,
     voiceModel: review.model,

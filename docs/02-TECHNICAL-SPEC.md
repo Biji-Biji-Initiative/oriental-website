@@ -68,15 +68,16 @@ Use `AGENTS.md` for the most compact "where to change what" map.
 
 ## 3. Rendering Model
 
-Everything runs in the Node runtime. `app/layout.tsx` calls `connection()` so
-the current root is dynamic and reads `TURNSTILE_SITE_KEY` at request time.
+Everything runs in the Node runtime. The browser fetches public runtime feature
+flags from `/api/client-config`; Turnstile UI is currently disabled on the
+microsite.
 
 | Route | Behaviour |
 |---|---|
-| `/` | RSC home page plus client islands for nav, timeline, voice, Turnstile, and hero email. |
-| `/api/leads` | Validate payload → Turnstile → rate-limit → route/persist lead → notify owner/Slack. |
-| `/api/newsletter` | Validate payload → Turnstile → rate-limit → persist `source="hero-email"` lead. |
-| `/api/voice/session` | Validate payload → Turnstile → rate-limit → mint OpenAI Realtime client secret. |
+| `/` | RSC home page plus client islands for nav, timeline, voice, and hero email. |
+| `/api/leads` | Validate payload → signed voice review credential or optional Turnstile check → rate-limit → route/persist lead → notify owner/Slack. |
+| `/api/newsletter` | Validate payload → optional Turnstile check → rate-limit → persist `source="hero-email"` lead. |
+| `/api/voice/session` | Validate payload → rate-limit → mint OpenAI Realtime client secret and signed review credentials. |
 | `/api/health` | Lightweight app liveness response; no upstream dependency ping. |
 
 Do not document aggressive HTML caching while the root layout is dynamic.

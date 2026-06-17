@@ -6,7 +6,9 @@ import { errorMeta, logWarn } from "@/lib/server/logger";
 import { buildOwnerNotification, buildSlackPayload } from "@/lib/server/notification-payloads";
 import { sendSmtpMail } from "@/lib/server/smtp";
 
-type RoutableLead = Omit<LeadRequest, "source"> & { source: LeadRequest["source"] | "hero-email" };
+type RoutableLead = Omit<LeadRequest, "source" | "voiceReviewToken"> & {
+  source: LeadRequest["source"] | "hero-email";
+};
 
 export type StoredLead = RoutableLead & {
   id: string;

@@ -96,9 +96,9 @@ export const spaces = [
   },
   {
     number: "02",
-    title: "Applied Workshops",
+    title: "Academy of Tomorrow Learning Studios",
     description:
-      "Flexible studios for future skills training, entrepreneurship programmes, youth development, creative workshops, professional upskilling, and recurring classes.",
+      "Flexible classrooms and workshop rooms for future skills training, entrepreneurship programmes, youth development, creative learning, professional upskilling, and recurring classes.",
     cta: "Bring a Learning Programme",
     intent: "education" as SegmentId,
     image: "/assets/2026-05-04-05-academy-tomorrow-2-v2.png",
@@ -114,12 +114,12 @@ export const spaces = [
   },
   {
     number: "04",
-    title: "Technology Showcase & Demo Lab",
+    title: "Social Enterprise & Innovation Spaces",
     description:
-      "A hands-on environment for technology partners to demonstrate tools, host learning experiences, and make emerging technologies more accessible to the public.",
-    cta: "Showcase Technology Here",
-    intent: "technology" as SegmentId,
-    image: "/assets/05-sustainability-workshop.png",
+      "Co-working, incubation, and showcase space for impact-driven organisations, social enterprises, NGOs, startups, and mission-aligned teams building with community relevance.",
+    cta: "Explore Impact Space",
+    intent: "tenancy" as SegmentId,
+    image: "/assets/16-buy-social-showcase.png",
   },
 ] as const;
 
@@ -150,15 +150,6 @@ export const partners = [
       "Companies, platforms, labs, and innovation teams looking to showcase tools, run demos, support hands-on learning, or create embedded technology experiences.",
     cta: "Explore a Technology Showcase",
     intent: "technology" as SegmentId,
-  },
-  {
-    number: "04",
-    tag: "COMMUNITY",
-    title: "Community & Cultural Partners",
-    description:
-      "Community organisations, cultural practitioners, creative collectives, facilitators, and civic groups looking for a meaningful space to gather, teach, exhibit, perform, or co-create.",
-    cta: "Explore a Community Activation",
-    intent: "community" as SegmentId,
   },
 ] as const;
 

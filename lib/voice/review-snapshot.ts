@@ -57,10 +57,19 @@ export function buildVoiceReviewSnapshot(
 export async function postVoiceReviewSnapshot(
   review: VoiceReviewCredentials,
   snapshot: VoiceReviewSnapshotRequest["snapshot"],
+  options: { keepalive?: boolean } = {},
 ) {
-  await fetch("/api/voice/debug", {
+  const payload = JSON.stringify({ review: { id: review.id, token: review.token }, snapshot });
+  if (options.keepalive && typeof navigator !== "undefined" && "sendBeacon" in navigator) {
+    const body = new Blob([payload], { type: "application/json" });
+    if (navigator.sendBeacon("/api/voice/debug", body)) return;
+  }
+
+  const response = await fetch("/api/voice/debug", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ review: { id: review.id, token: review.token }, snapshot }),
+    body: payload,
+    keepalive: options.keepalive,
   });
+  if (!response.ok) throw new Error(`voice_review_snapshot_${response.status}`);
 }

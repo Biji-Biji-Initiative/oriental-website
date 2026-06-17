@@ -46,7 +46,7 @@ component-prefixed class names:
 
 | Runtime surface | Production path | shadcn primitives | Notes |
 |---|---|---|---|
-| Voice context | `components/voice-agent/voice-state.tsx` | — | Owns global open state and passes Turnstile site key. |
+| Voice context | `components/voice-agent/voice-state.tsx` | — | Owns global open state, page-load bundle warmup, voice-variant persistence, and permission-aware prewarm signals. |
 | Voice button | `components/voice-agent/VoiceButton.tsx` | — | Opens dialog with optional segment/prefill. |
 | Dialog shell | `components/voice-agent/VoiceAgentDialog.tsx` | `Dialog`, `Form`, `Input`, `Textarea`, `Button` | Layout, lead submission, review snapshots, handoff-context sync, idle-goodbye wiring. |
 | Realtime runtime | `components/voice-agent/useVoiceRuntime.ts` | — | Owns reducer state (segment/captured/transcript), command dispatch over the data channel, typed-message append, and the voice toast policy. |
@@ -54,7 +54,7 @@ component-prefixed class names:
 | Handoff panel | `components/voice-agent/HandoffPanel.tsx` | `Form`, `Input`, `Textarea`, `Button` | Editable lead form, completion chips, live notes transcript. |
 | WebRTC lifecycle | `components/voice-agent/useRealtimeVoiceSession.ts` | — | Mic, peer connection, data channel, idle warning + goodbye + max timers, teardown. |
 | Audio level | `components/voice-agent/useVoiceAudioLevel.ts` | — | WebAudio analyser → `--voice-level` CSS variable on the orb; reduced-motion aware, no per-frame React renders. |
-| Turnstile | `components/security/useTurnstile.ts` | — | Script/widget lifecycle and local-dev token fallback. |
+| Turnstile compatibility | `components/security/TurnstileProvider.tsx` | — | Returns an empty token while Turnstile UI is disabled; server-side verifier remains available for optional form/newsletter enforcement. |
 | Realtime profile | `lib/voice/profile.ts` | — | Prompt sections, tools, semantic-VAD/transcription/session defaults. |
 | Realtime reducer | `lib/voice/realtime-events.ts` | — | Pure state machine for transcripts, tool calls, capture grounding, error classification, route command. |
 | Client events | `lib/voice/client-events.ts` | — | Serializes tool outputs, typed user messages, typed interruptions, handoff/reconnect context, `response.create`. |

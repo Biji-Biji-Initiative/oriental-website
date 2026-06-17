@@ -24,7 +24,7 @@ Production microsite for **Oriental Building** partner intake at `oriental.merek
 | Content | `lib/content.ts` + section components in `components/site/` |
 | Leads | Convex (`convex/schema.ts`, `convex/leads.ts`) via `lib/server/convex.ts` |
 | Voice | OpenAI Realtime (`gpt-realtime-2`), WebRTC client, ephemeral tokens from `POST /api/voice/session` |
-| Abuse | Cloudflare Turnstile + Redis-backed rate limits with memory fallback (`lib/server/rate-limit.ts`, re-exported by `security.ts`) |
+| Abuse | Optional Turnstile enforcement for form/newsletter posts + Redis-backed rate limits with memory fallback (`lib/server/rate-limit.ts`, re-exported by `security.ts`) |
 | Notify | AWS SES/SMTP + Slack Web API bot token, webhook fallback (`lib/server/notifications.ts`, `lib/server/smtp.ts`) |
 | Observability | Sentry Next.js SDK, structured JSON logs, Slack ops alerts, admin review dashboard |
 | Deploy | Docker `output: "standalone"` on Coolify app `mtrl2z6a7zvoyevxvufpntij`; secrets from Infisical (not in git) |
@@ -53,7 +53,8 @@ components/
   voice-agent/            # dialog, hooks, voice-state, HeroEmailCapture
   orb/                    # MiniOrb (SVG)
   ui/                     # shadcn primitives — prefer extending, not replacing
-  security/               # Turnstile hook
+  security/               # Turnstile compatibility provider
+  voice/                  # Turnstile hook
 lib/
   content.ts              # copy constants
   segments.ts             # partner segments + routing metadata
@@ -67,7 +68,7 @@ lib/
     admin-auth.ts         # signed admin review cookie/token helpers
     openai-realtime.ts    # session minting
     ops-alerts.ts         # Slack ops alerts for production failures
-    security.ts           # Turnstile, IP hash, shared response helpers
+    security.ts           # Turnstile verifier, IP hash, shared response helpers
     rate-limit.ts         # Redis/Valkey/Upstash limiter, memory fallback
     logger.ts             # structured JSON logs for route handlers
     notifications.ts      # SES + Slack
@@ -93,7 +94,7 @@ docs/                     # handover specs — reference, not auto-synced to cod
 | Nav active section underline | `components/site/SiteNav.tsx`, `.site-nav__link--active` |
 | Partner segments, openers, routing labels | `lib/segments.ts` |
 | Voice persona, guardrails, tool descriptions, VAD/transcription/timeouts | `lib/voice/profile.ts` |
-| Voice A/B variants (distinct Malaysian registers: voice/speed/persona) + QA picker | `lib/voice/variants.ts`, `components/voice-agent/VoiceVariantPicker.tsx`; flag `VOICE_VARIANT_PICKER` |
+| Voice A/B variants (distinct Malaysian registers: voice/speed/persona) + public picker | `lib/voice/variants.ts`, `components/voice-agent/VoiceVariantPicker.tsx`; selected voice persists in localStorage/cookie |
 | Realtime protocol / transcript state machine / capture grounding | `lib/voice/realtime-events.ts` + `tests/realtime-events.test.ts` |
 | Voice UI / WebRTC wiring | `components/voice-agent/useRealtimeVoiceSession.ts`, `useVoiceRuntime.ts`, `VoiceAgentDialog.tsx`, `VoiceSessionStage.tsx` |
 | Voice orb look & motion | `components/voice-agent/VoiceSessionStage.tsx`, `.voice-orb*` in `app/globals.css`, level source in `useVoiceAudioLevel.ts` |
@@ -158,11 +159,11 @@ sequenceDiagram
   participant OpenAI as OpenAI Realtime
   participant Convex
 
-  Browser->>API: POST + Turnstile
+  Browser->>API: POST segment + voice variant
   API->>OpenAI: mint ephemeral client secret
-  API-->>Browser: secret + session hints
+  API-->>Browser: secret + signed review credentials
   Browser->>OpenAI: WebRTC + Realtime events
-  Browser->>API: POST /api/leads (on submit)
+  Browser->>API: POST /api/leads + signed review credentials (on submit)
   API->>Convex: persist lead
   API-->>Browser: ok + notifications
   Browser->>API: POST /api/voice/debug + signed review token

@@ -63,6 +63,8 @@ type UseRealtimeVoiceSessionArgs = {
   variant?: string;
 };
 
+const prewarmSessionHeadroomMs = 30_000;
+
 export function useRealtimeVoiceSession({
   audioRef,
   onClose,
@@ -244,27 +246,28 @@ export function useRealtimeVoiceSession({
   }, []);
 
   /**
-   * Mint the ephemeral session in the background so the user's first click does
-   * not wait on OpenAI client-secret creation. Microphone access is still only
-   * requested from the explicit start action.
+   * Mint the ephemeral session in the background so returning visitors do not
+   * wait on OpenAI client-secret creation. First-time visitors still spend no
+   * voice quota until they grant microphone access in the explicit start flow.
    */
   const prewarmVoiceSession = useCallback(() => {
     if (statusRef.current !== "idle") return;
     if (prewarmPromiseRef.current) return;
     const cached = prewarmedRef.current;
     if (cached) {
-      const stillFresh =
-        cached.variant === variantRef.current &&
-        (cached.session.client_secret.expires_at && cached.session.client_secret.expires_at > 0
-          ? cached.session.client_secret.expires_at * 1000
-          : cached.mintedAt + 270_000) >
-          Date.now() + 30_000;
+      const expiresAtMs = sessionExpiresAtMs(cached.session, cached.mintedAt);
+      const stillFresh = cached.variant === variantRef.current && expiresAtMs > Date.now() + prewarmSessionHeadroomMs;
       if (stillFresh) return;
       prewarmedRef.current = null;
     }
     const variantAtMint = variantRef.current;
-    prewarmPromiseRef.current = mintVoiceSession()
+    prewarmPromiseRef.current = queryMicrophonePermission()
+      .then((permission) => {
+        if (permission !== "granted" || statusRef.current !== "idle") return null;
+        return mintVoiceSession();
+      })
       .then((session) => {
+        if (!session) return;
         const mintedAt = Date.now();
         prewarmedRef.current = { session, mintedAt, variant: variantAtMint };
         emitSessionReady(session, { prewarmedAt: mintedAt });
@@ -427,6 +430,12 @@ export function useRealtimeVoiceSession({
 
 function positiveOr(value: number | undefined, fallback: number) {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function sessionExpiresAtMs(session: { client_secret: { expires_at?: number } }, mintedAt: number) {
+  return session.client_secret.expires_at && session.client_secret.expires_at > 0
+    ? session.client_secret.expires_at * 1000
+    : mintedAt + 270_000;
 }
 
 async function queryMicrophonePermission(): Promise<PermissionState> {

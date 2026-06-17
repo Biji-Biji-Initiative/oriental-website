@@ -25,21 +25,21 @@ const footerPartners = [
 export function Hero() {
   return (
     <section
-      className="hero-section relative grid min-h-[100svh] overflow-hidden bg-mk-off-black text-white"
+      className="hero-section relative grid overflow-hidden bg-mk-paper text-mk-off-black"
       data-screen-label="01 Hero"
       id="top"
     >
       <Image
         alt=""
-        className="absolute inset-0 h-full w-full object-cover object-[58%_center] opacity-60 saturate-[0.8] md:object-[62%_center]"
+        className="absolute inset-0 h-full w-full object-cover object-[58%_center] opacity-[0.48] mix-blend-multiply saturate-[0.65] md:object-[62%_center]"
         fill
         priority
         sizes="100vw"
         src="/assets/hero/oriental-building-blueprint.jpeg"
       />
-      <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(16,13,24,0.92),rgba(16,13,24,0.72)_42%,rgba(16,13,24,0.38)_72%,rgba(16,13,24,0.7))]" />
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_72%_38%,rgba(201,213,236,0.18),transparent_42%)]" />
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:72px_72px] opacity-24" />
+      <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(244,241,234,0.97),rgba(244,241,234,0.86)_42%,rgba(244,241,234,0.5)_72%,rgba(244,241,234,0.78))]" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_74%_38%,rgba(31,63,124,0.16),transparent_43%)]" />
+      <div className="absolute inset-0 bg-[linear-gradient(rgba(31,63,124,0.055)_1px,transparent_1px),linear-gradient(90deg,rgba(31,63,124,0.055)_1px,transparent_1px)] bg-[size:72px_72px] opacity-80" />
       <HeroCorner className="left-5 top-24 md:left-9" lines={["Oriental Building", "Jalan Tun Perak · Kuala Lumpur"]} />
       <HeroCorner className="right-5 top-24 text-right md:right-9" lines={["Levels Two–Four", "Opening 2027"]} />
       <HeroCorner
@@ -93,9 +93,9 @@ export function Hero() {
 
 function HeroCorner({ className, lines }: { className?: string; lines: [string, string] }) {
   return (
-    <div className={cn("hero-corner absolute z-10 hidden text-xs uppercase text-white/68 md:block", className)}>
-      <div className="text-white">{lines[0]}</div>
-      <div className="mt-1 text-white/48">{lines[1]}</div>
+    <div className={cn("hero-corner absolute z-10 text-xs uppercase text-mk-off-black/58", className)}>
+      <div className="text-mk-off-black">{lines[0]}</div>
+      <div className="mt-1 text-mk-anchor-blue/58">{lines[1]}</div>
     </div>
   );
 }

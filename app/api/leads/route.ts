@@ -1,11 +1,12 @@
 import type { NextRequest } from "next/server";
 import { isProductionEnv } from "@/lib/env";
-import { leadRequestSchema } from "@/lib/schemas";
+import { type LeadRequest, leadRequestSchema } from "@/lib/schemas";
 import { persistLead, recordLeadNotificationStatus } from "@/lib/server/convex";
 import { durationSince, errorMeta, logError, logInfo, logWarn } from "@/lib/server/logger";
 import { type NotificationResult, notifyOwner, notifySlack, routeLead } from "@/lib/server/notifications";
 import { sendOpsAlert } from "@/lib/server/ops-alerts";
 import { checkRateLimit, hashIp, noStoreJson, requestIp, verifyTurnstile } from "@/lib/server/security";
+import { verifyVoiceReviewCredentials } from "@/lib/server/voice-review-token";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,7 +35,7 @@ export async function POST(request: NextRequest) {
     return noStoreJson({ ok: false, error: "invalid_payload", details: parsed.error.flatten() }, { status: 400 });
   }
 
-  const turnstileOk = await verifyTurnstile(parsed.data.turnstileToken, ip);
+  const turnstileOk = voiceLeadHasSignedReview(parsed.data) || (await verifyTurnstile(parsed.data.turnstileToken, ip));
   if (!turnstileOk) {
     logWarn("lead.turnstile_failed", {
       requestId,
@@ -46,7 +47,7 @@ export async function POST(request: NextRequest) {
     return noStoreJson({ ok: false, error: "turnstile_failed" }, { status: 403 });
   }
 
-  const lead = routeLead(parsed.data);
+  const lead = routeLead(stripLeadVerification(parsed.data));
   if (!lead.routedToEmail && isProductionEnv()) {
     logError("lead.routing_unconfigured", {
       requestId,
@@ -155,11 +156,22 @@ export async function POST(request: NextRequest) {
   });
 }
 
-function notificationResult(
-  result: PromiseSettledResult<NotificationResult>,
-  fallbackError: string,
-): NotificationResult {
+function notificationResult(result: PromiseSettledResult<NotificationResult>, fallback: string): NotificationResult {
   if (result.status === "fulfilled") return result.value;
-  logWarn("lead.notification_rejected", { fallbackError, error: errorMeta(result.reason) });
-  return { ok: false, error: fallbackError };
+  logWarn("lead.notification_rejected", { fallback, error: errorMeta(result.reason) });
+  return { ok: false, error: fallback };
+}
+
+function voiceLeadHasSignedReview(data: LeadRequest) {
+  return (
+    data.source === "voice" &&
+    Boolean(data.voiceReviewId) &&
+    Boolean(data.voiceReviewToken) &&
+    verifyVoiceReviewCredentials(data.voiceReviewId ?? "", data.voiceReviewToken ?? "")
+  );
+}
+
+function stripLeadVerification(data: LeadRequest) {
+  const { voiceReviewToken: _verificationOnly, ...lead } = data;
+  return lead;
 }
