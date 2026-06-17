@@ -82,6 +82,9 @@ describe("createRealtimeClientSecret", () => {
       tool_choice: "auto",
     });
     expect(body.session.instructions).toContain("# Role and Objective");
+    expect(body.session.instructions).toContain("# Website Knowledge Base");
+    expect(body.session.instructions).toContain("What office sizes are available on the 3rd floor?");
+    expect(body.session.instructions).toContain("Full floor: ~2,800–3,000 sq ft");
     expect(body.session.instructions).toContain("Initial Context");
     expect(body.session.audio.input.transcription.prompt).toContain("Mereka");
     expect(body.session.audio.input.transcription.prompt).toContain("Bahasa Melayu");

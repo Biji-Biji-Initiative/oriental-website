@@ -55,13 +55,24 @@ export default async function SessionReviewPage() {
 
   return (
     <AdminShell generatedAt={dashboard.data.generatedAt}>
+      <ActionQueuePanel data={dashboard.data} sessionsWithRealErrors={sessionsWithRealErrors} />
+
       <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
         <MetricCard label="Recent leads" value={dashboard.data.metrics.recentLeads} />
-        <MetricCard label="Active queue" value={dashboard.data.metrics.activeLeads} />
+        <MetricCard
+          detail={`${countUnassignedActiveLeads(dashboard.data.leads)} unassigned`}
+          label="Active queue"
+          value={dashboard.data.metrics.activeLeads}
+        />
         <MetricCard label="High priority" tone="danger" value={dashboard.data.metrics.urgentLeads} />
         <MetricCard label="Notification health" suffix="%" value={dashboard.data.metrics.notificationDeliveryRate} />
         <MetricCard label="Voice submit rate" suffix="%" value={dashboard.data.metrics.voiceSubmitRate} />
-        <MetricCard label="Sessions with errors" tone="danger" value={sessionsWithRealErrors} />
+        <MetricCard
+          detail={`${recoverableVoiceSessions(dashboard.data.voiceSessions).length} recoverable`}
+          label="Sessions with errors"
+          tone="danger"
+          value={sessionsWithRealErrors}
+        />
       </div>
 
       <section className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
@@ -69,7 +80,8 @@ export default async function SessionReviewPage() {
         <WorkflowPanel leads={dashboard.data.leads} />
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-3">
+      <section className="grid gap-5 xl:grid-cols-4">
+        <TriagePanel leads={dashboard.data.queues.triage} />
         <RecoverableVoicePanel sessions={dashboard.data.voiceSessions} />
         <PriorityPanel leads={dashboard.data.queues.highPriority} />
         <NotificationPanel leads={dashboard.data.queues.failedNotifications} />
@@ -117,11 +129,13 @@ function MetricCard({
   value,
   suffix = "",
   tone = "default",
+  detail,
 }: {
   label: string;
   value: number;
   suffix?: string;
   tone?: "default" | "danger";
+  detail?: string;
 }) {
   return (
     <Card className="border-mk-ash/20 bg-white shadow-sm" size="sm">
@@ -131,6 +145,7 @@ function MetricCard({
           {value}
           {suffix}
         </CardTitle>
+        {detail ? <p className="text-xs text-mk-ash">{detail}</p> : null}
       </CardHeader>
     </Card>
   );
@@ -141,7 +156,7 @@ function WorkflowPanel({ leads }: { leads: LeadRow[] }) {
     (left, right) => priorityRank(right) - priorityRank(left) || right.createdAt - left.createdAt,
   );
   return (
-    <Card className="border-mk-ash/20 bg-white shadow-sm">
+    <Card className="border-mk-ash/20 bg-white shadow-sm" id="workflow">
       <CardHeader>
         <CardTitle>Lead workflow</CardTitle>
         <CardDescription>
@@ -180,6 +195,14 @@ function AnalyticsPanel({ data }: { data: DashboardData }) {
           <CountList title="Source" values={data.analytics.sourceCounts} />
           <CountList title="Priority" values={data.analytics.priorityCounts} />
           <CountList title="Segment" values={data.analytics.segmentCounts} />
+          <CountList
+            title="Voice variants"
+            values={countByVoiceSessions(data.voiceSessions, (session) => session.variant || "default")}
+          />
+          <CountList
+            title="Realtime voices"
+            values={countByVoiceSessions(data.voiceSessions, (session) => session.voice || "unknown")}
+          />
         </div>
         <div>
           <div className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">7-day leads</div>
@@ -221,8 +244,9 @@ function AnalyticsPanel({ data }: { data: DashboardData }) {
 function WorkflowLeadCard({ lead }: { lead: LeadRow }) {
   const status = normalizeAdminLeadStatus(lead.status);
   const priority = normalizeAdminLeadPriority(lead.priority);
+  const notification = notificationStatus(lead);
   return (
-    <article className="rounded-lg border border-mk-ash/15 bg-mk-paper/60 p-4">
+    <article className="scroll-mt-6 rounded-lg border border-mk-ash/15 bg-mk-paper/60 p-4" id={leadAnchorId(lead)}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="font-semibold">{lead.name || "Unnamed"}</div>
@@ -234,15 +258,17 @@ function WorkflowLeadCard({ lead }: { lead: LeadRow }) {
           <Badge tone={lead.source === "voice" ? "blue" : "neutral"}>{lead.source}</Badge>
           <Badge tone={statusTone(status)}>{adminLeadStatusLabels[status]}</Badge>
           <Badge tone={priorityTone(priority)}>{adminLeadPriorityLabels[priority]}</Badge>
-          <Badge tone={lead.notificationDelivered ? "green" : "red"}>
-            {lead.notificationDelivered ? "notified" : "notify failed"}
-          </Badge>
+          <Badge tone={notification.tone}>{notification.label}</Badge>
         </div>
       </div>
-      <dl className="mt-4 grid gap-2 text-xs text-mk-ash sm:grid-cols-3">
+      <dl className="mt-4 grid gap-2 text-xs text-mk-ash sm:grid-cols-4">
         <div>
           <dt className="font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">Route</dt>
           <dd>{lead.routedTo}</dd>
+        </div>
+        <div>
+          <dt className="font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">Owner email</dt>
+          <dd className="break-all">{lead.routedToEmail || "n/a"}</dd>
         </div>
         <div>
           <dt className="font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">Created</dt>
@@ -253,6 +279,7 @@ function WorkflowLeadCard({ lead }: { lead: LeadRow }) {
           <dd>{lead.lastReviewedAt ? formatDate(lead.lastReviewedAt) : "Not yet"}</dd>
         </div>
       </dl>
+      <LeadContactChips lead={lead} />
       <p className="mt-4 whitespace-pre-wrap rounded-lg bg-white p-3 text-sm leading-6">{lead.message}</p>
       {lead.workflowNote ? (
         <p className="mt-3 rounded-lg bg-mk-horizon/15 p-3 text-xs text-mk-ash">{lead.workflowNote}</p>
@@ -268,11 +295,42 @@ function WorkflowLeadCard({ lead }: { lead: LeadRow }) {
   );
 }
 
+function LeadContactChips({ lead }: { lead: LeadRow }) {
+  const chips = [
+    lead.phone ? `Phone: ${lead.phone}` : null,
+    lead.website ? `Web: ${lead.website}` : null,
+    Object.keys(lead.utm ?? {}).length > 0 ? `UTM: ${Object.keys(lead.utm).join(", ")}` : null,
+  ].filter(Boolean);
+  if (chips.length === 0) return null;
+  return (
+    <div className="mt-3 flex flex-wrap gap-2">
+      {chips.map((chip) => (
+        <Badge key={chip} tone="neutral">
+          {chip}
+        </Badge>
+      ))}
+    </div>
+  );
+}
+
+function TriagePanel({ leads }: { leads: LeadRow[] }) {
+  return (
+    <QueuePanel
+      description="New and reviewing handoffs that need owner, priority, or next-action decisions."
+      emptyLabel="No triage leads in the recent window."
+      id="triage"
+      leads={leads}
+      title="Needs review"
+    />
+  );
+}
+
 function PriorityPanel({ leads }: { leads: LeadRow[] }) {
   return (
     <QueuePanel
       description="High and urgent handoffs that should get human ownership first."
       emptyLabel="No high-priority handoffs in the recent window."
+      id="priority"
       leads={leads}
       title="Priority queue"
     />
@@ -282,8 +340,9 @@ function PriorityPanel({ leads }: { leads: LeadRow[] }) {
 function NotificationPanel({ leads }: { leads: LeadRow[] }) {
   return (
     <QueuePanel
-      description="Leads where all configured delivery paths failed or are still unresolved."
-      emptyLabel="No notification failures in the recent window."
+      description="Leads where configured delivery paths definitely failed after a send attempt."
+      emptyLabel="No confirmed notification failures in the recent window."
+      id="notifications"
       leads={leads}
       title="Notification recovery"
     />
@@ -293,16 +352,18 @@ function NotificationPanel({ leads }: { leads: LeadRow[] }) {
 function QueuePanel({
   description,
   emptyLabel,
+  id,
   leads,
   title,
 }: {
   description: string;
   emptyLabel: string;
+  id: string;
   leads: LeadRow[];
   title: string;
 }) {
   return (
-    <Card className="border-mk-ash/20 bg-white shadow-sm">
+    <Card className="border-mk-ash/20 bg-white shadow-sm" id={id}>
       <CardHeader>
         <CardTitle>{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
@@ -312,8 +373,13 @@ function QueuePanel({
         {leads.map((lead) => {
           const priority = normalizeAdminLeadPriority(lead.priority);
           const status = normalizeAdminLeadStatus(lead.status);
+          const notification = notificationStatus(lead);
           return (
-            <article className="rounded-lg border border-mk-ash/15 p-3" key={`${title}:${lead.leadId}`}>
+            <a
+              className="block rounded-lg border border-mk-ash/15 p-3 transition hover:border-mk-blue/40 hover:bg-mk-paper/70"
+              href={`#${leadAnchorId(lead)}`}
+              key={`${title}:${lead.leadId}`}
+            >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <div className="font-semibold">{lead.name || "Unnamed"}</div>
@@ -322,6 +388,7 @@ function QueuePanel({
                 <div className="flex flex-wrap gap-2">
                   <Badge tone={priorityTone(priority)}>{adminLeadPriorityLabels[priority]}</Badge>
                   <Badge tone={statusTone(status)}>{adminLeadStatusLabels[status]}</Badge>
+                  <Badge tone={notification.tone}>{notification.label}</Badge>
                 </div>
               </div>
               <div className="mt-3 text-xs text-mk-ash">
@@ -330,7 +397,10 @@ function QueuePanel({
               {lead.notificationSummary ? (
                 <p className="mt-2 text-xs text-destructive">{lead.notificationSummary}</p>
               ) : null}
-            </article>
+              <div className="mt-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-mk-blue">
+                Open workflow
+              </div>
+            </a>
           );
         })}
       </CardContent>
@@ -420,6 +490,14 @@ function HealthBox({
   );
 }
 
+function countByVoiceSessions(sessions: VoiceSessionRow[], key: (session: VoiceSessionRow) => string) {
+  return sessions.reduce<Record<string, number>>((counts, session) => {
+    const value = key(session);
+    counts[value] = (counts[value] ?? 0) + 1;
+    return counts;
+  }, {});
+}
+
 function priorityRank(lead: LeadRow) {
   const priority = normalizeAdminLeadPriority(lead.priority);
   return { low: 0, normal: 1, high: 2, urgent: 3 }[priority];
@@ -439,12 +517,98 @@ function priorityTone(priority: ReturnType<typeof normalizeAdminLeadPriority>) {
   return "blue";
 }
 
+function notificationStatus(lead: LeadRow): { label: string; tone: "neutral" | "blue" | "green" | "red" | "amber" } {
+  if (lead.notificationDelivered === true) return { label: "notified", tone: "green" };
+  if (lead.notificationDelivered === false) return { label: "notify failed", tone: "red" };
+  return { label: "notify pending", tone: "neutral" };
+}
+
+function leadAnchorId(lead: LeadRow) {
+  return `lead-${lead.leadId.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+}
+
+function ActionQueuePanel({ data, sessionsWithRealErrors }: { data: DashboardData; sessionsWithRealErrors: number }) {
+  const recoverable = recoverableVoiceSessions(data.voiceSessions).length;
+  const staleActive = staleActiveLeads(data.leads, data.generatedAt).length;
+  const unassigned = countUnassignedActiveLeads(data.leads);
+  const cards = [
+    {
+      label: "Voice recovery",
+      value: recoverable,
+      detail: "Captured email but no submitted handoff.",
+      href: "#voice-recovery",
+      tone: recoverable > 0 ? "amber" : "green",
+    },
+    {
+      label: "Realtime QA",
+      value: sessionsWithRealErrors,
+      detail: "Sessions with non-benign Realtime errors.",
+      href: "#voice-sessions",
+      tone: sessionsWithRealErrors > 0 ? "red" : "green",
+    },
+    {
+      label: "Failed notifications",
+      value: data.queues.failedNotifications.length,
+      detail: "Handoffs needing manual delivery checks.",
+      href: "#notifications",
+      tone: data.queues.failedNotifications.length > 0 ? "red" : "green",
+    },
+    {
+      label: "Unassigned active",
+      value: unassigned,
+      detail: "Open leads without an owner.",
+      href: "#triage",
+      tone: unassigned > 0 ? "amber" : "green",
+    },
+    {
+      label: "Stale active",
+      value: staleActive,
+      detail: "Open leads untouched for more than 48 hours.",
+      href: "#triage",
+      tone: staleActive > 0 ? "amber" : "green",
+    },
+  ] as const;
+
+  return (
+    <Card className="border-mk-ash/20 bg-white shadow-sm">
+      <CardHeader>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle>Needs attention</CardTitle>
+            <CardDescription>Operator queue ordered by recoverability, risk, and handoff freshness.</CardDescription>
+          </div>
+          <Badge tone={data.metrics.activeLeads > 0 ? "amber" : "green"}>
+            {data.metrics.activeLeads > 0 ? "open work" : "clear"}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-3 md:grid-cols-5">
+        {cards.map((card) => (
+          <a
+            className="group rounded-lg border border-mk-ash/15 bg-mk-paper/60 p-3 transition hover:border-mk-blue/40 hover:bg-white"
+            href={card.href}
+            key={card.label}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
+                {card.label}
+              </span>
+              <Badge tone={card.tone}>{card.value}</Badge>
+            </div>
+            <p className="mt-3 text-xs leading-5 text-mk-ash">{card.detail}</p>
+          </a>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
 function RecoverableVoicePanel({ sessions }: { sessions: VoiceSessionRow[] }) {
   const unsent = sessions.filter((session) => !session.leadId && session.captured.email.trim().length > 0);
   const recoverable = unsent.filter((session) => !session.followedUpAt);
   const followedUp = unsent.filter((session) => Boolean(session.followedUpAt));
   return (
-    <Card className="border-mk-ash/20 bg-white shadow-sm">
+    <Card className="border-mk-ash/20 bg-white shadow-sm" id="voice-recovery">
       <CardHeader>
         <CardTitle>Recoverable voice leads</CardTitle>
         <CardDescription>
@@ -523,7 +687,7 @@ function followUpMailto(session: VoiceSessionRow) {
 
 function VoiceSessionsPanel({ sessions }: { sessions: VoiceSessionRow[] }) {
   return (
-    <Card className="border-mk-ash/20 bg-white shadow-sm">
+    <Card className="border-mk-ash/20 bg-white shadow-sm" id="voice-sessions">
       <CardHeader>
         <CardTitle>Voice sessions</CardTitle>
         <CardDescription>
@@ -531,6 +695,7 @@ function VoiceSessionsPanel({ sessions }: { sessions: VoiceSessionRow[] }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-3">
+        <VoiceQaRollup sessions={sessions} />
         {sessions.length === 0 ? <EmptyState label="No voice review snapshots yet." /> : null}
         {sessions.map((session) => {
           const realErrorCount = session.errors.filter((error: VoiceRuntimeError) => !isBenignVoiceError(error)).length;
@@ -548,6 +713,8 @@ function VoiceSessionsPanel({ sessions }: { sessions: VoiceSessionRow[] }) {
                   <Badge tone={session.leadId ? "green" : "neutral"}>
                     {session.leadId ? "submitted" : session.status}
                   </Badge>
+                  {session.variant ? <Badge tone="blue">{session.variant}</Badge> : null}
+                  {session.routeRequested ? <Badge tone="amber">route requested</Badge> : null}
                   <Badge tone={realErrorCount > 0 ? "red" : "blue"}>
                     {realErrorCount > 0
                       ? `${realErrorCount} errors`
@@ -557,7 +724,7 @@ function VoiceSessionsPanel({ sessions }: { sessions: VoiceSessionRow[] }) {
                   </Badge>
                 </div>
               </div>
-              <dl className="mt-4 grid gap-2 text-xs text-mk-ash sm:grid-cols-2">
+              <dl className="mt-4 grid gap-2 text-xs text-mk-ash sm:grid-cols-4">
                 <div>
                   <dt className="font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">Session</dt>
                   <dd className="break-all">{session.sessionId}</dd>
@@ -570,7 +737,16 @@ function VoiceSessionsPanel({ sessions }: { sessions: VoiceSessionRow[] }) {
                       .join(" · ") || "n/a"}
                   </dd>
                 </div>
+                <div>
+                  <dt className="font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">Variant</dt>
+                  <dd>{session.variant || "default"}</dd>
+                </div>
+                <div>
+                  <dt className="font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">Runtime</dt>
+                  <dd>{session.connectionStatus}</dd>
+                </div>
               </dl>
+              <SessionQualityFlags session={session} realErrorCount={realErrorCount} />
               <div className="mt-4 grid gap-3 rounded-lg bg-mk-paper p-3 text-sm leading-6">
                 <div>
                   <span className="font-semibold">Email:</span> {session.captured.email || "empty"}
@@ -625,10 +801,75 @@ function VoiceSessionsPanel({ sessions }: { sessions: VoiceSessionRow[] }) {
 function UsageSummary({ session }: { session: VoiceSessionRow }) {
   if (!session.usage) return null;
   return (
-    <div className="mt-3 grid gap-2 text-xs text-mk-ash sm:grid-cols-3">
+    <div className="mt-3 grid gap-2 text-xs text-mk-ash sm:grid-cols-3 lg:grid-cols-6">
       <div>Responses: {session.usage.responseCount}</div>
-      <div>Tokens: {session.usage.responseTokens}</div>
+      <div>Response tokens: {session.usage.responseTokens}</div>
+      <div>Input: {session.usage.responseInputTokens}</div>
+      <div>Output: {session.usage.responseOutputTokens}</div>
+      <div>Cached: {session.usage.responseCachedTokens}</div>
       <div>Transcriptions: {session.usage.transcriptionCount}</div>
+    </div>
+  );
+}
+
+function VoiceQaRollup({ sessions }: { sessions: VoiceSessionRow[] }) {
+  if (sessions.length === 0) return null;
+  const variantRows = summarizeVoiceVariants(sessions);
+  return (
+    <div className="grid gap-3 rounded-lg border border-mk-ash/15 bg-mk-paper/70 p-3 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)]">
+      <div>
+        <div className="text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">QA summary</div>
+        <div className="mt-3 grid gap-2 text-xs text-mk-ash sm:grid-cols-2 lg:grid-cols-1">
+          <div>{sessions.length} snapshots reviewed</div>
+          <div>{sessions.filter((session) => Boolean(session.leadId)).length} submitted handoffs</div>
+          <div>{recoverableVoiceSessions(sessions).length} recoverable unsent leads</div>
+          <div>{sessions.filter((session) => session.routeRequested).length} route requests</div>
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[520px] text-left text-xs">
+          <thead className="text-mk-off-black/55">
+            <tr className="border-b border-mk-ash/15">
+              <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Variant</th>
+              <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Voice</th>
+              <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Sessions</th>
+              <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Submit</th>
+              <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Errors</th>
+              <th className="py-2 font-semibold uppercase tracking-[0.12em]">Tokens</th>
+            </tr>
+          </thead>
+          <tbody className="text-mk-ash">
+            {variantRows.map((row) => (
+              <tr className="border-b border-mk-ash/10 last:border-0" key={`${row.variant}:${row.voice}`}>
+                <td className="py-2 pr-3 font-medium text-mk-off-black">{row.variant}</td>
+                <td className="py-2 pr-3">{row.voice}</td>
+                <td className="py-2 pr-3">{row.sessions}</td>
+                <td className="py-2 pr-3">{row.submitRate}%</td>
+                <td className={row.errorSessions > 0 ? "py-2 pr-3 text-destructive" : "py-2 pr-3"}>
+                  {row.errorSessions}
+                </td>
+                <td className="py-2">{row.responseTokens}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function SessionQualityFlags({ session, realErrorCount }: { session: VoiceSessionRow; realErrorCount: number }) {
+  const captured = capturedFieldCount(session.captured);
+  const roles = countTranscriptRoles(session.transcript);
+  return (
+    <div className="mt-3 flex flex-wrap gap-2">
+      <Badge tone={captured >= 4 ? "green" : captured >= 2 ? "amber" : "red"}>{captured}/6 captured</Badge>
+      <Badge tone={session.transcript.length > 0 ? "blue" : "red"}>{session.transcript.length} turns</Badge>
+      <Badge tone={roles.assistant > 0 ? "neutral" : "amber"}>
+        {roles.user}/{roles.assistant} visitor/reka
+      </Badge>
+      {realErrorCount > 0 ? <Badge tone="red">review error</Badge> : null}
+      {!session.leadId && session.captured.email.trim().length > 0 ? <Badge tone="amber">recoverable</Badge> : null}
     </div>
   );
 }
@@ -664,6 +905,76 @@ function EmptyState({ label }: { label: string }) {
   return (
     <div className="rounded-lg border border-dashed border-mk-ash/25 p-6 text-center text-sm text-mk-ash">{label}</div>
   );
+}
+
+function recoverableVoiceSessions(sessions: VoiceSessionRow[]) {
+  return sessions.filter(
+    (session) => !session.leadId && session.captured.email.trim().length > 0 && !session.followedUpAt,
+  );
+}
+
+function countUnassignedActiveLeads(leads: LeadRow[]) {
+  return leads.filter((lead) => isActiveLead(lead) && !lead.owner?.trim()).length;
+}
+
+function staleActiveLeads(leads: LeadRow[], generatedAt: number) {
+  const staleAfterMs = 48 * 60 * 60 * 1000;
+  return leads.filter(
+    (lead) => isActiveLead(lead) && generatedAt - (lead.lastReviewedAt ?? lead.createdAt) > staleAfterMs,
+  );
+}
+
+function isActiveLead(lead: LeadRow) {
+  return !["qualified", "archived"].includes(normalizeAdminLeadStatus(lead.status));
+}
+
+function capturedFieldCount(captured: VoiceSessionRow["captured"]) {
+  return [captured.name, captured.email, captured.org, captured.phone, captured.website, captured.message].filter(
+    (value) => Boolean(value?.trim()),
+  ).length;
+}
+
+type TranscriptRoleCounts = { user: number; assistant: number; system: number };
+type TranscriptRoleEntry = { role: string };
+
+function countTranscriptRoles(transcript: TranscriptRoleEntry[]) {
+  return transcript.reduce<TranscriptRoleCounts>(
+    (counts, turn) => {
+      if (turn.role === "assistant") counts.assistant += 1;
+      else if (turn.role === "system") counts.system += 1;
+      else counts.user += 1;
+      return counts;
+    },
+    { user: 0, assistant: 0, system: 0 },
+  );
+}
+
+function summarizeVoiceVariants(sessions: VoiceSessionRow[]) {
+  const rows = new Map<
+    string,
+    {
+      variant: string;
+      voice: string;
+      sessions: number;
+      submitted: number;
+      errorSessions: number;
+      responseTokens: number;
+    }
+  >();
+  for (const session of sessions) {
+    const variant = session.variant || "default";
+    const voice = session.voice || "unknown";
+    const key = `${variant}:${voice}`;
+    const row = rows.get(key) ?? { variant, voice, sessions: 0, submitted: 0, errorSessions: 0, responseTokens: 0 };
+    row.sessions += 1;
+    row.submitted += session.leadId ? 1 : 0;
+    row.errorSessions += session.errors.some((error: VoiceRuntimeError) => !isBenignVoiceError(error)) ? 1 : 0;
+    row.responseTokens += session.usage?.responseTokens ?? 0;
+    rows.set(key, row);
+  }
+  return [...rows.values()]
+    .map((row) => ({ ...row, submitRate: Math.round((row.submitted / row.sessions) * 100) }))
+    .sort((left, right) => right.sessions - left.sessions || right.errorSessions - left.errorSessions);
 }
 
 function formatDate(value: number) {

@@ -25,8 +25,8 @@ test("mobile menu opens sections and closes after navigation", async ({ page }) 
 
 test("timeline responds to keyboard focus", async ({ page }) => {
   await page.goto("/#timeline");
-  await page.getByRole("button", { name: /Renovation & Early Activation/i }).focus();
-  await expect(page.locator(".timeline")).toHaveAttribute("data-progress", "2");
+  await page.getByRole("button", { name: /Renovation and Early Activation/i }).focus();
+  await expect(page.locator(".timeline")).toHaveAttribute("data-progress", "3");
 });
 
 test("lead form prevents duplicate posts while submission is pending", async ({ page }) => {

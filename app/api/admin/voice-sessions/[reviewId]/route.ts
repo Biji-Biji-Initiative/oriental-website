@@ -1,7 +1,7 @@
 import { adminVoiceFollowUpSchema } from "@/lib/schemas";
 import { verifyAdminRequest } from "@/lib/server/admin-auth";
 import { setAdminVoiceFollowUp } from "@/lib/server/convex";
-import { logWarn } from "@/lib/server/logger";
+import { logInfo, logWarn } from "@/lib/server/logger";
 import { noStoreJson } from "@/lib/server/security";
 
 export const runtime = "nodejs";
@@ -28,6 +28,11 @@ export async function PATCH(request: Request, context: RouteContext<"/api/admin/
     const status = result.reason === "not_found" ? 404 : 503;
     return noStoreJson({ ok: false, error: result.reason }, { status });
   }
+
+  logInfo("admin_voice.follow_up_updated", {
+    reviewId: decodeURIComponent(reviewId),
+    followedUp: parsed.data.followedUp,
+  });
 
   return noStoreJson({ ok: true });
 }

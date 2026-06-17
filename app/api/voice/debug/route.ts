@@ -50,11 +50,41 @@ export async function POST(request: Request) {
 }
 
 const loggedErrorCounts = new Map<string, number>();
+const loggedSnapshotSignatures = new Map<string, string>();
 const loggedSubmissions = new Set<string>();
 
 // Surface voice session health in structured server logs without captured PII or transcript text.
 // Snapshots repost on every state change, so dedupe per review id.
 function logVoiceSessionHealth(reviewId: string, snapshot: VoiceReviewSnapshotRequest["snapshot"]) {
+  const signature = buildHealthSnapshotSignature(snapshot);
+  if (loggedSnapshotSignatures.get(reviewId) !== signature) {
+    loggedSnapshotSignatures.set(reviewId, signature);
+    trimToRecent(loggedSnapshotSignatures);
+    const capturedFields = buildCapturedFieldSummary(snapshot.captured);
+    const transcriptRoles = countTranscriptRoles(snapshot.transcript);
+    logInfo("voice_review.session_snapshot", {
+      reviewId,
+      sessionId: snapshot.sessionId,
+      leadId: snapshot.leadId ?? null,
+      status: snapshot.status,
+      connectionStatus: snapshot.connectionStatus,
+      segment: snapshot.segment,
+      model: snapshot.model ?? null,
+      voice: snapshot.voice ?? null,
+      speed: snapshot.speed ?? null,
+      variant: snapshot.variant ?? null,
+      transcriptTurns: snapshot.transcript.length,
+      transcriptRoles,
+      capturedFields,
+      capturedFieldCount: Object.values(capturedFields).filter(Boolean).length,
+      capturedMessageChars: snapshot.captured.message.length,
+      routeRequested: snapshot.routeRequested,
+      errorCount: snapshot.errors.length,
+      rateLimitCount: snapshot.rateLimits.length,
+      usage: snapshot.usage ?? null,
+      submittedAt: snapshot.submittedAt ?? null,
+    });
+  }
   if (snapshot.errors.length > (loggedErrorCounts.get(reviewId) ?? 0)) {
     loggedErrorCounts.set(reviewId, snapshot.errors.length);
     trimToRecent(loggedErrorCounts);
@@ -81,9 +111,53 @@ function logVoiceSessionHealth(reviewId: string, snapshot: VoiceReviewSnapshotRe
   }
 }
 
-function trimToRecent(store: Map<string, number> | Set<string>, limit = 500) {
+function trimToRecent(
+  store: { keys: () => IterableIterator<string>; readonly size: number; delete: (key: string) => boolean },
+  limit = 500,
+) {
   for (const key of store.keys()) {
     if (store.size <= limit) break;
     store.delete(key);
   }
+}
+
+function buildHealthSnapshotSignature(snapshot: VoiceReviewSnapshotRequest["snapshot"]) {
+  return JSON.stringify({
+    status: snapshot.status,
+    connectionStatus: snapshot.connectionStatus,
+    segment: snapshot.segment,
+    model: snapshot.model ?? null,
+    voice: snapshot.voice ?? null,
+    speed: snapshot.speed ?? null,
+    variant: snapshot.variant ?? null,
+    transcriptTurns: snapshot.transcript.length,
+    transcriptRoles: countTranscriptRoles(snapshot.transcript),
+    capturedFields: buildCapturedFieldSummary(snapshot.captured),
+    routeRequested: snapshot.routeRequested,
+    errorCount: snapshot.errors.length,
+    rateLimitCount: snapshot.rateLimits.length,
+    usage: snapshot.usage ?? null,
+    submitted: snapshot.status === "submitted",
+  });
+}
+
+function buildCapturedFieldSummary(snapshot: VoiceReviewSnapshotRequest["snapshot"]["captured"]) {
+  return {
+    name: snapshot.name.trim().length > 0,
+    email: snapshot.email.trim().length > 0,
+    org: snapshot.org.trim().length > 0,
+    phone: (snapshot.phone ?? "").trim().length > 0,
+    website: (snapshot.website ?? "").trim().length > 0,
+    message: snapshot.message.trim().length > 0,
+  };
+}
+
+function countTranscriptRoles(snapshot: VoiceReviewSnapshotRequest["snapshot"]["transcript"]) {
+  return snapshot.reduce(
+    (counts, turn) => {
+      counts[turn.role] += 1;
+      return counts;
+    },
+    { user: 0, assistant: 0, system: 0 },
+  );
 }

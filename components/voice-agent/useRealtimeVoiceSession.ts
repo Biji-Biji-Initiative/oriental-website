@@ -230,33 +230,38 @@ export function useRealtimeVoiceSession({
   }, []);
 
   /**
-   * Mint the ephemeral session while the visitor is still reading the dialog,
-   * so the tap on "start" only pays for the microphone and the WebRTC
-   * handshake. Failures stay silent — the tap path re-mints and surfaces them.
+   * Mint the ephemeral session only for returning visitors whose microphone is
+   * already granted. First-time visitors should see and accept the browser mic
+   * prompt before we spend daily voice quota or create an OpenAI session.
    */
   const prewarmVoiceSession = useCallback(() => {
     if (statusRef.current !== "idle") return;
     if (prewarmPromiseRef.current) return;
-    const cached = prewarmedRef.current;
-    if (cached) {
-      const stillFresh =
-        cached.variant === variantRef.current &&
-        (cached.session.client_secret.expires_at && cached.session.client_secret.expires_at > 0
-          ? cached.session.client_secret.expires_at * 1000
-          : cached.mintedAt + 270_000) >
-          Date.now() + 30_000;
-      if (stillFresh) return;
-      prewarmedRef.current = null;
-    }
-    const variantAtMint = variantRef.current;
-    prewarmPromiseRef.current = mintVoiceSession()
-      .then((session) => {
-        prewarmedRef.current = { session, mintedAt: Date.now(), variant: variantAtMint };
+    void queryMicrophonePermission()
+      .then((permission) => {
+        if (permission !== "granted" || statusRef.current !== "idle" || prewarmPromiseRef.current) return;
+        const cached = prewarmedRef.current;
+        if (cached) {
+          const stillFresh =
+            cached.variant === variantRef.current &&
+            (cached.session.client_secret.expires_at && cached.session.client_secret.expires_at > 0
+              ? cached.session.client_secret.expires_at * 1000
+              : cached.mintedAt + 270_000) >
+              Date.now() + 30_000;
+          if (stillFresh) return;
+          prewarmedRef.current = null;
+        }
+        const variantAtMint = variantRef.current;
+        prewarmPromiseRef.current = mintVoiceSession()
+          .then((session) => {
+            prewarmedRef.current = { session, mintedAt: Date.now(), variant: variantAtMint };
+          })
+          .catch(() => null)
+          .then(() => {
+            prewarmPromiseRef.current = null;
+          });
       })
-      .catch(() => null)
-      .then(() => {
-        prewarmPromiseRef.current = null;
-      });
+      .catch(() => null);
   }, [mintVoiceSession]);
 
   const obtainVoiceSession = useCallback(async (): Promise<MintedSession> => {

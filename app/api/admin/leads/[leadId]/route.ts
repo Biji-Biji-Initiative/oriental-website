@@ -1,7 +1,7 @@
 import { adminLeadWorkflowSchema } from "@/lib/schemas";
 import { verifyAdminRequest } from "@/lib/server/admin-auth";
 import { updateAdminLeadWorkflow } from "@/lib/server/convex";
-import { logWarn } from "@/lib/server/logger";
+import { logInfo, logWarn } from "@/lib/server/logger";
 import { noStoreJson } from "@/lib/server/security";
 
 export const runtime = "nodejs";
@@ -28,6 +28,14 @@ export async function PATCH(request: Request, context: RouteContext<"/api/admin/
     const status = result.reason === "not_found" ? 404 : 503;
     return noStoreJson({ ok: false, error: result.reason }, { status });
   }
+
+  logInfo("admin_lead.workflow_updated", {
+    leadId: decodeURIComponent(leadId),
+    status: parsed.data.status,
+    priority: parsed.data.priority,
+    ownerAssigned: parsed.data.owner.trim().length > 0,
+    noteAdded: Boolean(parsed.data.note?.trim()),
+  });
 
   return noStoreJson({ ok: true });
 }

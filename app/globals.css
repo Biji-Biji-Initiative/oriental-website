@@ -254,30 +254,6 @@
     @apply mt-3 inline-flex items-center text-[12.5px] font-semibold tracking-wide text-mk-anchor-blue transition group-hover:translate-x-0.5 group-hover:text-mk-vivid-blue;
   }
 
-  .timeline-table {
-    @apply mt-16 overflow-hidden rounded-lg border border-mk-off-black/12;
-  }
-
-  .timeline-table table {
-    @apply w-full border-collapse text-left;
-  }
-
-  .timeline-table thead th {
-    @apply bg-mk-off-black px-6 py-4 text-[12px] font-semibold tracking-[0.16em] text-white uppercase;
-  }
-
-  .timeline-table tbody tr {
-    @apply border-t border-mk-off-black/10;
-  }
-
-  .timeline-table tbody th {
-    @apply px-6 py-5 text-[16px] font-bold tracking-tight text-mk-off-black;
-  }
-
-  .timeline-table tbody td {
-    @apply px-6 py-5 text-[15.5px] text-mk-off-black/68;
-  }
-
   .faq-item__summary {
     @apply flex cursor-pointer list-none items-center justify-between gap-6 py-5 text-[17px] font-semibold tracking-tight text-mk-off-black transition-colors hover:text-mk-anchor-blue;
   }
@@ -424,27 +400,27 @@
   }
 
   .hero-email {
-    @apply max-w-xl text-mk-off-black;
+    @apply max-w-xl text-white;
   }
 
   .hero-email__label {
-    @apply mb-2 block text-xs font-medium tracking-[0.14em] text-mk-anchor-blue/78 uppercase;
+    @apply mb-2 block text-xs font-medium tracking-[0.14em] text-white/72 uppercase;
   }
 
   .hero-email__row {
-    @apply flex items-stretch rounded-full border border-mk-anchor-blue/18 bg-white/76 p-1 shadow-[0_18px_48px_rgba(31,63,124,0.12)] backdrop-blur-md transition focus-within:border-mk-anchor-blue/45 focus-within:bg-white/90;
+    @apply flex items-stretch rounded-full border border-white/14 bg-white/[0.06] p-1 backdrop-blur-md transition focus-within:border-white/45 focus-within:bg-white/[0.09];
   }
 
   .hero-email__row input {
-    @apply min-w-0 flex-1 appearance-none border-0 bg-transparent px-5 py-3.5 text-base font-medium text-mk-off-black outline-none placeholder:text-mk-off-black/42;
+    @apply min-w-0 flex-1 appearance-none border-0 bg-transparent px-5 py-3.5 text-base font-medium text-white outline-none placeholder:text-white/40;
   }
 
   .hero-email__submit {
-    @apply shrink-0 cursor-pointer rounded-full border-0 bg-mk-anchor-blue px-5 py-3 text-[13.5px] font-semibold text-white transition enabled:hover:bg-mk-vivid-blue disabled:cursor-not-allowed disabled:bg-mk-anchor-blue/18 disabled:text-mk-off-black/38;
+    @apply shrink-0 cursor-pointer rounded-full border-0 bg-white px-5 py-3 text-[13.5px] font-semibold text-mk-off-black transition enabled:hover:bg-mk-horizon enabled:hover:text-white disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/40;
   }
 
   .hero-email__error {
-    @apply mt-2 text-sm text-mk-anchor-blue;
+    @apply mt-2 text-sm text-white/90;
   }
 
   /* Page-level Turnstile slot: zero footprint until Cloudflare expands a
@@ -456,23 +432,23 @@
   }
 
   .hero-email--done {
-    @apply flex items-start gap-3.5 rounded-2xl border border-mk-anchor-blue/20 bg-white/72 px-4 py-3.5 shadow-[0_18px_48px_rgba(31,63,124,0.12)] backdrop-blur-md;
+    @apply flex items-start gap-3.5 rounded-2xl border border-[rgba(56,213,123,0.35)] bg-[rgba(56,213,123,0.1)] px-4 py-3.5;
   }
 
   .hero-email__check {
-    @apply flex size-8 shrink-0 items-center justify-center rounded-full bg-mk-anchor-blue/12 text-mk-anchor-blue;
+    @apply flex size-8 shrink-0 items-center justify-center rounded-full bg-[rgba(56,213,123,0.3)] text-[#38d57b];
   }
 
   .hero-email__done-title {
-    @apply text-[15px] font-semibold text-mk-off-black;
+    @apply text-[15px] font-semibold text-white;
   }
 
   .hero-email__done-detail {
-    @apply text-[13.5px] text-mk-off-black/62;
+    @apply text-[13.5px] text-white/70;
   }
 
   .hero-email__link {
-    @apply cursor-pointer border-0 border-b border-mk-anchor-blue/28 bg-transparent p-0 font-[inherit] text-mk-anchor-blue transition hover:border-mk-vivid-blue hover:text-mk-vivid-blue;
+    @apply cursor-pointer border-0 border-b border-white/30 bg-transparent p-0 font-[inherit] text-white transition hover:border-mk-horizon hover:text-mk-horizon;
   }
 
   .site-nav__menu-btn {
@@ -501,6 +477,52 @@
 
   .site-nav__mobile-voice {
     @apply mt-2 flex cursor-pointer items-center justify-center gap-2 rounded-full border border-white/16 bg-white/10 px-4 py-3 text-xs font-semibold tracking-[0.12em] text-white uppercase;
+  }
+
+  .timeline {
+    @apply relative mt-16 grid gap-8 border-t border-mk-off-black/12 lg:grid-cols-4 lg:gap-0;
+  }
+
+  .timeline::before {
+    content: "";
+    @apply absolute top-[-3px] left-0 h-[5px] bg-mk-anchor-blue transition-[width] duration-500 ease-out;
+    width: 25%;
+  }
+
+  .timeline[data-progress="2"]::before {
+    width: 50%;
+  }
+
+  .timeline[data-progress="3"]::before {
+    width: 75%;
+  }
+
+  .timeline[data-progress="4"]::before {
+    width: 100%;
+  }
+
+  .timeline-step {
+    @apply relative cursor-pointer border-0 bg-transparent p-0 pt-9 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-mk-anchor-blue lg:pr-8;
+  }
+
+  .timeline-step__marker {
+    @apply absolute top-[-8px] left-0 size-3 rounded-full border-2 border-mk-anchor-blue bg-mk-paper transition-colors;
+  }
+
+  .timeline-step--done .timeline-step__marker {
+    @apply bg-mk-anchor-blue;
+  }
+
+  .timeline-step__year {
+    @apply text-[clamp(26px,3vw,42px)] font-extrabold leading-tight tracking-tight text-mk-anchor-blue;
+  }
+
+  .timeline-step__phase {
+    @apply mt-3 text-[11px] font-semibold tracking-[0.28em] text-mk-anchor-blue uppercase;
+  }
+
+  .timeline-step__label {
+    @apply mt-4 max-w-[18ch] text-[22px] font-bold tracking-tight text-mk-off-black;
   }
 }
 
@@ -531,6 +553,18 @@
 
   .facilities-pillar__name {
     @apply text-lg;
+  }
+
+  .timeline::before {
+    display: none;
+  }
+
+  .timeline-step {
+    @apply border-l-2 border-l-mk-anchor-blue pl-6;
+  }
+
+  .timeline-step__marker {
+    @apply top-6 -left-[9px];
   }
 }
 

@@ -71,35 +71,24 @@ export function SiteNav() {
     <>
       <header
         className={cn(
-          "fixed left-0 right-0 top-0 z-40 flex items-center justify-between gap-4 px-5 py-4 transition duration-300 md:px-9",
-          scrolled ? "bg-mk-off-black/82 text-white shadow-2xl backdrop-blur-xl" : "text-mk-off-black",
+          "fixed left-0 right-0 top-0 z-40 flex items-center justify-between gap-4 px-5 py-4 text-white transition duration-300 md:px-9",
+          scrolled && "bg-mk-off-black/82 shadow-2xl backdrop-blur-xl",
         )}
       >
         <a className="flex items-center gap-3 text-sm font-semibold tracking-[0.18em]" href="#top">
-          <Image
-            alt="Mereka"
-            className="h-5 w-auto"
-            height={26}
-            src={scrolled ? "/assets/mereka-white.png" : "/assets/mereka-black.png"}
-            width={112}
-          />
-          <span className={cn(scrolled ? "text-white/48" : "text-mk-anchor-blue/42")}>×</span>
+          <Image alt="Mereka" className="h-5 w-auto" height={26} src="/assets/mereka-white.png" width={112} />
+          <span className="text-white/48">×</span>
           <span>ORIENTAL</span>
         </a>
         <nav
           aria-label="Section menu"
-          className={cn(
-            "hidden items-center gap-6 text-xs font-medium uppercase tracking-[0.12em] lg:flex",
-            scrolled ? "text-white/62" : "text-mk-off-black/62",
-          )}
+          className="hidden items-center gap-6 text-xs font-medium uppercase tracking-[0.12em] text-white/62 lg:flex"
         >
           {navItems.map(([id, label]) => (
             <a
               className={cn(
-                "site-nav__link relative transition",
-                scrolled ? "hover:text-white" : "hover:text-mk-anchor-blue",
-                activeSection === id &&
-                  (scrolled ? "site-nav__link--active text-white" : "site-nav__link--active text-mk-anchor-blue"),
+                "site-nav__link relative transition hover:text-white",
+                activeSection === id && "site-nav__link--active text-white",
               )}
               href={`#${id}`}
               key={id}
@@ -107,13 +96,7 @@ export function SiteNav() {
               {label}
             </a>
           ))}
-          <a
-            className={cn(
-              "site-nav__link relative transition",
-              scrolled ? "hover:text-white" : "hover:text-mk-anchor-blue",
-            )}
-            href="/faq"
-          >
+          <a className="site-nav__link relative transition hover:text-white" href="/faq">
             FAQ
           </a>
         </nav>
@@ -121,12 +104,7 @@ export function SiteNav() {
           <button
             aria-expanded={menuOpen}
             aria-label={menuOpen ? "Close menu" : "Open menu"}
-            className={cn(
-              "rounded-full px-3 py-2 text-[11px] font-semibold tracking-[0.12em] uppercase backdrop-blur transition lg:hidden",
-              scrolled
-                ? "border border-white/16 bg-white/10 text-white hover:bg-white/18"
-                : "border border-mk-anchor-blue/18 bg-white/70 text-mk-anchor-blue shadow-sm hover:bg-mk-anchor-blue/8",
-            )}
+            className="site-nav__menu-btn lg:hidden"
             onClick={() => setMenuOpen((open) => !open)}
             type="button"
           >
@@ -134,12 +112,7 @@ export function SiteNav() {
           </button>
           <button
             aria-label="Talk to Mereka"
-            className={cn(
-              "flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] backdrop-blur transition",
-              scrolled
-                ? "border border-white/16 bg-white/10 text-white hover:bg-white/18"
-                : "border border-mk-anchor-blue/18 bg-white/70 text-mk-anchor-blue shadow-sm hover:bg-mk-anchor-blue/8",
-            )}
+            className="flex items-center gap-2 rounded-full border border-white/16 bg-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] backdrop-blur transition hover:bg-white/18"
             onClick={() => voice.open(undefined, { autoStart: true })}
             onFocus={voice.prewarm}
             onPointerEnter={voice.prewarm}

@@ -78,6 +78,7 @@ export const voiceReviewSnapshotSchema = z.object({
     model: z.string().max(80).optional(),
     voice: z.string().max(80).optional(),
     speed: z.number().min(0.25).max(1.5).optional(),
+    variant: z.string().max(64).nullable().optional(),
     captured: z.object({
       name: z.string().max(120).default(""),
       email: z.string().max(180).default(""),

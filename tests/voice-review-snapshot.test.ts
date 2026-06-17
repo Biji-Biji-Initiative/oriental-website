@@ -9,6 +9,7 @@ const review = {
   model: "gpt-realtime-2",
   voice: "marin",
   speed: 1.18,
+  variant: "kl-polished",
 };
 
 function state(overrides: Partial<VoiceRuntimeState> = {}): VoiceRuntimeState {
@@ -36,6 +37,7 @@ describe("voice review snapshots", () => {
       model: "gpt-realtime-2",
       voice: "marin",
       speed: 1.18,
+      variant: "kl-polished",
       captured: { name: "Asha" },
       transcript: [{ role: "user", text: "I want to run an AI literacy demo." }],
       routeRequested: true,

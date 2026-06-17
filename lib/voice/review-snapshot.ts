@@ -9,6 +9,7 @@ export type VoiceReviewCredentials = VoiceReviewSnapshotRequest["review"] & {
   model?: string;
   voice?: string;
   speed?: number;
+  variant?: string | null;
 };
 
 export function buildVoiceReviewSnapshot(
@@ -26,6 +27,7 @@ export function buildVoiceReviewSnapshot(
     model: review.model,
     voice: review.voice,
     speed: review.speed,
+    variant: review.variant,
     captured: state.captured,
     transcript: state.transcript,
     usage: state.usage,

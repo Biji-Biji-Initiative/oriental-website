@@ -102,7 +102,7 @@ type TokenWaiter = {
 };
 
 type TurnstileContextValue = {
-  /** Resolves a fresh single-use token, pre-warmed at page load when possible. */
+  /** Resolves a fresh single-use token only when a protected action asks for it. */
   getToken: () => Promise<string>;
   ready: boolean;
 };
@@ -110,11 +110,9 @@ type TurnstileContextValue = {
 const TurnstileContext = createContext<TurnstileContextValue | null>(null);
 
 /**
- * One Turnstile widget for the whole page, warmed while the visitor is still
- * reading. Tokens are minted ahead of need and replenished on consumption, so
- * voice start and form submits never wait on (or display) a challenge at the
- * moment of action. When Cloudflare does require interaction, the checkbox
- * appears in a fixed slot at the bottom of the viewport — outside any dialog.
+ * One lazy Turnstile widget for protected actions. It is rendered invisibly at
+ * page load so readiness is known, but it does not execute until a form submit
+ * or voice-session mint asks for a token.
  */
 export function TurnstileProvider({ children }: { children: React.ReactNode }) {
   const [siteKey, setSiteKey] = useState<string | null>(null);
@@ -177,7 +175,7 @@ export function TurnstileProvider({ children }: { children: React.ReactNode }) {
           widgetIdRef.current = window.turnstile.render(container, {
             sitekey: siteKey,
             action: "oriental-intake",
-            appearance: "interaction-only",
+            appearance: "execute",
             execution: "execute",
             callback: (token) => {
               executingRef.current = false;
@@ -200,16 +198,10 @@ export function TurnstileProvider({ children }: { children: React.ReactNode }) {
               }
             },
             "expired-callback": () => {
-              // The warm token aged out before anyone used it; mint the next
-              // one only while the tab is actually visible.
               warmTokenRef.current = null;
-              if (document.visibilityState === "visible") startExecute();
             },
           });
           setWidgetReady(Boolean(widgetIdRef.current));
-          // Pre-warm: mint the first token while the visitor is still reading,
-          // so any interactive challenge happens now — not mid-action.
-          startExecute();
         } catch {
           setWidgetReady(false);
         }
@@ -218,15 +210,8 @@ export function TurnstileProvider({ children }: { children: React.ReactNode }) {
         setWidgetReady(false);
       });
 
-    const onVisible = () => {
-      if (document.visibilityState !== "visible") return;
-      if (!warmTokenRef.current && waitersRef.current.length === 0) startExecute();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-
     return () => {
       mounted = false;
-      document.removeEventListener("visibilitychange", onVisible);
       setWidgetReady(false);
       executingRef.current = false;
       warmTokenRef.current = null;
@@ -251,8 +236,6 @@ export function TurnstileProvider({ children }: { children: React.ReactNode }) {
     const warm = warmTokenRef.current;
     if (warm && Date.now() - warm.mintedAt < TOKEN_FRESH_MS) {
       warmTokenRef.current = null;
-      // Replenish in the background so the next action is instant too.
-      startExecute();
       return warm.value;
     }
 
@@ -278,9 +261,8 @@ export function TurnstileProvider({ children }: { children: React.ReactNode }) {
   return (
     <TurnstileContext.Provider value={value}>
       {children}
-      {/* Fixed page-level slot: invisible until Cloudflare expands a challenge
-          into it. Stays clickable above an open dialog (z-index over the
-          overlay, pointer-events restored under Radix's body lock). */}
+      {/* Fixed page-level slot: empty during normal browsing. Cloudflare only
+          expands it if a protected action needs an interactive challenge. */}
       <div className="turnstile-anchor" ref={containerRef} />
     </TurnstileContext.Provider>
   );

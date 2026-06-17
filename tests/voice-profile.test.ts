@@ -18,6 +18,12 @@ describe("voice profile", () => {
     expect(prompt).toContain("call end_call");
     expect(prompt).toContain("not grounded");
     expect(prompt).toContain("A valid email is the only required field");
+    expect(prompt).toContain("# Website Knowledge Base");
+    expect(prompt).toContain("Academy of Tomorrow learning studios");
+    expect(prompt).toContain("Type A: 250–300 sq ft");
+    expect(prompt).toContain("Full floor: ~2,800–3,000 sq ft");
+    expect(prompt).toContain("Public Programme & Event Spaces");
+    expect(prompt).toContain("Launch Public Partner Interest Call: June – July 2026");
     expect(prompt).toContain("Never invent prices.");
     expect(prompt).toContain("tenancy: Tenancy -> Chewi, Tenancy Lead");
   });

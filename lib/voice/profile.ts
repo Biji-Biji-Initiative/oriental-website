@@ -1,3 +1,5 @@
+import { audiences, ecosystemCells, partners as homepagePartners, pillars, spaces, timelineSteps } from "@/lib/content";
+import { faqKnowledgeLines } from "@/lib/faq-content";
 import { SEGMENT_IDS, SEGMENTS, type SegmentId } from "@/lib/segments";
 
 export type VoiceTurnDetection =
@@ -281,6 +283,7 @@ export function buildVoiceInstructions(
     section("Role and Objective", profile.roleAndObjective),
     section("Accent and Delivery", profile.accentAndDelivery),
     section("Website and Project Context", profile.siteContext),
+    buildWebsiteKnowledge(),
     section("Personality and Tone", profile.personalityAndTone),
     personaNote ? section("Voice Variant Tuning", [personaNote]) : "",
     section("Sample Phrases", profile.samplePhrases),
@@ -418,5 +421,21 @@ function buildRoutingTable() {
       const segment = SEGMENTS[id];
       return `- ${segment.id}: ${segment.label} -> ${segment.routedTo.name}, ${segment.routedTo.role}. ${segment.blurb}`;
     }),
+  ].join("\n");
+}
+
+function buildWebsiteKnowledge() {
+  return [
+    "# Website Knowledge Base",
+    "Use this as the current website/FAQ source of truth. Answer directly from it when visitors ask about the project, spaces, partner fit, office sizes, bare units, timelines, process, or collaboration. If a fact is not here, do not invent it; capture the question for the team.",
+    "## Homepage Data",
+    `- Ecosystem offers: ${ecosystemCells.map((cell) => `${cell.title} (${cell.description})`).join("; ")}`,
+    `- Communities served: ${audiences.join(", ")}`,
+    `- Content pillars: ${pillars.map((pillar) => `${pillar.name} (${pillar.description})`).join("; ")}`,
+    `- Planned spaces: ${spaces.map((space) => `${space.title} (${space.description})`).join("; ")}`,
+    `- Partner categories: ${homepagePartners.map((partner) => `${partner.title} (${partner.description})`).join("; ")}`,
+    `- Timeline: ${timelineSteps.map((step) => `${step.phase}: ${step.timeline}`).join("; ")}`,
+    "## FAQ Data",
+    ...faqKnowledgeLines().map((line) => `- ${line}`),
   ].join("\n");
 }

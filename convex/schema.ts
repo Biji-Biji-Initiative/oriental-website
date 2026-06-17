@@ -56,6 +56,7 @@ export default defineSchema({
     model: v.optional(v.string()),
     voice: v.optional(v.string()),
     speed: v.optional(v.number()),
+    variant: v.optional(v.union(v.string(), v.null())),
     captured: v.object({
       name: v.string(),
       email: v.string(),

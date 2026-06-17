@@ -65,6 +65,7 @@ const voiceSessionValidator = v.object({
   model: v.optional(v.string()),
   voice: v.optional(v.string()),
   speed: v.optional(v.number()),
+  variant: v.optional(v.union(v.string(), v.null())),
   captured: capturedValidator,
   transcript: transcriptValidator,
   usage: v.optional(usageValidator),
@@ -113,7 +114,6 @@ export const createLead = mutationGeneric({
       status: "new",
       priority: "normal",
       owner: "",
-      notificationDelivered: false,
       createdAt: Date.now(),
     });
     await ctx.db.insert("leadEvents", {
@@ -231,6 +231,7 @@ export const recordVoiceSession = mutationGeneric({
       ...(snapshot.model ? { model: snapshot.model } : {}),
       ...(snapshot.voice ? { voice: snapshot.voice } : {}),
       ...(typeof snapshot.speed === "number" ? { speed: snapshot.speed } : {}),
+      ...(typeof snapshot.variant !== "undefined" ? { variant: snapshot.variant } : {}),
       ...(snapshot.usage ? { usage: snapshot.usage } : {}),
       ...(typeof snapshot.submittedAt === "number" ? { submittedAt: snapshot.submittedAt } : {}),
     };

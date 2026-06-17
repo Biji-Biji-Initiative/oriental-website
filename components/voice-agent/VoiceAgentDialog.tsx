@@ -252,16 +252,17 @@ export function VoiceAgentDialog({
     if (status === "submitted") teardownVoice("manual");
   }, [status, teardownVoice]);
 
-  // The dialog opening IS the intent signal: warm the TLS connection and mint
-  // the ephemeral session while the visitor reads, so the start tap only pays
-  // for the microphone and the WebRTC handshake.
+  // The dialog opening IS the intent signal: warm the OpenAI connection. A
+  // Realtime session is only pre-minted when microphone permission is already
+  // granted, so first-time visitors do not spend quota before consent.
   useEffect(() => {
     if (!open || prefill?.mode === "form") return;
     preconnect("https://api.openai.com");
     prewarmVoiceSession();
   }, [open, prefill, prewarmVoiceSession]);
 
-  // Hover/focus on a talk CTA, before any click: same warm-up, earlier.
+  // Hover/focus on a talk CTA, before any click: same warm-up, earlier, but
+  // still permission-aware inside useRealtimeVoiceSession.
   useEffect(() => {
     if (!prewarmSignal) return;
     preconnect("https://api.openai.com");
