@@ -25,20 +25,21 @@ const footerPartners = [
 export function Hero() {
   return (
     <section
-      className="relative grid min-h-svh overflow-hidden bg-mk-off-black text-white"
+      className="relative grid min-h-svh overflow-hidden bg-mk-paper text-mk-off-black"
       data-screen-label="01 Hero"
       id="top"
     >
       <Image
         alt=""
-        className="absolute inset-0 h-full w-full object-cover"
+        className="absolute inset-0 h-full w-full object-cover object-[62%_center]"
         fill
         priority
         sizes="100vw"
-        src="/assets/orientalhero2.png"
+        src="/assets/hero/oriental-building-blueprint.jpeg"
       />
-      <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(16,13,24,0.78),rgba(16,13,24,0.28)_52%,rgba(16,13,24,0.7))]" />
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:72px_72px] opacity-30" />
+      <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(244,241,234,0.98),rgba(244,241,234,0.9)_38%,rgba(244,241,234,0.42)_70%,rgba(31,63,124,0.1))]" />
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(244,241,234,0.82),rgba(244,241,234,0.1)_24%,rgba(244,241,234,0.72))]" />
+      <div className="absolute inset-0 bg-[linear-gradient(rgba(31,63,124,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(31,63,124,0.07)_1px,transparent_1px)] bg-[size:72px_72px] opacity-35" />
       <HeroCorner className="left-5 top-24 md:left-9" lines={["Oriental Building", "Jalan Tun Perak · Kuala Lumpur"]} />
       <HeroCorner className="right-5 top-24 text-right md:right-9" lines={["Levels Two–Four", "Opening 2027"]} />
       <HeroCorner className="bottom-10 left-5 md:left-9" lines={["Status", "Partner conversations now open"]} />
@@ -46,23 +47,23 @@ export function Hero() {
         className="bottom-10 right-5 text-right md:right-9"
         lines={["oriental.mereka.io", "A founding invitation"]}
       />
-      <div className="relative z-10 mx-auto flex w-full max-w-wrap items-center px-gutter py-32">
+      <div className="relative z-10 mx-auto flex w-full max-w-wrap items-center px-gutter pt-24 pb-14 md:py-32">
         <div className="max-w-5xl">
-          <div className="mb-6 flex items-center gap-3 text-xs font-medium uppercase tracking-[0.16em] text-white/70">
-            <span className="size-2 rounded-full bg-mk-horizon" />A new chapter for a historic building
+          <div className="mb-6 flex items-center gap-3 text-xs font-medium uppercase tracking-[0.16em] text-mk-anchor-blue/78">
+            <span className="size-2 rounded-full bg-mk-anchor-blue" />A new chapter for a historic building
           </div>
-          <h1 className="text-[clamp(54px,9vw,148px)] font-extrabold leading-[0.91] tracking-normal">
+          <h1 className="text-[clamp(40px,11.7vw,96px)] font-extrabold leading-[0.9] tracking-normal text-mk-off-black md:text-[clamp(54px,9vw,148px)] md:leading-[0.91]">
             Reimagining
             <br />
-            <span className="text-transparent [-webkit-text-stroke:1.2px_rgba(255,255,255,0.72)]">Oriental.</span>
+            <span className="text-transparent [-webkit-text-stroke:1.2px_rgba(31,63,124,0.7)]">Oriental.</span>
             <br />
-            <em className="font-serif font-light">A future</em> we build together.
+            <em className="font-serif font-light text-mk-anchor-blue">A future</em> we build together.
           </h1>
-          <p className="mt-8 max-w-3xl text-lg leading-8 text-white/78 md:text-xl">
+          <p className="mt-5 max-w-3xl text-base leading-6 text-mk-off-black/74 md:mt-8 md:text-xl md:leading-8">
             Mereka, Biji-biji Initiative, and partners are shaping Levels 2 to 4 of Oriental Building into a shared hub
             for future learning, technology, creativity, culture, and community — in the heart of Kuala Lumpur.
           </p>
-          <div className="mt-9 flex flex-col gap-5">
+          <div className="mt-6 flex flex-col gap-4 md:mt-9 md:gap-5">
             <VoiceButton className="w-fit">
               <span>
                 Tell us why you&apos;re here
@@ -70,12 +71,12 @@ export function Hero() {
                   Speak or type — Mereka will route you to the right team
                 </span>
               </span>
-              <span className="rounded-full bg-mk-off-black px-2 py-1 text-[10px] text-white">SPACE</span>
+              <span className="rounded-full bg-mk-anchor-blue px-2 py-1 text-[10px] text-white">SPACE</span>
             </VoiceButton>
             <HeroEmailCapture />
           </div>
-          <div className="mt-5 flex items-center gap-2 text-sm text-white/62">
-            <span className="size-1.5 rounded-full bg-mk-horizon" />
+          <div className="mt-5 hidden items-center gap-2 text-sm text-mk-off-black/58 sm:flex">
+            <span className="size-1.5 rounded-full bg-mk-anchor-blue" />
             Private · transcribed &amp; saved so the right person follows up · routed only to your partner&apos;s team
             at Mereka
           </div>
@@ -87,9 +88,14 @@ export function Hero() {
 
 function HeroCorner({ className, lines }: { className?: string; lines: [string, string] }) {
   return (
-    <div className={cn("absolute z-10 hidden text-xs uppercase tracking-[0.15em] text-white/68 md:block", className)}>
-      <div className="text-white">{lines[0]}</div>
-      <div className="mt-1 text-white/48">{lines[1]}</div>
+    <div
+      className={cn(
+        "absolute z-10 hidden text-xs uppercase tracking-[0.15em] text-mk-anchor-blue/62 md:block",
+        className,
+      )}
+    >
+      <div className="text-mk-off-black">{lines[0]}</div>
+      <div className="mt-1 text-mk-anchor-blue/50">{lines[1]}</div>
     </div>
   );
 }

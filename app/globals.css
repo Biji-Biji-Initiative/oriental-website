@@ -424,27 +424,27 @@
   }
 
   .hero-email {
-    @apply max-w-xl text-white;
+    @apply max-w-xl text-mk-off-black;
   }
 
   .hero-email__label {
-    @apply mb-2 block text-xs font-medium tracking-[0.14em] text-white/72 uppercase;
+    @apply mb-2 block text-xs font-medium tracking-[0.14em] text-mk-anchor-blue/78 uppercase;
   }
 
   .hero-email__row {
-    @apply flex items-stretch rounded-full border border-white/14 bg-white/[0.06] p-1 backdrop-blur-md transition focus-within:border-white/45 focus-within:bg-white/[0.09];
+    @apply flex items-stretch rounded-full border border-mk-anchor-blue/18 bg-white/76 p-1 shadow-[0_18px_48px_rgba(31,63,124,0.12)] backdrop-blur-md transition focus-within:border-mk-anchor-blue/45 focus-within:bg-white/90;
   }
 
   .hero-email__row input {
-    @apply min-w-0 flex-1 appearance-none border-0 bg-transparent px-5 py-3.5 text-base font-medium text-white outline-none placeholder:text-white/40;
+    @apply min-w-0 flex-1 appearance-none border-0 bg-transparent px-5 py-3.5 text-base font-medium text-mk-off-black outline-none placeholder:text-mk-off-black/42;
   }
 
   .hero-email__submit {
-    @apply shrink-0 cursor-pointer rounded-full border-0 bg-white px-5 py-3 text-[13.5px] font-semibold text-mk-off-black transition enabled:hover:bg-mk-horizon enabled:hover:text-white disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/40;
+    @apply shrink-0 cursor-pointer rounded-full border-0 bg-mk-anchor-blue px-5 py-3 text-[13.5px] font-semibold text-white transition enabled:hover:bg-mk-vivid-blue disabled:cursor-not-allowed disabled:bg-mk-anchor-blue/18 disabled:text-mk-off-black/38;
   }
 
   .hero-email__error {
-    @apply mt-2 text-sm text-white/90;
+    @apply mt-2 text-sm text-mk-anchor-blue;
   }
 
   /* Page-level Turnstile slot: zero footprint until Cloudflare expands a
@@ -456,23 +456,23 @@
   }
 
   .hero-email--done {
-    @apply flex items-start gap-3.5 rounded-2xl border border-[rgba(56,213,123,0.35)] bg-[rgba(56,213,123,0.1)] px-4 py-3.5;
+    @apply flex items-start gap-3.5 rounded-2xl border border-mk-anchor-blue/20 bg-white/72 px-4 py-3.5 shadow-[0_18px_48px_rgba(31,63,124,0.12)] backdrop-blur-md;
   }
 
   .hero-email__check {
-    @apply flex size-8 shrink-0 items-center justify-center rounded-full bg-[rgba(56,213,123,0.3)] text-[#38d57b];
+    @apply flex size-8 shrink-0 items-center justify-center rounded-full bg-mk-anchor-blue/12 text-mk-anchor-blue;
   }
 
   .hero-email__done-title {
-    @apply text-[15px] font-semibold text-white;
+    @apply text-[15px] font-semibold text-mk-off-black;
   }
 
   .hero-email__done-detail {
-    @apply text-[13.5px] text-white/70;
+    @apply text-[13.5px] text-mk-off-black/62;
   }
 
   .hero-email__link {
-    @apply cursor-pointer border-0 border-b border-white/30 bg-transparent p-0 font-[inherit] text-white transition hover:border-mk-horizon hover:text-mk-horizon;
+    @apply cursor-pointer border-0 border-b border-mk-anchor-blue/28 bg-transparent p-0 font-[inherit] text-mk-anchor-blue transition hover:border-mk-vivid-blue hover:text-mk-vivid-blue;
   }
 
   .site-nav__menu-btn {

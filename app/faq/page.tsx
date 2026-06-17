@@ -38,7 +38,7 @@ const faqSections: FaqSection[] = [
         a: ["Levels 2 to 4 are being reimagined. The planned spaces include:"],
         bullets: [
           "Public commons & community lounge: open gathering and networking space",
-          "Applied workshops: flexible classrooms and workshop rooms",
+          "Academy of Tomorrow learning studios: flexible classrooms and workshop rooms",
           "Flexible event spaces: modular venue for talks, forums, screenings, and public discussions",
           "Social enterprise & innovation spaces: co-working and incubation for impact-driven organisations",
         ],
@@ -56,7 +56,7 @@ const faqSections: FaqSection[] = [
     title: "Who we're looking for",
     items: [
       {
-        q: "What are the partner and tenant types you're looking for?",
+        q: "What are the three types of partners and tenants you're looking for?",
         a: ["We are building this ecosystem with three core types of organisations in mind:"],
         bullets: [
           "Mission-Aligned Tenants — organisations, studios, social enterprises, and community-driven brands looking for a collaborative space to grow, connect, and contribute to a vibrant public ecosystem.",
@@ -112,7 +112,7 @@ const faqSections: FaqSection[] = [
             ["Type A", "250–300 sq ft"],
             ["Type B", "400–600 sq ft"],
             ["Type C", "700–800 sq ft"],
-            ["Full floor", "~2,800 sq ft"],
+            ["Full floor", "~2,800–3,000 sq ft"],
           ],
         },
         note: "Unit conditions vary depending on floor suitability and partner needs — we have a mix of ready-to-move-in and bare units available. For bare units, fit-out, furnishing, and utilities are the tenant's responsibility. A 2-month deposit is required to secure your space.",
@@ -142,7 +142,7 @@ const faqSections: FaqSection[] = [
       {
         q: "Is the full floor available as a single rental option?",
         a: [
-          "Yes. A full-floor option of approximately 2,800 sq ft is available for anchor tenants or established organisations that want a larger, contiguous space with dedicated floor presence within the ecosystem. Reach out to us directly to discuss full-floor arrangements.",
+          "Yes. A full-floor option of approximately 2,800–3,000 sq ft is available for anchor tenants or established organisations that want a larger, contiguous space with dedicated floor presence within the ecosystem. Reach out to us directly to discuss full-floor arrangements.",
         ],
       },
     ],
