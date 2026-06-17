@@ -37,6 +37,10 @@ describe("admin auth helpers", () => {
     expect(verifyAdminRequest(request)).toMatchObject({ ok: true });
   });
 
+  it("accepts the shared admin password alias", () => {
+    expect(verifyAdminToken("Cr3ativity")).toMatchObject({ ok: true });
+  });
+
   it("marks session cookies secure only in production", () => {
     const localHeader = adminCookieHeader("cookie-value", Date.now() + 1000);
     expect(localHeader).toContain("Path=/;");
