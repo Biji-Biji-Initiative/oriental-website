@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { adminLeadWorkflowSchema, leadRequestSchema } from "@/lib/schemas";
+import { adminLeadWorkflowSchema, adminLoginSchema, leadRequestSchema } from "@/lib/schemas";
 
 describe("lead request schema", () => {
   it("accepts a complete form lead", () => {
@@ -76,6 +76,16 @@ describe("lead request schema", () => {
 
     expect(leadRequestSchema.safeParse({ ...base, utm: { source: "x".repeat(301) } }).success).toBe(false);
     expect(leadRequestSchema.safeParse({ ...base, utm: { utm_source: "newsletter" } }).success).toBe(true);
+  });
+});
+
+describe("admin login schema", () => {
+  it("accepts the shared admin password length", () => {
+    expect(adminLoginSchema.safeParse({ token: "Cr3ativity" }).success).toBe(true);
+  });
+
+  it("rejects very short admin tokens", () => {
+    expect(adminLoginSchema.safeParse({ token: "short" }).success).toBe(false);
   });
 });
 
