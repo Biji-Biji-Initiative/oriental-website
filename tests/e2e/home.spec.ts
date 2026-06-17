@@ -190,3 +190,39 @@ test("voice prewarms on page load without Turnstile and with the selected varian
   expect(voiceSessionBodies[0]).toMatchObject({ intent: "other", variant: "kl-polished" });
   expect(JSON.stringify(voiceSessionBodies[0])).not.toContain("turnstile");
 });
+
+test("talk CTA immediately enters the voice permission flow", async ({ page }) => {
+  await page.addInitScript(() => {
+    const state = window as typeof window & { __voiceGetUserMediaCalled?: boolean };
+    state.__voiceGetUserMediaCalled = false;
+    Object.defineProperty(navigator, "permissions", {
+      configurable: true,
+      value: {
+        query: async (descriptor: PermissionDescriptor) =>
+          ({ state: descriptor.name === "microphone" ? "prompt" : "granted" }) as PermissionStatus,
+      },
+    });
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: async () => {
+          state.__voiceGetUserMediaCalled = true;
+          throw new DOMException("Microphone denied in e2e", "NotAllowedError");
+        },
+      },
+    });
+  });
+
+  await page.goto("/");
+  await page.locator('header button[aria-label="Talk to Mereka"]').click();
+
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as typeof window & { __voiceGetUserMediaCalled?: boolean }).__voiceGetUserMediaCalled,
+      ),
+    )
+    .toBe(true);
+  await expect(page.getByText(/Microphone access is blocked/i)).toBeVisible();
+});

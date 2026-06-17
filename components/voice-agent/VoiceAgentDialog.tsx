@@ -268,8 +268,8 @@ export function VoiceAgentDialog({
   }, [prewarmSignal, prewarmVoiceSession]);
 
   // Direct-talk CTAs: the tap that opened the dialog already meant "talk", so
-  // connect immediately — unless the mic is knowingly blocked, in which case
-  // the workspace opens quietly for typing instead of yelling an error.
+  // begin the permission/connect flow immediately. connectVoice handles known
+  // denial and falls back to typing without spending an unnecessary session.
   const autoStartedRef = useRef(false);
   useEffect(() => {
     if (!open) {
@@ -278,24 +278,8 @@ export function VoiceAgentDialog({
     }
     if (!prefill?.autoStart || autoStartedRef.current || status !== "idle") return;
     autoStartedRef.current = true;
-    let cancelled = false;
-    const start = () => {
-      if (!cancelled) connectVoice();
-    };
-    if (navigator.permissions?.query) {
-      navigator.permissions
-        .query({ name: "microphone" as PermissionName })
-        .then((result) => {
-          if (result.state !== "denied") start();
-        })
-        .catch(start);
-    } else {
-      start();
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [open, prefill, status, connectVoice]);
+    void connectVoice();
+  }, [open, prefill?.autoStart, status, connectVoice]);
 
   // Closing the workspace must always release the microphone — a live mic
   // behind a closed dialog is a privacy bug, not a resumable session.
