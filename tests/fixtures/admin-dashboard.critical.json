@@ -1,0 +1,400 @@
+{
+  "generatedAt": 1781714952327,
+  "leads": [
+    {
+      "leadId": "lead-critical-1",
+      "source": "voice",
+      "segment": "technology",
+      "routedTo": "Gurpreet",
+      "routedToEmail": "gurpreet@biji-biji.com",
+      "name": "Aisha Rahman",
+      "email": "aisha@example.test",
+      "org": "Impact Robotics Lab",
+      "phone": "+60 12 555 0101",
+      "website": "https://example.test",
+      "message": "We want a technology partnership with demos, workshops, and a small showcase area for youth programmes.",
+      "transcript": [
+        {
+          "role": "user",
+          "text": "We run robotics workshops and want to understand what space or partnership fits."
+        },
+        {
+          "role": "assistant",
+          "text": "That sounds like a technology partnership. I can route you to the right team."
+        }
+      ],
+      "voiceReviewId": "voice-critical-1",
+      "voiceSessionId": "sess-critical-1",
+      "voiceVariant": "kl-polished",
+      "voiceModel": "gpt-realtime-2",
+      "voiceName": "marin",
+      "voiceSpeed": 1.22,
+      "utm": {
+        "source": "e2e"
+      },
+      "status": "new",
+      "priority": "urgent",
+      "owner": "",
+      "workflowNote": "Needs same-day owner assignment.",
+      "notificationDelivered": false,
+      "notificationEmailOk": false,
+      "notificationSlackOk": false,
+      "notificationSummary": "email=failed slack=failed",
+      "lastNotificationAt": 1781713152327,
+      "createdAt": 1781538552327
+    },
+    {
+      "leadId": "lead-priority-2",
+      "source": "form",
+      "segment": "tenancy",
+      "routedTo": "Chewi",
+      "routedToEmail": "chewi@mereka.my",
+      "name": "Daniel Lim",
+      "email": "daniel@example.test",
+      "org": "Civic Studio",
+      "message": "We are looking for 700 to 800 sq ft for a mission-aligned studio team.",
+      "transcript": [],
+      "utm": {},
+      "status": "reviewing",
+      "priority": "high",
+      "owner": "Chewi",
+      "lastReviewedAt": 1781711352327,
+      "notificationDelivered": true,
+      "notificationEmailOk": true,
+      "notificationSlackOk": true,
+      "notificationSummary": "email=ses slack=slack",
+      "lastNotificationAt": 1781709552327,
+      "createdAt": 1781707752327
+    },
+    {
+      "leadId": "lead-closed-3",
+      "source": "hero-email",
+      "segment": "other",
+      "routedTo": "Nadia",
+      "routedToEmail": "hello@mereka.my",
+      "name": "Newsletter Visitor",
+      "email": "updates@example.test",
+      "org": "",
+      "message": "Keep me posted.",
+      "transcript": [],
+      "utm": {},
+      "status": "qualified",
+      "priority": "normal",
+      "owner": "Nadia",
+      "lastReviewedAt": 1781713152327,
+      "createdAt": 1781711352327
+    }
+  ],
+  "voiceSessions": [
+    {
+      "reviewId": "voice-critical-1",
+      "sessionId": "sess-critical-1",
+      "leadId": null,
+      "segment": "technology",
+      "status": "idle",
+      "connectionStatus": "connecting",
+      "closeReason": "transport_error",
+      "prewarmedAt": 1781711352327,
+      "connectStartedAt": 1781711652327,
+      "model": "gpt-realtime-2",
+      "voice": "marin",
+      "speed": 1.22,
+      "variant": "kl-polished",
+      "captured": {
+        "name": "Aisha Rahman",
+        "email": "aisha@example.test",
+        "org": "Impact Robotics Lab",
+        "phone": "+60 12 555 0101",
+        "website": "https://example.test",
+        "message": "We want to run demos and workshops at Oriental."
+      },
+      "transcript": [
+        {
+          "role": "user",
+          "text": "Can we showcase robotics and run hands-on sessions?"
+        },
+        {
+          "role": "assistant",
+          "text": "Yes. That sounds like a technology and innovation partnership."
+        }
+      ],
+      "usage": {
+        "responseCount": 2,
+        "responseTokens": 840,
+        "responseInputTokens": 520,
+        "responseOutputTokens": 320,
+        "responseCachedTokens": 120,
+        "transcriptionCount": 1,
+        "transcriptionTokens": 80,
+        "transcriptionInputTokens": 80,
+        "transcriptionOutputTokens": 0
+      },
+      "errors": [
+        {
+          "eventId": "evt-critical",
+          "message": "Realtime transport disconnected before the handoff was submitted.",
+          "code": "transport_error"
+        }
+      ],
+      "rateLimits": [],
+      "routeRequested": true,
+      "createdAt": 1781711352327,
+      "updatedAt": 1781713152327
+    },
+    {
+      "reviewId": "voice-routine-2",
+      "sessionId": "sess-routine-2",
+      "leadId": "lead-priority-2",
+      "segment": "tenancy",
+      "status": "submitted",
+      "connectionStatus": "connected",
+      "closeReason": "manual",
+      "prewarmedAt": 1781704152327,
+      "connectStartedAt": 1781704212327,
+      "connectedAt": 1781704219327,
+      "firstEventAt": 1781704223327,
+      "closedAt": 1781704812327,
+      "model": "gpt-realtime-2",
+      "voice": "cedar",
+      "speed": 1.08,
+      "variant": "kl-warm",
+      "captured": {
+        "name": "Daniel Lim",
+        "email": "daniel@example.test",
+        "org": "Civic Studio",
+        "message": "We need a studio unit."
+      },
+      "transcript": [
+        {
+          "role": "user",
+          "text": "We need a studio space."
+        },
+        {
+          "role": "assistant",
+          "text": "I can route that as a tenancy enquiry."
+        }
+      ],
+      "usage": {
+        "responseCount": 3,
+        "responseTokens": 920,
+        "responseInputTokens": 610,
+        "responseOutputTokens": 310,
+        "responseCachedTokens": 140,
+        "transcriptionCount": 1,
+        "transcriptionTokens": 70,
+        "transcriptionInputTokens": 70,
+        "transcriptionOutputTokens": 0
+      },
+      "errors": [],
+      "rateLimits": [],
+      "routeRequested": true,
+      "createdAt": 1781704152327,
+      "updatedAt": 1781704812327,
+      "submittedAt": 1781704812327
+    }
+  ],
+  "leadEvents": [
+    {
+      "leadId": "lead-critical-1",
+      "kind": "notification_failed",
+      "actor": "system",
+      "note": "email=failed slack=failed",
+      "createdAt": 1781713152327
+    },
+    {
+      "leadId": "lead-priority-2",
+      "kind": "workflow_update",
+      "actor": "admin",
+      "fromStatus": "new",
+      "toStatus": "reviewing",
+      "note": "Assigned to Chewi for tenancy review.",
+      "createdAt": 1781711352327
+    }
+  ],
+  "metrics": {
+    "recentLeads": 3,
+    "activeLeads": 2,
+    "voiceLeads": 1,
+    "notificationFailures": 1,
+    "urgentLeads": 2,
+    "qualifiedLeads": 1,
+    "reviewedSessions": 2,
+    "prewarmedSessions": 2,
+    "engagedSessions": 2,
+    "connectedSessions": 1,
+    "sessionsWithErrors": 1,
+    "submittedSessions": 1,
+    "notificationDeliveryRate": 33,
+    "voiceSubmitRate": 50
+  },
+  "analytics": {
+    "sourceCounts": {
+      "voice": 1,
+      "form": 1,
+      "hero-email": 1
+    },
+    "statusCounts": {
+      "new": 1,
+      "reviewing": 1,
+      "qualified": 1
+    },
+    "priorityCounts": {
+      "urgent": 1,
+      "high": 1,
+      "normal": 1
+    },
+    "segmentCounts": {
+      "technology": 1,
+      "tenancy": 1,
+      "other": 1
+    },
+    "dailyLeads": [
+      {
+        "date": "2026-06-11",
+        "count": 0
+      },
+      {
+        "date": "2026-06-12",
+        "count": 0
+      },
+      {
+        "date": "2026-06-13",
+        "count": 0
+      },
+      {
+        "date": "2026-06-14",
+        "count": 1
+      },
+      {
+        "date": "2026-06-15",
+        "count": 0
+      },
+      {
+        "date": "2026-06-16",
+        "count": 1
+      },
+      {
+        "date": "2026-06-17",
+        "count": 1
+      }
+    ],
+    "notification": {
+      "delivered": 1,
+      "failed": 1,
+      "pending": 1
+    },
+    "voice": {
+      "sessions": 2,
+      "prewarmed": 2,
+      "engaged": 2,
+      "connected": 1,
+      "submitted": 1,
+      "withErrors": 1,
+      "routeRequested": 2,
+      "totalResponseTokens": 1760
+    }
+  },
+  "queues": {
+    "triage": [
+      {
+        "leadId": "lead-critical-1",
+        "source": "voice",
+        "segment": "technology",
+        "routedTo": "Gurpreet",
+        "routedToEmail": "gurpreet@biji-biji.com",
+        "name": "Aisha Rahman",
+        "email": "aisha@example.test",
+        "org": "Impact Robotics Lab",
+        "phone": "+60 12 555 0101",
+        "website": "https://example.test",
+        "message": "We want a technology partnership with demos, workshops, and a small showcase area for youth programmes.",
+        "transcript": [],
+        "utm": {},
+        "status": "new",
+        "priority": "urgent",
+        "owner": "",
+        "notificationDelivered": false,
+        "notificationSummary": "email=failed slack=failed",
+        "createdAt": 1781538552327
+      },
+      {
+        "leadId": "lead-priority-2",
+        "source": "form",
+        "segment": "tenancy",
+        "routedTo": "Chewi",
+        "routedToEmail": "chewi@mereka.my",
+        "name": "Daniel Lim",
+        "email": "daniel@example.test",
+        "org": "Civic Studio",
+        "message": "We are looking for 700 to 800 sq ft for a mission-aligned studio team.",
+        "transcript": [],
+        "utm": {},
+        "status": "reviewing",
+        "priority": "high",
+        "owner": "Chewi",
+        "notificationDelivered": true,
+        "createdAt": 1781707752327
+      }
+    ],
+    "failedNotifications": [
+      {
+        "leadId": "lead-critical-1",
+        "source": "voice",
+        "segment": "technology",
+        "routedTo": "Gurpreet",
+        "routedToEmail": "gurpreet@biji-biji.com",
+        "name": "Aisha Rahman",
+        "email": "aisha@example.test",
+        "org": "Impact Robotics Lab",
+        "message": "We want a technology partnership with demos, workshops, and a small showcase area for youth programmes.",
+        "transcript": [],
+        "utm": {},
+        "status": "new",
+        "priority": "urgent",
+        "owner": "",
+        "notificationDelivered": false,
+        "notificationSummary": "email=failed slack=failed",
+        "createdAt": 1781538552327
+      }
+    ],
+    "highPriority": [
+      {
+        "leadId": "lead-critical-1",
+        "source": "voice",
+        "segment": "technology",
+        "routedTo": "Gurpreet",
+        "routedToEmail": "gurpreet@biji-biji.com",
+        "name": "Aisha Rahman",
+        "email": "aisha@example.test",
+        "org": "Impact Robotics Lab",
+        "message": "We want a technology partnership with demos, workshops, and a small showcase area for youth programmes.",
+        "transcript": [],
+        "utm": {},
+        "status": "new",
+        "priority": "urgent",
+        "owner": "",
+        "notificationDelivered": false,
+        "notificationSummary": "email=failed slack=failed",
+        "createdAt": 1781538552327
+      },
+      {
+        "leadId": "lead-priority-2",
+        "source": "form",
+        "segment": "tenancy",
+        "routedTo": "Chewi",
+        "routedToEmail": "chewi@mereka.my",
+        "name": "Daniel Lim",
+        "email": "daniel@example.test",
+        "org": "Civic Studio",
+        "message": "We are looking for 700 to 800 sq ft for a mission-aligned studio team.",
+        "transcript": [],
+        "utm": {},
+        "status": "reviewing",
+        "priority": "high",
+        "owner": "Chewi",
+        "notificationDelivered": true,
+        "createdAt": 1781707752327
+      }
+    ]
+  }
+}

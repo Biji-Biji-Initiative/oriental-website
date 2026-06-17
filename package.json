@@ -12,6 +12,7 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e:admin": "playwright test tests/e2e/admin-session-review.spec.ts",
     "convex:codegen": "convex codegen",
     "convex:deploy": "convex deploy",
     "check-secrets": "tsx scripts/check-secrets.ts",

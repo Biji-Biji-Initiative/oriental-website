@@ -44,9 +44,14 @@ export async function persistVoiceReviewSnapshot(input: VoiceReviewSnapshotReque
 }
 
 export async function getAdminReviewDashboard(limit = 50) {
+  const fixturePath = readEnv("ADMIN_REVIEW_DASHBOARD_FIXTURE");
+  if (fixturePath && process.env.NODE_ENV !== "production") {
+    return { ok: true as const, data: await readAdminReviewDashboardFixture(fixturePath) };
+  }
+
   const client = createConvexClient();
   if (!client) return { ok: false as const, reason: "convex_unconfigured" };
-  const data = await client.client.query(api.leads.reviewDashboard, { ingestSecret: client.ingestSecret, limit });
+  const data = await queryAdminReviewDashboard(client, limit);
   return { ok: true as const, data };
 }
 
@@ -79,6 +84,19 @@ function createConvexClient() {
   const ingestSecret = readEnv("CONVEX_INGEST_SECRET");
   if (!convexUrl || !ingestSecret) return null;
   return { client: new ConvexHttpClient(convexUrl), ingestSecret };
+}
+
+type ConvexClientConfig = NonNullable<ReturnType<typeof createConvexClient>>;
+type AdminReviewDashboardData = Awaited<ReturnType<typeof queryAdminReviewDashboard>>;
+
+async function queryAdminReviewDashboard(client: ConvexClientConfig, limit: number) {
+  return client.client.query(api.leads.reviewDashboard, { ingestSecret: client.ingestSecret, limit });
+}
+
+async function readAdminReviewDashboardFixture(fixturePath: string): Promise<AdminReviewDashboardData> {
+  const [{ readFile }, { resolve }] = await Promise.all([import("node:fs/promises"), import("node:path")]);
+  const raw = await readFile(resolve(process.cwd(), fixturePath), "utf8");
+  return JSON.parse(raw) as AdminReviewDashboardData;
 }
 
 function notificationSummary(notifications: { email: NotificationResult; slack: NotificationResult }) {
