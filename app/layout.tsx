@@ -1,10 +1,8 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { TurnstileProvider } from "@/components/security/TurnstileProvider";
-import { SiteNav } from "@/components/site/SiteNav";
-import { VoiceRail } from "@/components/site/VoiceRail";
+import { PublicChrome } from "@/components/site/PublicChrome";
 import { Toaster } from "@/components/ui/sonner";
-import { VoiceVariantPicker } from "@/components/voice-agent/VoiceVariantPicker";
 import { VoiceProvider } from "@/components/voice-agent/voice-state";
 import { siteMeta } from "@/lib/content";
 import "./globals.css";
@@ -79,10 +77,8 @@ export default function RootLayout({
         </a>
         <TurnstileProvider>
           <VoiceProvider>
-            <SiteNav />
+            <PublicChrome />
             {children}
-            <VoiceRail />
-            <VoiceVariantPicker />
             <Toaster />
           </VoiceProvider>
         </TurnstileProvider>
