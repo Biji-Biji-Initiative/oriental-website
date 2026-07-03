@@ -53,8 +53,8 @@ export function voiceStatusCopy(status: VoiceConnectionStatus) {
   }
   return {
     label: "Ready",
-    detail: "Start with the idea, programme, tenancy, or question.",
-    button: "Start talking with Reka",
+    detail: "Fill in the handoff details, or start voice when you are ready.",
+    button: "Start voice with Reka",
   };
 }
 
@@ -111,9 +111,9 @@ export const reconnectVoiceInstruction =
   "The visitor reconnected to voice and the earlier conversation context was just provided. Do not repeat the opening pitch and do not greet from scratch. Acknowledge in one short sentence that you are back, then continue exactly where the conversation left off.";
 
 const openingVoiceInstructionBase =
-  "Start the intake now as Reka, pronounced REH-ka. You are a KL Malaysian host speaking natural Malaysian English with Manglish inflection — absolutely not American. Open with one short, bright Malaysian welcome (a 'Selamat datang!' or 'Hi hi, welcome ah' both work), say we are moving into Oriental — new chapter for Mereka lah — and we are excited to build it with the right people. Then ask what the visitor wants to build or explore. Keep the Malaysian register for the whole call, not just this opener. Do not explain pronunciation, tools, limitations, privacy, or the form.";
+  "Start the intake now as Reka, pronounced REH-ka. You are a KL Malaysian host speaking natural, clear Malaysian English — warm and local, never forced or caricatured. Open with one short welcome (a simple 'Hi, welcome!' or 'Selamat datang!' both work), say we are moving into Oriental — new chapter for Mereka — and we are excited to build it with the right people. Then ask what the visitor wants to build or explore. Keep the tone conversational, not performative. Do not explain pronunciation, tools, limitations, privacy, or the form.";
 
 export function openingVoiceInstruction(knownVisitor: boolean) {
   if (!knownVisitor) return openingVoiceInstructionBase;
-  return `${openingVoiceInstructionBase} The handoff context already carries details remembered from this visitor's earlier handoff: greet them back warmly by name if a name is present, treat them as a returning partner, and never re-ask details that are already filled in.`;
+  return `${openingVoiceInstructionBase} The handoff panel already carries details for this visitor — typed just now or remembered from an earlier visit. Greet them warmly by name if a name is present, acknowledge you can see what is filled in, and never re-ask details that are already there. Do not assume they have visited before unless they say so.`;
 }

@@ -12,7 +12,7 @@ export function PartnersBands() {
         <button
           className="partner-card group"
           key={partner.number}
-          onClick={() => voice.open(partner.intent)}
+          onClick={() => voice.open(partner.intent, { autoStart: false, mode: "form" })}
           type="button"
         >
           <div className="partner-card__row">

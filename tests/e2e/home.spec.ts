@@ -28,7 +28,7 @@ test("renders the Oriental microsite and opens the collaborative intake workspac
   await page.waitForTimeout(900);
   await page.getByRole("button", { name: /Tell us why/i }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
-  await expect(page.getByText("Handoff details")).toBeVisible();
+  await expect(page.getByText("Handoff details", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Name")).toBeVisible();
   await page.getByRole("button", { name: "The spaces" }).click();
   await expect(page.getByText("Oriental note")).toBeVisible();
@@ -75,15 +75,22 @@ test("hero fits the first viewport and leaves the next section visible", async (
   }
 });
 
-test("short desktop hero hides bottom corner labels", async ({ page }) => {
-  await page.setViewportSize({ width: 1366, height: 768 });
-  await page.goto("/");
+test("faq page nav links point home and the talk CTA opens the form workspace", async ({ page, isMobile }) => {
+  await page.goto("/faq");
 
-  const visibleBottomCorners = await page
-    .locator(".hero-corner--bottom")
-    .evaluateAll((corners) => corners.filter((corner) => window.getComputedStyle(corner).display !== "none").length);
-
-  expect(visibleBottomCorners).toBe(0);
+  if (isMobile) {
+    await page.getByRole("button", { name: "Open menu" }).click();
+    const mobileNav = page.getByRole("navigation", { name: "Mobile section menu" });
+    await expect(mobileNav.getByRole("link", { name: "Vision" })).toHaveAttribute("href", "/#vision");
+    await expect(mobileNav.getByRole("link", { name: "Timeline" })).toHaveAttribute("href", "/#timeline");
+    await mobileNav.getByRole("button", { name: "Talk to Mereka" }).click();
+  } else {
+    await expect(page.locator("header").getByRole("link", { name: "Vision" })).toHaveAttribute("href", "/#vision");
+    await expect(page.locator("header").getByRole("link", { name: "Timeline" })).toHaveAttribute("href", "/#timeline");
+    await page.getByRole("button", { name: "Talk to Mereka" }).last().click();
+  }
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.getByLabel("Name")).toBeFocused();
 });
 
 test("facilities use the current supplied space images and aligned labels", async ({ page }) => {
@@ -92,7 +99,7 @@ test("facilities use the current supplied space images and aligned labels", asyn
   await expect(page.getByRole("button", { name: /Public Commons & Community Lounge/i })).toBeVisible();
   await expect(page.getByRole("button", { name: /Academy of Tomorrow Learning Studios/i })).toBeVisible();
   await expect(page.getByRole("button", { name: /Flexible Event Spaces/i })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Social Enterprise & Innovation Spaces/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Technology Showcase & Demo Lab/i })).toBeVisible();
 
   const imageSources = await page
     .locator("#facilities img")
@@ -106,6 +113,7 @@ test("facilities use the current supplied space images and aligned labels", asyn
     expect.arrayContaining([
       expect.stringContaining("/assets/spaces/public-commons-community-lounge"),
       expect.stringContaining("/assets/spaces/flexible-event-spaces-forum"),
+      expect.stringContaining("/assets/spaces/technology-showcase-demo-lab"),
     ]),
   );
 });
@@ -224,7 +232,7 @@ test("lead form surfaces a partial failure when the lead saves but notifications
 });
 
 test("voice variant picker appears, switches voice, and persists the selection", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/?voices=1");
   await page.getByRole("button", { name: /Choose Reka voice/i }).click();
   const picker = page.getByRole("region", { name: /Choose Reka voice/i });
   await expect(picker).toBeVisible();
@@ -284,7 +292,7 @@ test("voice prewarms on page load for returning microphone permission without Tu
   expect(JSON.stringify(voiceSessionBodies[0])).not.toContain("turnstile");
 });
 
-test("talk CTA immediately enters the voice permission flow", async ({ page }) => {
+test("talk CTA opens the partner dialog without requesting the microphone", async ({ page }) => {
   await page.addInitScript(() => {
     const state = window as typeof window & { __voiceGetUserMediaCalled?: boolean };
     state.__voiceGetUserMediaCalled = false;
@@ -310,6 +318,16 @@ test("talk CTA immediately enters the voice permission flow", async ({ page }) =
   await page.locator('header button[aria-label="Talk to Mereka"]').click();
 
   await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.getByLabel("Name")).toBeFocused();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as typeof window & { __voiceGetUserMediaCalled?: boolean }).__voiceGetUserMediaCalled,
+      ),
+    )
+    .toBe(false);
+
+  await page.getByRole("button", { name: "Start voice with Reka" }).click();
   await expect
     .poll(() =>
       page.evaluate(

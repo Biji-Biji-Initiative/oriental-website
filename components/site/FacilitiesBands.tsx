@@ -18,7 +18,12 @@ export function FacilitiesBands() {
         </div>
         <div className="facilities-aud-list">
           {audiences.map((audience, index) => (
-            <button className="facilities-aud" key={audience} onClick={() => voice.open()} type="button">
+            <button
+              className="facilities-aud"
+              key={audience}
+              onClick={() => voice.open(undefined, { autoStart: false, mode: "form" })}
+              type="button"
+            >
               <span className="facilities-aud__num">{String(index + 1).padStart(2, "0")}</span>
               <span className="facilities-aud__name">{audience}</span>
             </button>
@@ -38,7 +43,7 @@ export function FacilitiesBands() {
             <button
               className="facilities-pillar group"
               key={pillar.name}
-              onClick={() => voice.open(pillar.intent)}
+              onClick={() => voice.open(pillar.intent, { autoStart: false, mode: "form" })}
               type="button"
             >
               <span className="facilities-pillar__num">{String(index + 1).padStart(2, "0")}</span>
@@ -68,7 +73,7 @@ export function FacilitiesBands() {
             <button
               className="facilities-space group"
               key={space.number}
-              onClick={() => voice.open(space.intent)}
+              onClick={() => voice.open(space.intent, { autoStart: false, mode: "form" })}
               type="button"
             >
               <div className="facilities-space__img">

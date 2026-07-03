@@ -30,6 +30,7 @@ import {
   postVoiceReviewSnapshot,
   type VoiceReviewCredentials,
 } from "@/lib/voice/review-snapshot";
+import { DEFAULT_VOICE_VARIANT_ID, VOICE_VARIANTS } from "@/lib/voice/variants";
 import { HandoffPanel } from "./HandoffPanel";
 import { playLiveChime } from "./live-chime";
 import {
@@ -47,6 +48,8 @@ import {
   voiceCloseReasonToast,
   voiceToastIds,
 } from "./voice-dialog-copy";
+import { useVoice } from "./voice-state";
+import { readTunerFlag } from "./voice-tuner";
 
 type VoiceAgentDialogProps = {
   open: boolean;
@@ -218,6 +221,33 @@ export function VoiceAgentDialog({
   teardownVoiceRef.current = teardownVoice;
   sendClientEventsRef.current = sendClientEvents;
   connectionStatusRef.current = connectionStatus;
+
+  // Team voice tuning: switch Reka's register from inside the dialog. A switch
+  // mid-call tears the session down and reconnects with the new voice — the
+  // resumed-transcript handoff keeps the conversation going.
+  const { setVoiceVariant } = useVoice();
+  const [tunerEnabled, setTunerEnabled] = useState(false);
+  const pendingVariantRestartRef = useRef(false);
+  useEffect(() => {
+    setTunerEnabled(readTunerFlag());
+  }, []);
+  const switchVoiceVariant = useCallback(
+    (variantId: string) => {
+      if (variantId === (voiceVariant ?? DEFAULT_VOICE_VARIANT_ID)) return;
+      const live = connectionStatus !== "idle";
+      setVoiceVariant(variantId);
+      if (live) {
+        pendingVariantRestartRef.current = true;
+        teardownVoice("manual");
+      }
+    },
+    [connectionStatus, setVoiceVariant, teardownVoice, voiceVariant],
+  );
+  useEffect(() => {
+    if (!pendingVariantRestartRef.current || connectionStatus !== "idle") return;
+    pendingVariantRestartRef.current = false;
+    void connectVoice();
+  }, [connectionStatus, connectVoice]);
 
   useEffect(() => {
     if (!open) return;
@@ -402,6 +432,31 @@ export function VoiceAgentDialog({
           </aside>
 
           <main className="order-1 min-w-0 p-5 sm:p-8 lg:order-none">
+            {tunerEnabled ? (
+              <div className="mb-4 flex flex-wrap items-center gap-1.5">
+                <span className="mr-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/40">Voice</span>
+                {VOICE_VARIANTS.map((variant) => {
+                  const active = variant.id === (voiceVariant ?? DEFAULT_VOICE_VARIANT_ID);
+                  return (
+                    <button
+                      aria-label={`Switch Reka voice to ${variant.label}`}
+                      aria-pressed={active}
+                      className={cn(
+                        "rounded-full border px-2.5 py-1 text-[11px] font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mk-horizon",
+                        active
+                          ? "border-mk-horizon bg-white/12 text-white"
+                          : "border-white/12 text-white/55 hover:border-white/30 hover:text-white",
+                      )}
+                      key={variant.id}
+                      onClick={() => switchVoiceVariant(variant.id)}
+                      type="button"
+                    >
+                      {variant.label.replace("Reka · ", "")}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
             <VoiceSessionStage
               activeTopicId={activeTopicId}
               assistantDraft={runtime.assistantDraft}

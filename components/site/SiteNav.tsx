@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { MiniOrb } from "@/components/orb/MiniOrb";
 import { useVoice } from "@/components/voice-agent/voice-state";
@@ -10,6 +11,10 @@ import { cn } from "@/lib/utils";
 const sectionIds = navItems.map(([id]) => id);
 
 export function SiteNav() {
+  const pathname = usePathname();
+  const onHome = pathname === "/";
+  const sectionHref = (id: string) => (onHome ? `#${id}` : `/#${id}`);
+  const topHref = onHome ? "#top" : "/";
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeSection, setActiveSection] = useState<string>(sectionIds[0] ?? "vision");
@@ -56,7 +61,7 @@ export function SiteNav() {
       if (event.code === "Escape") setMenuOpen(false);
       if (event.code === "Space" && event.target === document.body && !menuOpen) {
         event.preventDefault();
-        voice.open(undefined, { autoStart: true });
+        voice.open(undefined, { autoStart: false, mode: "form" });
       }
     };
     window.addEventListener("keydown", handler);
@@ -80,7 +85,7 @@ export function SiteNav() {
           scrolled && "bg-mk-off-black/82 text-white shadow-2xl backdrop-blur-xl",
         )}
       >
-        <a className="flex items-center gap-3 text-sm font-semibold tracking-[0.18em]" href="#top">
+        <a className="flex items-center gap-3 text-sm font-semibold tracking-[0.18em]" href={topHref}>
           <Image
             alt="Mereka"
             className="h-5 w-auto"
@@ -100,8 +105,8 @@ export function SiteNav() {
         >
           {navItems.map(([id, label]) => (
             <a
-              className={cn("site-nav__link relative transition", activeSection === id && navLinkActiveTone)}
-              href={`#${id}`}
+              className={cn("site-nav__link relative transition", onHome && activeSection === id && navLinkActiveTone)}
+              href={sectionHref(id)}
               key={id}
             >
               {label}
@@ -134,9 +139,7 @@ export function SiteNav() {
                 ? "border border-white/16 bg-white/10 hover:bg-white/18"
                 : "border border-mk-off-black/12 bg-white/75 text-mk-off-black shadow-sm hover:bg-white",
             )}
-            onClick={() => voice.open(undefined, { autoStart: true })}
-            onFocus={voice.prewarm}
-            onPointerEnter={voice.prewarm}
+            onClick={() => voice.open(undefined, { autoStart: false, mode: "form" })}
             type="button"
           >
             <MiniOrb size={24} />
@@ -151,8 +154,11 @@ export function SiteNav() {
           <nav aria-label="Mobile section menu" className="site-nav__mobile-nav">
             {navItems.map(([id, label]) => (
               <a
-                className={cn("site-nav__mobile-link", activeSection === id && "site-nav__mobile-link--active")}
-                href={`#${id}`}
+                className={cn(
+                  "site-nav__mobile-link",
+                  onHome && activeSection === id && "site-nav__mobile-link--active",
+                )}
+                href={sectionHref(id)}
                 key={id}
                 onClick={closeMenu}
               >
@@ -166,7 +172,7 @@ export function SiteNav() {
               className="site-nav__mobile-voice"
               onClick={() => {
                 closeMenu();
-                voice.open(undefined, { autoStart: true });
+                voice.open(undefined, { autoStart: false, mode: "form" });
               }}
               type="button"
             >

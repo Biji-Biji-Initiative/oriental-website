@@ -115,23 +115,13 @@
     width: min(100%, 64rem);
   }
 
-  .hero-kicker {
-    @apply mb-4 flex items-center gap-3 text-xs font-semibold uppercase text-mk-anchor-blue/72;
-    letter-spacing: 0;
+  .hero-tagline {
+    @apply mb-3 max-w-2xl text-sm font-medium leading-6 text-mk-off-black/62 sm:text-base sm:leading-7;
   }
 
   .hero-title {
     @apply max-w-[60rem] font-extrabold leading-[0.9] tracking-normal text-balance text-mk-off-black;
     font-size: clamp(3.15rem, 6.25vw, 5.65rem);
-  }
-
-  .hero-title__outline {
-    color: transparent;
-    -webkit-text-stroke: 1.1px rgba(31, 63, 124, 0.72);
-  }
-
-  .hero-title__script {
-    @apply font-serif font-light text-mk-anchor-blue;
   }
 
   .hero-lede {
@@ -154,20 +144,8 @@
     @apply mt-4 flex max-w-2xl items-start gap-2 text-xs leading-5 text-mk-off-black/58 sm:text-sm;
   }
 
-  .hero-corner {
-    display: none;
-    letter-spacing: 0;
-  }
-
-  @media (min-width: 768px) {
-    .hero-corner {
-      display: block;
-    }
-  }
-
   @media (max-height: 900px) and (min-width: 768px) {
-    .hero-private,
-    .hero-corner--bottom {
+    .hero-private {
       display: none;
     }
 
@@ -514,7 +492,7 @@
   }
 
   .partner-cards {
-    @apply mt-14 grid overflow-hidden rounded-md border border-white/12 bg-white/12 md:grid-cols-3;
+    @apply mt-14 grid overflow-hidden rounded-md border border-white/12 bg-white/12 md:grid-cols-2 xl:grid-cols-4;
   }
 
   .partner-card {

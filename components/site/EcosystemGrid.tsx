@@ -16,7 +16,12 @@ export function EcosystemGrid() {
         {ecosystemCells.map((cell, index) => {
           const Icon = icons[index] ?? Sparkles;
           return (
-            <button className="eco-cell group" key={cell.number} onClick={() => voice.open(cell.intent)} type="button">
+            <button
+              className="eco-cell group"
+              key={cell.number}
+              onClick={() => voice.open(cell.intent, { autoStart: false, mode: "form" })}
+              type="button"
+            >
               <div className="eco-cell__num">{cell.number}</div>
               <Icon aria-hidden className="eco-cell__icon" />
               <h3>{cell.title}</h3>
@@ -33,9 +38,7 @@ export function EcosystemGrid() {
         </p>
         <button
           className="voice-cta"
-          onClick={() => voice.open(undefined, { autoStart: true })}
-          onFocus={voice.prewarm}
-          onPointerEnter={voice.prewarm}
+          onClick={() => voice.open(undefined, { autoStart: false, mode: "form" })}
           type="button"
         >
           <span className="voice-cta__orb">

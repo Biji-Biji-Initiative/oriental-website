@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import { FaqTalkCta } from "@/components/site/FaqTalkCta";
 import { faqItemPlainText, faqSections } from "@/lib/faq-content";
 
 export const metadata: Metadata = {
@@ -37,10 +37,7 @@ export default function FaqPage() {
           </h1>
           <p className="mt-8 max-w-2xl text-lg leading-8 text-mk-off-black/70">
             Everything you might want to know about the space, who we are looking for, options and pricing, and how to
-            express your interest. Still unsure?{" "}
-            <Link className="font-semibold text-mk-anchor-blue underline-offset-4 hover:underline" href="/#partners">
-              Start a conversation with us.
-            </Link>
+            express your interest. Still unsure? <FaqTalkCta />.
           </p>
 
           <div className="mt-16 space-y-16">

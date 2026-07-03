@@ -40,39 +40,22 @@ export function Hero() {
       <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(244,241,234,0.97),rgba(244,241,234,0.86)_42%,rgba(244,241,234,0.5)_72%,rgba(244,241,234,0.78))]" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_74%_38%,rgba(31,63,124,0.16),transparent_43%)]" />
       <div className="absolute inset-0 bg-[linear-gradient(rgba(31,63,124,0.055)_1px,transparent_1px),linear-gradient(90deg,rgba(31,63,124,0.055)_1px,transparent_1px)] bg-[size:72px_72px] opacity-80" />
-      <HeroCorner className="left-5 top-24 md:left-9" lines={["Oriental Building", "Jalan Tun Perak · Kuala Lumpur"]} />
-      <HeroCorner className="right-5 top-24 text-right md:right-9" lines={["Levels Two–Four", "Opening 2027"]} />
-      <HeroCorner
-        className="hero-corner--bottom bottom-10 left-5 md:left-9"
-        lines={["Status", "Partner conversations now open"]}
-      />
-      <HeroCorner
-        className="hero-corner--bottom bottom-10 right-5 text-right md:right-9"
-        lines={["oriental.mereka.io", "A founding invitation"]}
-      />
       <div className="hero-shell relative z-10 mx-auto flex w-full max-w-wrap items-center px-gutter">
         <div className="hero-copy">
-          <div className="hero-kicker">
-            <span className="size-2 rounded-full bg-mk-horizon" />A new chapter for a historic building
-          </div>
+          <p className="hero-tagline">A future we build together</p>
           <h1 className="hero-title">
-            <span className="block">Reimagining</span>
-            <span className="hero-title__outline block">Oriental.</span>
-            <span className="block">
-              <em className="hero-title__script">A future</em>
-            </span>
-            <span className="block">we build together.</span>
+            <span className="block">Reimagining Oriental Building</span>
           </h1>
           <p className="hero-lede">
             Mereka, Biji-biji Initiative, and partners are shaping Levels 2 to 4 of Oriental Building into a shared hub
             for future learning, technology, creativity, culture, and community — in the heart of Kuala Lumpur.
           </p>
           <div className="hero-actions">
-            <VoiceButton className="hero-voice-button">
+            <VoiceButton autoStart={false} className="hero-voice-button" prefill={{ mode: "form" }}>
               <span className="min-w-0">
                 Tell us why you&apos;re here
                 <span className="block text-xs font-normal text-mk-off-black/58">
-                  Speak or type — Mereka will route you to the right team
+                  Type your interest — voice is optional inside
                 </span>
               </span>
               <span className="hero-voice-button__key">SPACE</span>
@@ -88,15 +71,6 @@ export function Hero() {
         </div>
       </div>
     </section>
-  );
-}
-
-function HeroCorner({ className, lines }: { className?: string; lines: [string, string] }) {
-  return (
-    <div className={cn("hero-corner absolute z-10 text-xs uppercase text-mk-off-black/58", className)}>
-      <div className="text-mk-off-black">{lines[0]}</div>
-      <div className="mt-1 text-mk-anchor-blue/58">{lines[1]}</div>
-    </div>
   );
 }
 
@@ -158,9 +132,6 @@ export function Ecosystem() {
           <span className="bar" />
           03 — The Ecosystem
         </span>
-        <h2 className="section-heading max-w-5xl text-white">
-          Spaces for growing skills, <em>creating solutions, and driving tech-adoption.</em>
-        </h2>
         <EcosystemGrid />
       </div>
     </section>
@@ -222,7 +193,7 @@ export function Closing() {
         className="absolute inset-0 h-full w-full object-cover opacity-42"
         fill
         sizes="100vw"
-        src="/assets/01-hero-welcome.png"
+        src="/assets/closing-community-gathering.png"
       />
       <div className="absolute inset-0 bg-mk-off-black/70" />
       <div className="relative mx-auto max-w-wrap px-gutter">
@@ -243,7 +214,9 @@ export function Closing() {
           If you have a programme, space, technology, community, institution, or idea that belongs in this story — now
           is the moment to enter the conversation.
         </p>
-        <VoiceButton className="mt-10">Start the conversation</VoiceButton>
+        <VoiceButton autoStart={false} className="mt-10" prefill={{ mode: "form" }}>
+          Start the conversation
+        </VoiceButton>
       </div>
     </section>
   );
@@ -273,7 +246,11 @@ export function Footer() {
               >
                 Email · {siteMeta.email}
               </a>
-              <VoiceButton className="bg-white/10 text-white hover:bg-white hover:text-mk-off-black">
+              <VoiceButton
+                autoStart={false}
+                className="bg-white/10 text-white hover:bg-white hover:text-mk-off-black"
+                prefill={{ mode: "form" }}
+              >
                 Or · Talk to Mereka
               </VoiceButton>
             </div>

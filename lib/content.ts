@@ -49,8 +49,8 @@ export const ecosystemCells = [
 export const audiences = [
   "Students and Youths",
   "Impact Organisations",
-  "Working Professionals",
   "Creative Community",
+  "Corporate Partners",
   "Entrepreneurs and SMEs",
   "Community Groups and Seniors",
 ] as const;
@@ -114,12 +114,12 @@ export const spaces = [
   },
   {
     number: "04",
-    title: "Social Enterprise & Innovation Spaces",
+    title: "Technology Showcase & Demo Lab",
     description:
-      "Co-working, incubation, and showcase space for impact-driven organisations, social enterprises, NGOs, startups, and mission-aligned teams building with community relevance.",
-    cta: "Explore Impact Space",
-    intent: "tenancy" as SegmentId,
-    image: "/assets/16-buy-social-showcase.png",
+      "A hands-on environment for technology partners to demonstrate tools, host learning experiences, and make emerging technologies more accessible to the public.",
+    cta: "Showcase Technology Here",
+    intent: "technology" as SegmentId,
+    image: "/assets/spaces/technology-showcase-demo-lab.png",
   },
 ] as const;
 
@@ -150,6 +150,15 @@ export const partners = [
       "Companies, platforms, labs, and innovation teams looking to showcase tools, run demos, support hands-on learning, or create embedded technology experiences.",
     cta: "Explore a Technology Showcase",
     intent: "technology" as SegmentId,
+  },
+  {
+    number: "04",
+    tag: "COMMUNITY",
+    title: "Community & Cultural Partners",
+    description:
+      "Community organisations, cultural practitioners, creative collectives, facilitators, and civic groups looking for a meaningful space to gather, teach, exhibit, perform, or co-create.",
+    cta: "Join as a Community Partner",
+    intent: "community" as SegmentId,
   },
 ] as const;
 

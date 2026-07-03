@@ -46,12 +46,13 @@ export const faqSections: FaqSection[] = [
     title: "Who we're looking for",
     items: [
       {
-        q: "What are the three types of partners and tenants you're looking for?",
-        a: ["We are building this ecosystem with three core types of organisations in mind:"],
+        q: "What types of partners and tenants are you looking for?",
+        a: ["We are building this ecosystem with four core types of organisations in mind:"],
         bullets: [
           "Mission-Aligned Tenants — organisations, studios, social enterprises, and community-driven brands looking for a collaborative space to grow, connect, and contribute to a vibrant public ecosystem.",
           "Education & Programme Partners — academic institutions, social enterprises, and learning operators, including teams running recurring workshops, trainings, or skilling programmes, who want to deliver impact-driven programmes in a professional, ready-to-use collaborative environment.",
           "Technology & Innovation Partners — companies and platform providers looking to showcase tools, technologies, and hands-on learning experiences through demos, activations, and embedded programmes.",
+          "Community & Cultural Partners — community organisations, cultural practitioners, creative collectives, facilitators, and civic groups looking for a meaningful space to gather, teach, exhibit, perform, or co-create.",
         ],
       },
       {
@@ -81,8 +82,8 @@ export const faqSections: FaqSection[] = [
         bullets: [
           "Students and Youths",
           "Impact Organisations",
-          "Working Professionals",
           "Creative Community",
+          "Corporate Partners",
           "Entrepreneurs and SMEs",
           "Community Groups and Seniors",
         ],

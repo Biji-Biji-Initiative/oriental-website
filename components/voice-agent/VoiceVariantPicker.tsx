@@ -4,19 +4,24 @@ import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { DEFAULT_VOICE_VARIANT_ID, VOICE_VARIANTS } from "@/lib/voice/variants";
 import { useVoice } from "./voice-state";
+import { readTunerFlag } from "./voice-tuner";
 
-/** First-class visitor control for choosing Reka's voice register. */
+/** Team tuning control for choosing Reka's voice register. */
 export function VoiceVariantPicker() {
   const { voiceVariant, setVoiceVariant } = useVoice();
   const [expanded, setExpanded] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  const [enabled, setEnabled] = useState(false);
 
   const selectedVariant = voiceVariant || DEFAULT_VOICE_VARIANT_ID;
   const activeLabel = labelFor(selectedVariant);
 
   useEffect(() => {
     setHydrated(true);
+    setEnabled(readTunerFlag());
   }, []);
+
+  if (!enabled) return null;
 
   if (!expanded) {
     return (
