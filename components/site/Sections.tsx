@@ -193,7 +193,7 @@ export function Closing() {
         className="absolute inset-0 h-full w-full object-cover opacity-42"
         fill
         sizes="100vw"
-        src="/assets/closing-community-gathering.png"
+        src="/assets/closing-community-gathering.jpg"
       />
       <div className="absolute inset-0 bg-mk-off-black/70" />
       <div className="relative mx-auto max-w-wrap px-gutter">

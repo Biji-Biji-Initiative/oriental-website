@@ -145,7 +145,7 @@ Production launch needs:
 | Hero | `assets/orientalhero2.png` | Verify rights for `oriental.mereka.io` use. |
 | Vision strip | `assets/07-building-context.jpg` | Same. |
 | Space 01 Commons | `81_agora_world_cafe_evening_*.png` | Same. |
-| Space 02 Academy | `2026-05-04-05-academy-tomorrow-2-v2.png` | Same. |
+| Space 02 Academy | `2026-05-04-05-academy-tomorrow-2-v2.jpg` | Same. |
 | Space 03 Events | `16-buy-social-showcase.png` | Same. |
 | Space 04 Tech demo | `05-sustainability-workshop.png` | Same — verify it represents tech, not sustainability, or swap. |
 | Space 05 Social enterprise | `20-ngo-finance-guild.png` | Same. |

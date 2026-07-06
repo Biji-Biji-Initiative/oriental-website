@@ -90,7 +90,7 @@ Institutions & mission-aligned tenants.
 | # | Title | Routes to segment | Image |
 |---|---|---|---|
 | 01 | Public Commons & Community Lounge | `community` | `spaces/public-commons-community-lounge.jpg` |
-| 02 | Academy of Tomorrow Learning Studios | `education` | `2026-05-04-05-academy-tomorrow-2-v2.png` |
+| 02 | Academy of Tomorrow Learning Studios | `education` | `2026-05-04-05-academy-tomorrow-2-v2.jpg` |
 | 03 | Flexible Event Spaces | `programme` | `spaces/flexible-event-spaces-forum.jpg` |
 | 04 | Social Enterprise & Innovation Spaces | `tenancy` | `16-buy-social-showcase.png` |
 
@@ -169,7 +169,7 @@ public web use before launch — track in [`10-ROADMAP.md`](./10-ROADMAP.md).
 | `05-sustainability-workshop.png` | Space 04 — Tech demo |
 | `16-buy-social-showcase.png` | Space 03 — Events |
 | `20-ngo-finance-guild.png` | Space 05 — Social enterprise |
-| `2026-05-04-05-academy-tomorrow-2-v2.png` | Space 02 — Academy |
+| `2026-05-04-05-academy-tomorrow-2-v2.jpg` | Space 02 — Academy |
 | `81_agora_world_cafe_evening_openai_4e792ccfe15d_20260504-213415_0.png` | Space 01 — Commons |
 | `exterior_render_*.png` | Reserve / unused (potential press kit) |
 | `oriental hsots.png` | Reserve (rename — has typo, will not ship) |

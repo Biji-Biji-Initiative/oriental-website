@@ -101,7 +101,7 @@ export const spaces = [
       "Flexible classrooms and workshop rooms for future skills training, entrepreneurship programmes, youth development, creative learning, professional upskilling, and recurring classes.",
     cta: "Bring a Learning Programme",
     intent: "education" as SegmentId,
-    image: "/assets/2026-05-04-05-academy-tomorrow-2-v2.png",
+    image: "/assets/2026-05-04-05-academy-tomorrow-2-v2.jpg",
   },
   {
     number: "03",
