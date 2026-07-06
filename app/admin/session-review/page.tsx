@@ -437,6 +437,19 @@ function VoiceQualityPanel({ data }: { data: DashboardData }) {
                   >
                     {primaryFix.cta}
                   </a>
+                  {primaryFix.entries.length > 0 ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {primaryFix.entries.slice(0, 3).map((entry) => (
+                        <a
+                          className="rounded-full border border-mk-blue/20 bg-white/70 px-3 py-1.5 text-xs font-semibold text-mk-blue transition hover:border-mk-blue/45 hover:bg-white"
+                          href={`#${voiceSessionAnchorId(entry.reviewId)}`}
+                          key={`primary:${entry.reviewId}`}
+                        >
+                          {getSegment(entry.segment).label} · {entry.reviewId.slice(0, 8)}
+                        </a>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
                 <div className="grid content-start gap-2 rounded-xl border border-mk-ash/15 bg-mk-paper/70 p-3">
                   <div className="text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
@@ -448,7 +461,7 @@ function VoiceQualityPanel({ data }: { data: DashboardData }) {
                 </div>
               </div>
 
-              <RekaFixActionList actions={fixActions} />
+              {fixActions.length > 1 ? <RekaFixActionList actions={fixActions.slice(1)} /> : null}
 
               <details className="rounded-lg border border-mk-ash/15 bg-mk-paper/60" suppressHydrationWarning>
                 <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold marker:hidden">
@@ -548,6 +561,7 @@ function buildPrimaryRekaFix(actions: RekaFixAction[], evaluated: number) {
       cta: "Open diagnostics",
       detail: "No repeated failure pattern is currently flagged. Use diagnostics only when a new session looks wrong.",
       href: "#voice-diagnostics",
+      entries: [] as EvalAttentionEntry[],
       title: "Keep monitoring new sessions",
       tone: "green" as const,
     };
@@ -557,6 +571,7 @@ function buildPrimaryRekaFix(actions: RekaFixAction[], evaluated: number) {
     cta: "Open first evidence session",
     detail: `${top.change} ${top.why}`,
     href: `#${voiceSessionAnchorId(top.entries[0]?.reviewId ?? "")}`,
+    entries: top.entries,
     title: top.title,
     tone: top.tone,
   };
