@@ -6,3 +6,12 @@ test-results
 playwright-report
 .env*
 !.env.local.example
+
+# Non-runtime repo surfaces. Keep these out of repeated production build contexts.
+docs
+tests
+.github
+.claude
+.codegraph
+*.log
+*.tsbuildinfo
