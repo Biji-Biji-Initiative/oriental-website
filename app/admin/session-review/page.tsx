@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import type { ReactNode } from "react";
 import { AdminAutoRefresh } from "@/components/admin/AdminAutoRefresh";
+import { AdminHashOpenDetails } from "@/components/admin/AdminHashOpenDetails";
 import { AdminLeadWorkflowForm } from "@/components/admin/AdminLeadWorkflowForm";
 import { AdminLoginForm } from "@/components/admin/AdminLoginForm";
 import { AdminVoiceFollowUpButton } from "@/components/admin/AdminVoiceFollowUpButton";
@@ -160,6 +161,7 @@ function AdminShell({ children, generatedAt }: { children: ReactNode; generatedA
             </form>
           </div>
         </header>
+        <AdminHashOpenDetails />
         {children}
       </div>
     </main>
