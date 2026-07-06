@@ -6,6 +6,7 @@ import { AdminHashOpenDetails } from "@/components/admin/AdminHashOpenDetails";
 import { AdminLeadWorkflowForm } from "@/components/admin/AdminLeadWorkflowForm";
 import { AdminLoginForm } from "@/components/admin/AdminLoginForm";
 import { AdminVoiceFollowUpButton } from "@/components/admin/AdminVoiceFollowUpButton";
+import { AdminVoiceSessionTranscript } from "@/components/admin/AdminVoiceSessionTranscript";
 import { Badge } from "@/components/admin/Badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -1941,7 +1942,7 @@ function VoiceSessionDetails({ session }: { session: VoiceSessionRow }) {
             ))}
           </div>
         ) : null}
-        {session.transcript.length > 0 ? <TranscriptLog transcript={session.transcript} /> : null}
+        <AdminVoiceSessionTranscript expectedTurnCount={transcriptTurnCount(session)} reviewId={session.reviewId} />
       </div>
     </details>
   );
@@ -2057,11 +2058,12 @@ function SessionLifecycle({ session }: { session: VoiceSessionRow }) {
 
 function SessionQualityFlags({ session, realErrorCount }: { session: VoiceSessionRow; realErrorCount: number }) {
   const captured = capturedFieldCount(session.captured);
-  const roles = countTranscriptRoles(session.transcript);
+  const roles = transcriptRoles(session);
+  const turns = transcriptTurnCount(session);
   return (
     <div className="mt-3 flex flex-wrap gap-2">
       <Badge tone={captured >= 4 ? "green" : captured >= 2 ? "amber" : "red"}>{captured}/6 captured</Badge>
-      <Badge tone={session.transcript.length > 0 ? "blue" : "red"}>{session.transcript.length} turns</Badge>
+      <Badge tone={turns > 0 ? "blue" : "red"}>{turns} turns</Badge>
       <Badge tone={roles.assistant > 0 ? "neutral" : "amber"}>
         {roles.user}/{roles.assistant} visitor/reka
       </Badge>
@@ -2164,6 +2166,17 @@ function capturedFieldCount(captured: VoiceSessionRow["captured"]) {
 
 type TranscriptRoleCounts = { user: number; assistant: number; system: number };
 type TranscriptRoleEntry = { role: string };
+
+function transcriptTurnCount(session: VoiceSessionRow) {
+  return "transcriptTurnCount" in session && typeof session.transcriptTurnCount === "number"
+    ? session.transcriptTurnCount
+    : session.transcript.length;
+}
+
+function transcriptRoles(session: VoiceSessionRow): TranscriptRoleCounts {
+  if ("transcriptRoles" in session && session.transcriptRoles) return session.transcriptRoles;
+  return countTranscriptRoles(session.transcript);
+}
 
 function countTranscriptRoles(transcript: TranscriptRoleEntry[]) {
   return transcript.reduce<TranscriptRoleCounts>(

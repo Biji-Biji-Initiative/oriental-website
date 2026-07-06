@@ -315,6 +315,18 @@ export const setVoiceSessionFollowUp = mutationGeneric({
   },
 });
 
+export const voiceSessionByReviewId = queryGeneric({
+  args: { ingestSecret: v.string(), reviewId: v.string() },
+  handler: async (ctx, { ingestSecret, reviewId }) => {
+    requireIngestSecret(ingestSecret);
+    const session = await ctx.db
+      .query("voiceSessions")
+      .withIndex("by_review_id", (query) => query.eq("reviewId", reviewId))
+      .unique();
+    return session ?? null;
+  },
+});
+
 const voiceEvalValidator = v.object({
   reviewId: v.string(),
   routingCorrect: v.number(),
@@ -418,7 +430,7 @@ export const reviewDashboard = queryGeneric({
     return {
       generatedAt: now,
       leads,
-      voiceSessions,
+      voiceSessions: voiceSessions.map(toVoiceSessionSummary),
       leadEvents,
       metrics: {
         recentLeads: leads.length,
@@ -480,6 +492,27 @@ export const reviewDashboard = queryGeneric({
     };
   },
 });
+
+function toVoiceSessionSummary<T extends { transcript: Array<{ role: string; text: string }> }>(session: T) {
+  return {
+    ...session,
+    transcript: [],
+    transcriptTurnCount: session.transcript.length,
+    transcriptRoles: countTranscriptRoles(session.transcript),
+  };
+}
+
+function countTranscriptRoles(transcript: Array<{ role: string }>) {
+  return transcript.reduce(
+    (counts, turn) => {
+      if (turn.role === "assistant") counts.assistant += 1;
+      else if (turn.role === "system") counts.system += 1;
+      else counts.user += 1;
+      return counts;
+    },
+    { user: 0, assistant: 0, system: 0 },
+  );
+}
 
 function countBy<T>(items: T[], key: (item: T) => string) {
   return items.reduce<Record<string, number>>((counts, item) => {

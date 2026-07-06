@@ -75,6 +75,17 @@ export async function getAdminReviewDashboard(limit = 50) {
   return { ok: true as const, data };
 }
 
+export async function getAdminVoiceSession(reviewId: string) {
+  const client = createConvexClient();
+  if (!client) return { ok: false as const, reason: "convex_unconfigured" };
+  const session = await client.client.query(api.leads.voiceSessionByReviewId, {
+    ingestSecret: client.ingestSecret,
+    reviewId,
+  });
+  if (!session) return { ok: false as const, reason: "not_found" };
+  return { ok: true as const, session };
+}
+
 export async function updateAdminLeadWorkflow(leadId: string, workflow: AdminLeadWorkflowRequest) {
   const client = createConvexClient();
   if (!client) return { ok: false as const, reason: "convex_unconfigured" };

@@ -1,15 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { persistLead, persistVoiceReviewSnapshot, updateAdminLeadWorkflow } from "@/lib/server/convex";
+import {
+  getAdminVoiceSession,
+  persistLead,
+  persistVoiceReviewSnapshot,
+  updateAdminLeadWorkflow,
+} from "@/lib/server/convex";
 import type { StoredLead } from "@/lib/server/notifications";
 
 const mocks = vi.hoisted(() => ({
   client: vi.fn(),
   mutation: vi.fn(),
+  query: vi.fn(),
 }));
 
 vi.mock("convex/browser", () => ({
   ConvexHttpClient: class {
     mutation = mocks.mutation;
+    query = mocks.query;
 
     constructor(url: string) {
       mocks.client(url);
@@ -21,6 +28,7 @@ vi.mock("@/convex/_generated/api", () => ({
   api: {
     leads: {
       createLead: "createLead",
+      voiceSessionByReviewId: "voiceSessionByReviewId",
       updateLeadWorkflow: "updateLeadWorkflow",
       recordVoiceSession: "recordVoiceSession",
     },
@@ -95,6 +103,40 @@ describe("persistLead", () => {
       owner: "Gurpreet",
       note: "Ready for direct follow-up.",
     });
+  });
+});
+
+describe("getAdminVoiceSession", () => {
+  beforeEach(() => {
+    process.env = {
+      ...originalEnv,
+      CONVEX_URL: "https://convex.example",
+      CONVEX_INGEST_SECRET: "ingest-secret",
+    };
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+    vi.clearAllMocks();
+  });
+
+  it("loads one full voice session by review id", async () => {
+    mocks.query.mockResolvedValue({ reviewId: "review_1", transcript: [{ role: "user", text: "hello" }] });
+
+    await expect(getAdminVoiceSession("review_1")).resolves.toEqual({
+      ok: true,
+      session: { reviewId: "review_1", transcript: [{ role: "user", text: "hello" }] },
+    });
+    expect(mocks.query).toHaveBeenCalledWith("voiceSessionByReviewId", {
+      ingestSecret: "ingest-secret",
+      reviewId: "review_1",
+    });
+  });
+
+  it("reports not_found when the review id does not exist", async () => {
+    mocks.query.mockResolvedValue(null);
+
+    await expect(getAdminVoiceSession("missing")).resolves.toEqual({ ok: false, reason: "not_found" });
   });
 });
 
