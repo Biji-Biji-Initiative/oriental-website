@@ -131,6 +131,18 @@ export default defineSchema({
         ),
       }),
     ),
+    eval: v.optional(
+      v.object({
+        routingCorrect: v.number(),
+        captureCompleteness: v.number(),
+        conversationQuality: v.number(),
+        frustration: v.number(),
+        summary: v.string(),
+        droppedMidTurn: v.boolean(),
+        model: v.string(),
+        evaluatedAt: v.number(),
+      }),
+    ),
     createdAt: v.number(),
     updatedAt: v.number(),
     submittedAt: v.optional(v.number()),

@@ -34,6 +34,7 @@ import {
 type Args = {
   limit: number;
   dry: boolean;
+  persist: boolean;
   out: string;
   minQuality?: number;
   minRouting?: number;
@@ -44,12 +45,14 @@ type Args = {
 const JUDGE_CONCURRENCY = 4;
 
 function parseArgs(argv: string[]): Args {
-  const args: Args = { limit: 50, dry: false, out: "eval-reports" };
+  const args: Args = { limit: 50, dry: false, persist: false, out: "eval-reports" };
   for (let i = 0; i < argv.length; i += 1) {
     const flag = argv[i];
     const value = argv[i + 1];
     if (flag === "--dry") {
       args.dry = true;
+    } else if (flag === "--persist") {
+      args.persist = true;
     } else if (flag === "--limit") {
       args.limit = Number(value) || args.limit;
       i += 1;
@@ -85,7 +88,10 @@ function requireEnv(...keys: string[]): string | null {
 // stored as `'\''https://...'\''`). Strip leading/trailing quote and backslash
 // characters so URLs/secrets are usable verbatim.
 function unquote(value: string): string {
-  return value.trim().replace(/^['"\\]+/, "").replace(/['"\\]+$/, "");
+  return value
+    .trim()
+    .replace(/^['"\\]+/, "")
+    .replace(/['"\\]+$/, "");
 }
 
 async function judgeSession(client: OpenAI, model: string, session: VoiceEvalSession): Promise<JudgeScore | null> {
@@ -164,6 +170,25 @@ async function main() {
     buildSessionEval(session, scores.get(session.reviewId) ?? null),
   );
   const aggregate = aggregateEvals(evals);
+
+  if (args.persist && !dry) {
+    const payloads = evals
+      .filter((entry): entry is SessionEval & { score: NonNullable<SessionEval["score"]> } => entry.score !== null)
+      .map((entry) => ({
+        reviewId: entry.reviewId,
+        routingCorrect: entry.score.routingCorrect,
+        captureCompleteness: entry.score.captureCompleteness,
+        conversationQuality: entry.score.conversationQuality,
+        frustration: entry.score.frustration,
+        summary: entry.score.summary,
+        droppedMidTurn: entry.transport.droppedMidTurn,
+        model,
+      }));
+    if (payloads.length > 0) {
+      const result = await convex.mutation(api.leads.recordVoiceEvals, { ingestSecret, evals: payloads });
+      console.log(`Persisted ${result.updated}/${payloads.length} eval scores to Convex.`);
+    }
+  }
 
   const thresholds = {
     minConversationQuality: args.minQuality,

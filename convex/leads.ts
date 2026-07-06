@@ -315,6 +315,38 @@ export const setVoiceSessionFollowUp = mutationGeneric({
   },
 });
 
+const voiceEvalValidator = v.object({
+  reviewId: v.string(),
+  routingCorrect: v.number(),
+  captureCompleteness: v.number(),
+  conversationQuality: v.number(),
+  frustration: v.number(),
+  summary: v.string(),
+  droppedMidTurn: v.boolean(),
+  model: v.string(),
+});
+
+export const recordVoiceEvals = mutationGeneric({
+  args: { ingestSecret: v.string(), evals: v.array(voiceEvalValidator) },
+  returns: v.object({ ok: v.boolean(), updated: v.number() }),
+  handler: async (ctx, { ingestSecret, evals }) => {
+    requireIngestSecret(ingestSecret);
+    const evaluatedAt = Date.now();
+    let updated = 0;
+    for (const entry of evals) {
+      const session = await ctx.db
+        .query("voiceSessions")
+        .withIndex("by_review_id", (query) => query.eq("reviewId", entry.reviewId))
+        .unique();
+      if (!session) continue;
+      const { reviewId: _reviewId, ...score } = entry;
+      await ctx.db.patch(session._id, { eval: { ...score, evaluatedAt } });
+      updated += 1;
+    }
+    return { ok: true, updated };
+  },
+});
+
 export const voiceSessionsForEval = queryGeneric({
   args: { ingestSecret: v.string(), limit: v.optional(v.number()) },
   handler: async (ctx, { ingestSecret, limit }) => {
@@ -380,6 +412,9 @@ export const reviewDashboard = queryGeneric({
     const engagedSessions = voiceSessions.filter(isEngagedVoiceSession);
     const submittedSessions = voiceSessions.filter((session) => Boolean(session.leadId)).length;
     const totalResponseTokens = voiceSessions.reduce((sum, session) => sum + (session.usage?.responseTokens ?? 0), 0);
+    const evaluatedSessions = voiceSessions.filter((session) => session.eval);
+    const evalAverages = averageEvalScores(evaluatedSessions);
+    const droppedMidTurnEvals = evaluatedSessions.filter((session) => session.eval?.droppedMidTurn).length;
     return {
       generatedAt: now,
       leads,
@@ -421,6 +456,20 @@ export const reviewDashboard = queryGeneric({
           withErrors: sessionsWithErrors,
           routeRequested: voiceSessions.filter((session) => session.routeRequested).length,
           totalResponseTokens,
+        },
+        evals: {
+          evaluated: evaluatedSessions.length,
+          droppedMidTurn: droppedMidTurnEvals,
+          averages: evalAverages,
+          trend: evalTrend(evaluatedSessions),
+          attention: evaluatedSessions
+            .filter(
+              (session) =>
+                session.eval &&
+                (session.eval.frustration >= 4 || session.eval.conversationQuality <= 2 || session.eval.droppedMidTurn),
+            )
+            .slice(0, 20)
+            .map((session) => ({ reviewId: session.reviewId, segment: session.segment, ...session.eval })),
         },
       },
       queues: {
@@ -472,4 +521,74 @@ function isEngagedVoiceSession(session: {
 function percent(numerator: number, denominator: number) {
   if (denominator <= 0) return 0;
   return Math.round((numerator / denominator) * 100);
+}
+
+type EvaluatedSession = {
+  createdAt: number;
+  eval?: {
+    routingCorrect: number;
+    captureCompleteness: number;
+    conversationQuality: number;
+    frustration: number;
+    droppedMidTurn: boolean;
+  };
+};
+
+const roundScore = (value: number) => Math.round(value * 100) / 100;
+
+function averageEvalScores(sessions: EvaluatedSession[]) {
+  const scored = sessions.filter((session) => session.eval);
+  if (scored.length === 0) return null;
+  const sum = (pick: (evaluation: NonNullable<EvaluatedSession["eval"]>) => number) =>
+    roundScore(
+      scored.reduce((total, session) => total + pick(session.eval as NonNullable<EvaluatedSession["eval"]>), 0) /
+        scored.length,
+    );
+  return {
+    routingCorrect: sum((evaluation) => evaluation.routingCorrect),
+    captureCompleteness: sum((evaluation) => evaluation.captureCompleteness),
+    conversationQuality: sum((evaluation) => evaluation.conversationQuality),
+    frustration: sum((evaluation) => evaluation.frustration),
+  };
+}
+
+// Bucket evaluated sessions by their session date so quality can be tracked
+// chronologically as Reka is iterated on.
+function bucketEvalAverages(sessions: EvaluatedSession[], keyOf: (createdAt: number) => string) {
+  const groups = new Map<string, EvaluatedSession[]>();
+  for (const session of sessions) {
+    if (!session.eval) continue;
+    const key = keyOf(session.createdAt);
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(session);
+    else groups.set(key, [session]);
+  }
+  return [...groups.entries()]
+    .map(([key, items]) => ({
+      key,
+      count: items.length,
+      droppedMidTurn: items.filter((session) => session.eval?.droppedMidTurn).length,
+      averages: averageEvalScores(items),
+    }))
+    .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+}
+
+function evalTrend(sessions: EvaluatedSession[]) {
+  const dayFormatter = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kuala_Lumpur" });
+  return {
+    daily: bucketEvalAverages(sessions, (createdAt) => dayFormatter.format(createdAt)),
+    weekly: bucketEvalAverages(sessions, isoWeekKey),
+  };
+}
+
+// ISO-8601 week label (e.g. 2026-W28), computed in UTC — adequate for a weekly
+// quality trend.
+function isoWeekKey(timestamp: number): string {
+  const date = new Date(timestamp);
+  const utc = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const dayNum = (utc.getUTCDay() + 6) % 7;
+  utc.setUTCDate(utc.getUTCDate() - dayNum + 3);
+  const firstThursday = new Date(Date.UTC(utc.getUTCFullYear(), 0, 4));
+  const week = 1 + Math.round((utc.getTime() - firstThursday.getTime()) / (7 * 86400000));
+  return `${utc.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
 }
