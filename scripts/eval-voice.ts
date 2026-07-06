@@ -76,9 +76,16 @@ function parseArgs(argv: string[]): Args {
 function requireEnv(...keys: string[]): string | null {
   for (const key of keys) {
     const value = process.env[key];
-    if (value) return value;
+    if (value) return unquote(value);
   }
   return null;
+}
+
+// Some Infisical values carry literal quote/shell-escape artifacts (e.g. a URL
+// stored as `'\''https://...'\''`). Strip leading/trailing quote and backslash
+// characters so URLs/secrets are usable verbatim.
+function unquote(value: string): string {
+  return value.trim().replace(/^['"\\]+/, "").replace(/['"\\]+$/, "");
 }
 
 async function judgeSession(client: OpenAI, model: string, session: VoiceEvalSession): Promise<JudgeScore | null> {
