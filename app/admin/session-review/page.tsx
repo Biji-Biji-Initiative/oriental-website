@@ -40,6 +40,7 @@ type AdminFilters = {
   priority: string;
   source: string;
 };
+type AdminTone = "neutral" | "blue" | "green" | "red" | "amber";
 
 export default async function SessionReviewPage({ searchParams }: { searchParams?: AdminSearchParams }) {
   const filters = parseAdminFilters(await searchParams);
@@ -71,7 +72,7 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
 
   return (
     <AdminShell generatedAt={dashboard.data.generatedAt}>
-      <AdminNavPills />
+      <AdminSectionTabs data={dashboard.data} sessionsWithRealErrors={sessionsWithRealErrors} />
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.42fr)]" id="command-center">
         <ActionQueuePanel data={dashboard.data} sessionsWithRealErrors={sessionsWithRealErrors} />
         <NextBestActionPanel data={dashboard.data} sessionsWithRealErrors={sessionsWithRealErrors} />
@@ -171,30 +172,82 @@ function AdminShell({ children, generatedAt }: { children: ReactNode; generatedA
   );
 }
 
-function AdminNavPills() {
-  const items = [
-    { href: "#command-center", label: "Today" },
-    { href: "#reka-quality", label: "Reka quality" },
-    { href: "#operator-filters", label: "Find" },
-    { href: "#work-queues", label: "Leads" },
-    { href: "#voice-recovery", label: "Voice recovery" },
-    { href: "#notifications", label: "Notifications" },
-    { href: "#voice-diagnostics", label: "Diagnostics" },
-    { href: "#insights-audit", label: "Audit" },
+function AdminSectionTabs({ data, sessionsWithRealErrors }: { data: DashboardData; sessionsWithRealErrors: number }) {
+  const recoverable = recoverableVoiceSessions(data.voiceSessions).length;
+  const stale = staleActiveLeads(data.leads, data.generatedAt).length;
+  const unassigned = countUnassignedActiveLeads(data.leads);
+  const fixAreas = buildRekaFixActions(data.analytics.evals.attention).length;
+  const items: Array<{
+    href: string;
+    label: string;
+    eyebrow: string;
+    detail: string;
+    badge: string;
+    tone: AdminTone;
+  }> = [
+    {
+      href: "#command-center",
+      label: "Today",
+      eyebrow: "Command",
+      detail: "Next action, blockers, and close criteria.",
+      badge: data.metrics.activeLeads > 0 ? `${data.metrics.activeLeads} open` : "clear",
+      tone: data.metrics.activeLeads > 0 ? "amber" : "green",
+    },
+    {
+      href: "#work-queues",
+      label: "Leads",
+      eyebrow: "Pipeline",
+      detail: `${unassigned} unassigned · ${stale} stale · ${data.metrics.qualifiedLeads} qualified`,
+      badge: `${data.metrics.recentLeads} saved`,
+      tone: stale > 0 || unassigned > 0 ? "amber" : "green",
+    },
+    {
+      href: "#reka-quality",
+      label: "Reka",
+      eyebrow: "Learning loop",
+      detail: `${fixAreas} fix areas · ${recoverable} recoverable voice leads`,
+      badge: `${data.analytics.evals.evaluated} evals`,
+      tone: fixAreas > 0 || recoverable > 0 ? "amber" : "green",
+    },
+    {
+      href: "#voice-diagnostics",
+      label: "Voice QA",
+      eyebrow: "Runtime",
+      detail: `${data.metrics.connectedSessions}/${data.metrics.reviewedSessions} connected · ${recoverable} unsent`,
+      badge: sessionsWithRealErrors > 0 ? `${sessionsWithRealErrors} errors` : "clean",
+      tone: sessionsWithRealErrors > 0 ? "red" : "green",
+    },
+    {
+      href: "#insights-audit",
+      label: "Audit",
+      eyebrow: "Evidence",
+      detail: "Acquisition mix, notifications, and event trail.",
+      badge: `${data.leadEvents.length} events`,
+      tone: "blue",
+    },
   ];
   return (
     <nav
-      aria-label="Admin sections"
-      className="sticky top-0 z-20 -mx-4 overflow-x-auto border-y border-mk-ash/15 bg-mk-paper/95 px-4 py-2 backdrop-blur sm:mx-0 sm:rounded-full sm:border"
+      aria-label="Admin work modes"
+      className="sticky top-0 z-20 -mx-4 overflow-x-auto border-y border-mk-ash/15 bg-mk-paper/95 px-4 py-3 backdrop-blur sm:mx-0 sm:rounded-2xl sm:border sm:bg-white/90 sm:shadow-sm"
     >
-      <div className="flex min-w-max gap-2">
+      <div className="grid min-w-[980px] grid-cols-5 gap-2">
         {items.map((item) => (
           <a
-            className="rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-mk-ash transition hover:bg-white hover:text-mk-blue"
+            className="group rounded-xl border border-mk-ash/15 bg-white px-3 py-3 transition hover:border-mk-blue/35 hover:bg-mk-blue/5"
             href={item.href}
             key={item.href}
           >
-            {item.label}
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-mk-ash">{item.eyebrow}</div>
+                <div className="mt-1 text-sm font-semibold text-mk-off-black group-hover:text-mk-blue">
+                  {item.label}
+                </div>
+              </div>
+              <Badge tone={item.tone}>{item.badge}</Badge>
+            </div>
+            <p className="mt-2 text-xs leading-5 text-mk-ash">{item.detail}</p>
           </a>
         ))}
       </div>
@@ -630,7 +683,7 @@ function VoiceQualityPanel({ data }: { data: DashboardData }) {
             <EmptyState label="No evaluated sessions yet — run the eval to populate quality actions." />
           ) : (
             <>
-              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_390px]">
                 <div className="rounded-xl border border-amber-700/20 bg-amber-500/10 p-4">
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge tone={primaryFix.tone}>{primaryFix.badge}</Badge>
@@ -668,7 +721,8 @@ function VoiceQualityPanel({ data }: { data: DashboardData }) {
                     </div>
                   ) : null}
                 </div>
-                <div className="grid content-start gap-2 rounded-xl border border-mk-ash/15 bg-mk-paper/70 p-3">
+                <div className="grid content-start gap-3 rounded-xl border border-mk-ash/15 bg-mk-paper/70 p-3">
+                  <RekaDiagnosisPanel actions={fixActions} evals={evals} />
                   <div className="text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
                     Current eval scores
                   </div>
@@ -2594,4 +2648,92 @@ function normalizeSearchText(value: string) {
 
 function normalizeFilterValue(value: string, allowed: string[]) {
   return allowed.includes(value) ? value : "";
+}
+
+type TrendDelta = { from: string; to: string; delta: number; current: number };
+
+function RekaDiagnosisPanel({ actions, evals }: { actions: RekaFixAction[]; evals: EvalAnalytics }) {
+  const bottleneck = actions[0];
+  const weeklyDelta = latestQualityDelta(evals.trend.weekly) ?? latestQualityDelta(evals.trend.daily);
+  const movementTone: AdminTone = weeklyDelta && weeklyDelta.delta >= 0 ? "green" : weeklyDelta ? "amber" : "neutral";
+  return (
+    <div className="grid gap-3 rounded-lg border border-mk-ash/15 bg-white p-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">Diagnosis</div>
+          <h3 className="mt-1 text-base font-semibold leading-snug text-mk-off-black">
+            {bottleneck ? bottleneck.title : "No repeated failure pattern"}
+          </h3>
+        </div>
+        <Badge tone={movementTone}>
+          {weeklyDelta ? `${formatSignedScoreDelta(weeklyDelta.delta)} quality` : "no trend"}
+        </Badge>
+      </div>
+      <p className="text-xs leading-5 text-mk-ash">
+        {bottleneck
+          ? `${bottleneck.count} evaluated sessions point to this first. Patch the runtime surface, then collect new sessions before re-scoring.`
+          : "Keep the eval loop running after real sessions; the panel will promote the next repeated failure pattern."}
+      </p>
+      {weeklyDelta ? (
+        <div className="rounded-md bg-mk-paper px-3 py-2 text-xs leading-5 text-mk-ash">
+          Quality moved from {weeklyDelta.from} to {weeklyDelta.to}: {weeklyDelta.current.toFixed(2)}/5 (
+          {formatSignedScoreDelta(weeklyDelta.delta)}).
+        </div>
+      ) : null}
+      <RekaFailureMix actions={actions} />
+    </div>
+  );
+}
+
+function RekaFailureMix({ actions }: { actions: RekaFixAction[] }) {
+  if (actions.length === 0) {
+    return <div className="rounded-md bg-mk-paper px-3 py-2 text-xs text-mk-ash">No failure mix yet.</div>;
+  }
+  const max = Math.max(...actions.map((action) => action.count), 1);
+  return (
+    <div className="grid gap-2">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">Failure mix</div>
+      {actions.map((action) => (
+        <div className="grid gap-1" key={`failure:${action.key}`}>
+          <div className="flex items-center justify-between gap-2 text-xs">
+            <span className="font-semibold text-mk-off-black">{action.key}</span>
+            <span className="text-mk-ash">{action.count} examples</span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-mk-paper">
+            <div
+              className={`h-full rounded-full ${failureBarClass(action.tone)}`}
+              style={{ width: `${Math.max((action.count / max) * 100, 8)}%` }}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function failureBarClass(tone: AdminTone) {
+  if (tone === "red") return "bg-destructive";
+  if (tone === "amber") return "bg-amber-500";
+  if (tone === "green") return "bg-emerald-600";
+  return "bg-mk-blue";
+}
+
+function latestQualityDelta(trend: EvalAnalytics["trend"]["daily"] | EvalAnalytics["trend"]["weekly"]) {
+  if (!trend || trend.length < 2) return null;
+  const last = trend[trend.length - 1];
+  const prev = trend[trend.length - 2];
+  if (!last?.averages || !prev?.averages) return null;
+  const lastQuality = last.averages.conversationQuality ?? 0;
+  const prevQuality = prev.averages.conversationQuality ?? 0;
+  return {
+    from: prev.key,
+    to: last.key,
+    delta: lastQuality - prevQuality,
+    current: lastQuality,
+  } as TrendDelta;
+}
+
+function formatSignedScoreDelta(delta: number) {
+  if (delta >= 0) return `+${delta.toFixed(2)}`;
+  return `${delta.toFixed(2)}`;
 }
