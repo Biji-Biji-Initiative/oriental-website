@@ -40,10 +40,13 @@ type AdminFilters = {
   priority: string;
   source: string;
 };
+type AdminView = "all" | "today" | "leads" | "reka" | "voice" | "audit";
 type AdminTone = "neutral" | "blue" | "green" | "red" | "amber";
 
 export default async function SessionReviewPage({ searchParams }: { searchParams?: AdminSearchParams }) {
-  const filters = parseAdminFilters(await searchParams);
+  const resolvedSearchParams = await searchParams;
+  const filters = parseAdminFilters(resolvedSearchParams);
+  const view = parseAdminView(resolvedSearchParams);
   const filterActive = hasActiveFilters(filters);
   const cookieStore = await cookies();
   const auth = verifyAdminSessionCookie(cookieStore.get(adminCookieName)?.value);
@@ -69,78 +72,108 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
   const filteredPriority = filterLeads(dashboard.data.queues.highPriority, filters);
   const filteredNotifications = filterLeads(dashboard.data.queues.failedNotifications, filters);
   const filteredVoiceSessions = filterVoiceSessions(dashboard.data.voiceSessions, filters.q);
+  const showAll = view === "all";
+  const showToday = showAll || view === "today";
+  const showLeadQueues = showAll || view === "leads";
+  const showReka = showAll || view === "reka";
+  const showVoice = showAll || view === "voice";
+  const showAudit = showAll || view === "audit";
 
   return (
     <AdminShell generatedAt={dashboard.data.generatedAt}>
-      <AdminSectionTabs data={dashboard.data} sessionsWithRealErrors={sessionsWithRealErrors} />
-      <section
-        className="grid scroll-mt-36 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.42fr)]"
-        id="command-center"
-      >
-        <ActionQueuePanel data={dashboard.data} sessionsWithRealErrors={sessionsWithRealErrors} />
-        <NextBestActionPanel data={dashboard.data} sessionsWithRealErrors={sessionsWithRealErrors} />
-      </section>
+      <AdminSectionTabs activeView={view} data={dashboard.data} sessionsWithRealErrors={sessionsWithRealErrors} />
+      {showToday ? (
+        <>
+          <section
+            className="grid scroll-mt-36 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.42fr)]"
+            id="command-center"
+          >
+            <ActionQueuePanel data={dashboard.data} sessionsWithRealErrors={sessionsWithRealErrors} />
+            <NextBestActionPanel data={dashboard.data} sessionsWithRealErrors={sessionsWithRealErrors} />
+          </section>
 
-      <OperationalHealthStrip data={dashboard.data} sessionsWithRealErrors={sessionsWithRealErrors} />
+          <OperationalHealthStrip data={dashboard.data} sessionsWithRealErrors={sessionsWithRealErrors} />
 
-      <OperatingBriefPanel data={dashboard.data} sessionsWithRealErrors={sessionsWithRealErrors} />
+          <OperatingBriefPanel data={dashboard.data} sessionsWithRealErrors={sessionsWithRealErrors} />
+        </>
+      ) : null}
 
-      <VoiceQualityPanel data={dashboard.data} />
+      {showReka ? <VoiceQualityPanel data={dashboard.data} /> : null}
 
-      <OperatorFilters
-        filterActive={filterActive}
-        filters={filters}
-        leadCount={filteredLeads.length}
-        totalLeads={dashboard.data.leads.length}
-        totalVoiceRecoverable={recoverableVoiceSessions(dashboard.data.voiceSessions).length}
-        voiceRecoverableCount={recoverableVoiceSessions(filteredVoiceSessions).length}
-      />
+      {showLeadQueues || view === "voice" ? (
+        <OperatorFilters
+          filterActive={filterActive}
+          filters={filters}
+          leadCount={filteredLeads.length}
+          totalLeads={dashboard.data.leads.length}
+          totalVoiceRecoverable={recoverableVoiceSessions(dashboard.data.voiceSessions).length}
+          view={view}
+          voiceRecoverableCount={recoverableVoiceSessions(filteredVoiceSessions).length}
+        />
+      ) : null}
 
-      <section className="grid scroll-mt-36 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.55fr)]" id="work-queues">
-        <WorkflowPanel filterActive={filterActive} leads={filteredLeads} totalLeads={dashboard.data.leads.length} />
-        <div className="grid content-start gap-5">
-          <RecoverableVoicePanel
-            filterActive={filterActive}
-            query={filters.q}
-            sessions={filteredVoiceSessions}
-            totalRecoverable={recoverableVoiceSessions(dashboard.data.voiceSessions).length}
-          />
-          <TriagePanel
-            filterActive={filterActive}
-            leads={filteredTriage}
-            totalLeads={dashboard.data.queues.triage.length}
-          />
-          <PriorityPanel
-            filterActive={filterActive}
-            leads={filteredPriority}
-            totalLeads={dashboard.data.queues.highPriority.length}
-          />
-          <NotificationPanel
-            filterActive={filterActive}
-            leads={filteredNotifications}
-            totalLeads={dashboard.data.queues.failedNotifications.length}
-          />
-        </div>
-      </section>
-
-      <DisclosureSection
-        detail="Realtime QA, lifecycle timings, full transcripts, and usage details. Open only when debugging a session."
-        id="voice-diagnostics"
-        title="Voice diagnostics"
-      >
-        <VoiceSessionsPanel sessions={dashboard.data.voiceSessions} />
-      </DisclosureSection>
-
-      <DisclosureSection
-        detail="Acquisition mix, workflow distribution, provider health, and the event audit trail."
-        id="insights-audit"
-        title="Insights and audit"
-      >
-        <section className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(360px,0.65fr)]">
-          <AnalyticsPanel data={dashboard.data} />
-          <EventsPanel events={dashboard.data.leadEvents} />
+      {showLeadQueues ? (
+        <section className="grid scroll-mt-36 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.55fr)]" id="work-queues">
+          <WorkflowPanel filterActive={filterActive} leads={filteredLeads} totalLeads={dashboard.data.leads.length} />
+          <div className="grid content-start gap-5">
+            <RecoverableVoicePanel
+              filterActive={filterActive}
+              query={filters.q}
+              sessions={filteredVoiceSessions}
+              totalRecoverable={recoverableVoiceSessions(dashboard.data.voiceSessions).length}
+            />
+            <TriagePanel
+              filterActive={filterActive}
+              leads={filteredTriage}
+              totalLeads={dashboard.data.queues.triage.length}
+            />
+            <PriorityPanel
+              filterActive={filterActive}
+              leads={filteredPriority}
+              totalLeads={dashboard.data.queues.highPriority.length}
+            />
+            <NotificationPanel
+              filterActive={filterActive}
+              leads={filteredNotifications}
+              totalLeads={dashboard.data.queues.failedNotifications.length}
+            />
+          </div>
         </section>
-      </DisclosureSection>
+      ) : null}
+
+      {view === "voice" ? (
+        <RecoverableVoicePanel
+          filterActive={filterActive}
+          query={filters.q}
+          sessions={filteredVoiceSessions}
+          totalRecoverable={recoverableVoiceSessions(dashboard.data.voiceSessions).length}
+        />
+      ) : null}
+
+      {showVoice ? (
+        <DisclosureSection
+          defaultOpen={view === "voice"}
+          detail="Realtime QA, lifecycle timings, full transcripts, and usage details. Open only when debugging a session."
+          id="voice-diagnostics"
+          title="Voice diagnostics"
+        >
+          <VoiceSessionsPanel sessions={dashboard.data.voiceSessions} />
+        </DisclosureSection>
+      ) : null}
+
+      {showAudit ? (
+        <DisclosureSection
+          defaultOpen={view === "audit"}
+          detail="Acquisition mix, workflow distribution, provider health, and the event audit trail."
+          id="insights-audit"
+          title="Insights and audit"
+        >
+          <section className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(360px,0.65fr)]">
+            <AnalyticsPanel data={dashboard.data} />
+            <EventsPanel events={dashboard.data.leadEvents} />
+          </section>
+        </DisclosureSection>
+      ) : null}
     </AdminShell>
   );
 }
@@ -175,13 +208,21 @@ function AdminShell({ children, generatedAt }: { children: ReactNode; generatedA
   );
 }
 
-function AdminSectionTabs({ data, sessionsWithRealErrors }: { data: DashboardData; sessionsWithRealErrors: number }) {
+function AdminSectionTabs({
+  data,
+  sessionsWithRealErrors,
+  activeView,
+}: {
+  data: DashboardData;
+  sessionsWithRealErrors: number;
+  activeView: AdminView;
+}) {
   const recoverable = recoverableVoiceSessions(data.voiceSessions).length;
   const stale = staleActiveLeads(data.leads, data.generatedAt).length;
   const unassigned = countUnassignedActiveLeads(data.leads);
   const fixAreas = buildRekaFixActions(data.analytics.evals.attention).length;
   const items: Array<{
-    href: string;
+    view: AdminView;
     label: string;
     eyebrow: string;
     detail: string;
@@ -189,7 +230,7 @@ function AdminSectionTabs({ data, sessionsWithRealErrors }: { data: DashboardDat
     tone: AdminTone;
   }> = [
     {
-      href: "#command-center",
+      view: "today",
       label: "Today",
       eyebrow: "Command",
       detail: "Next action, blockers, and close criteria.",
@@ -197,7 +238,7 @@ function AdminSectionTabs({ data, sessionsWithRealErrors }: { data: DashboardDat
       tone: data.metrics.activeLeads > 0 ? "amber" : "green",
     },
     {
-      href: "#work-queues",
+      view: "leads",
       label: "Leads",
       eyebrow: "Pipeline",
       detail: `${unassigned} unassigned · ${stale} stale · ${data.metrics.qualifiedLeads} qualified`,
@@ -205,7 +246,7 @@ function AdminSectionTabs({ data, sessionsWithRealErrors }: { data: DashboardDat
       tone: stale > 0 || unassigned > 0 ? "amber" : "green",
     },
     {
-      href: "#reka-quality",
+      view: "reka",
       label: "Reka",
       eyebrow: "Learning loop",
       detail: `${fixAreas} fix areas · ${recoverable} recoverable voice leads`,
@@ -213,7 +254,7 @@ function AdminSectionTabs({ data, sessionsWithRealErrors }: { data: DashboardDat
       tone: fixAreas > 0 || recoverable > 0 ? "amber" : "green",
     },
     {
-      href: "#voice-diagnostics",
+      view: "voice",
       label: "Voice QA",
       eyebrow: "Runtime",
       detail: `${data.metrics.connectedSessions}/${data.metrics.reviewedSessions} connected · ${recoverable} unsent`,
@@ -221,12 +262,20 @@ function AdminSectionTabs({ data, sessionsWithRealErrors }: { data: DashboardDat
       tone: sessionsWithRealErrors > 0 ? "red" : "green",
     },
     {
-      href: "#insights-audit",
+      view: "audit",
       label: "Audit",
       eyebrow: "Evidence",
       detail: "Acquisition mix, notifications, and event trail.",
       badge: `${data.leadEvents.length} events`,
       tone: "blue",
+    },
+    {
+      view: "all",
+      label: "All",
+      eyebrow: "Full cockpit",
+      detail: "Everything on one page for cross-checking.",
+      badge: "full",
+      tone: "neutral",
     },
   ];
   return (
@@ -234,25 +283,37 @@ function AdminSectionTabs({ data, sessionsWithRealErrors }: { data: DashboardDat
       aria-label="Admin work modes"
       className="sticky top-0 z-20 -mx-4 overflow-x-auto border-y border-mk-ash/15 bg-mk-paper/95 px-4 py-3 backdrop-blur sm:mx-0 sm:rounded-2xl sm:border sm:bg-white/90 sm:shadow-sm"
     >
-      <div className="grid min-w-[980px] grid-cols-5 gap-2">
-        {items.map((item) => (
-          <a
-            className="group rounded-xl border border-mk-ash/15 bg-white px-3 py-3 transition hover:border-mk-blue/35 hover:bg-mk-blue/5"
-            href={item.href}
-            key={item.href}
-          >
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-mk-ash">{item.eyebrow}</div>
-                <div className="mt-1 text-sm font-semibold text-mk-off-black group-hover:text-mk-blue">
-                  {item.label}
+      <div className="grid min-w-[1180px] grid-cols-6 gap-2">
+        {items.map((item) => {
+          const active = item.view === activeView;
+          return (
+            <a
+              aria-current={active ? "page" : undefined}
+              className={`group rounded-xl border px-3 py-3 transition ${
+                active
+                  ? "border-mk-blue/35 bg-mk-blue/5 shadow-sm"
+                  : "border-mk-ash/15 bg-white hover:border-mk-blue/35 hover:bg-mk-blue/5"
+              }`}
+              href={adminModeHref(item.view)}
+              key={item.view}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-mk-ash">
+                    {item.eyebrow}
+                  </div>
+                  <div
+                    className={`mt-1 text-sm font-semibold ${active ? "text-mk-blue" : "text-mk-off-black group-hover:text-mk-blue"}`}
+                  >
+                    {item.label}
+                  </div>
                 </div>
+                <Badge tone={item.tone}>{item.badge}</Badge>
               </div>
-              <Badge tone={item.tone}>{item.badge}</Badge>
-            </div>
-            <p className="mt-2 text-xs leading-5 text-mk-ash">{item.detail}</p>
-          </a>
-        ))}
+              <p className="mt-2 text-xs leading-5 text-mk-ash">{item.detail}</p>
+            </a>
+          );
+        })}
       </div>
     </nav>
   );
@@ -277,7 +338,7 @@ function NextBestActionPanel({
         badge: "Delivery",
         cta: "Open failed handoff",
         detail: `${failedNotification.name || failedNotification.email} may not have reached the owner. Verify Slack/email and manually route it if needed.`,
-        href: `#${leadAnchorId(failedNotification)}`,
+        href: adminModeHref("leads", leadAnchorId(failedNotification)),
         title: "Recover the failed notification first",
         tone: "red" as const,
       }
@@ -286,7 +347,7 @@ function NextBestActionPanel({
           badge: "Voice",
           cta: "Open recovery queue",
           detail: `${recoverable.captured.name || recoverable.captured.email} shared contact details with Reka but did not submit the handoff.`,
-          href: "#voice-recovery",
+          href: adminModeHref("voice", "voice-recovery"),
           title: "Follow up on the unsent voice lead",
           tone: "amber" as const,
         }
@@ -295,7 +356,7 @@ function NextBestActionPanel({
             badge: "QA",
             cta: "Open diagnostics",
             detail: `${realtimeError.captured.name || realtimeError.sessionId} has non-benign Realtime errors worth reviewing before more tests.`,
-            href: "#voice-diagnostics",
+            href: adminModeHref("voice", "voice-diagnostics"),
             title: "Inspect the Realtime session error",
             tone: "red" as const,
           }
@@ -304,7 +365,7 @@ function NextBestActionPanel({
               badge: "Priority",
               cta: "Open priority lead",
               detail: `${highPriority.name || highPriority.email} is marked ${normalizeAdminLeadPriority(highPriority.priority)} and still active.`,
-              href: `#${leadAnchorId(highPriority)}`,
+              href: adminModeHref("leads", leadAnchorId(highPriority)),
               title: "Assign the high-priority handoff",
               tone: "amber" as const,
             }
@@ -313,7 +374,7 @@ function NextBestActionPanel({
                 badge: "Freshness",
                 cta: "Open stale lead",
                 detail: `${stale.name || stale.email} has not been reviewed in more than 48 hours.`,
-                href: `#${leadAnchorId(stale)}`,
+                href: adminModeHref("leads", leadAnchorId(stale)),
                 title: "Refresh a stale active lead",
                 tone: "amber" as const,
               }
@@ -322,7 +383,7 @@ function NextBestActionPanel({
                   badge: "Triage",
                   cta: "Open review queue",
                   detail: `${triage.name || triage.email} is waiting for owner, fit, and next-action decisions.`,
-                  href: `#${leadAnchorId(triage)}`,
+                  href: adminModeHref("leads", leadAnchorId(triage)),
                   title: "Clear the next triage lead",
                   tone: "blue" as const,
                 }
@@ -331,7 +392,7 @@ function NextBestActionPanel({
                   cta: "Review analytics",
                   detail:
                     "No urgent recovery item is visible in the recent window. Check trends, then keep the queue fresh.",
-                  href: "#insights-audit",
+                  href: adminModeHref("audit", "insights-audit"),
                   title: "The critical queue is clear",
                   tone: "green" as const,
                 };
@@ -525,7 +586,7 @@ function buildOperatingInsights(
       title: `${context.recoverable} voice ${context.recoverable === 1 ? "lead" : "leads"} can still be recovered`,
       detail:
         "These visitors left an email with Reka but never submitted the handoff. This is the highest-leverage human follow-up queue.",
-      href: "#voice-recovery",
+      href: adminModeHref("voice", "voice-recovery"),
       tone: "amber",
     });
   }
@@ -534,7 +595,7 @@ function buildOperatingInsights(
       label: "Ownership",
       title: `${context.unassigned} unassigned · ${context.stale} stale active`,
       detail: "The queue needs visible owners and next steps; otherwise qualified partners age silently.",
-      href: "#workflow",
+      href: adminModeHref("leads", "workflow"),
       tone: context.stale > 0 ? "amber" : "blue",
     });
   }
@@ -544,7 +605,7 @@ function buildOperatingInsights(
       title: `${data.analytics.notification.failed} notification ${data.analytics.notification.failed === 1 ? "failure" : "failures"}`,
       detail:
         "Manually route failed handoffs before changing lead status; owner visibility depends on delivery being true.",
-      href: "#notifications",
+      href: adminModeHref("leads", "notifications"),
       tone: "red",
     });
   }
@@ -555,7 +616,7 @@ function buildOperatingInsights(
       title: `Reka quality target: capture ${evals.captureCompleteness.toFixed(2)}/5, routing ${evals.routingCorrect.toFixed(2)}/5`,
       detail:
         "The current prompt change is aimed at capture without hurting conversion. Re-run persisted evals after the next real sessions.",
-      href: "#reka-quality",
+      href: adminModeHref("reka", "reka-quality"),
       tone: "amber",
     });
   }
@@ -564,7 +625,7 @@ function buildOperatingInsights(
       label: "Realtime health",
       title: `${context.sessionsWithRealErrors} Realtime ${context.sessionsWithRealErrors === 1 ? "session has" : "sessions have"} non-benign errors`,
       detail: "Treat voice QA as degraded until those sessions are understood; inspect telemetry before changing copy.",
-      href: "#voice-diagnostics",
+      href: adminModeHref("voice", "voice-diagnostics"),
       tone: "red",
     });
   }
@@ -574,7 +635,7 @@ function buildOperatingInsights(
       title: "No critical blocker in the recent admin window",
       detail:
         "Keep the workflow current, then watch Reka evals and notification delivery after the next campaign push.",
-      href: "#insights-audit",
+      href: adminModeHref("audit", "insights-audit"),
       tone: "green",
     });
   }
@@ -715,7 +776,7 @@ function VoiceQualityPanel({ data }: { data: DashboardData }) {
                       {primaryFix.entries.slice(0, 3).map((entry) => (
                         <a
                           className="rounded-full border border-mk-blue/20 bg-white/70 px-3 py-1.5 text-xs font-semibold text-mk-blue transition hover:border-mk-blue/45 hover:bg-white"
-                          href={`#${voiceSessionAnchorId(entry.reviewId)}`}
+                          href={adminModeHref("voice", voiceSessionAnchorId(entry.reviewId))}
                           key={`primary:${entry.reviewId}`}
                         >
                           {getSegment(entry.segment).label} · {entry.reviewId.slice(0, 8)}
@@ -831,7 +892,7 @@ function RekaFixActionList({ actions }: { actions: RekaFixAction[] }) {
             {action.entries.slice(0, 3).map((entry) => (
               <a
                 className="rounded-full border border-mk-blue/20 bg-mk-blue/5 px-3 py-1.5 text-xs font-semibold text-mk-blue transition hover:border-mk-blue/45 hover:bg-mk-blue/10"
-                href={`#${voiceSessionAnchorId(entry.reviewId)}`}
+                href={adminModeHref("voice", voiceSessionAnchorId(entry.reviewId))}
                 key={`${action.key}:${entry.reviewId}`}
               >
                 {getSegment(entry.segment).label} · {entry.reviewId.slice(0, 8)}
@@ -853,7 +914,7 @@ function buildPrimaryRekaFix(actions: RekaFixAction[], evaluated: number) {
       acceptance: "No runtime patch selected",
       change: "",
       entries: [] as EvalAttentionEntry[],
-      href: "#voice-diagnostics",
+      href: adminModeHref("voice", "voice-diagnostics"),
       surface: "No runtime patch selected",
       title: "Keep monitoring new sessions",
       tone: "green" as const,
@@ -866,7 +927,7 @@ function buildPrimaryRekaFix(actions: RekaFixAction[], evaluated: number) {
     acceptance: top.acceptance,
     change: top.change,
     entries: top.entries,
-    href: `#${voiceSessionAnchorId(top.entries[0]?.reviewId ?? "")}`,
+    href: adminModeHref("voice", voiceSessionAnchorId(top.entries[0]?.reviewId ?? "")),
     surface: top.surface,
     title: top.title,
     tone: top.tone,
@@ -974,6 +1035,7 @@ function OperatorFilters({
   totalLeads,
   voiceRecoverableCount,
   totalVoiceRecoverable,
+  view,
 }: {
   filters: AdminFilters;
   filterActive: boolean;
@@ -981,7 +1043,10 @@ function OperatorFilters({
   totalLeads: number;
   voiceRecoverableCount: number;
   totalVoiceRecoverable: number;
+  view: AdminView;
 }) {
+  const targetView = view === "voice" ? "voice" : "leads";
+  const targetHash = targetView === "voice" ? "voice-recovery" : "work-queues";
   return (
     <section aria-label="Operator filters" className="scroll-mt-36" id="operator-filters">
       <Card className="border-mk-ash/20 bg-white shadow-sm">
@@ -1001,7 +1066,7 @@ function OperatorFilters({
         </CardHeader>
         <CardContent>
           <form
-            action="/admin/session-review#work-queues"
+            action={adminModeHref(targetView, targetHash)}
             className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_repeat(3,160px)_auto_auto]"
           >
             <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
@@ -1275,16 +1340,19 @@ function DisclosureSection({
   detail,
   id,
   title,
+  defaultOpen,
 }: {
   children: ReactNode;
   detail: string;
   id: string;
   title: string;
+  defaultOpen?: boolean;
 }) {
   return (
     <details
       className="group scroll-mt-36 rounded-xl border border-mk-ash/20 bg-white shadow-sm"
       id={id}
+      open={defaultOpen}
       suppressHydrationWarning
     >
       <summary className="flex cursor-pointer list-none flex-wrap items-start justify-between gap-3 px-4 py-4 marker:hidden">
@@ -1849,35 +1917,35 @@ function ActionQueuePanel({ data, sessionsWithRealErrors }: { data: DashboardDat
       label: "Voice recovery",
       value: recoverable,
       detail: "Captured email but no submitted handoff.",
-      href: "#voice-recovery",
+      href: adminModeHref("voice", "voice-recovery"),
       tone: recoverable > 0 ? "amber" : "green",
     },
     {
       label: "Realtime QA",
       value: sessionsWithRealErrors,
       detail: "Sessions with non-benign Realtime errors.",
-      href: "#voice-diagnostics",
+      href: adminModeHref("voice", "voice-diagnostics"),
       tone: sessionsWithRealErrors > 0 ? "red" : "green",
     },
     {
       label: "Failed notifications",
       value: data.queues.failedNotifications.length,
       detail: "Handoffs needing manual delivery checks.",
-      href: "#notifications",
+      href: adminModeHref("leads", "notifications"),
       tone: data.queues.failedNotifications.length > 0 ? "red" : "green",
     },
     {
       label: "Unassigned active",
       value: unassigned,
       detail: "Open leads without an owner.",
-      href: "#triage",
+      href: adminModeHref("leads", "triage"),
       tone: unassigned > 0 ? "amber" : "green",
     },
     {
       label: "Stale active",
       value: staleActive,
       detail: "Open leads untouched for more than 48 hours.",
-      href: "#triage",
+      href: adminModeHref("leads", "triage"),
       tone: staleActive > 0 ? "amber" : "green",
     },
   ] as const;
@@ -2590,6 +2658,19 @@ function parseAdminFilters(searchParams: Awaited<AdminSearchParams> | undefined)
     priority: normalizeFilterValue(readParam("priority"), Object.keys(adminLeadPriorityLabels)),
     source: normalizeFilterValue(readParam("source"), ["form", "voice", "newsletter"]),
   };
+}
+
+function parseAdminView(searchParams: Awaited<AdminSearchParams> | undefined): AdminView {
+  const value = searchParams?.view;
+  const view = Array.isArray(value) ? value[0] : value;
+  if (view === "today" || view === "leads" || view === "reka" || view === "voice" || view === "audit") return view;
+  return "all";
+}
+
+function adminModeHref(view: AdminView, hash?: string) {
+  const query = view === "all" ? "" : `?view=${view}`;
+  const fragment = hash ? `#${hash}` : "";
+  return `/admin/session-review${query}${fragment}`;
 }
 
 function hasActiveFilters(filters: AdminFilters) {
