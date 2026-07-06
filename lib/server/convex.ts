@@ -40,11 +40,27 @@ export async function recordLeadNotificationStatus(
 export async function persistVoiceReviewSnapshot(input: VoiceReviewSnapshotRequest["snapshot"] & { reviewId: string }) {
   const client = createConvexClient();
   if (!client) return { ok: false as const, reason: "convex_unconfigured" };
-  const result = await client.client.mutation(api.leads.recordVoiceSession, {
-    ingestSecret: client.ingestSecret,
-    snapshot: input,
-  });
-  return { ok: result.ok, id: result.id };
+  try {
+    const result = await client.client.mutation(api.leads.recordVoiceSession, {
+      ingestSecret: client.ingestSecret,
+      snapshot: input,
+    });
+    return { ok: result.ok, id: result.id };
+  } catch (error) {
+    // Forward-compatibility: a Convex deployment that predates the `transport`
+    // field rejects it as an unknown argument. Retry once without it so voice
+    // review persistence never regresses on deploy ordering — transport
+    // telemetry simply starts flowing once Convex functions are redeployed.
+    if (input.transport) {
+      const { transport: _transport, ...rest } = input;
+      const result = await client.client.mutation(api.leads.recordVoiceSession, {
+        ingestSecret: client.ingestSecret,
+        snapshot: rest,
+      });
+      return { ok: result.ok, id: result.id };
+    }
+    throw error;
+  }
 }
 
 export async function getAdminReviewDashboard(limit = 50) {

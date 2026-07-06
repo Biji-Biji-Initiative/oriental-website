@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { persistLead, updateAdminLeadWorkflow } from "@/lib/server/convex";
+import { persistLead, persistVoiceReviewSnapshot, updateAdminLeadWorkflow } from "@/lib/server/convex";
 import type { StoredLead } from "@/lib/server/notifications";
 
 const mocks = vi.hoisted(() => ({
@@ -18,7 +18,13 @@ vi.mock("convex/browser", () => ({
 }));
 
 vi.mock("@/convex/_generated/api", () => ({
-  api: { leads: { createLead: "createLead", updateLeadWorkflow: "updateLeadWorkflow" } },
+  api: {
+    leads: {
+      createLead: "createLead",
+      updateLeadWorkflow: "updateLeadWorkflow",
+      recordVoiceSession: "recordVoiceSession",
+    },
+  },
 }));
 
 const originalEnv = process.env;
@@ -89,5 +95,62 @@ describe("persistLead", () => {
       owner: "Gurpreet",
       note: "Ready for direct follow-up.",
     });
+  });
+});
+
+describe("persistVoiceReviewSnapshot", () => {
+  const snapshot = {
+    reviewId: "review_1",
+    sessionId: "session_1",
+    segment: "technology" as const,
+    status: "idle" as const,
+    connectionStatus: "listening" as const,
+    captured: { name: "", email: "", org: "", phone: "", website: "", message: "" },
+    transcript: [],
+    errors: [],
+    rateLimits: [],
+    routeRequested: false,
+    transport: {
+      disconnectCount: 1,
+      recoveryCount: 1,
+      iceRestartCount: 1,
+      transitions: [{ state: "disconnected", at: 10 }],
+    },
+  };
+
+  beforeEach(() => {
+    process.env = {
+      ...originalEnv,
+      CONVEX_URL: "https://convex.example",
+      CONVEX_INGEST_SECRET: "ingest-secret",
+    };
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+    vi.clearAllMocks();
+  });
+
+  it("persists the transport telemetry when Convex accepts it", async () => {
+    mocks.mutation.mockResolvedValue({ ok: true, id: "review_1" });
+
+    await expect(persistVoiceReviewSnapshot(snapshot)).resolves.toEqual({ ok: true, id: "review_1" });
+    expect(mocks.mutation).toHaveBeenCalledTimes(1);
+    expect(mocks.mutation).toHaveBeenCalledWith(
+      "recordVoiceSession",
+      expect.objectContaining({ snapshot: expect.objectContaining({ transport: expect.any(Object) }) }),
+    );
+  });
+
+  it("retries without transport when a pre-migration Convex rejects the unknown field", async () => {
+    mocks.mutation
+      .mockRejectedValueOnce(new Error("ArgumentValidationError: unexpected field `transport`"))
+      .mockResolvedValueOnce({ ok: true, id: "review_1" });
+
+    await expect(persistVoiceReviewSnapshot(snapshot)).resolves.toEqual({ ok: true, id: "review_1" });
+    expect(mocks.mutation).toHaveBeenCalledTimes(2);
+    const retryArgs = mocks.mutation.mock.calls[1]?.[1] as { snapshot: Record<string, unknown> };
+    expect(retryArgs.snapshot).not.toHaveProperty("transport");
+    expect(retryArgs.snapshot).toMatchObject({ reviewId: "review_1" });
   });
 });
