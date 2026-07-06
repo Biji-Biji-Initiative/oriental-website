@@ -670,7 +670,7 @@ function buildRekaFixActions(entries: EvalAttentionEntry[]): RekaFixAction[] {
   return issueActions
     .map((action) => ({ ...action, count: action.entries.length }))
     .filter((action) => action.count > 0)
-    .sort((left, right) => right.count - left.count || issuePriority(left.key) - issuePriority(right.key));
+    .sort((left, right) => issuePriority(left.key) - issuePriority(right.key) || right.count - left.count);
 }
 
 function isCaptureIssue(entry: EvalAttentionEntry) {
