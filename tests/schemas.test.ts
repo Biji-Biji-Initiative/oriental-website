@@ -85,6 +85,10 @@ describe("admin login schema", () => {
     expect(adminLoginSchema.safeParse({ token: "Cr3ativity" }).success).toBe(true);
   });
 
+  it("accepts long generated admin review tokens", () => {
+    expect(adminLoginSchema.safeParse({ token: `admin-${"x".repeat(600)}` }).success).toBe(true);
+  });
+
   it("rejects very short admin tokens", () => {
     expect(adminLoginSchema.safeParse({ token: "short" }).success).toBe(false);
   });

@@ -13,13 +13,15 @@ if ! [[ "$sha" =~ ^[0-9a-f]{7,40}$ ]]; then
 fi
 
 remote_host="${COOLIFY_DEPLOY_HOST:-root@mereka-deploy-apps-01-sin}"
+ssh_command="${COOLIFY_SSH_COMMAND:-tailscale ssh}"
 app_uuid="${COOLIFY_ORIENTAL_APPLICATION_UUID:-mtrl2z6a7zvoyevxvufpntij}"
 repo_url="${ORIENTAL_REPO_URL:-https://github.com/Biji-Biji-Initiative/oriental-website.git}"
 remote_cache_dir="${ORIENTAL_REMOTE_BUILD_CACHE:-/data/coolify/build-cache/oriental-website}"
 prod_dir="/data/coolify/applications/${app_uuid}"
 staging_dir="/data/coolify/applications/oriental-staging"
 
-ssh "$remote_host" "bash -s -- '$sha' '$app_uuid' '$repo_url' '$remote_cache_dir' '$prod_dir' '$staging_dir'" <<'REMOTE'
+# shellcheck disable=SC2086 # COOLIFY_SSH_COMMAND may intentionally include flags.
+$ssh_command "$remote_host" "bash -s -- '$sha' '$app_uuid' '$repo_url' '$remote_cache_dir' '$prod_dir' '$staging_dir'" <<'REMOTE'
 set -euo pipefail
 
 sha="$1"
@@ -40,7 +42,7 @@ if [[ ! -d "$mirror" ]]; then
   git clone --bare "$repo_url" "$mirror" >/dev/null 2>&1
 fi
 
-git --git-dir="$mirror" fetch --prune origin main >/dev/null
+git --git-dir="$mirror" fetch --prune origin '+refs/heads/*:refs/remotes/origin/*' >/dev/null
 git --git-dir="$mirror" cat-file -e "${sha}^{commit}"
 git --git-dir="$mirror" worktree add --detach "$workdir" "$sha" >/dev/null
 
