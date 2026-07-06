@@ -1,22 +1,32 @@
 import { expect, test } from "@playwright/test";
+import { adminCookieName, createAdminSessionCookie } from "../../lib/server/admin-auth";
 
 const adminPassword = process.env.E2E_ADMIN_SHARED_PASSWORD ?? process.env.ADMIN_REVIEW_TOKEN;
 
 test.describe("admin session review console", () => {
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ context, page }) => {
     const password = adminPassword;
     test.skip(!password, "Set ADMIN_REVIEW_TOKEN or E2E_ADMIN_SHARED_PASSWORD to run admin E2E.");
-    const token = password ?? "";
-    const login = await page.request.post("/api/admin/login", { data: { token } });
-    expect(login.ok()).toBe(true);
+    await context.addCookies([
+      {
+        expires: Math.floor(Date.now() / 1000) + 12 * 60 * 60,
+        httpOnly: true,
+        name: adminCookieName,
+        sameSite: "Lax",
+        secure: false,
+        url: process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000",
+        value: createAdminSessionCookie(),
+      },
+    ]);
     await page.goto("/admin/session-review");
 
-    await expect(page.getByRole("heading", { name: "Operations console" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Oriental intake cockpit" })).toBeVisible();
   });
 
   test("renders the operator queues without horizontal overflow", async ({ page }) => {
     await expect(page.getByText("Needs attention")).toBeVisible();
     await expect(page.getByText("Next best action")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Find a handoff" })).toBeVisible();
     await expect(page.getByText("Lead action queue")).toBeVisible();
     await expect(page.getByText("Recoverable voice leads", { exact: true })).toBeVisible();
     await expect(page.getByText("Notification recovery", { exact: true })).toBeVisible();
@@ -26,6 +36,15 @@ test.describe("admin session review console", () => {
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     );
     expect(overflow).toBeLessThanOrEqual(1);
+  });
+
+  test("filters queue rows from URL search params", async ({ page }) => {
+    await page.goto("/admin/session-review?q=Aisha&source=voice#work-queues");
+
+    await expect(page.getByText("Filtered queue view")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Lead action queue" })).toBeVisible();
+    await expect(page.getByText("Aisha Rahman").first()).toBeVisible();
+    await expect(page.getByText("Bonobo").first()).toBeHidden();
   });
 
   test("keeps deep diagnostics collapsed until requested", async ({ page }) => {

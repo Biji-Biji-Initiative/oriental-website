@@ -31,8 +31,17 @@ type DashboardData = Extract<DashboardResult, { ok: true }>["data"];
 type LeadRow = DashboardData["leads"][number];
 type VoiceSessionRow = DashboardData["voiceSessions"][number];
 type LeadEventRow = DashboardData["leadEvents"][number];
+type AdminSearchParams = Promise<{ [key: string]: string | string[] | undefined }>;
+type AdminFilters = {
+  q: string;
+  status: string;
+  priority: string;
+  source: string;
+};
 
-export default async function SessionReviewPage() {
+export default async function SessionReviewPage({ searchParams }: { searchParams?: AdminSearchParams }) {
+  const filters = parseAdminFilters(await searchParams);
+  const filterActive = hasActiveFilters(filters);
   const cookieStore = await cookies();
   const auth = verifyAdminSessionCookie(cookieStore.get(adminCookieName)?.value);
   if (!auth.ok) return <AdminLoginForm reason={auth.reason} />;
@@ -52,6 +61,11 @@ export default async function SessionReviewPage() {
   const sessionsWithRealErrors = dashboard.data.voiceSessions.filter((session: VoiceSessionRow) =>
     session.errors.some((error: VoiceRuntimeError) => !isBenignVoiceError(error)),
   ).length;
+  const filteredLeads = filterLeads(dashboard.data.leads, filters);
+  const filteredTriage = filterLeads(dashboard.data.queues.triage, filters);
+  const filteredPriority = filterLeads(dashboard.data.queues.highPriority, filters);
+  const filteredNotifications = filterLeads(dashboard.data.queues.failedNotifications, filters);
+  const filteredVoiceSessions = filterVoiceSessions(dashboard.data.voiceSessions, filters.q);
 
   return (
     <AdminShell generatedAt={dashboard.data.generatedAt}>
@@ -65,13 +79,39 @@ export default async function SessionReviewPage() {
 
       <VoiceQualityPanel data={dashboard.data} />
 
+      <OperatorFilters
+        filterActive={filterActive}
+        filters={filters}
+        leadCount={filteredLeads.length}
+        totalLeads={dashboard.data.leads.length}
+        totalVoiceRecoverable={recoverableVoiceSessions(dashboard.data.voiceSessions).length}
+        voiceRecoverableCount={recoverableVoiceSessions(filteredVoiceSessions).length}
+      />
+
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.55fr)]" id="work-queues">
-        <WorkflowPanel leads={dashboard.data.leads} />
+        <WorkflowPanel filterActive={filterActive} leads={filteredLeads} totalLeads={dashboard.data.leads.length} />
         <div className="grid content-start gap-5">
-          <RecoverableVoicePanel sessions={dashboard.data.voiceSessions} />
-          <TriagePanel leads={dashboard.data.queues.triage} />
-          <PriorityPanel leads={dashboard.data.queues.highPriority} />
-          <NotificationPanel leads={dashboard.data.queues.failedNotifications} />
+          <RecoverableVoicePanel
+            filterActive={filterActive}
+            query={filters.q}
+            sessions={filteredVoiceSessions}
+            totalRecoverable={recoverableVoiceSessions(dashboard.data.voiceSessions).length}
+          />
+          <TriagePanel
+            filterActive={filterActive}
+            leads={filteredTriage}
+            totalLeads={dashboard.data.queues.triage.length}
+          />
+          <PriorityPanel
+            filterActive={filterActive}
+            leads={filteredPriority}
+            totalLeads={dashboard.data.queues.highPriority.length}
+          />
+          <NotificationPanel
+            filterActive={filterActive}
+            leads={filteredNotifications}
+            totalLeads={dashboard.data.queues.failedNotifications.length}
+          />
         </div>
       </section>
 
@@ -130,6 +170,7 @@ function AdminNavPills() {
   const items = [
     { href: "#command-center", label: "Today" },
     { href: "#reka-quality", label: "Reka quality" },
+    { href: "#operator-filters", label: "Find" },
     { href: "#work-queues", label: "Leads" },
     { href: "#voice-recovery", label: "Voice recovery" },
     { href: "#notifications", label: "Notifications" },
@@ -387,6 +428,129 @@ function VoiceQualityPanel({ data }: { data: DashboardData }) {
   );
 }
 
+function OperatorFilters({
+  filters,
+  filterActive,
+  leadCount,
+  totalLeads,
+  voiceRecoverableCount,
+  totalVoiceRecoverable,
+}: {
+  filters: AdminFilters;
+  filterActive: boolean;
+  leadCount: number;
+  totalLeads: number;
+  voiceRecoverableCount: number;
+  totalVoiceRecoverable: number;
+}) {
+  return (
+    <section aria-label="Operator filters" id="operator-filters">
+      <Card className="border-mk-ash/20 bg-white shadow-sm">
+        <CardHeader className="pb-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>Find a handoff</CardTitle>
+              <CardDescription>
+                Filter the visible queues by contact, organisation, source, status, or priority. Metrics above stay
+                unfiltered.
+              </CardDescription>
+            </div>
+            <Badge tone={filterActive ? "blue" : "neutral"}>
+              {filterActive ? `${leadCount}/${totalLeads} shown` : `${totalLeads} recent leads`}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <form
+            action="/admin/session-review#work-queues"
+            className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_repeat(3,160px)_auto_auto]"
+          >
+            <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
+              Search
+              <input
+                className="h-10 rounded-lg border border-mk-ash/25 bg-white px-3 text-sm font-normal normal-case tracking-normal text-mk-off-black outline-none transition placeholder:text-mk-ash/70 focus:border-mk-blue focus:ring-2 focus:ring-mk-blue/10"
+                defaultValue={filters.q}
+                name="q"
+                placeholder="name, email, org, note"
+                type="search"
+              />
+            </label>
+            <FilterSelect label="Status" name="status" options={adminLeadStatusLabels} value={filters.status} />
+            <FilterSelect label="Priority" name="priority" options={adminLeadPriorityLabels} value={filters.priority} />
+            <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
+              Source
+              <select
+                className="h-10 rounded-lg border border-mk-ash/25 bg-white px-3 text-sm font-normal normal-case tracking-normal text-mk-off-black outline-none transition focus:border-mk-blue focus:ring-2 focus:ring-mk-blue/10"
+                defaultValue={filters.source}
+                name="source"
+              >
+                <option value="">All</option>
+                <option value="form">Form</option>
+                <option value="voice">Voice</option>
+                <option value="newsletter">Newsletter</option>
+              </select>
+            </label>
+            <div className="flex items-end">
+              <Button className="h-10 w-full" type="submit">
+                Apply
+              </Button>
+            </div>
+            <div className="flex items-end">
+              <a
+                className="inline-flex h-10 w-full items-center justify-center rounded-lg border border-mk-ash/25 bg-white px-3 text-sm font-medium transition hover:bg-mk-paper"
+                href="/admin/session-review#work-queues"
+              >
+                Reset
+              </a>
+            </div>
+          </form>
+          <div className="mt-3 flex flex-wrap gap-2 text-xs text-mk-ash">
+            <span className="rounded-full bg-mk-paper px-3 py-1">
+              Leads: {leadCount}/{totalLeads}
+            </span>
+            <span className="rounded-full bg-mk-paper px-3 py-1">
+              Voice recovery: {voiceRecoverableCount}/{totalVoiceRecoverable}
+            </span>
+            {filterActive ? (
+              <span className="rounded-full bg-mk-blue/10 px-3 py-1 text-mk-blue">Filtered queue view</span>
+            ) : null}
+          </div>
+        </CardContent>
+      </Card>
+    </section>
+  );
+}
+
+function FilterSelect({
+  label,
+  name,
+  options,
+  value,
+}: {
+  label: string;
+  name: string;
+  options: Record<string, string>;
+  value: string;
+}) {
+  return (
+    <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
+      {label}
+      <select
+        className="h-10 rounded-lg border border-mk-ash/25 bg-white px-3 text-sm font-normal normal-case tracking-normal text-mk-off-black outline-none transition focus:border-mk-blue focus:ring-2 focus:ring-mk-blue/10"
+        defaultValue={value}
+        name={name}
+      >
+        <option value="">All</option>
+        {Object.entries(options).map(([key, labelText]) => (
+          <option key={`${name}:${key}`} value={key}>
+            {labelText}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 function scoreTone(value: number, invert: boolean): "green" | "amber" | "red" {
   const normalized = invert ? 5 - value : value;
   if (normalized >= 3.75) return "green";
@@ -597,7 +761,15 @@ function DisclosureSection({
   );
 }
 
-function WorkflowPanel({ leads }: { leads: LeadRow[] }) {
+function WorkflowPanel({
+  leads,
+  filterActive,
+  totalLeads,
+}: {
+  leads: LeadRow[];
+  filterActive: boolean;
+  totalLeads: number;
+}) {
   const ordered = [...leads].sort(
     (left, right) => priorityRank(right) - priorityRank(left) || right.createdAt - left.createdAt,
   );
@@ -612,14 +784,20 @@ function WorkflowPanel({ leads }: { leads: LeadRow[] }) {
           <div>
             <CardTitle>Lead action queue</CardTitle>
             <CardDescription>
-              The first few active or risky handoffs are expanded here. Everything else stays one click away below.
+              {filterActive
+                ? `Showing ${ordered.length} of ${totalLeads} recent handoffs that match the current filters.`
+                : "The first few active or risky handoffs are expanded here. Everything else stays one click away below."}
             </CardDescription>
           </div>
-          <Badge tone={active.length > 0 ? "amber" : "green"}>{active.length} active</Badge>
+          <Badge tone={active.length > 0 ? "amber" : "green"}>
+            {filterActive ? `${ordered.length} shown` : `${active.length} active`}
+          </Badge>
         </div>
       </CardHeader>
       <CardContent className="grid gap-3">
-        {ordered.length === 0 ? <EmptyState label="No leads saved yet." /> : null}
+        {ordered.length === 0 ? (
+          <EmptyState label={filterActive ? "No recent leads match these filters." : "No leads saved yet."} />
+        ) : null}
         {visible.map((lead) => (
           <WorkflowLeadCard key={lead.leadId} lead={lead} />
         ))}
@@ -835,11 +1013,24 @@ function LeadContactChips({ lead }: { lead: LeadRow }) {
   );
 }
 
-function TriagePanel({ leads }: { leads: LeadRow[] }) {
+function TriagePanel({
+  leads,
+  filterActive,
+  totalLeads,
+}: {
+  leads: LeadRow[];
+  filterActive: boolean;
+  totalLeads: number;
+}) {
   return (
     <QueuePanel
-      description="New and reviewing handoffs that need owner, priority, or next-action decisions."
+      description={
+        filterActive
+          ? `${leads.length}/${totalLeads} review handoffs match the filters.`
+          : "New and reviewing handoffs that need owner, priority, or next-action decisions."
+      }
       emptyLabel="No triage leads in the recent window."
+      filterActive={filterActive}
       id="triage"
       leads={leads}
       title="Needs review"
@@ -847,11 +1038,24 @@ function TriagePanel({ leads }: { leads: LeadRow[] }) {
   );
 }
 
-function PriorityPanel({ leads }: { leads: LeadRow[] }) {
+function PriorityPanel({
+  leads,
+  filterActive,
+  totalLeads,
+}: {
+  leads: LeadRow[];
+  filterActive: boolean;
+  totalLeads: number;
+}) {
   return (
     <QueuePanel
-      description="High and urgent handoffs that should get human ownership first."
+      description={
+        filterActive
+          ? `${leads.length}/${totalLeads} priority handoffs match the filters.`
+          : "High and urgent handoffs that should get human ownership first."
+      }
       emptyLabel="No high-priority handoffs in the recent window."
+      filterActive={filterActive}
       id="priority"
       leads={leads}
       title="Priority queue"
@@ -859,11 +1063,24 @@ function PriorityPanel({ leads }: { leads: LeadRow[] }) {
   );
 }
 
-function NotificationPanel({ leads }: { leads: LeadRow[] }) {
+function NotificationPanel({
+  leads,
+  filterActive,
+  totalLeads,
+}: {
+  leads: LeadRow[];
+  filterActive: boolean;
+  totalLeads: number;
+}) {
   return (
     <QueuePanel
-      description="Leads where configured delivery paths definitely failed after a send attempt."
+      description={
+        filterActive
+          ? `${leads.length}/${totalLeads} failed-notification handoffs match the filters.`
+          : "Leads where configured delivery paths definitely failed after a send attempt."
+      }
       emptyLabel="No confirmed notification failures in the recent window."
+      filterActive={filterActive}
       id="notifications"
       leads={leads}
       title="Notification recovery"
@@ -874,12 +1091,14 @@ function NotificationPanel({ leads }: { leads: LeadRow[] }) {
 function QueuePanel({
   description,
   emptyLabel,
+  filterActive,
   id,
   leads,
   title,
 }: {
   description: string;
   emptyLabel: string;
+  filterActive: boolean;
   id: string;
   leads: LeadRow[];
   title: string;
@@ -893,7 +1112,9 @@ function QueuePanel({
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent className="grid gap-3">
-        {leads.length === 0 ? <EmptyState label={emptyLabel} /> : null}
+        {leads.length === 0 ? (
+          <EmptyState label={filterActive ? "No leads in this queue match the filters." : emptyLabel} />
+        ) : null}
         {visible.map((lead) => {
           const priority = normalizeAdminLeadPriority(lead.priority);
           const status = normalizeAdminLeadStatus(lead.status);
@@ -1152,7 +1373,17 @@ function ActionQueuePanel({ data, sessionsWithRealErrors }: { data: DashboardDat
   );
 }
 
-function RecoverableVoicePanel({ sessions }: { sessions: VoiceSessionRow[] }) {
+function RecoverableVoicePanel({
+  sessions,
+  filterActive,
+  query,
+  totalRecoverable,
+}: {
+  sessions: VoiceSessionRow[];
+  filterActive: boolean;
+  query: string;
+  totalRecoverable: number;
+}) {
   const unsent = sessions.filter((session) => !session.leadId && session.captured.email.trim().length > 0);
   const recoverable = unsent.filter((session) => !session.followedUpAt);
   const followedUp = unsent.filter((session) => Boolean(session.followedUpAt));
@@ -1161,13 +1392,28 @@ function RecoverableVoicePanel({ sessions }: { sessions: VoiceSessionRow[] }) {
   return (
     <Card className="border-mk-ash/20 bg-white shadow-sm" id="voice-recovery">
       <CardHeader>
-        <CardTitle>Recoverable voice leads</CardTitle>
-        <CardDescription>
-          Visitors who shared contact details with Reka but never sent the handoff. Follow up before they go cold.
-        </CardDescription>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle>Recoverable voice leads</CardTitle>
+            <CardDescription>
+              {filterActive
+                ? `${recoverable.length}/${totalRecoverable} unsent voice leads match${query ? ` "${query}"` : " the current filters"}.`
+                : "Visitors who shared contact details with Reka but never sent the handoff. Follow up before they go cold."}
+            </CardDescription>
+          </div>
+          <Badge tone={recoverable.length > 0 ? "amber" : "green"}>{recoverable.length} unsent</Badge>
+        </div>
       </CardHeader>
       <CardContent className="grid gap-3">
-        {recoverable.length === 0 ? <EmptyState label="No unsent voice sessions waiting for follow-up." /> : null}
+        {recoverable.length === 0 ? (
+          <EmptyState
+            label={
+              filterActive
+                ? "No unsent voice sessions match the current search."
+                : "No unsent voice sessions waiting for follow-up."
+            }
+          />
+        ) : null}
         {visibleRecoverable.map((session) => {
           const owner = getSegment(session.segment).routedTo.name;
           return (
@@ -1718,4 +1964,82 @@ function formatDate(value: number) {
     timeStyle: "short",
     timeZone: "Asia/Kuala_Lumpur",
   }).format(value);
+}
+
+function parseAdminFilters(searchParams: Awaited<AdminSearchParams> | undefined): AdminFilters {
+  const readParam = (key: string) => {
+    const value = searchParams?.[key];
+    return Array.isArray(value) ? (value[0] ?? "") : (value ?? "");
+  };
+  return {
+    q: readParam("q").trim(),
+    status: normalizeFilterValue(readParam("status"), Object.keys(adminLeadStatusLabels)),
+    priority: normalizeFilterValue(readParam("priority"), Object.keys(adminLeadPriorityLabels)),
+    source: normalizeFilterValue(readParam("source"), ["form", "voice", "newsletter"]),
+  };
+}
+
+function hasActiveFilters(filters: AdminFilters) {
+  return Boolean(filters.q || filters.status || filters.priority || filters.source);
+}
+
+function filterLeads(leads: LeadRow[], filters: AdminFilters) {
+  return leads.filter((lead) => {
+    if (filters.status && normalizeAdminLeadStatus(lead.status) !== filters.status) return false;
+    if (filters.priority && normalizeAdminLeadPriority(lead.priority) !== filters.priority) return false;
+    if (filters.source && lead.source !== filters.source) return false;
+    return matchesLeadQuery(lead, filters.q);
+  });
+}
+
+function filterVoiceSessions(sessions: VoiceSessionRow[], query: string) {
+  if (!query.trim()) return sessions;
+  const normalized = normalizeSearchText(query);
+  return sessions.filter((session) =>
+    normalizeSearchText(
+      [
+        session.captured.name,
+        session.captured.email,
+        session.captured.org,
+        session.captured.phone,
+        session.captured.website,
+        session.captured.message,
+        session.segment,
+        session.reviewId,
+      ].join(" "),
+    ).includes(normalized),
+  );
+}
+
+function matchesLeadQuery(lead: LeadRow, query: string) {
+  if (!query.trim()) return true;
+  const normalized = normalizeSearchText(query);
+  return normalizeSearchText(
+    [
+      lead.name,
+      lead.email,
+      lead.org,
+      lead.phone,
+      lead.website,
+      lead.message,
+      lead.workflowNote,
+      lead.owner,
+      lead.routedTo,
+      lead.routedToEmail,
+      lead.segment,
+      lead.source,
+      lead.leadId,
+    ].join(" "),
+  ).includes(normalized);
+}
+
+function normalizeSearchText(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9@._+-]+/g, " ")
+    .trim();
+}
+
+function normalizeFilterValue(value: string, allowed: string[]) {
+  return allowed.includes(value) ? value : "";
 }
