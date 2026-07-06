@@ -104,10 +104,10 @@ function AdminShell({ children, generatedAt }: { children: ReactNode; generatedA
         <header className="flex flex-col gap-4 border-b border-mk-ash/20 pb-5 md:flex-row md:items-end md:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-mk-blue">Oriental Admin</p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-tight">Operations console</h1>
+            <h1 className="mt-2 text-3xl font-semibold tracking-tight">Oriental intake cockpit</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-mk-ash">
-              Triage partner handoffs, track conversion health, inspect voice QA, and leave an audit trail for
-              follow-up.
+              Start with the next action, then use the queues below to assign leads, recover unsent voice handoffs, and
+              check delivery or Reka quality when something looks off.
             </p>
             {generatedAt ? <p className="mt-2 text-xs text-mk-ash">Fresh as of {formatDate(generatedAt)}</p> : null}
           </div>
@@ -519,27 +519,50 @@ function EvalAttentionList({ entries }: { entries: EvalAnalytics["attention"] })
       </div>
     );
   }
+  const visible = entries.slice(0, 5);
+  const hidden = entries.slice(5);
   return (
     <div className="grid gap-2">
-      <div className="text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
-        Needs attention ({entries.length})
-      </div>
-      {entries.map((entry) => (
-        <div className="grid gap-1 rounded-lg border border-mk-ash/15 bg-white p-3 text-sm" key={entry.reviewId}>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge tone="neutral">{getSegment(entry.segment).label}</Badge>
-            {entry.droppedMidTurn ? <Badge tone="red">dropped mid-turn</Badge> : null}
-            {typeof entry.frustration === "number" && entry.frustration >= 4 ? (
-              <Badge tone="amber">frustrated</Badge>
-            ) : null}
-            {typeof entry.conversationQuality === "number" ? (
-              <Badge tone={scoreTone(entry.conversationQuality, false)}>quality {entry.conversationQuality}</Badge>
-            ) : null}
-            <span className="ml-auto font-mono text-[11px] text-mk-ash">{entry.reviewId.slice(0, 8)}</span>
-          </div>
-          {entry.summary ? <p className="text-xs leading-5 text-mk-ash">{entry.summary}</p> : null}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
+          Needs attention ({entries.length})
         </div>
+        {hidden.length > 0 ? <Badge tone="amber">Top 5 shown</Badge> : null}
+      </div>
+      {visible.map((entry) => (
+        <EvalAttentionRow entry={entry} key={entry.reviewId} />
       ))}
+      {hidden.length > 0 ? (
+        <details className="rounded-lg border border-mk-ash/15 bg-mk-paper/60" suppressHydrationWarning>
+          <summary className="cursor-pointer list-none px-3 py-2 text-sm font-semibold marker:hidden">
+            Show {hidden.length} additional flagged {hidden.length === 1 ? "session" : "sessions"}
+          </summary>
+          <div className="grid gap-2 border-t border-mk-ash/15 p-3">
+            {hidden.map((entry) => (
+              <EvalAttentionRow entry={entry} key={`hidden:${entry.reviewId}`} />
+            ))}
+          </div>
+        </details>
+      ) : null}
+    </div>
+  );
+}
+
+function EvalAttentionRow({ entry }: { entry: EvalAnalytics["attention"][number] }) {
+  return (
+    <div className="grid gap-1 rounded-lg border border-mk-ash/15 bg-white p-3 text-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge tone="neutral">{getSegment(entry.segment).label}</Badge>
+        {entry.droppedMidTurn ? <Badge tone="red">dropped mid-turn</Badge> : null}
+        {typeof entry.frustration === "number" && entry.frustration >= 4 ? (
+          <Badge tone="amber">frustrated</Badge>
+        ) : null}
+        {typeof entry.conversationQuality === "number" ? (
+          <Badge tone={scoreTone(entry.conversationQuality, false)}>quality {entry.conversationQuality}</Badge>
+        ) : null}
+        <span className="ml-auto font-mono text-[11px] text-mk-ash">{entry.reviewId.slice(0, 8)}</span>
+      </div>
+      {entry.summary ? <p className="text-xs leading-5 text-mk-ash">{entry.summary}</p> : null}
     </div>
   );
 }
@@ -579,7 +602,7 @@ function WorkflowPanel({ leads }: { leads: LeadRow[] }) {
     (left, right) => priorityRank(right) - priorityRank(left) || right.createdAt - left.createdAt,
   );
   const active = ordered.filter((lead) => isActiveLead(lead) || lead.notificationDelivered === false);
-  const visible = (active.length > 0 ? active : ordered).slice(0, active.length > 0 ? 10 : 6);
+  const visible = (active.length > 0 ? active : ordered).slice(0, active.length > 0 ? 5 : 4);
   const visibleIds = new Set(visible.map((lead) => lead.leadId));
   const hidden = ordered.filter((lead) => !visibleIds.has(lead.leadId));
   return (
@@ -589,7 +612,7 @@ function WorkflowPanel({ leads }: { leads: LeadRow[] }) {
           <div>
             <CardTitle>Lead action queue</CardTitle>
             <CardDescription>
-              Only active or risky handoffs are expanded here. Older closed records stay searchable below.
+              The first few active or risky handoffs are expanded here. Everything else stays one click away below.
             </CardDescription>
           </div>
           <Badge tone={active.length > 0 ? "amber" : "green"}>{active.length} active</Badge>
@@ -1133,6 +1156,8 @@ function RecoverableVoicePanel({ sessions }: { sessions: VoiceSessionRow[] }) {
   const unsent = sessions.filter((session) => !session.leadId && session.captured.email.trim().length > 0);
   const recoverable = unsent.filter((session) => !session.followedUpAt);
   const followedUp = unsent.filter((session) => Boolean(session.followedUpAt));
+  const visibleRecoverable = recoverable.slice(0, 4);
+  const hiddenRecoverable = recoverable.slice(4);
   return (
     <Card className="border-mk-ash/20 bg-white shadow-sm" id="voice-recovery">
       <CardHeader>
@@ -1143,7 +1168,7 @@ function RecoverableVoicePanel({ sessions }: { sessions: VoiceSessionRow[] }) {
       </CardHeader>
       <CardContent className="grid gap-3">
         {recoverable.length === 0 ? <EmptyState label="No unsent voice sessions waiting for follow-up." /> : null}
-        {recoverable.map((session) => {
+        {visibleRecoverable.map((session) => {
           const owner = getSegment(session.segment).routedTo.name;
           return (
             <article className="rounded-lg border border-mk-ash/15 p-3" key={session.reviewId}>
@@ -1177,6 +1202,43 @@ function RecoverableVoicePanel({ sessions }: { sessions: VoiceSessionRow[] }) {
             </article>
           );
         })}
+        {hiddenRecoverable.length > 0 ? (
+          <details className="rounded-lg border border-mk-ash/15 bg-mk-paper/60" suppressHydrationWarning>
+            <summary className="cursor-pointer list-none px-3 py-2 text-sm font-semibold marker:hidden">
+              Show {hiddenRecoverable.length} more recoverable {hiddenRecoverable.length === 1 ? "session" : "sessions"}
+            </summary>
+            <div className="grid gap-2 border-t border-mk-ash/15 p-3">
+              {hiddenRecoverable.map((session) => (
+                <div
+                  className="grid gap-2 rounded-lg border border-mk-ash/15 bg-white p-3 text-xs sm:grid-cols-[minmax(0,1fr)_auto]"
+                  key={`hidden:${session.reviewId}`}
+                >
+                  <div className="min-w-0">
+                    <div className="truncate font-semibold text-sm">{session.captured.name || "Unnamed visitor"}</div>
+                    <div className="mt-1 truncate text-mk-ash">
+                      {session.captured.email}
+                      {session.captured.org ? ` · ${session.captured.org}` : ""}
+                    </div>
+                    <div className="mt-1 text-mk-ash">
+                      {getSegment(session.segment).routedTo.name} · {formatDate(session.updatedAt)}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 sm:justify-end">
+                    <a
+                      className="inline-flex h-8 items-center rounded-full bg-mk-off-black px-3 text-xs font-semibold text-white transition hover:bg-mk-blue"
+                      href={followUpMailto(session)}
+                    >
+                      Email
+                    </a>
+                    <AdminVoiceFollowUpButton markAs={true} reviewId={session.reviewId}>
+                      Done
+                    </AdminVoiceFollowUpButton>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </details>
+        ) : null}
         {followedUp.length > 0 ? (
           <div className="rounded-lg border border-mk-ash/15 bg-mk-paper/60 p-3">
             <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
