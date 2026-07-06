@@ -73,7 +73,10 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
   return (
     <AdminShell generatedAt={dashboard.data.generatedAt}>
       <AdminSectionTabs data={dashboard.data} sessionsWithRealErrors={sessionsWithRealErrors} />
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.42fr)]" id="command-center">
+      <section
+        className="grid scroll-mt-36 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.42fr)]"
+        id="command-center"
+      >
         <ActionQueuePanel data={dashboard.data} sessionsWithRealErrors={sessionsWithRealErrors} />
         <NextBestActionPanel data={dashboard.data} sessionsWithRealErrors={sessionsWithRealErrors} />
       </section>
@@ -93,7 +96,7 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
         voiceRecoverableCount={recoverableVoiceSessions(filteredVoiceSessions).length}
       />
 
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.55fr)]" id="work-queues">
+      <section className="grid scroll-mt-36 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.55fr)]" id="work-queues">
         <WorkflowPanel filterActive={filterActive} leads={filteredLeads} totalLeads={dashboard.data.leads.length} />
         <div className="grid content-start gap-5">
           <RecoverableVoicePanel
@@ -662,7 +665,7 @@ function VoiceQualityPanel({ data }: { data: DashboardData }) {
   const primaryFix = buildPrimaryRekaFix(fixActions, evals.evaluated);
 
   return (
-    <section aria-label="Reka quality" id="reka-quality">
+    <section aria-label="Reka quality" className="scroll-mt-36" id="reka-quality">
       <Card className="border-mk-ash/20 bg-white shadow-sm">
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -683,7 +686,7 @@ function VoiceQualityPanel({ data }: { data: DashboardData }) {
             <EmptyState label="No evaluated sessions yet — run the eval to populate quality actions." />
           ) : (
             <>
-              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_390px]">
+              <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_390px]">
                 <div className="rounded-xl border border-amber-700/20 bg-amber-500/10 p-4">
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge tone={primaryFix.tone}>{primaryFix.badge}</Badge>
@@ -980,7 +983,7 @@ function OperatorFilters({
   totalVoiceRecoverable: number;
 }) {
   return (
-    <section aria-label="Operator filters" id="operator-filters">
+    <section aria-label="Operator filters" className="scroll-mt-36" id="operator-filters">
       <Card className="border-mk-ash/20 bg-white shadow-sm">
         <CardHeader className="pb-3">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1279,7 +1282,11 @@ function DisclosureSection({
   title: string;
 }) {
   return (
-    <details className="group rounded-xl border border-mk-ash/20 bg-white shadow-sm" id={id} suppressHydrationWarning>
+    <details
+      className="group scroll-mt-36 rounded-xl border border-mk-ash/20 bg-white shadow-sm"
+      id={id}
+      suppressHydrationWarning
+    >
       <summary className="flex cursor-pointer list-none flex-wrap items-start justify-between gap-3 px-4 py-4 marker:hidden">
         <span>
           <span className="block text-base font-semibold leading-snug">{title}</span>
@@ -1314,7 +1321,7 @@ function WorkflowPanel({
   const visibleIds = new Set(visible.map((lead) => lead.leadId));
   const hidden = ordered.filter((lead) => !visibleIds.has(lead.leadId));
   return (
-    <Card className="border-mk-ash/20 bg-white shadow-sm" id="workflow">
+    <Card className="scroll-mt-36 border-mk-ash/20 bg-white shadow-sm" id="workflow">
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -1642,7 +1649,7 @@ function QueuePanel({
   const visible = leads.slice(0, 5);
   const hiddenCount = Math.max(leads.length - visible.length, 0);
   return (
-    <Card className="border-mk-ash/20 bg-white shadow-sm" id={id}>
+    <Card className="scroll-mt-36 border-mk-ash/20 bg-white shadow-sm" id={id}>
       <CardHeader>
         <CardTitle>{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
@@ -1926,7 +1933,7 @@ function RecoverableVoicePanel({
   const visibleRecoverable = recoverable.slice(0, 4);
   const hiddenRecoverable = recoverable.slice(4);
   return (
-    <Card className="border-mk-ash/20 bg-white shadow-sm" id="voice-recovery">
+    <Card className="scroll-mt-36 border-mk-ash/20 bg-white shadow-sm" id="voice-recovery">
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
