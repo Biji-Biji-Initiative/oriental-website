@@ -63,6 +63,8 @@ export default async function SessionReviewPage() {
 
       <OperationalHealthStrip data={dashboard.data} sessionsWithRealErrors={sessionsWithRealErrors} />
 
+      <VoiceQualityPanel data={dashboard.data} />
+
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.55fr)]" id="work-queues">
         <WorkflowPanel leads={dashboard.data.leads} />
         <div className="grid content-start gap-5">
@@ -127,6 +129,7 @@ function AdminShell({ children, generatedAt }: { children: ReactNode; generatedA
 function AdminNavPills() {
   const items = [
     { href: "#command-center", label: "Today" },
+    { href: "#reka-quality", label: "Reka quality" },
     { href: "#work-queues", label: "Leads" },
     { href: "#voice-recovery", label: "Voice recovery" },
     { href: "#notifications", label: "Notifications" },
@@ -328,6 +331,216 @@ function OperationalHealthStrip({
         </div>
       ))}
     </section>
+  );
+}
+
+type EvalAnalytics = DashboardData["analytics"]["evals"];
+
+function VoiceQualityPanel({ data }: { data: DashboardData }) {
+  const evals = data.analytics.evals;
+  const averages = evals.averages;
+  const dims = [
+    { key: "routingCorrect", label: "Routing", value: averages?.routingCorrect ?? null, invert: false },
+    { key: "captureCompleteness", label: "Capture", value: averages?.captureCompleteness ?? null, invert: false },
+    { key: "conversationQuality", label: "Quality", value: averages?.conversationQuality ?? null, invert: false },
+    { key: "frustration", label: "Frustration", value: averages?.frustration ?? null, invert: true },
+  ];
+  return (
+    <section aria-label="Reka quality" id="reka-quality">
+      <Card className="border-mk-ash/20 bg-white shadow-sm">
+        <CardHeader>
+          <CardTitle>Reka quality</CardTitle>
+          <CardDescription>
+            How well Reka is converting conversations, scored across {evals.evaluated} evaluated{" "}
+            {evals.evaluated === 1 ? "session" : "sessions"}. Refresh with{" "}
+            <code className="rounded bg-mk-paper px-1 py-0.5 text-[11px]">pnpm eval:voice -- --persist</code>.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-6">
+          {evals.evaluated === 0 ? (
+            <EmptyState label="No evaluated sessions yet — run the eval to populate quality scores." />
+          ) : (
+            <>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {dims.map((dim) => (
+                  <ScoreTile invert={dim.invert} key={dim.key} label={dim.label} value={dim.value} />
+                ))}
+              </div>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <TrendCard buckets={evals.trend.daily} label="Daily quality" />
+                <TrendCard buckets={evals.trend.weekly} label="Weekly quality" />
+              </div>
+              {evals.droppedMidTurn > 0 ? (
+                <HealthBox
+                  danger
+                  detail="Sessions that dropped while the visitor was speaking. The ICE recovery fix should drive this toward zero on new sessions."
+                  label="Dropped mid-turn"
+                  value={String(evals.droppedMidTurn)}
+                />
+              ) : null}
+              <EvalAttentionList entries={evals.attention} />
+            </>
+          )}
+        </CardContent>
+      </Card>
+    </section>
+  );
+}
+
+function scoreTone(value: number, invert: boolean): "green" | "amber" | "red" {
+  const normalized = invert ? 5 - value : value;
+  if (normalized >= 3.75) return "green";
+  if (normalized >= 2.5) return "amber";
+  return "red";
+}
+
+const scoreBarClass: Record<"green" | "amber" | "red", string> = {
+  green: "bg-emerald-600",
+  amber: "bg-amber-500",
+  red: "bg-destructive",
+};
+
+function ScoreTile({ label, value, invert }: { label: string; value: number | null; invert: boolean }) {
+  const tone = value === null ? null : scoreTone(value, invert);
+  const pct = value === null ? 0 : (value / 5) * 100;
+  return (
+    <div className="rounded-xl border border-mk-ash/15 bg-white p-4 shadow-sm">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">{label}</span>
+        <span className="text-lg font-semibold text-mk-off-black">
+          {value === null ? "—" : value.toFixed(2)}
+          <span className="ml-0.5 text-xs font-normal text-mk-ash">/5</span>
+        </span>
+      </div>
+      <div className="mt-3 h-2 rounded-full bg-mk-paper">
+        <div
+          className={`h-2 rounded-full ${tone ? scoreBarClass[tone] : "bg-mk-ash/30"}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <p className="mt-2 text-[11px] text-mk-ash">{invert ? "lower is better" : "higher is better"}</p>
+    </div>
+  );
+}
+
+function TrendCard({ buckets, label }: { buckets: EvalAnalytics["trend"]["daily"]; label: string }) {
+  const points = buckets
+    .filter((bucket) => bucket.averages)
+    .map((bucket) => ({
+      label: bucket.key.includes("W") ? bucket.key.split("-").slice(1).join("-") : bucket.key.slice(5),
+      value: bucket.averages?.conversationQuality ?? 0,
+      count: bucket.count,
+    }));
+  return (
+    <div className="rounded-lg border border-mk-ash/15 bg-mk-paper p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">{label}</span>
+        <span className="text-[11px] text-mk-ash">conversation quality · 0–5</span>
+      </div>
+      {points.length === 0 ? (
+        <div className="py-6 text-center text-xs text-mk-ash">Not enough evaluated sessions yet.</div>
+      ) : (
+        <TrendChart points={points} />
+      )}
+    </div>
+  );
+}
+
+// Static inline SVG line chart (RSC-safe, no client JS). Scale fixed 0–5.
+function TrendChart({ points }: { points: Array<{ label: string; value: number; count: number }> }) {
+  const width = 100;
+  const height = 42;
+  const max = 5;
+  const step = points.length > 1 ? width / (points.length - 1) : 0;
+  const coords = points.map((point, index) => ({
+    x: points.length === 1 ? width / 2 : index * step,
+    y: height - (point.value / max) * height,
+    ...point,
+  }));
+  const line = coords.map((coord) => `${coord.x.toFixed(1)},${coord.y.toFixed(1)}`).join(" ");
+  return (
+    <div className="grid gap-2">
+      <svg
+        className="h-16 w-full text-mk-blue"
+        preserveAspectRatio="none"
+        role="img"
+        viewBox={`0 0 ${width} ${height}`}
+      >
+        <title>Conversation quality over time (0–5)</title>
+        <line
+          stroke="currentColor"
+          strokeOpacity={0.15}
+          strokeWidth={0.5}
+          x1={0}
+          x2={width}
+          y1={height / 2}
+          y2={height / 2}
+        />
+        {points.length > 1 ? (
+          <polyline
+            fill="none"
+            points={line}
+            stroke="currentColor"
+            strokeWidth={1.5}
+            vectorEffect="non-scaling-stroke"
+          />
+        ) : null}
+        {coords.map((coord) => (
+          <circle
+            cx={coord.x}
+            cy={coord.y}
+            fill="currentColor"
+            key={coord.label}
+            r={1.6}
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
+      </svg>
+      <div className="flex justify-between text-[10px] text-mk-ash">
+        {coords.map((coord) => (
+          <span
+            className="flex-1 text-center"
+            key={coord.label}
+            title={`${coord.label}: ${coord.value.toFixed(2)} (${coord.count} sessions)`}
+          >
+            {coord.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function EvalAttentionList({ entries }: { entries: EvalAnalytics["attention"] }) {
+  if (entries.length === 0) {
+    return (
+      <div className="rounded-lg border border-emerald-700/20 bg-emerald-700/5 p-3 text-xs text-emerald-800">
+        No sessions flagged for attention in this window.
+      </div>
+    );
+  }
+  return (
+    <div className="grid gap-2">
+      <div className="text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
+        Needs attention ({entries.length})
+      </div>
+      {entries.map((entry) => (
+        <div className="grid gap-1 rounded-lg border border-mk-ash/15 bg-white p-3 text-sm" key={entry.reviewId}>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge tone="neutral">{getSegment(entry.segment).label}</Badge>
+            {entry.droppedMidTurn ? <Badge tone="red">dropped mid-turn</Badge> : null}
+            {typeof entry.frustration === "number" && entry.frustration >= 4 ? (
+              <Badge tone="amber">frustrated</Badge>
+            ) : null}
+            {typeof entry.conversationQuality === "number" ? (
+              <Badge tone={scoreTone(entry.conversationQuality, false)}>quality {entry.conversationQuality}</Badge>
+            ) : null}
+            <span className="ml-auto font-mono text-[11px] text-mk-ash">{entry.reviewId.slice(0, 8)}</span>
+          </div>
+          {entry.summary ? <p className="text-xs leading-5 text-mk-ash">{entry.summary}</p> : null}
+        </div>
+      ))}
+    </div>
   );
 }
 
