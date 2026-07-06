@@ -78,7 +78,8 @@ unchanged with Playwright's own browsers.
   are expected with typed interruptions and are filtered from admin badges.
 - `lead.accepted` with `persisted: false` — the new degraded mode (Convex
   down, notifications carried the lead). It pages ops as critical.
-- `notification.smtp_failed_falling_back` — SMTP broke and SESv2 covered it.
+- `notification.smtp_failed` — configured SMTP failed; verify SES/SMTP env and
+  owner delivery from the admin notification queue.
 - OpenAI spend per session in the admin usage summaries (`gpt-4o-transcribe`
   replaces whisper-1 line items).
 

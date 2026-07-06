@@ -208,7 +208,7 @@ Newsletter writes use the same Convex mutation as full leads:
     org: "Unknown",
     phone: "",
     website: "",
-    message: "Keep me posted about Oriental Building."
+    message: "Requested Oriental Building updates from the hero email capture."
   },
   transcript: []
 }

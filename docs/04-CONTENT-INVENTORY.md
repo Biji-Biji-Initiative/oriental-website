@@ -15,8 +15,8 @@ Copy is **final-draft** in the prototype unless flagged `(DRAFT)` below.
 | `<title>` | `Oriental · A future we build together` |
 | `<meta name="description">` | Oriental Building — a historic Kuala Lumpur landmark, reactivated as a home for future learning, technology, creativity, and community. Mereka, Biji-biji Initiative, CIMB, and partners are shaping Levels 2 to 4 before the building opens in 2027. |
 | `theme-color` | `#100d18` |
-| OG image | `/assets/og-image.svg` |
-| Favicon | `/assets/favicon.svg` |
+| OG image | `/assets/og-image.png` |
+| Favicon | `/favicon.ico` plus `/assets/brand/mereka/favicon-*.png` |
 | Email (footer + mailto) | `team@mereka.io` |
 
 ## Nav
@@ -62,7 +62,7 @@ Eyebrow: `03 — The Ecosystem`. H2: `Spaces for learning, making, gathering, & 
 |---|---|---|
 | 01 | Public Programme & Event Spaces | Talks, forums, launches, screenings, exhibitions, performances, and public conversations. |
 | 02 | Creative Studios & Collaboration Spaces | Making, designing, teaching, prototyping, production, and project-based work. |
-| 03 | Technology Showcase & Demo Spaces | Hands-on experiences with AI, digital tools, future skills, digital trust, and emerging technologies. |
+| 03 | Technology Showcase & Demo Lab | Hands-on experiences with AI, digital tools, future skills, digital trust, and emerging technologies. |
 | 04 | Workshops & Future Skills Programmes | Youth development, professional upskilling, entrepreneurship, creative learning, and community education. |
 | 05 | Innovation & Social Impact Initiatives | NGOs, social enterprises, startups, and mission-driven teams building solutions with community relevance. |
 
@@ -166,23 +166,25 @@ for public web use before launch — track in [`10-ROADMAP.md`](./10-ROADMAP.md)
 | File | Use |
 |---|---|
 | `docs/assets/orientalhero2.png` | Hero background (candidate — not wired in code) |
+| `hero/oriental-building-blueprint.jpeg` | Hero background |
 | `07-building-context.jpg` | Vision strip caption photo |
-| `01-hero-welcome.png` | Closing section background |
-| `05-sustainability-workshop.png` | Space 04 — Tech demo |
-| `16-buy-social-showcase.png` | Space 03 — Events |
-| `docs/assets/20-ngo-finance-guild.png` | Space 05 — Social enterprise (candidate — not wired in code) |
+| `closing-community-gathering.jpg` | Closing section background |
+| `spaces/public-commons-community-lounge.jpg` | Space 01 — Commons |
 | `2026-05-04-05-academy-tomorrow-2-v2.jpg` | Space 02 — Academy |
-| `docs/assets/81_agora_world_cafe_evening_openai_4e792ccfe15d_20260504-213415_0.png` | Space 01 — Commons (candidate — not wired in code) |
+| `spaces/flexible-event-spaces-forum.jpg` | Space 03 — Events |
+| `spaces/technology-showcase-demo-lab-techy.jpg` | Space 04 — Technology demo lab |
+| `docs/assets/20-ngo-finance-guild.png` | Candidate/reference render — not wired in code |
+| `docs/assets/81_agora_world_cafe_evening_openai_4e792ccfe15d_20260504-213415_0.png` | Candidate/reference render — not wired in code |
 | `docs/assets/exterior_render_*.png` | Reserve / unused (potential press kit) |
 | `docs/assets/oriental-hsots.png` | Reserve (renamed from `oriental hsots.png`) |
-| `mereka-white.png`, `mereka-symbol-white.png` | Brand marks |
-| `brand/biji-biji/biji-biji-logo-*.svg` | Footer Biji-biji primary mark, black/white variants |
-| `brand/biji-biji/biji-biji-elaborated-logo-*.svg` | Stored Biji-biji elaborated mark variants |
-| `brand/cimb/cimb-symbol.svg` | Footer CIMB square symbol |
-| `brand/cimb/cimb-logo-elaborated.svg` | Stored CIMB full logo |
+| `mereka-white.png`, `mereka-black.png`, `mereka-symbol-white.png` | Runtime brand marks |
+| `docs/assets/archive/brand/mereka/mereka-symbol-black.png` | Archived Mereka mark variant — not shipped |
+| `brand/biji-biji/biji-biji-logo-white.svg` | Runtime Biji-biji footer mark |
+| `docs/assets/archive/brand/biji-biji/*.svg` | Archived Biji-biji black/elaborated variants — not shipped |
 | `brand/mereka/favicon-*.png` | Browser favicon set from canonical Mereka brand assets |
-| `og-image.svg`, `favicon.svg` | Legacy browser chrome / OG fallback |
-| `fonts/Poppins-*.ttf`, `fonts/Fraunces-*.ttf` | Self-hosted fonts |
+| `og-image.png` | Runtime social preview image |
+| `docs/assets/archive/meta/og-image.svg`, `docs/assets/archive/meta/favicon.svg` | Archived legacy SVG fallbacks — not shipped |
+| `fonts/Poppins-*.ttf`, `fonts/Fraunces-*.ttf` | Self-hosted fonts; unused weights are archived under `docs/assets/archive/fonts/` |
 
 ## External links
 

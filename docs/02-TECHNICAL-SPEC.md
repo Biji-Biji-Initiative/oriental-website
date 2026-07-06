@@ -15,7 +15,7 @@ Runtime truth for the production build:
 | Brand assets | Local public assets | Source notes in `docs/ASSET-SOURCES.md`. |
 | Voice | OpenAI Realtime 2 | `gpt-realtime-2`, WebRTC, ephemeral client secrets. |
 | Data | Convex | `convex/schema.ts`, `convex/leads.ts`, `lib/server/convex.ts`. |
-| Email | SMTP or AWS SESv2 | SMTP preferred when configured; SESv2 fallback by region. |
+| Email | SMTP or AWS SESv2 | SMTP preferred when configured; otherwise SESv2 by region. SMTP sends one message to all recipients in a single transaction. |
 | Slack | Bot token + channel id, webhook fallback | Lead mirror to `#tech-team-test` via `SLACK_CHANNEL_ID`; `SLACK_WEBHOOK_URL` is fallback-only. |
 | Abuse protection | Cloudflare Turnstile | Verified server-side on all intake POST routes. |
 | Rate limiting | Redis/Valkey via `REDIS_URL`, memory fallback | Shared limiter is active in production; memory mode is degraded fallback only. |
@@ -76,7 +76,7 @@ microsite.
 |---|---|
 | `/` | RSC home page plus client islands for nav, timeline, voice, and hero email. |
 | `/api/leads` | Validate payload → signed voice review credential or optional Turnstile check → rate-limit → route/persist lead → notify owner/Slack. |
-| `/api/newsletter` | Validate payload → optional Turnstile check → rate-limit → persist `source="hero-email"` lead. |
+| `/api/newsletter` | Validate payload → optional Turnstile check → rate-limit → persist `source="hero-email"` lead → send newsletter-specific subscriber confirmation when email is configured. |
 | `/api/voice/session` | Validate payload → rate-limit → mint OpenAI Realtime client secret and signed review credentials. |
 | `/api/health` | Lightweight app liveness response; no upstream dependency ping. |
 
@@ -254,7 +254,7 @@ SEO:
 - `app/sitemap.ts` lists `/`
 - `app/robots.ts` allows indexing
 - JSON-LD includes Mereka `Organization` and Oriental Building `Place`
-- OG/Twitter images use `/assets/og-image.svg`
+- OG/Twitter images use `/assets/og-image.png`
 - favicon metadata uses canonical Mereka favicon PNGs under
   `/assets/brand/mereka/`
 

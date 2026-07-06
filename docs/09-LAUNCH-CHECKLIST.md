@@ -150,7 +150,7 @@ Walk through every user path on the staging URL:
 
 ## SEO & social
 
-- [ ] `og-image.svg` renders correctly in:
+- [ ] `og-image.png` renders correctly in:
       Slack, WhatsApp, X, LinkedIn, iMessage
 - [ ] `sitemap.xml` and `robots.txt` served
 - [ ] Canonical URL set to `https://oriental.mereka.io/`

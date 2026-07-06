@@ -30,7 +30,7 @@ capture.
 | `name` | string | For hero email capture this is currently `"Newsletter subscriber"`. |
 | `email` | string | Validated by `lib/schemas.ts`. |
 | `org` | string | For hero email capture this is `"Unknown"`. |
-| `message` | string | For hero email capture this is `"Keep me posted about Oriental Building."`. |
+| `message` | string | For hero email capture this is `"Requested Oriental Building updates from the hero email capture."`. |
 | `transcript` | `{ role: string; text: string }[]` | Voice transcript rows; empty for form/newsletter. |
 | `utm` | `Record<string,string>` | Optional attribution data. |
 | `status` | string | Admin workflow state; new leads start as `"new"`. |
@@ -38,9 +38,10 @@ capture.
 | `owner` | string? | Human owner currently responsible for follow-up. |
 | `workflowNote` | string? | Latest admin handoff / next-action note. |
 | `lastReviewedAt` | number? | Last admin workflow update timestamp. |
-| `notificationDelivered` | boolean? | True when at least one owner notification channel delivered. |
-| `notificationEmailOk` | boolean? | Last owner email delivery result. |
-| `notificationSlackOk` | boolean? | Last Slack delivery result. |
+| `notificationDelivered` | boolean? | True when the required delivery policy passed: owner email/Slack for full leads, subscriber confirmation for newsletter-only leads. |
+| `notificationEmailOk` | boolean? | Last owner email delivery result when owner email was attempted. |
+| `notificationSlackOk` | boolean? | Last Slack delivery result when Slack was attempted. |
+| `notificationConfirmationOk` | boolean? | Last submitter or newsletter confirmation email result. |
 | `notificationSummary` | string? | Compact last notification status. |
 | `lastNotificationAt` | number? | Last notification status write timestamp. |
 | `createdAt` | number | Milliseconds since epoch, set by mutation. |
@@ -110,9 +111,8 @@ Indexes:
 4. `persistLead()` calls Convex with `{ lead, ingestSecret }`.
 5. Convex validates `CONVEX_INGEST_SECRET`, inserts `leads`, then inserts a
    `leadEvents` row.
-6. Owner email and Slack notifications are attempted after persistence.
-7. Notification status is patched back to the lead and appended to
-   `leadEvents`.
+6. Owner email and Slack notifications are attempted after persistence for full lead submissions; newsletter-only captures send subscriber confirmation only.
+7. Notification status, including confirmation email status when present, is patched back to the lead and appended to `leadEvents`.
 8. Admin workflow changes from `/admin/session-review` patch `status`,
    `priority`, `owner`, optional `workflowNote`, and append a `workflow_update`
    event.

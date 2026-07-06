@@ -1,18 +1,13 @@
 # Asset Sources
 
-Runtime brand assets live under `public/assets/brand/`.
+Runtime brand assets live under `public/assets/brand/`. Unused brand variants live under `docs/assets/archive/` so they stay available for reference without shipping in the public bundle.
 
-| Asset | Runtime path | Source |
+| Asset | Runtime or archive path | Source |
 |---|---|---|
-| Biji-biji primary mark, black/white | `public/assets/brand/biji-biji/biji-biji-logo-*.svg` | [`bbbi-mereka-brand-assets/brands/bbi/logos/svg/primary`](https://github.com/Biji-Biji-Initiative/bbbi-mereka-brand-assets/tree/main/brands/bbi/logos/svg/primary) |
-| Biji-biji elaborated mark, black/white | `public/assets/brand/biji-biji/biji-biji-elaborated-logo-*.svg` | [`bbbi-mereka-brand-assets/brands/bbi/logos/svg/primary`](https://github.com/Biji-Biji-Initiative/bbbi-mereka-brand-assets/tree/main/brands/bbi/logos/svg/primary) |
+| Biji-biji runtime footer mark | `public/assets/brand/biji-biji/biji-biji-logo-white.svg` | [`bbbi-mereka-brand-assets/brands/bbi/logos/svg/primary`](https://github.com/Biji-Biji-Initiative/bbbi-mereka-brand-assets/tree/main/brands/bbi/logos/svg/primary) |
+| Biji-biji archived variants | `docs/assets/archive/brand/biji-biji/*.svg` | [`bbbi-mereka-brand-assets/brands/bbi/logos/svg/primary`](https://github.com/Biji-Biji-Initiative/bbbi-mereka-brand-assets/tree/main/brands/bbi/logos/svg/primary) |
 | Mereka favicon PNG set | `public/assets/brand/mereka/favicon-*.png` | [`bbbi-mereka-brand-assets/brands/mereka/icons/favicon`](https://github.com/Biji-Biji-Initiative/bbbi-mereka-brand-assets/tree/main/brands/mereka/icons/favicon) |
-| CIMB square symbol | `public/assets/brand/cimb/cimb-symbol.svg` | [CompaniesLogo CIMB Group symbol download](https://companieslogo.com/cimb/logo/) |
-| CIMB elaborated logo | `public/assets/brand/cimb/cimb-logo-elaborated.svg` | [CompaniesLogo CIMB Group full-logo download](https://companieslogo.com/cimb/logo/) |
-
-The CIMB marks are third-party brand assets used for partner identification only.
-Confirm trademark approval before public launch if CIMB brand governance requires
-formal sign-off.
+| Mereka archived black symbol | `docs/assets/archive/brand/mereka/mereka-symbol-black.png` | Mereka brand asset export |
 
 The source Mereka favicon exports were one pixel larger than their filenames;
 the committed PNGs were resized to exact `16x16`, `32x32`, and `256x256`
