@@ -79,6 +79,8 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
 
       <OperationalHealthStrip data={dashboard.data} sessionsWithRealErrors={sessionsWithRealErrors} />
 
+      <OperatingBriefPanel data={dashboard.data} sessionsWithRealErrors={sessionsWithRealErrors} />
+
       <VoiceQualityPanel data={dashboard.data} />
 
       <OperatorFilters
@@ -375,6 +377,208 @@ function OperationalHealthStrip({
         </div>
       ))}
     </section>
+  );
+}
+
+type BriefInsight = {
+  label: string;
+  title: string;
+  detail: string;
+  href: string;
+  tone: "neutral" | "blue" | "green" | "red" | "amber";
+};
+
+function OperatingBriefPanel({
+  data,
+  sessionsWithRealErrors,
+}: {
+  data: DashboardData;
+  sessionsWithRealErrors: number;
+}) {
+  const recoverable = recoverableVoiceSessions(data.voiceSessions).length;
+  const unassigned = countUnassignedActiveLeads(data.leads);
+  const stale = staleActiveLeads(data.leads, data.generatedAt).length;
+  const ownedActive = Math.max(data.metrics.activeLeads - unassigned, 0);
+  const evals = data.analytics.evals.averages;
+  const insights = buildOperatingInsights(data, { recoverable, sessionsWithRealErrors, stale, unassigned });
+  const leadFunnel = [
+    { label: "Saved", value: data.metrics.recentLeads, detail: "recent handoffs" },
+    { label: "Active", value: data.metrics.activeLeads, detail: "need a next step" },
+    { label: "Owned", value: ownedActive, detail: "active with owner" },
+    { label: "Qualified", value: data.metrics.qualifiedLeads, detail: "ready to progress" },
+  ];
+  const voiceFunnel = [
+    { label: "Sessions", value: data.analytics.voice.sessions, detail: "review snapshots" },
+    { label: "Engaged", value: data.analytics.voice.engaged, detail: "visitor interacted" },
+    { label: "Connected", value: data.analytics.voice.connected, detail: "live audio" },
+    { label: "Submitted", value: data.analytics.voice.submitted, detail: "handoff sent" },
+    {
+      label: "Recover",
+      value: recoverable,
+      detail: "email captured, unsent",
+      tone: recoverable > 0 ? ("amber" as const) : ("green" as const),
+    },
+  ];
+
+  return (
+    <section aria-label="Operating brief" className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(420px,1.05fr)]">
+      <Card className="border-mk-ash/20 bg-white shadow-sm">
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>Operating brief</CardTitle>
+              <CardDescription>What the team should understand before touching the queues.</CardDescription>
+            </div>
+            <Badge
+              tone={insights.some((insight) => insight.tone === "red" || insight.tone === "amber") ? "amber" : "green"}
+            >
+              {insights.length} live insights
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="grid gap-3">
+          {insights.map((insight) => (
+            <InsightTile insight={insight} key={insight.label} />
+          ))}
+        </CardContent>
+      </Card>
+      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+        <MetricFunnel
+          detail={`${data.metrics.notificationDeliveryRate}% notification delivery · ${stale} stale active · ${unassigned} unassigned`}
+          items={leadFunnel}
+          title="Lead operating funnel"
+        />
+        <MetricFunnel
+          detail={`${data.metrics.voiceSubmitRate}% submit rate · quality ${evals?.conversationQuality?.toFixed(2) ?? "--"}/5 · capture ${evals?.captureCompleteness?.toFixed(2) ?? "--"}/5`}
+          items={voiceFunnel}
+          title="Voice and Reka funnel"
+        />
+      </div>
+    </section>
+  );
+}
+
+function buildOperatingInsights(
+  data: DashboardData,
+  context: { recoverable: number; sessionsWithRealErrors: number; stale: number; unassigned: number },
+): BriefInsight[] {
+  const insights: BriefInsight[] = [];
+  if (context.recoverable > 0) {
+    insights.push({
+      label: "Voice leakage",
+      title: `${context.recoverable} voice ${context.recoverable === 1 ? "lead" : "leads"} can still be recovered`,
+      detail:
+        "These visitors left an email with Reka but never submitted the handoff. This is the highest-leverage human follow-up queue.",
+      href: "#voice-recovery",
+      tone: "amber",
+    });
+  }
+  if (context.unassigned > 0 || context.stale > 0) {
+    insights.push({
+      label: "Ownership",
+      title: `${context.unassigned} unassigned · ${context.stale} stale active`,
+      detail: "The queue needs visible owners and next steps; otherwise qualified partners age silently.",
+      href: "#workflow",
+      tone: context.stale > 0 ? "amber" : "blue",
+    });
+  }
+  if (data.analytics.notification.failed > 0) {
+    insights.push({
+      label: "Delivery",
+      title: `${data.analytics.notification.failed} notification ${data.analytics.notification.failed === 1 ? "failure" : "failures"}`,
+      detail:
+        "Manually route failed handoffs before changing lead status; owner visibility depends on delivery being true.",
+      href: "#notifications",
+      tone: "red",
+    });
+  }
+  const evals = data.analytics.evals.averages;
+  if (evals && (evals.captureCompleteness < 3 || evals.routingCorrect < 3 || evals.conversationQuality < 3)) {
+    insights.push({
+      label: "Reka learning loop",
+      title: `Reka quality target: capture ${evals.captureCompleteness.toFixed(2)}/5, routing ${evals.routingCorrect.toFixed(2)}/5`,
+      detail:
+        "The current prompt change is aimed at capture without hurting conversion. Re-run persisted evals after the next real sessions.",
+      href: "#reka-quality",
+      tone: "amber",
+    });
+  }
+  if (context.sessionsWithRealErrors > 0) {
+    insights.push({
+      label: "Realtime health",
+      title: `${context.sessionsWithRealErrors} Realtime ${context.sessionsWithRealErrors === 1 ? "session has" : "sessions have"} non-benign errors`,
+      detail: "Treat voice QA as degraded until those sessions are understood; inspect telemetry before changing copy.",
+      href: "#voice-diagnostics",
+      tone: "red",
+    });
+  }
+  if (insights.length === 0) {
+    insights.push({
+      label: "Clear window",
+      title: "No critical blocker in the recent admin window",
+      detail:
+        "Keep the workflow current, then watch Reka evals and notification delivery after the next campaign push.",
+      href: "#insights-audit",
+      tone: "green",
+    });
+  }
+  return insights.slice(0, 4);
+}
+
+function InsightTile({ insight }: { insight: BriefInsight }) {
+  return (
+    <a
+      className="grid gap-2 rounded-xl border border-mk-ash/15 bg-mk-paper/60 p-4 transition hover:border-mk-blue/40 hover:bg-white sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-start"
+      href={insight.href}
+    >
+      <Badge tone={insight.tone}>{insight.label}</Badge>
+      <span>
+        <span className="block text-sm font-semibold leading-snug text-mk-off-black">{insight.title}</span>
+        <span className="mt-1 block text-xs leading-5 text-mk-ash">{insight.detail}</span>
+      </span>
+      <span className="text-xs font-semibold uppercase tracking-[0.12em] text-mk-blue">Open</span>
+    </a>
+  );
+}
+
+function MetricFunnel({
+  detail,
+  items,
+  title,
+}: {
+  detail: string;
+  items: Array<{ label: string; value: number; detail: string; tone?: "green" | "amber" }>;
+  title: string;
+}) {
+  const max = Math.max(...items.map((item) => item.value), 1);
+  return (
+    <Card className="border-mk-ash/20 bg-white shadow-sm">
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>{detail}</CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        {items.map((item) => {
+          const width = Math.max((item.value / max) * 100, item.value > 0 ? 8 : 2);
+          const toneClass =
+            item.tone === "amber" ? "bg-amber-500" : item.tone === "green" ? "bg-emerald-600" : "bg-mk-blue";
+          return (
+            <div className="grid gap-1" key={`${title}:${item.label}`}>
+              <div className="flex items-center justify-between gap-3 text-xs">
+                <div>
+                  <span className="font-semibold text-mk-off-black">{item.label}</span>
+                  <span className="ml-2 text-mk-ash">{item.detail}</span>
+                </div>
+                <span className="font-semibold text-mk-off-black">{item.value}</span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-mk-paper">
+                <div className={`h-full rounded-full ${toneClass}`} style={{ width: `${width}%` }} />
+              </div>
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -1801,6 +2005,11 @@ function VoiceSessionsPanel({ sessions }: { sessions: VoiceSessionRow[] }) {
   const reviewNeeded = sessions.filter(sessionNeedsVoiceReview);
   const reviewIds = new Set(reviewNeeded.map((session) => session.reviewId));
   const routine = sessions.filter((session) => !reviewIds.has(session.reviewId));
+  const pinnedRoutine = routine.filter(sessionNeedsEvalAttention);
+  const pinnedIds = new Set(pinnedRoutine.map((session) => session.reviewId));
+  const recentRoutine = routine.filter((session) => !pinnedIds.has(session.reviewId)).slice(0, 8);
+  const visibleRoutine = [...pinnedRoutine, ...recentRoutine];
+  const hiddenRoutineCount = Math.max(routine.length - visibleRoutine.length, 0);
   return (
     <Card className="border-mk-ash/20 bg-white shadow-sm" id="voice-sessions">
       <CardHeader>
@@ -1823,17 +2032,63 @@ function VoiceSessionsPanel({ sessions }: { sessions: VoiceSessionRow[] }) {
         {routine.length > 0 ? (
           <details className="rounded-lg border border-mk-ash/15 bg-mk-paper/60" suppressHydrationWarning>
             <summary className="cursor-pointer list-none px-3 py-2 text-sm font-semibold marker:hidden">
-              Show {routine.length} routine voice {routine.length === 1 ? "session" : "sessions"}
+              Show {visibleRoutine.length} diagnostic {visibleRoutine.length === 1 ? "session" : "sessions"}
+              {hiddenRoutineCount > 0 ? ` · ${hiddenRoutineCount} routine hidden` : ""}
             </summary>
             <div className="grid gap-3 border-t border-mk-ash/15 p-3">
-              {routine.map((session) => (
-                <VoiceSessionDetails key={session.reviewId} session={session} />
+              {visibleRoutine.map((session) => (
+                <VoiceSessionCompactDetails key={session.reviewId} session={session} />
               ))}
+              {hiddenRoutineCount > 0 ? (
+                <div className="rounded-lg border border-dashed border-mk-ash/25 bg-white p-3 text-center text-xs leading-5 text-mk-ash">
+                  {hiddenRoutineCount} low-signal routine sessions are summarized in the QA rollup and omitted from the
+                  initial page for speed.
+                </div>
+              ) : null}
             </div>
           </details>
         ) : null}
       </CardContent>
     </Card>
+  );
+}
+
+function VoiceSessionCompactDetails({ session }: { session: VoiceSessionRow }) {
+  const realErrorCount = realVoiceErrorCount(session);
+  return (
+    <details
+      className="rounded-lg border border-mk-ash/15 bg-white"
+      id={voiceSessionAnchorId(session.reviewId)}
+      suppressHydrationWarning
+    >
+      <summary className="cursor-pointer list-none p-3 marker:hidden">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="font-semibold">
+              {session.captured.name || session.captured.email || "Uncaptured visitor"}
+            </div>
+            <div className="mt-1 text-xs text-mk-ash">
+              {session.segment} · {formatDate(session.updatedAt)} · {transcriptTurnCount(session)} turns
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Badge tone={session.leadId ? "green" : "neutral"}>{session.leadId ? "submitted" : session.status}</Badge>
+            {session.eval?.conversationQuality && session.eval.conversationQuality <= 2 ? (
+              <Badge tone="red">quality {session.eval.conversationQuality}</Badge>
+            ) : null}
+            {session.routeRequested ? <Badge tone="amber">route requested</Badge> : null}
+            <Badge tone={realErrorCount > 0 ? "red" : "blue"}>
+              {realErrorCount > 0 ? `${realErrorCount} errors` : "ok"}
+            </Badge>
+          </div>
+        </div>
+      </summary>
+      <div className="border-t border-mk-ash/15 p-3">
+        <SessionQualityFlags session={session} realErrorCount={realErrorCount} />
+        <UsageSummary session={session} />
+        <AdminVoiceSessionTranscript expectedTurnCount={transcriptTurnCount(session)} reviewId={session.reviewId} />
+      </div>
+    </details>
   );
 }
 
@@ -2127,6 +2382,13 @@ function sessionNeedsVoiceReview(session: VoiceSessionRow) {
     hasNonBenignVoiceErrors(session) ||
     Boolean(session.connectStartedAt && !session.connectedAt) ||
     (!session.leadId && session.captured.email.trim().length > 0 && !session.followedUpAt)
+  );
+}
+
+function sessionNeedsEvalAttention(session: VoiceSessionRow) {
+  return Boolean(
+    session.eval &&
+      (session.eval.frustration >= 4 || session.eval.conversationQuality <= 2 || session.eval.droppedMidTurn),
   );
 }
 
