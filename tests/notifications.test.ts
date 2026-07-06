@@ -1,6 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { buildOwnerNotification, buildSlackPayload } from "@/lib/server/notification-payloads";
-import { notifyOwner, notifySlack, type StoredLead } from "@/lib/server/notifications";
+import {
+  buildNewsletterConfirmation,
+  buildOwnerNotification,
+  buildSlackPayload,
+  buildSubmitterConfirmation,
+} from "@/lib/server/notification-payloads";
+import {
+  notifyNewsletterSubscriber,
+  notifyOwner,
+  notifySlack,
+  notifySubmitter,
+  type StoredLead,
+} from "@/lib/server/notifications";
 import { sendSmtpMail } from "@/lib/server/smtp";
 
 vi.mock("@/lib/server/smtp", () => ({ sendSmtpMail: vi.fn() }));
@@ -84,6 +95,27 @@ describe("notification payload builders", () => {
     expect(body).toContain("CogWorks &lt;script&gt;");
     expect(body).toContain("*Conversation context*");
     expect(payload.blocks.at(-1)).toMatchObject({ type: "context" });
+  });
+
+  it("builds submitter confirmation copy", () => {
+    const notification = buildSubmitterConfirmation(lead(), "team@mereka.io");
+
+    expect(notification.subject).toBe("We received your Oriental Building note");
+    expect(notification.text).toContain("Hi Alex Tan");
+    expect(notification.text).toContain("the Mereka team has a copy");
+    expect(notification.text).toContain("Technology");
+    expect(notification.html).toContain("team@mereka.io");
+    expect(notification.html).toContain("AI literacy demos.<br />Also exploring agent labs.");
+  });
+
+  it("builds newsletter confirmation copy without lead handoff language", () => {
+    const notification = buildNewsletterConfirmation("asha@example.com", "team@mereka.io");
+
+    expect(notification.subject).toBe("You're on the Oriental Building updates list");
+    expect(notification.text).toContain("Thanks for signing up for Oriental Building updates");
+    expect(notification.text).not.toContain("handoff");
+    expect(notification.text).toContain("Subscribed email: asha@example.com");
+    expect(notification.html).toContain("team@mereka.io");
   });
 });
 
@@ -212,8 +244,17 @@ describe("notifyOwner", () => {
     vi.clearAllMocks();
   });
 
-  it("falls back to SESv2 when SMTP delivery fails", async () => {
+  it("does not retry or fall back after an SMTP transaction failure", async () => {
     vi.mocked(sendSmtpMail).mockRejectedValue(new Error("smtp_down"));
+
+    await expect(notifyOwner(lead())).resolves.toEqual({ ok: false, error: "smtp_down", status: 400 });
+    expect(sendSmtpMail).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses SESv2 when SMTP is not configured", async () => {
+    delete process.env.SMTP_USER;
+    delete process.env.SMTP_PASSWORD;
+    delete process.env.SMTP_HOST;
 
     await expect(notifyOwner(lead())).resolves.toEqual({ ok: true, transport: "sesv2" });
   });
@@ -222,5 +263,58 @@ describe("notifyOwner", () => {
     vi.mocked(sendSmtpMail).mockResolvedValue(undefined);
 
     await expect(notifyOwner(lead())).resolves.toEqual({ ok: true, transport: "smtp" });
+    expect(sendSmtpMail).toHaveBeenCalledTimes(1);
+    expect(sendSmtpMail).toHaveBeenCalledWith(expect.objectContaining({ to: ["gurpreet@example.com"] }));
+  });
+
+  it("adds an explicit configured team inbox to the SMTP recipient batch", async () => {
+    process.env.TEAM_NOTIFICATION_EMAIL = "team@mereka.io";
+    vi.mocked(sendSmtpMail).mockResolvedValue(undefined);
+
+    await expect(notifyOwner(lead())).resolves.toEqual({ ok: true, transport: "smtp" });
+    expect(sendSmtpMail).toHaveBeenCalledTimes(1);
+    expect(sendSmtpMail).toHaveBeenCalledWith(
+      expect.objectContaining({ to: ["gurpreet@example.com", "team@mereka.io"] }),
+    );
+  });
+
+  it("deduplicates the team copy when the routed owner is the configured team inbox", async () => {
+    process.env.TEAM_NOTIFICATION_EMAIL = "team@mereka.io";
+    vi.mocked(sendSmtpMail).mockResolvedValue(undefined);
+
+    await expect(notifyOwner(lead({ routedToEmail: "team@mereka.io" }))).resolves.toEqual({
+      ok: true,
+      transport: "smtp",
+    });
+    expect(sendSmtpMail).toHaveBeenCalledTimes(1);
+    expect(sendSmtpMail).toHaveBeenCalledWith(expect.objectContaining({ to: ["team@mereka.io"] }));
+  });
+
+  it("sends a confirmation email to the submitter", async () => {
+    process.env.SES_REPLY_TO = "team@mereka.io";
+    vi.mocked(sendSmtpMail).mockResolvedValue(undefined);
+
+    await expect(notifySubmitter(lead())).resolves.toEqual({ ok: true, transport: "smtp" });
+    expect(sendSmtpMail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: ["alex@example.com"],
+        replyTo: "team@mereka.io",
+        subject: "We received your Oriental Building note",
+      }),
+    );
+  });
+
+  it("sends a newsletter confirmation email to the subscriber", async () => {
+    process.env.SES_REPLY_TO = "team@mereka.io";
+    vi.mocked(sendSmtpMail).mockResolvedValue(undefined);
+
+    await expect(notifyNewsletterSubscriber("asha@example.com")).resolves.toEqual({ ok: true, transport: "smtp" });
+    expect(sendSmtpMail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: ["asha@example.com"],
+        replyTo: "team@mereka.io",
+        subject: "You're on the Oriental Building updates list",
+      }),
+    );
   });
 });

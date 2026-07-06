@@ -3,11 +3,22 @@ import { POST } from "@/app/api/newsletter/route";
 
 const mocks = vi.hoisted(() => ({
   persistLead: vi.fn(),
+  recordLeadNotificationStatus: vi.fn(),
+  notifyNewsletterSubscriber: vi.fn(),
 }));
 
 vi.mock("@/lib/server/convex", () => ({
   persistLead: mocks.persistLead,
+  recordLeadNotificationStatus: mocks.recordLeadNotificationStatus,
 }));
+
+vi.mock("@/lib/server/notifications", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/server/notifications")>();
+  return {
+    ...actual,
+    notifyNewsletterSubscriber: mocks.notifyNewsletterSubscriber,
+  };
+});
 
 const originalEnv = process.env;
 
@@ -30,6 +41,8 @@ describe("POST /api/newsletter", () => {
       IP_HASH_SECRET: "newsletter-route-test",
     };
     mocks.persistLead.mockResolvedValue({ id: "lead_news", persisted: true });
+    mocks.recordLeadNotificationStatus.mockResolvedValue({ ok: true });
+    mocks.notifyNewsletterSubscriber.mockResolvedValue({ ok: true, transport: "smtp" });
   });
 
   afterEach(() => {
@@ -43,7 +56,19 @@ describe("POST /api/newsletter", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body).toMatchObject({ ok: true, persisted: true });
+    expect(body).toMatchObject({
+      ok: true,
+      persisted: true,
+      notifications: {
+        confirmation: { ok: true, transport: "smtp" },
+      },
+    });
+    expect(mocks.notifyNewsletterSubscriber).toHaveBeenCalledWith("asha@example.com");
+    expect(mocks.recordLeadNotificationStatus).toHaveBeenCalledWith(
+      "lead_news",
+      { confirmation: body.notifications.confirmation },
+      true,
+    );
   });
 
   it("degrades gracefully instead of crashing when persistence throws outside production", async () => {

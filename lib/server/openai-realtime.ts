@@ -1,3 +1,6 @@
+import OpenAI, { APIError } from "openai";
+import type { ClientSecretCreateParams, ClientSecretCreateResponse } from "openai/resources/realtime/client-secrets";
+import type { RealtimeSessionCreateRequest } from "openai/resources/realtime/realtime";
 import { readEnv, readPositiveIntEnv } from "@/lib/env";
 import type { SegmentId } from "@/lib/segments";
 import { buildVoiceInstructions, VOICE_SESSION_DEFAULTS, VOICE_TOOLS } from "@/lib/voice/profile";
@@ -29,57 +32,56 @@ export async function createRealtimeClientSecret(
   // Phones are close-talking mics; laptops and desktops are far-field.
   const noiseReduction = deviceProfile === "mobile" ? "near_field" : "far_field";
 
-  const response = await fetch("https://api.openai.com/v1/realtime/client_secrets", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "OpenAI-Safety-Identifier": safetyIdentifier,
-    },
-    body: JSON.stringify({
-      expires_after: { anchor: "created_at", seconds: 300 },
-      session: {
-        type: "realtime",
-        model,
-        instructions: buildVoiceInstructions(undefined, initialSegment, variant?.personaNote),
-        output_modalities: ["audio"],
-        reasoning: { effort: VOICE_SESSION_DEFAULTS.reasoningEffort },
-        truncation: VOICE_SESSION_DEFAULTS.truncation,
-        audio: {
-          input: {
-            turn_detection: VOICE_SESSION_DEFAULTS.turnDetection,
-            transcription: { ...VOICE_SESSION_DEFAULTS.transcription, model: transcriptionModel },
-            noise_reduction: { type: noiseReduction },
-          },
-          output: { voice, speed },
+  const client = new OpenAI({ apiKey, dangerouslyAllowBrowser: process.env.NODE_ENV === "test" });
+  const clientSecretRequest = {
+    expires_after: { anchor: "created_at", seconds: 300 },
+    session: {
+      type: "realtime",
+      model,
+      instructions: buildVoiceInstructions(undefined, initialSegment, variant?.personaNote),
+      output_modalities: ["audio"],
+      reasoning: { effort: VOICE_SESSION_DEFAULTS.reasoningEffort },
+      truncation: VOICE_SESSION_DEFAULTS.truncation,
+      audio: {
+        input: {
+          turn_detection: VOICE_SESSION_DEFAULTS.turnDetection,
+          transcription: { ...VOICE_SESSION_DEFAULTS.transcription, model: transcriptionModel },
+          noise_reduction: { type: noiseReduction },
         },
-        tools: VOICE_TOOLS,
-        tool_choice: "auto",
+        output: { voice, speed },
       },
-    }),
-  });
+      tools: VOICE_TOOLS as unknown as RealtimeSessionCreateRequest["tools"],
+      tool_choice: "auto",
+      parallel_tool_calls: false,
+    },
+  } satisfies ClientSecretCreateParams;
 
-  if (!response.ok) {
-    throw new Error(`openai_${response.status}`);
+  let data: ClientSecretCreateResponse;
+  try {
+    data = await client.realtime.clientSecrets.create(clientSecretRequest, {
+      headers: { "OpenAI-Safety-Identifier": safetyIdentifier },
+      maxRetries: 0,
+    });
+  } catch (error) {
+    if (error instanceof APIError && error.status) {
+      throw new Error(`openai_${error.status}`);
+    }
+    throw error;
   }
 
-  const data = (await response.json()) as {
-    value?: string;
-    expires_at?: number;
-    session?: { id?: string };
+  const legacyData = data as ClientSecretCreateResponse & {
     client_secret?: { value?: string; expires_at?: number };
-    id?: string;
   };
-  const value = data.client_secret?.value ?? data.value;
+  const value = legacyData.client_secret?.value ?? data.value;
   if (!value) {
     throw new Error("openai_invalid_secret");
   }
   return {
     client_secret: {
       value,
-      expires_at: data.client_secret?.expires_at ?? data.expires_at ?? 0,
+      expires_at: legacyData.client_secret?.expires_at ?? data.expires_at ?? 0,
     },
-    session_id: data.session?.id ?? data.id ?? crypto.randomUUID(),
+    session_id: data.session?.id ?? crypto.randomUUID(),
     model,
     voice,
     speed,

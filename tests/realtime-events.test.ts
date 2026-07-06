@@ -101,6 +101,79 @@ describe("reduceRealtimeServerEvent", () => {
     expect(result.commands).toEqual([{ type: "submit_voice", callId: "call_2", segment: "technology" }]);
   });
 
+  it("allows spoken email corrections that only add punctuation", () => {
+    const current = state({
+      captured: { ...emptyCapturedLead, email: "saralim@gmail.com" },
+      transcript: [{ role: "user", text: "Sorry, it is sara dot lim at gmail dot com." }],
+    });
+
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_email_correction",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "sara.lim@gmail.com",
+                evidence: "sara dot lim at gmail dot com",
+              }),
+            },
+          ],
+        },
+      },
+      current,
+    );
+
+    expect(result.state.captured.email).toBe("sara.lim@gmail.com");
+    expect(result.commands[0]).toMatchObject({
+      type: "function_result",
+      output: { ok: true, key: "email", captured: expect.objectContaining({ email: "sara.lim@gmail.com" }) },
+    });
+  });
+
+  it("does not route malformed email addresses", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "route_to_team",
+              call_id: "call_bad_email",
+              arguments: JSON.stringify({ segment: "technology" }),
+            },
+          ],
+        },
+      },
+      state({ captured: { ...emptyCapturedLead, email: "sara at gmail", message: "AI demos." } }),
+    );
+
+    expect(result.state.routeRequested).toBeFalsy();
+    expect(result.commands).toEqual([
+      {
+        type: "function_result",
+        callId: "call_bad_email",
+        createResponse: true,
+        output: {
+          ok: false,
+          ready: false,
+          segment: "technology",
+          error: "invalid_required_fields",
+          missingFields: [],
+          missingFieldLabels: [],
+          invalidFields: ["email"],
+          invalidFieldLabels: ["email"],
+          captured: { ...emptyCapturedLead, email: "sara at gmail", message: "AI demos." },
+        },
+      },
+    ]);
+  });
+
   it("does not submit twice after a route was already requested", () => {
     const result = reduceRealtimeServerEvent(
       {
@@ -166,8 +239,11 @@ describe("reduceRealtimeServerEvent", () => {
           ok: false,
           ready: false,
           segment: "education",
+          error: "missing_required_fields",
           missingFields: ["email"],
           missingFieldLabels: ["email"],
+          invalidFields: [],
+          invalidFieldLabels: [],
           captured: { ...emptyCapturedLead, name: "Asha" },
         },
       },
@@ -208,6 +284,8 @@ describe("reduceRealtimeServerEvent", () => {
         ready: false,
         missingFields: ["email"],
         missingFieldLabels: ["email"],
+        invalidFields: [],
+        invalidFieldLabels: [],
       },
     });
   });
@@ -230,6 +308,8 @@ describe("reduceRealtimeServerEvent", () => {
         ready: false,
         missingFields: ["email"],
         missingFieldLabels: ["email"],
+        invalidFields: [],
+        invalidFieldLabels: [],
         routeRequested: false,
       },
     });

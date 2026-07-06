@@ -3,7 +3,12 @@ import { readEnv } from "@/lib/env";
 import type { LeadRequest } from "@/lib/schemas";
 import { getOwnerEmail, getSegment } from "@/lib/segments";
 import { errorMeta, logWarn } from "@/lib/server/logger";
-import { buildOwnerNotification, buildSlackPayload } from "@/lib/server/notification-payloads";
+import {
+  buildNewsletterConfirmation,
+  buildOwnerNotification,
+  buildSlackPayload,
+  buildSubmitterConfirmation,
+} from "@/lib/server/notification-payloads";
 import { sendSmtpMail } from "@/lib/server/smtp";
 
 type RoutableLead = Omit<LeadRequest, "source" | "voiceReviewToken"> & {
@@ -30,6 +35,14 @@ export async function notifySlack(lead: StoredLead): Promise<NotificationResult>
   return withTransientRetry(() => sendSlackMessage(lead));
 }
 
+export async function notifySubmitter(lead: StoredLead): Promise<NotificationResult> {
+  return withTransientRetry(() => sendSubmitterConfirmation(lead));
+}
+
+export async function notifyNewsletterSubscriber(email: string): Promise<NotificationResult> {
+  return withTransientRetry(() => sendNewsletterConfirmation(email));
+}
+
 async function withTransientRetry(send: () => Promise<NotificationResult>): Promise<NotificationResult> {
   const first = await attemptNotification(send);
   if (!isTransientFailure(first)) return first;
@@ -51,12 +64,60 @@ function isTransientFailure(result: NotificationResult): boolean {
 }
 
 async function sendOwnerEmail(lead: StoredLead): Promise<NotificationResult> {
-  const from = readEnv("SES_FROM_ADDRESS") ?? readEnv("SES_FROM_EMAIL");
-  if (!from || !lead.routedToEmail) {
+  const notification = buildOwnerNotification(lead);
+  const recipients = uniqueEmails([lead.routedToEmail, teamNotificationEmail()]);
+  if (recipients.length === 0) {
     return { ok: false, skipped: true, reason: "email_unconfigured" };
   }
 
-  const notification = buildOwnerNotification(lead);
+  return sendConfiguredEmail({
+    to: recipients,
+    replyTo: lead.form.email,
+    subject: notification.subject,
+    text: notification.text,
+    html: notification.html,
+    leadId: lead.id,
+  });
+}
+
+async function sendSubmitterConfirmation(lead: StoredLead): Promise<NotificationResult> {
+  const contactEmail = contactEmailAddress();
+  const notification = buildSubmitterConfirmation(lead, contactEmail);
+  return sendConfiguredEmail({
+    to: [lead.form.email],
+    replyTo: contactEmail,
+    subject: notification.subject,
+    text: notification.text,
+    html: notification.html,
+    leadId: lead.id,
+  });
+}
+
+async function sendNewsletterConfirmation(email: string): Promise<NotificationResult> {
+  const contactEmail = contactEmailAddress();
+  const notification = buildNewsletterConfirmation(email, contactEmail);
+  return sendConfiguredEmail({
+    to: [email],
+    replyTo: contactEmail,
+    subject: notification.subject,
+    text: notification.text,
+    html: notification.html,
+    leadId: `newsletter:${email}`,
+  });
+}
+
+type EmailMessage = {
+  to: string[];
+  replyTo?: string;
+  subject: string;
+  text: string;
+  html: string;
+  leadId: string;
+};
+
+async function sendConfiguredEmail(message: EmailMessage): Promise<NotificationResult> {
+  const from = readEnv("SES_FROM_ADDRESS") ?? readEnv("SES_FROM_EMAIL");
+  if (!from) return { ok: false, skipped: true, reason: "email_unconfigured" };
 
   const smtpUser = readEnv("SMTP_USER") ?? readEnv("EMAIL_SERVER_USER");
   const smtpPassword = readEnv("SMTP_PASSWORD") ?? readEnv("EMAIL_SERVER_PASSWORD");
@@ -71,18 +132,16 @@ async function sendOwnerEmail(lead: StoredLead): Promise<NotificationResult> {
         username: smtpUser,
         password: smtpPassword,
         from,
-        to: lead.routedToEmail,
-        replyTo: lead.form.email,
-        subject: notification.subject,
-        text: notification.text,
-        html: notification.html,
+        to: message.to,
+        replyTo: message.replyTo,
+        subject: message.subject,
+        text: message.text,
+        html: message.html,
       });
       return { ok: true, transport: "smtp" };
     } catch (error) {
-      // Fall through to SESv2 when AWS credentials can carry the same message,
-      // but leave a trail so a broken SMTP path does not stay invisible.
-      if (!awsRegion) throw error;
-      logWarn("notification.smtp_failed_falling_back", { leadId: lead.id, error: errorMeta(error) });
+      logWarn("notification.smtp_failed", { leadId: message.leadId, error: errorMeta(error) });
+      return { ok: false, error: error instanceof Error ? error.message : String(error), status: 400 };
     }
   }
 
@@ -92,17 +151,17 @@ async function sendOwnerEmail(lead: StoredLead): Promise<NotificationResult> {
   await client.send(
     new SendEmailCommand({
       FromEmailAddress: from,
-      Destination: { ToAddresses: [lead.routedToEmail] },
-      ReplyToAddresses: [lead.form.email],
+      Destination: { ToAddresses: message.to },
+      ReplyToAddresses: message.replyTo ? [message.replyTo] : undefined,
       Content: {
         Simple: {
-          Subject: { Data: notification.subject },
+          Subject: { Data: message.subject },
           Body: {
             Text: {
-              Data: notification.text,
+              Data: message.text,
             },
             Html: {
-              Data: notification.html,
+              Data: message.html,
             },
           },
         },
@@ -110,6 +169,28 @@ async function sendOwnerEmail(lead: StoredLead): Promise<NotificationResult> {
     }),
   );
   return { ok: true, transport: "sesv2" };
+}
+
+function teamNotificationEmail() {
+  return readEnv("TEAM_NOTIFICATION_EMAIL") ?? readEnv("TEAM_INBOX_EMAIL");
+}
+
+function contactEmailAddress() {
+  return readEnv("SES_REPLY_TO") ?? teamNotificationEmail();
+}
+
+function uniqueEmails(values: Array<string | null | undefined>) {
+  const seen = new Set<string>();
+  const emails: string[] = [];
+  for (const value of values) {
+    const email = value?.trim();
+    if (!email) continue;
+    const key = email.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    emails.push(email);
+  }
+  return emails;
 }
 
 async function sendSlackMessage(lead: StoredLead): Promise<NotificationResult> {

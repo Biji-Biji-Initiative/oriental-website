@@ -35,6 +35,7 @@ export default defineSchema({
     notificationDelivered: v.optional(v.boolean()),
     notificationEmailOk: v.optional(v.boolean()),
     notificationSlackOk: v.optional(v.boolean()),
+    notificationConfirmationOk: v.optional(v.boolean()),
     notificationSummary: v.optional(v.string()),
     lastNotificationAt: v.optional(v.number()),
     createdAt: v.number(),

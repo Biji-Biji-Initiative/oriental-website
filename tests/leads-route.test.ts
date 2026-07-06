@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   recordLeadNotificationStatus: vi.fn(),
   notifyOwner: vi.fn(),
   notifySlack: vi.fn(),
+  notifySubmitter: vi.fn(),
 }));
 
 vi.mock("@/lib/server/convex", () => ({
@@ -20,6 +21,7 @@ vi.mock("@/lib/server/notifications", async (importOriginal) => {
     ...actual,
     notifyOwner: mocks.notifyOwner,
     notifySlack: mocks.notifySlack,
+    notifySubmitter: mocks.notifySubmitter,
   };
 });
 
@@ -72,6 +74,7 @@ describe("POST /api/leads", () => {
     mocks.recordLeadNotificationStatus.mockResolvedValue({ ok: true });
     mocks.notifyOwner.mockResolvedValue({ ok: false, skipped: true, reason: "email_unconfigured" });
     mocks.notifySlack.mockResolvedValue({ ok: true, transport: "slack" });
+    mocks.notifySubmitter.mockResolvedValue({ ok: true, transport: "smtp" });
   });
 
   afterEach(() => {
@@ -103,9 +106,18 @@ describe("POST /api/leads", () => {
       notifications: {
         email: { ok: false, skipped: true, reason: "email_unconfigured" },
         slack: { ok: true, transport: "slack" },
+        confirmation: { ok: true, transport: "smtp" },
       },
     });
-    expect(mocks.recordLeadNotificationStatus).toHaveBeenCalledWith("lead_123", body.notifications);
+    expect(mocks.recordLeadNotificationStatus).toHaveBeenCalledWith(
+      "lead_123",
+      {
+        email: body.notifications.email,
+        slack: body.notifications.slack,
+        confirmation: body.notifications.confirmation,
+      },
+      true,
+    );
     expect(mocks.persistLead).toHaveBeenCalledWith(
       expect.objectContaining({
         voiceReviewId: "5a8c25b1-cd50-4e47-89bf-84947c805add",

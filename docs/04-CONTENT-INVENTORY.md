@@ -164,7 +164,7 @@ public web use before launch — track in [`10-ROADMAP.md`](./10-ROADMAP.md).
 | File | Use |
 |---|---|
 | `orientalhero2.png` | Hero background |
-| `07-building-context.png` | Vision strip caption photo |
+| `07-building-context.jpg` | Vision strip caption photo |
 | `01-hero-welcome.png` | Closing section background |
 | `05-sustainability-workshop.png` | Space 04 — Tech demo |
 | `16-buy-social-showcase.png` | Space 03 — Events |

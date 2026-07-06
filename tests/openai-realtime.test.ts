@@ -41,18 +41,14 @@ describe("createRealtimeClientSecret", () => {
       noise_reduction: "far_field",
       limits: { max_duration_ms: 150_000, idle_timeout_ms: 20_000 },
     });
-    expect(fetchMock).toHaveBeenCalledWith(
-      "https://api.openai.com/v1/realtime/client_secrets",
-      expect.objectContaining({
-        method: "POST",
-        headers: expect.objectContaining({
-          Authorization: "Bearer sk-test",
-          "OpenAI-Safety-Identifier": "safe-user",
-        }),
-      }),
-    );
 
     const init = fetchMock.mock.calls[0]?.[1];
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.openai.com/v1/realtime/client_secrets");
+    expect(init?.method).toBe("POST");
+    const headers = new Headers(init?.headers);
+    expect(headers.get("authorization")).toBe("Bearer sk-test");
+    expect(headers.get("openai-safety-identifier")).toBe("safe-user");
+
     expect(init).toBeDefined();
     const body = JSON.parse(String(init?.body));
     expect(body.expires_after).toEqual({ anchor: "created_at", seconds: 300 });
@@ -80,6 +76,7 @@ describe("createRealtimeClientSecret", () => {
         token_limits: { post_instructions: 8000 },
       },
       tool_choice: "auto",
+      parallel_tool_calls: false,
     });
     expect(body.session.instructions).toContain("# Role and Objective");
     expect(body.session.instructions).toContain("# Website Knowledge Base");

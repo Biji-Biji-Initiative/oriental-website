@@ -3,7 +3,8 @@ import { isProductionEnv } from "@/lib/env";
 import { type LeadRequest, leadRequestSchema } from "@/lib/schemas";
 import { persistLead, recordLeadNotificationStatus } from "@/lib/server/convex";
 import { durationSince, errorMeta, logError, logInfo, logWarn } from "@/lib/server/logger";
-import { type NotificationResult, notifyOwner, notifySlack, routeLead } from "@/lib/server/notifications";
+import { settledNotificationResult } from "@/lib/server/notification-results";
+import { notifyOwner, notifySlack, notifySubmitter, routeLead } from "@/lib/server/notifications";
 import { sendOpsAlert } from "@/lib/server/ops-alerts";
 import { checkRateLimit, hashIp, noStoreJson, requestIp, verifyTurnstile } from "@/lib/server/security";
 import { verifyVoiceReviewCredentials } from "@/lib/server/voice-review-token";
@@ -73,10 +74,15 @@ export async function POST(request: NextRequest) {
   }));
   // Notifications double as an independent durability path: the owner email and
   // Slack message carry the full lead, so they are attempted even when Convex is down.
-  const [email, slack] = await Promise.allSettled([notifyOwner(lead), notifySlack(lead)]);
+  const [email, slack, confirmation] = await Promise.allSettled([
+    notifyOwner(lead),
+    notifySlack(lead),
+    notifySubmitter(lead),
+  ]);
   const notifications = {
-    email: notificationResult(email, "email_failed"),
-    slack: notificationResult(slack, "slack_failed"),
+    email: settledNotificationResult(email, "email_failed", "lead.notification_rejected"),
+    slack: settledNotificationResult(slack, "slack_failed", "lead.notification_rejected"),
+    confirmation: settledNotificationResult(confirmation, "confirmation_failed", "lead.notification_rejected"),
   };
   const delivered = notifications.email.ok === true || notifications.slack.ok === true;
   if (!persistence.persisted && isProductionEnv()) {
@@ -103,7 +109,15 @@ export async function POST(request: NextRequest) {
     }
   }
   if (persistence.persisted) {
-    await recordLeadNotificationStatus(persistence.id, notifications).catch((error) => {
+    await recordLeadNotificationStatus(
+      persistence.id,
+      {
+        email: notifications.email,
+        slack: notifications.slack,
+        confirmation: notifications.confirmation,
+      },
+      delivered,
+    ).catch((error) => {
       logWarn("lead.notification_status_persist_failed", {
         requestId,
         leadId: persistence.id,
@@ -154,12 +168,6 @@ export async function POST(request: NextRequest) {
     persisted: persistence.persisted,
     notifications,
   });
-}
-
-function notificationResult(result: PromiseSettledResult<NotificationResult>, fallback: string): NotificationResult {
-  if (result.status === "fulfilled") return result.value;
-  logWarn("lead.notification_rejected", { fallback, error: errorMeta(result.reason) });
-  return { ok: false, error: fallback };
 }
 
 function voiceLeadHasSignedReview(data: LeadRequest) {

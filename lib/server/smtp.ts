@@ -7,7 +7,7 @@ type SmtpConfig = {
   username: string;
   password: string;
   from: string;
-  to: string;
+  to: string | string[];
   replyTo?: string;
   subject: string;
   text: string;
@@ -49,6 +49,14 @@ function mailBody(config: SmtpConfig) {
       `--${boundary}--`,
     ].join("\r\n"),
   };
+}
+
+function recipients(config: SmtpConfig) {
+  return Array.isArray(config.to) ? config.to : [config.to];
+}
+
+function recipientHeader(config: SmtpConfig) {
+  return recipients(config).join(", ");
 }
 
 function readReply(socket: SocketLike) {
@@ -113,13 +121,15 @@ export async function sendSmtpMail(config: SmtpConfig) {
     await sendCommand(socket, Buffer.from(config.username).toString("base64"), 334);
     await sendCommand(socket, Buffer.from(config.password).toString("base64"), 235);
     await sendCommand(socket, `MAIL FROM:<${config.from}>`, 250);
-    await sendCommand(socket, `RCPT TO:<${config.to}>`, [250, 251]);
+    for (const recipient of recipients(config)) {
+      await sendCommand(socket, `RCPT TO:<${recipient}>`, [250, 251]);
+    }
     await sendCommand(socket, "DATA", 354);
 
     const message = mailBody(config);
     const headers = [
       `From: ${encodeHeader(config.from)}`,
-      `To: ${encodeHeader(config.to)}`,
+      `To: ${encodeHeader(recipientHeader(config))}`,
       config.replyTo ? `Reply-To: ${encodeHeader(config.replyTo)}` : null,
       `Subject: ${encodeHeader(config.subject)}`,
       "MIME-Version: 1.0",

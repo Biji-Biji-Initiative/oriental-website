@@ -166,8 +166,8 @@ Current production floor:
 
 - Structured JSON logs from route handlers, visible in Coolify logs.
 - Sentry Next.js SDK (`sentry.server.config.ts`, `sentry.edge.config.ts`,
-  `sentry.client.config.ts`, `instrumentation.ts`, `instrumentation-client.ts`)
-  with project `oriental-website`.
+  `instrumentation.ts`, `instrumentation-client.ts`) with project
+  `oriental-website`.
 - Slack ops alerts through `SLACK_BOT_TOKEN` and
   `OPS_ALERT_SLACK_CHANNEL_ID=C01AVSGACFN` (`#tech-team-test`).
 - Token-gated `/admin/session-review` for recent Convex leads, voice session

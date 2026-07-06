@@ -12,6 +12,7 @@ export type LeadSubmitResponse = {
   notifications?: {
     email?: NotificationResult;
     slack?: NotificationResult;
+    confirmation?: NotificationResult;
   };
 };
 

@@ -119,7 +119,7 @@ export const spaces = [
       "A hands-on environment for technology partners to demonstrate tools, host learning experiences, and make emerging technologies more accessible to the public.",
     cta: "Showcase Technology Here",
     intent: "technology" as SegmentId,
-    image: "/assets/spaces/technology-showcase-demo-lab.png",
+    image: "/assets/spaces/technology-showcase-demo-lab-techy.jpg",
   },
 ] as const;
 

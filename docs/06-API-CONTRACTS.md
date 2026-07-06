@@ -95,6 +95,14 @@ type LeadResponse = {
       error?: string;
       status?: number;
     };
+    confirmation: {
+      ok: boolean;
+      transport?: "smtp" | "sesv2";
+      skipped?: boolean;
+      reason?: string;
+      error?: string;
+      status?: number;
+    };
   };
 };
 ```
@@ -124,12 +132,18 @@ degraded-success case.
 1. `routeLead()` resolves owner metadata from `lib/segments.ts` and `OWNER_*`.
 2. `persistLead()` inserts into Convex `leads` and `leadEvents` when configured.
 3. Owner notification is attempted through SMTP when SMTP env exists, otherwise
-   SESv2 when `AWS_REGION` is set. Owner email includes the lead id, source,
-   segment, routed owner, contact fields, brief, and recent transcript context.
+   SESv2 when `AWS_REGION` is set. SMTP sends one message to all recipients in
+   a single transaction. Owner email includes the lead id, source, segment,
+   routed owner, contact fields, brief, and recent transcript context. A shared
+   team copy is sent only when `TEAM_NOTIFICATION_EMAIL` or `TEAM_INBOX_EMAIL`
+   is explicitly configured.
 4. Slack notification is attempted through `SLACK_BOT_TOKEN` +
    `SLACK_CHANNEL_ID` first, with `SLACK_WEBHOOK_URL` as a fallback. Slack
    blocks include the same routing/contact fields plus a brief and transcript
    excerpt.
+5. Submitter confirmation email is attempted separately and is included in the
+   response and persisted notification summary. Production lead success still
+   depends on owner email or Slack delivery, not on submitter confirmation alone.
 
 In local and test environments, notification failures are represented in the
 `notifications` object and do not turn a successfully accepted lead into an
@@ -158,6 +172,16 @@ type NewsletterResponse = {
   ok: true;
   id: string;
   persisted: boolean;
+  notifications: {
+    confirmation: {
+      ok: boolean;
+      transport?: "smtp" | "sesv2";
+      skipped?: boolean;
+      reason?: string;
+      error?: string;
+      status?: number;
+    };
+  };
 };
 ```
 
@@ -190,7 +214,9 @@ Newsletter writes use the same Convex mutation as full leads:
 }
 ```
 
-No owner email or Slack notification is sent for newsletter-only leads.
+No owner email or Slack notification is sent for newsletter-only leads. If email
+delivery is configured, the subscriber receives newsletter-specific confirmation
+copy and that status is persisted in the notification summary.
 
 ## `POST /api/voice/session`
 

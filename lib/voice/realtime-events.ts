@@ -241,11 +241,11 @@ function applyFunctionCall(
 
       const normalizedValue = key === "org" ? normalizeOrganisation(value) : value;
       const existing = next.captured[key];
-      if (
-        !FREE_TEXT_CAPTURE_KEYS.has(key) &&
-        existing.trim() &&
-        normalizeEvidence(existing) === normalizeEvidence(normalizedValue)
-      ) {
+      const duplicateCapture =
+        key === "email"
+          ? existing.trim().toLowerCase() === normalizedValue.toLowerCase()
+          : existing.trim() && normalizeEvidence(existing) === normalizeEvidence(normalizedValue);
+      if (!FREE_TEXT_CAPTURE_KEYS.has(key) && duplicateCapture) {
         output = { ok: true, key, mode: "replace", captured: next.captured };
         break;
       }
@@ -280,13 +280,16 @@ function applyFunctionCall(
     }
     case "summarise_lead": {
       const missingFields = getMissingFields(next.captured);
+      const invalidFields = getInvalidFields(next.captured);
       output = {
         ok: true,
         segment: next.segment,
         captured: next.captured,
-        ready: missingFields.length === 0,
+        ready: missingFields.length === 0 && invalidFields.length === 0,
         missingFields,
         missingFieldLabels: getMissingFieldLabels(missingFields),
+        invalidFields,
+        invalidFieldLabels: getMissingFieldLabels(invalidFields),
         routeRequested: next.routeRequested ?? false,
       };
       break;
@@ -300,13 +303,17 @@ function applyFunctionCall(
 
       next = { ...next, segment };
       const missingFields = getMissingFields(next.captured);
-      if (missingFields.length > 0) {
+      const invalidFields = getInvalidFields(next.captured);
+      if (missingFields.length > 0 || invalidFields.length > 0) {
         output = {
           ok: false,
           ready: false,
           segment: next.segment,
+          error: invalidFields.length > 0 ? "invalid_required_fields" : "missing_required_fields",
           missingFields,
           missingFieldLabels: getMissingFieldLabels(missingFields),
+          invalidFields,
+          invalidFieldLabels: getMissingFieldLabels(invalidFields),
           captured: next.captured,
         };
       } else if (next.routeRequested) {
@@ -605,6 +612,17 @@ function normalizeEvidence(value: string) {
 
 function getMissingFields(captured: CapturedLead) {
   return REQUIRED_CAPTURED_FIELDS.filter((key) => !captured[key].trim());
+}
+
+function getInvalidFields(captured: CapturedLead): Array<keyof CapturedLead> {
+  const invalid: Array<keyof CapturedLead> = [];
+  const email = captured.email.trim();
+  if (email && !isLikelyEmail(email)) invalid.push("email");
+  return invalid;
+}
+
+function isLikelyEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
 const capturedFieldLabels: Record<keyof CapturedLead, string> = {

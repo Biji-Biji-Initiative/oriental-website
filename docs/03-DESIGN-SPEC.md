@@ -143,7 +143,7 @@ Production launch needs:
 | Slot | Current placeholder | Action |
 |---|---|---|
 | Hero | `assets/orientalhero2.png` | Verify rights for `oriental.mereka.io` use. |
-| Vision strip | `assets/07-building-context.png` | Same. |
+| Vision strip | `assets/07-building-context.jpg` | Same. |
 | Space 01 Commons | `81_agora_world_cafe_evening_*.png` | Same. |
 | Space 02 Academy | `2026-05-04-05-academy-tomorrow-2-v2.png` | Same. |
 | Space 03 Events | `16-buy-social-showcase.png` | Same. |

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { SegmentId } from "@/lib/segments";
 import { serializeRealtimeCommand } from "@/lib/voice/client-events";
@@ -42,10 +42,6 @@ export function useVoiceRuntime({ initialSegment, prefillEmail, submitLead, onEn
   // when the same field keeps failing.
   const ungroundedRejectionsRef = useRef(0);
 
-  useEffect(() => {
-    stateRef.current = { ...stateRef.current, segment, captured, transcript };
-  }, [captured, segment, transcript]);
-
   const reset = useCallback((initial: { segment: SegmentId; email?: string; name?: string; org?: string }) => {
     const nextCaptured = {
       ...emptyCapturedLead,
@@ -62,7 +58,14 @@ export function useVoiceRuntime({ initialSegment, prefillEmail, submitLead, onEn
   }, []);
 
   const updateCaptured = useCallback((key: keyof CapturedLead, value: string) => {
-    setCaptured((current) => ({ ...current, [key]: value }));
+    const nextCaptured = { ...stateRef.current.captured, [key]: value };
+    stateRef.current = { ...stateRef.current, captured: nextCaptured };
+    setCaptured(nextCaptured);
+  }, []);
+
+  const updateSegment = useCallback((nextSegment: SegmentId) => {
+    stateRef.current = { ...stateRef.current, segment: nextSegment };
+    setSegment(nextSegment);
   }, []);
 
   const appendUserText = useCallback((text: string) => {
@@ -89,8 +92,18 @@ export function useVoiceRuntime({ initialSegment, prefillEmail, submitLead, onEn
             output,
           });
         })
-        .catch(() => {
+        .catch((error) => {
           stateRef.current = { ...stateRef.current, routeRequested: false };
+          sendRealtimeCommand(channel, {
+            type: "function_result",
+            callId: command.callId,
+            createResponse: true,
+            output: {
+              ok: false,
+              error: "lead_submit_failed",
+              message: error instanceof Error ? error.message : "The lead submission failed.",
+            },
+          });
           toast.error("Could not finish voice routing. You can still send from the handoff panel.");
         });
     },
@@ -139,7 +152,7 @@ export function useVoiceRuntime({ initialSegment, prefillEmail, submitLead, onEn
     handleRealtimeEvent,
     reset,
     segment,
-    setSegment,
+    setSegment: updateSegment,
     stateRef,
     transcript,
     updateCaptured,

@@ -152,10 +152,11 @@ export const recordLeadNotification = mutationGeneric({
     notificationDelivered: v.boolean(),
     emailOk: v.boolean(),
     slackOk: v.boolean(),
+    confirmationOk: v.optional(v.boolean()),
     summary: v.string(),
   },
   returns: v.object({ ok: v.boolean() }),
-  handler: async (ctx, { ingestSecret, leadId, notificationDelivered, emailOk, slackOk, summary }) => {
+  handler: async (ctx, { ingestSecret, leadId, notificationDelivered, emailOk, slackOk, confirmationOk, summary }) => {
     requireIngestSecret(ingestSecret);
     const lead = await ctx.db
       .query("leads")
@@ -166,6 +167,7 @@ export const recordLeadNotification = mutationGeneric({
       notificationDelivered,
       notificationEmailOk: emailOk,
       notificationSlackOk: slackOk,
+      ...(typeof confirmationOk === "boolean" ? { notificationConfirmationOk: confirmationOk } : {}),
       notificationSummary: summary,
       lastNotificationAt: Date.now(),
     });

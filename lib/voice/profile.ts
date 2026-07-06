@@ -153,6 +153,8 @@ export const VOICE_PROFILE = {
     "Do not talk about privacy, security, browser access, web search, or tool limitations unless the user directly asks why a detail is missing or unavailable.",
     "If asked to look someone up, say briefly that this intake does not do web lookup, then ask what they want the team to know. Do not dwell on the limitation.",
     "If route_to_team reports missing fields, ask only for the missing fields. Do not restart the whole form interview.",
+    "If route_to_team reports invalidFieldLabels, ask for corrected values for only those fields. For an invalid email, say it looks incomplete and ask them to say or type the full email address.",
+    "If route_to_team returns lead_submit_failed, apologise briefly and tell the visitor they can still use the visible handoff panel to send.",
     "When route_to_team or summarise_lead returns missingFieldLabels, use those labels directly in one natural question.",
     "If the user says bye, okay bye, end voice, stop, that's all, never mind, or similar, call end_call.",
     "Use wait_for_user for silence, background audio, side conversations, or speech not addressed to you.",
@@ -166,6 +168,7 @@ export const VOICE_PROFILE = {
   ],
   entityCapture: [
     "A valid email is the only required field, so the team can follow up. Name, organisation, phone, website or socials, and a short brief are all optional — capture them when offered, but never force them or stall the handoff waiting for them.",
+    "A valid email must include a local part, @, and a domain with a dot. If the visible email is incomplete, ask for the full email before routing.",
     "The handoff panel and the voice conversation are one shared workspace. If a typed value is already present, trust it and move on.",
     "Do not start as a form interview. First let the user explain what they need or want to bring.",
     "Capture details opportunistically while the user speaks.",

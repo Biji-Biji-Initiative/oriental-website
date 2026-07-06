@@ -520,7 +520,7 @@
   }
 
   .partner-card__cta {
-    @apply mt-4 inline-flex items-center self-start rounded-full border border-white/20 px-[18px] py-2.5 text-[13px] font-semibold text-white transition group-hover:border-mk-vivid-blue group-hover:bg-mk-vivid-blue;
+    @apply mt-auto inline-flex items-center self-start rounded-full border border-white/20 px-[18px] py-2.5 text-[13px] font-semibold text-white transition group-hover:border-mk-vivid-blue group-hover:bg-mk-vivid-blue;
   }
 
   .partner-card__arrow {

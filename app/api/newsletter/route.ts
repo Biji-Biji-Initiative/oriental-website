@@ -1,9 +1,10 @@
 import type { NextRequest } from "next/server";
 import { isProductionEnv } from "@/lib/env";
 import { newsletterRequestSchema } from "@/lib/schemas";
-import { persistLead } from "@/lib/server/convex";
-import { durationSince, logError, logInfo, logWarn } from "@/lib/server/logger";
-import { routeLead } from "@/lib/server/notifications";
+import { persistLead, recordLeadNotificationStatus } from "@/lib/server/convex";
+import { durationSince, errorMeta, logError, logInfo, logWarn } from "@/lib/server/logger";
+import { settledNotificationResult } from "@/lib/server/notification-results";
+import { notifyNewsletterSubscriber, routeLead } from "@/lib/server/notifications";
 import { sendOpsAlert } from "@/lib/server/ops-alerts";
 import { checkRateLimit, hashIp, noStoreJson, requestIp, verifyTurnstile } from "@/lib/server/security";
 
@@ -78,13 +79,32 @@ export async function POST(request: NextRequest) {
     });
     return noStoreJson({ ok: false, error: "persistence_failed" }, { status: 502 });
   }
+
+  const [confirmation] = await Promise.allSettled([notifyNewsletterSubscriber(parsed.data.email)]);
+  const notifications = {
+    confirmation: settledNotificationResult(confirmation, "confirmation_failed", "newsletter.notification_rejected"),
+  };
+  if (persistence.persisted) {
+    await recordLeadNotificationStatus(persistence.id, notifications, notifications.confirmation.ok === true).catch(
+      (error) => {
+        logWarn("newsletter.notification_status_persist_failed", {
+          requestId,
+          leadId: persistence.id,
+          error: errorMeta(error),
+          durationMs: durationSince(startedAt),
+        });
+      },
+    );
+  }
+
   logInfo("newsletter.accepted", {
     requestId,
     leadId: lead.id,
     persisted: persistence.persisted,
+    notifications,
     rateLimitStore: limit.store,
     remaining: limit.remaining,
     durationMs: durationSince(startedAt),
   });
-  return noStoreJson({ ok: true, id: persistence.id, persisted: persistence.persisted });
+  return noStoreJson({ ok: true, id: persistence.id, persisted: persistence.persisted, notifications });
 }

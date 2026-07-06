@@ -64,6 +64,8 @@ type UseRealtimeVoiceSessionArgs = {
 };
 
 const prewarmSessionHeadroomMs = 30_000;
+const sessionMintTimeoutMs = 12_000;
+const sdpExchangeTimeoutMs = 15_000;
 
 export function useRealtimeVoiceSession({
   audioRef,
@@ -95,6 +97,8 @@ export function useRealtimeVoiceSession({
   // the connect machinery; the prewarm cache is invalidated on mismatch instead.
   const variantRef = useRef(variant);
   variantRef.current = variant;
+  const segmentRef = useRef(segment);
+  segmentRef.current = segment;
 
   const clearTimers = useCallback(() => {
     if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
@@ -107,6 +111,12 @@ export function useRealtimeVoiceSession({
 
   const teardownVoice = useCallback(
     (reason: VoiceCloseReason = "manual") => {
+      const hadActiveSession =
+        statusRef.current !== "idle" ||
+        Boolean(dataChannelRef.current) ||
+        Boolean(connectionRef.current) ||
+        Boolean(localStreamRef.current);
+      if (!hadActiveSession) return;
       clearTimers();
       idleClosingRef.current = false;
       const channel = dataChannelRef.current;
@@ -145,7 +155,7 @@ export function useRealtimeVoiceSession({
 
   const sendClientEvents = useCallback((events: RealtimeOutboundEvent | RealtimeOutboundEvent[]) => {
     const channel = dataChannelRef.current;
-    if (!channel || channel.readyState !== "open") return false;
+    if (channel?.readyState !== "open") return false;
     for (const event of Array.isArray(events) ? events : [events]) {
       channel.send(JSON.stringify(event));
     }
@@ -184,10 +194,16 @@ export function useRealtimeVoiceSession({
   }, []);
 
   const mintVoiceSession = useCallback(async () => {
-    const sessionResponse = await fetch("/api/voice/session", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ intent: segment, variant: variantRef.current }),
+    const sessionResponse = await fetchWithTimeout(
+      "/api/voice/session",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ intent: segmentRef.current, variant: variantRef.current }),
+      },
+      sessionMintTimeoutMs,
+    ).catch(() => {
+      throw new VoiceConnectionFailure("session_failed");
     });
     const session = (await sessionResponse.json().catch(() => null)) as VoiceSessionResponse | null;
     if (session?.error === "voice_limit_reached" || sessionResponse.status === 429) {
@@ -202,10 +218,15 @@ export function useRealtimeVoiceSession({
       idleTimeoutMs: positiveOr(session.limits?.idle_timeout_ms, VOICE_SESSION_DEFAULTS.idleTimeoutMs),
     };
     return { ...session, client_secret: { ...session.client_secret, value: clientSecret } };
-  }, [segment]);
+  }, []);
 
   type MintedSession = Awaited<ReturnType<typeof mintVoiceSession>>;
-  const prewarmedRef = useRef<{ session: MintedSession; mintedAt: number; variant: string | undefined } | null>(null);
+  const prewarmedRef = useRef<{
+    session: MintedSession;
+    mintedAt: number;
+    segment: SegmentId;
+    variant: string | undefined;
+  } | null>(null);
   const prewarmPromiseRef = useRef<Promise<void> | null>(null);
   const activePrewarmedAtRef = useRef<number | undefined>(undefined);
   const firstEventAtRef = useRef<number | undefined>(undefined);
@@ -231,9 +252,9 @@ export function useRealtimeVoiceSession({
     const cached = prewarmedRef.current;
     if (!cached) return null;
     prewarmedRef.current = null;
-    // A session prewarmed under a different voice variant is stale for the
-    // current selection — discard it so the new voice is honoured.
-    if (cached.variant !== variantRef.current) return null;
+    // A session prewarmed under a different segment or voice variant is stale for
+    // the current opening context — discard it so the first turn is grounded.
+    if (cached.segment !== segmentRef.current || cached.variant !== variantRef.current) return null;
     // expires_at is unix seconds from OpenAI; leave headroom for the SDP
     // handshake. Fall back to the documented 300s TTL when it is absent.
     const expiresAtMs =
@@ -256,10 +277,14 @@ export function useRealtimeVoiceSession({
     const cached = prewarmedRef.current;
     if (cached) {
       const expiresAtMs = sessionExpiresAtMs(cached.session, cached.mintedAt);
-      const stillFresh = cached.variant === variantRef.current && expiresAtMs > Date.now() + prewarmSessionHeadroomMs;
+      const stillFresh =
+        cached.segment === segmentRef.current &&
+        cached.variant === variantRef.current &&
+        expiresAtMs > Date.now() + prewarmSessionHeadroomMs;
       if (stillFresh) return;
       prewarmedRef.current = null;
     }
+    const segmentAtMint = segmentRef.current;
     const variantAtMint = variantRef.current;
     prewarmPromiseRef.current = queryMicrophonePermission()
       .then((permission) => {
@@ -269,7 +294,7 @@ export function useRealtimeVoiceSession({
       .then((session) => {
         if (!session) return;
         const mintedAt = Date.now();
-        prewarmedRef.current = { session, mintedAt, variant: variantAtMint };
+        prewarmedRef.current = { session, mintedAt, segment: segmentAtMint, variant: variantAtMint };
         emitSessionReady(session, { prewarmedAt: mintedAt });
       })
       .catch(() => null)
@@ -348,8 +373,7 @@ export function useRealtimeVoiceSession({
       const channel = peer.createDataChannel("oai-events");
       dataChannelRef.current = channel;
       channel.onopen = () => {
-        setConnectionStatus("listening");
-        statusRef.current = "listening";
+        setStatus("listening");
         emitSessionReady(session, {
           prewarmedAt: activePrewarmedAtRef.current,
           connectStartedAt,
@@ -390,16 +414,27 @@ export function useRealtimeVoiceSession({
 
       const offer = await peer.createOffer();
       await peer.setLocalDescription(offer);
-      const sdpResponse = await fetch("https://api.openai.com/v1/realtime/calls", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${session.client_secret.value}`,
-          "Content-Type": "application/sdp",
+      const sdpResponse = await fetchWithTimeout(
+        "https://api.openai.com/v1/realtime/calls",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session.client_secret.value}`,
+            "Content-Type": "application/sdp",
+          },
+          body: offer.sdp,
         },
-        body: offer.sdp,
+        sdpExchangeTimeoutMs,
+      ).catch(() => {
+        throw new VoiceConnectionFailure("webrtc_failed");
       });
+      if (connectionRef.current !== peer || statusRef.current === "idle") throw new VoiceConnectionFailure("manual");
       if (!sdpResponse.ok) throw new VoiceConnectionFailure("webrtc_failed");
-      await peer.setRemoteDescription({ type: "answer", sdp: await sdpResponse.text() });
+      const answerSdp = await sdpResponse.text();
+      if (connectionRef.current !== peer || statusRef.current === "idle") throw new VoiceConnectionFailure("manual");
+      await peer.setRemoteDescription({ type: "answer", sdp: answerSdp }).catch(() => {
+        throw new VoiceConnectionFailure(statusRef.current === "idle" ? "manual" : "webrtc_failed");
+      });
     } catch (error) {
       teardownVoice(error instanceof VoiceConnectionFailure ? error.reason : "error");
     } finally {
@@ -436,6 +471,16 @@ function sessionExpiresAtMs(session: { client_secret: { expires_at?: number } },
   return session.client_secret.expires_at && session.client_secret.expires_at > 0
     ? session.client_secret.expires_at * 1000
     : mintedAt + 270_000;
+}
+
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs: number) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeout);
+  }
 }
 
 async function queryMicrophonePermission(): Promise<PermissionState> {

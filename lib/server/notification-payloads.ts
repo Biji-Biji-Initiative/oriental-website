@@ -123,6 +123,120 @@ export function buildOwnerNotification(lead: StoredLead): OwnerNotification {
   return { subject, text, html };
 }
 
+export function buildSubmitterConfirmation(lead: StoredLead, contactEmail?: string): OwnerNotification {
+  const segment = getSegment(lead.segment);
+  const subject = "We received your Oriental Building note";
+  const name = lead.form.name.trim() || "there";
+  const contactLine = contactEmail
+    ? `If this is urgent, reply here or email ${contactEmail}.`
+    : "If this is urgent, reply to this email.";
+  const contactHtml = contactEmail
+    ? `If this is urgent, reply here or email <a href="mailto:${escapeHtml(contactEmail)}" style="color:#1f3f7c;">${escapeHtml(contactEmail)}</a>.`
+    : "If this is urgent, reply to this email.";
+  const text = [
+    `Hi ${name},`,
+    "",
+    "Thanks for reaching out about Oriental Building. We received your handoff and the Mereka team has a copy.",
+    `Your note is routed under: ${segment.label}.`,
+    lead.routedTo ? `Current team route: ${lead.routedTo}.` : "",
+    "",
+    `We will review it and follow up within two working days. ${contactLine}`,
+    "",
+    "Your note",
+    lead.form.message || "No additional note provided.",
+    "",
+    "Mereka · Oriental Building, Kuala Lumpur",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const html = `<!doctype html>
+<html lang="en">
+  <body style="margin:0;background:#f4f1ea;color:#100d18;font-family:Arial,Helvetica,sans-serif;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f1ea;padding:32px 16px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;background:#ffffff;border:1px solid #e3ddd2;border-radius:18px;overflow:hidden;">
+            <tr>
+              <td style="background:#100d18;padding:28px 34px;">
+                <p style="margin:0;color:#c9d5ec;font-size:11px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;">Oriental Building</p>
+                <h1 style="margin:12px 0 0;color:#ffffff;font-family:Georgia,'Times New Roman',serif;font-size:28px;line-height:1.25;font-weight:400;">Thanks, ${escapeHtml(name)}. We received your note.</h1>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:28px 34px 10px;color:#100d18;font-size:15px;line-height:1.65;">
+                <p style="margin:0 0 14px;">Thanks for reaching out about Oriental Building. We received your handoff and the Mereka team has a copy.</p>
+                <p style="margin:0 0 14px;">It is routed under <strong>${escapeHtml(segment.label)}</strong>${lead.routedTo ? ` and currently points to <strong>${escapeHtml(lead.routedTo)}</strong>` : ""}. We will review it and follow up within two working days.</p>
+                <p style="margin:0 0 18px;">${contactHtml}</p>
+                <p style="margin:0 0 8px;color:#5f5950;font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;">Your note</p>
+                <div style="border-left:3px solid #c9d5ec;padding:4px 0 4px 18px;font-family:Georgia,'Times New Roman',serif;font-size:17px;line-height:1.65;color:#100d18;">${htmlParagraph(lead.form.message || "No additional note provided.")}</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:22px 34px 30px;color:#9b948a;font-size:11px;letter-spacing:.08em;">MEREKA &#183; ORIENTAL BUILDING, KUALA LUMPUR &#183; OPENING 2027</td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+
+  return { subject, text, html };
+}
+
+export function buildNewsletterConfirmation(email: string, contactEmail?: string): OwnerNotification {
+  const contactLine = contactEmail
+    ? `Questions? Reply here or email ${contactEmail}.`
+    : "Questions? Reply to this email.";
+  const contactHtml = contactEmail
+    ? `Questions? Reply here or email <a href="mailto:${escapeHtml(contactEmail)}" style="color:#1f3f7c;">${escapeHtml(contactEmail)}</a>.`
+    : "Questions? Reply to this email.";
+  const subject = "You're on the Oriental Building updates list";
+  const text = [
+    "Hi there,",
+    "",
+    "Thanks for signing up for Oriental Building updates from Mereka.",
+    "We will send occasional project news, partner-interest updates, and launch notes as the building moves toward opening in 2027.",
+    contactLine,
+    "",
+    `Subscribed email: ${email}`,
+    "",
+    "Mereka · Oriental Building, Kuala Lumpur",
+  ].join("\n");
+  const html = `<!doctype html>
+<html lang="en">
+  <body style="margin:0;background:#f4f1ea;color:#100d18;font-family:Arial,Helvetica,sans-serif;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f1ea;padding:32px 16px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;background:#ffffff;border:1px solid #e3ddd2;border-radius:18px;overflow:hidden;">
+            <tr>
+              <td style="background:#100d18;padding:28px 34px;">
+                <p style="margin:0;color:#c9d5ec;font-size:11px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;">Oriental Building</p>
+                <h1 style="margin:12px 0 0;color:#ffffff;font-family:Georgia,'Times New Roman',serif;font-size:28px;line-height:1.25;font-weight:400;">You're on the updates list.</h1>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:28px 34px 10px;color:#100d18;font-size:15px;line-height:1.65;">
+                <p style="margin:0 0 14px;">Thanks for signing up for Oriental Building updates from Mereka.</p>
+                <p style="margin:0 0 14px;">We will send occasional project news, partner-interest updates, and launch notes as the building moves toward opening in 2027.</p>
+                <p style="margin:0 0 18px;">${contactHtml}</p>
+                <p style="margin:0;color:#5f5950;font-size:13px;line-height:1.6;">Subscribed email: ${escapeHtml(email)}</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:22px 34px 30px;color:#9b948a;font-size:11px;letter-spacing:.08em;">MEREKA &#183; ORIENTAL BUILDING, KUALA LUMPUR &#183; OPENING 2027</td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+
+  return { subject, text, html };
+}
+
 export function buildSlackPayload(lead: StoredLead): SlackLeadPayload {
   const segment = getSegment(lead.segment);
   const conversation = lead.transcript

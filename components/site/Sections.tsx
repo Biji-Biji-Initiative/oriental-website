@@ -106,15 +106,15 @@ export function Vision() {
             </p>
           </div>
         </div>
-        <figure className="relative mt-20 h-[520px] overflow-hidden rounded-lg">
+        <figure className="relative mt-20 h-[420px] overflow-hidden rounded-lg shadow-[0_24px_80px_rgba(16,13,24,0.12)] sm:h-[560px] lg:h-[720px] lg:max-h-[78vh]">
           <Image
             alt="Oriental Building context on Jalan Tun Perak"
-            className="object-cover"
+            className="object-cover object-[50%_22%]"
             fill
             sizes="(max-width: 768px) 100vw, 1240px"
-            src="/assets/07-building-context.png"
+            src="/assets/07-building-context.jpg"
           />
-          <figcaption className="absolute bottom-0 left-0 right-0 flex justify-between bg-mk-off-black/80 px-5 py-4 text-sm text-white backdrop-blur">
+          <figcaption className="absolute bottom-0 left-0 right-0 flex flex-col gap-1 bg-mk-off-black/82 px-5 py-4 text-sm text-white backdrop-blur sm:flex-row sm:justify-between">
             <span>Oriental Building</span>
             <span className="text-white/56">Art Deco landmark · Jalan Tun Perak · Kuala Lumpur</span>
           </figcaption>
