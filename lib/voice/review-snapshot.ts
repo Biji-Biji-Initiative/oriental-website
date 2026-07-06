@@ -1,5 +1,6 @@
 import type { VoiceReviewSnapshotRequest } from "@/lib/schemas";
 import type { VoiceRuntimeState } from "@/lib/voice/realtime-events";
+import type { VoiceTransportTelemetry } from "@/lib/voice/transport-telemetry";
 
 type VoiceReviewConnectionStatus = VoiceReviewSnapshotRequest["snapshot"]["connectionStatus"];
 type VoiceReviewStatus = VoiceReviewSnapshotRequest["snapshot"]["status"];
@@ -14,6 +15,7 @@ export type VoiceReviewCredentials = VoiceReviewSnapshotRequest["review"] & {
   connectStartedAt?: number;
   connectedAt?: number;
   firstEventAt?: number;
+  transport?: VoiceTransportTelemetry;
 };
 
 export function buildVoiceReviewSnapshot(
@@ -40,6 +42,7 @@ export function buildVoiceReviewSnapshot(
     connectedAt: review.connectedAt,
     firstEventAt: review.firstEventAt,
     closedAt: overrides.closedAt,
+    transport: review.transport,
     model: review.model,
     voice: review.voice,
     speed: review.speed,

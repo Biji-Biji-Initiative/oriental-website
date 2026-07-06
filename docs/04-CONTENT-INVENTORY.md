@@ -158,21 +158,23 @@ The voice agent has its own strings. Source: `voice-agent.jsx` constants
 
 ## Assets
 
-All under `/public/assets/` in production. Each must be re-licensed for
-public web use before launch — track in [`10-ROADMAP.md`](./10-ROADMAP.md).
+Shipped assets live under `/public/assets/`. Candidate/reference renders that
+are **not referenced by code** live under `/docs/assets/` (marked below) so
+they no longer ship in the Docker image. Each shipped image must be re-licensed
+for public web use before launch — track in [`10-ROADMAP.md`](./10-ROADMAP.md).
 
 | File | Use |
 |---|---|
-| `orientalhero2.png` | Hero background |
+| `docs/assets/orientalhero2.png` | Hero background (candidate — not wired in code) |
 | `07-building-context.jpg` | Vision strip caption photo |
 | `01-hero-welcome.png` | Closing section background |
 | `05-sustainability-workshop.png` | Space 04 — Tech demo |
 | `16-buy-social-showcase.png` | Space 03 — Events |
-| `20-ngo-finance-guild.png` | Space 05 — Social enterprise |
+| `docs/assets/20-ngo-finance-guild.png` | Space 05 — Social enterprise (candidate — not wired in code) |
 | `2026-05-04-05-academy-tomorrow-2-v2.jpg` | Space 02 — Academy |
-| `81_agora_world_cafe_evening_openai_4e792ccfe15d_20260504-213415_0.png` | Space 01 — Commons |
-| `exterior_render_*.png` | Reserve / unused (potential press kit) |
-| `oriental hsots.png` | Reserve (rename — has typo, will not ship) |
+| `docs/assets/81_agora_world_cafe_evening_openai_4e792ccfe15d_20260504-213415_0.png` | Space 01 — Commons (candidate — not wired in code) |
+| `docs/assets/exterior_render_*.png` | Reserve / unused (potential press kit) |
+| `docs/assets/oriental-hsots.png` | Reserve (renamed from `oriental hsots.png`) |
 | `mereka-white.png`, `mereka-symbol-white.png` | Brand marks |
 | `brand/biji-biji/biji-biji-logo-*.svg` | Footer Biji-biji primary mark, black/white variants |
 | `brand/biji-biji/biji-biji-elaborated-logo-*.svg` | Stored Biji-biji elaborated mark variants |
