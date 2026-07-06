@@ -12,7 +12,7 @@ Next.js 16 microsite for the Oriental Building partner-intake launch. The site t
 - OpenAI Realtime client-secret minting via `/api/voice/session`
 - Optional Cloudflare Turnstile enforcement for form/newsletter posts, Redis-backed rate limiting with memory fallback, SES/SMTP, and Slack Web API notifications
 - Sentry error tracking, Slack ops alerts, and a token-gated internal session review dashboard
-- Docker standalone runtime for Coolify (`oriental.mereka.io`)
+- Docker standalone runtime for Coolify (`oriental.mereka.io`; staging at `oriental-staging.deploy.mereka.io`)
 
 ## Development
 
@@ -36,6 +36,8 @@ The helper authenticates with Infisical Universal Auth, reads ngrok credentials 
 Copy `.env.local.example` to `.env.local` for local work. The Convex URL is non-secret and already points at the provisioned production deployment. Server-only secrets must be supplied through Infisical/Coolify for production.
 
 The production app-scoped Infisical folder is `/deploy/oriental-website` in project `6bfac905-9bb1-449e-8be8-f25f9634802b`. It mirrors the Coolify runtime variable names below so env syncs do not need ad hoc `ORIENTAL_*` remapping.
+
+Staging is live at `https://oriental-staging.deploy.mereka.io` on the Coolify app host. Its container currently reuses the production image and a host-local env copy with staging metadata overrides; the Infisical `staging` environment for `/deploy/oriental-website` is intentionally not documented as authoritative until separate staging secrets are populated.
 
 Required production variables:
 

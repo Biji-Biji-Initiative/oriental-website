@@ -33,6 +33,8 @@ mode as horizontally scalable.
 | Record | Value | Proxied |
 |---|---|---|
 | `oriental.mereka.io` | Coolify origin | Yes |
+| `oriental.deploy.mereka.io` | Coolify app host (`194.233.71.200`) | No |
+| `oriental-staging.deploy.mereka.io` | Coolify app host (`194.233.71.200`) | No |
 | `oriental.mereka.io` CAA | `letsencrypt.org` | n/a |
 
 TLS terminates at Cloudflare and the origin should remain Full Strict.
@@ -109,6 +111,17 @@ Secret contract is enforced by `scripts/check-secrets.ts`.
 | Runtime port | `3000` by default |
 | Health check | `GET /api/health` |
 | Build | Next.js `output: "standalone"` |
+
+Staging is available at `https://oriental-staging.deploy.mereka.io`. It is a lightweight Compose deployment on the same Coolify app host under `/data/coolify/applications/oriental-staging`, reusing the production image tag for the commit under review. It is routed through the Coolify Traefik network with `coolify.managed=false`, so it is host-managed rather than a full Coolify UI application until a dedicated Coolify staging app/API token is provisioned.
+
+Current staging caveat: `/deploy/oriental-website` has no populated Infisical `staging` environment. The staging container therefore uses a host-local copy of the production runtime env with non-secret overrides such as `COOLIFY_FQDN`, `COOLIFY_URL`, `SOURCE_COMMIT`, `GIT_SHA`, `SENTRY_ENVIRONMENT=staging`, and `NEXT_PUBLIC_SENTRY_ENVIRONMENT=staging`. Do not treat staging submissions as an isolated data/notification sandbox until separate staging Convex, SES, Slack, Redis, and OpenAI secrets are created.
+
+Staging rollback/removal is host-local:
+
+```bash
+cd /data/coolify/applications/oriental-staging
+docker compose -p oriental-staging down
+```
 
 Deploy flow:
 
