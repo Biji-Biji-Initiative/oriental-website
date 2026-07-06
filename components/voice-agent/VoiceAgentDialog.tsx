@@ -489,6 +489,7 @@ export function VoiceAgentDialog({
             }
             ready={true}
             selectedSegment={selectedSegment}
+            submitted={status === "submitted"}
             submitting={submitting}
             transcript={transcript}
           />

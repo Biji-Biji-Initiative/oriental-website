@@ -22,6 +22,7 @@ type HandoffPanelProps = {
   onSubmit: (values: CapturedLead) => Promise<Record<string, unknown>> | Record<string, unknown> | undefined;
   ready: boolean;
   selectedSegment: ReturnType<typeof getSegment>;
+  submitted: boolean;
   submitting: boolean;
   transcript: VoiceTranscriptEntry[];
 };
@@ -34,11 +35,14 @@ export function HandoffPanel({
   onSubmit,
   ready,
   selectedSegment,
+  submitted,
   submitting,
   transcript,
 }: HandoffPanelProps) {
   const completion = useMemo(() => handoffCompletion(captured), [captured]);
   const invalidCount = Object.keys(form.formState.errors).length;
+  const locked = submitted || submitting;
+  const sentTo = selectedSegment.routedTo.name;
   const transcriptRef = useRef<HTMLDivElement | null>(null);
   const transcriptTurnCount = transcript.length;
   const latestTranscriptKey = transcript.at(-1) ? `${transcript.at(-1)?.role}:${transcript.at(-1)?.text}` : "";
@@ -98,7 +102,7 @@ export function HandoffPanel({
         <form
           className="mt-5 grid gap-4"
           onSubmit={form.handleSubmit(
-            (values) => onSubmit(values),
+            (values) => (submitted ? undefined : onSubmit(values)),
             () => {
               toast.error("Please fix the highlighted details.", {
                 description: "The handoff just needs a valid email — everything else is optional.",
@@ -115,6 +119,7 @@ export function HandoffPanel({
                 <FormControl>
                   <Input
                     {...field}
+                    disabled={locked}
                     onChange={(event) => {
                       field.onChange(event);
                       onChange("name", event.target.value);
@@ -136,6 +141,7 @@ export function HandoffPanel({
                 <FormControl>
                   <Input
                     {...field}
+                    disabled={locked}
                     onChange={(event) => {
                       field.onChange(event);
                       onChange("email", event.target.value);
@@ -158,6 +164,7 @@ export function HandoffPanel({
                 <FormControl>
                   <Input
                     {...field}
+                    disabled={locked}
                     onChange={(event) => {
                       field.onChange(event);
                       onChange("org", event.target.value);
@@ -181,6 +188,7 @@ export function HandoffPanel({
                 <FormControl>
                   <Input
                     {...field}
+                    disabled={locked}
                     onChange={(event) => {
                       field.onChange(event);
                       onChange("phone", event.target.value);
@@ -205,6 +213,7 @@ export function HandoffPanel({
                 <FormControl>
                   <Input
                     {...field}
+                    disabled={locked}
                     onChange={(event) => {
                       field.onChange(event);
                       onChange("website", event.target.value);
@@ -229,6 +238,7 @@ export function HandoffPanel({
                   <Textarea
                     {...field}
                     className="min-h-28 resize-none py-3"
+                    disabled={locked}
                     onChange={(event) => {
                       field.onChange(event);
                       onChange("message", event.target.value);
@@ -244,7 +254,7 @@ export function HandoffPanel({
               </FormItem>
             )}
           />
-          {invalidCount > 0 ? (
+          {invalidCount > 0 && !submitted ? (
             <div
               className="flex gap-2 rounded-lg border border-mk-error/25 bg-mk-error/10 p-3 text-xs leading-5 text-mk-error-soft"
               role="alert"
@@ -253,13 +263,28 @@ export function HandoffPanel({
               Fix the highlighted fields before sending the handoff.
             </div>
           ) : null}
+          {submitted ? (
+            <div
+              className="flex gap-2 rounded-lg border border-mk-horizon/25 bg-mk-horizon/10 p-3 text-xs leading-5 text-mk-horizon"
+              role="status"
+            >
+              <CheckIcon className="mt-0.5 size-4 shrink-0" />
+              Sent to {sentTo}. The handoff is locked so it cannot be submitted twice.
+            </div>
+          ) : null}
           <Button
-            className="h-12 rounded-full bg-mk-horizon px-5 text-sm font-semibold text-mk-off-black transition hover:bg-white disabled:opacity-45"
-            disabled={!ready || submitting}
+            className="h-12 rounded-full bg-mk-horizon px-5 text-sm font-semibold text-mk-off-black transition hover:bg-white disabled:opacity-55"
+            disabled={!ready || locked}
             type="submit"
           >
-            <SendIcon data-icon="inline-start" />
-            {submitting ? "Sending..." : completion.ready ? "Send complete handoff" : "Send to Mereka"}
+            {submitted ? <CheckIcon data-icon="inline-start" /> : <SendIcon data-icon="inline-start" />}
+            {submitted
+              ? `Sent to ${sentTo}`
+              : submitting
+                ? "Sending..."
+                : completion.ready
+                  ? "Send complete handoff"
+                  : "Send to Mereka"}
           </Button>
         </form>
       </Form>

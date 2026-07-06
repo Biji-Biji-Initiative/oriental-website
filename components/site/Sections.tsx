@@ -214,9 +214,20 @@ export function Closing() {
           If you have a programme, space, technology, community, institution, or idea that belongs in this story — now
           is the moment to enter the conversation.
         </p>
-        <VoiceButton autoStart={false} className="mt-10" prefill={{ mode: "form" }}>
-          Start the conversation
-        </VoiceButton>
+        <div className="mt-10 flex flex-col gap-4 sm:flex-row sm:items-center">
+          <VoiceButton autoStart={false} prefill={{ mode: "form" }}>
+            Start the conversation
+          </VoiceButton>
+          <a
+            className="inline-flex min-h-12 items-center rounded-full border border-white/18 px-5 py-3 text-sm font-semibold text-white/72 transition hover:border-mk-horizon hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mk-horizon"
+            href="/faq"
+          >
+            Read the partner FAQ first
+            <span aria-hidden className="ml-3 text-mk-horizon">
+              →
+            </span>
+          </a>
+        </div>
       </div>
     </section>
   );
