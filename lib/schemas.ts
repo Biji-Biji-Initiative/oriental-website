@@ -57,7 +57,7 @@ export const voiceSessionRequestSchema = z.object({
 });
 
 export const adminLoginSchema = z.object({
-  token: z.string().min(8).max(300),
+  token: z.string().min(8).max(2000),
 });
 
 export const adminLeadWorkflowSchema = z.object({
