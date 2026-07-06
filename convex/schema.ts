@@ -106,6 +106,31 @@ export default defineSchema({
     ),
     rateLimits: v.array(v.any()),
     routeRequested: v.boolean(),
+    transport: v.optional(
+      v.object({
+        disconnectCount: v.number(),
+        recoveryCount: v.number(),
+        iceRestartCount: v.number(),
+        wasSpeakingAtClose: v.optional(v.boolean()),
+        transitions: v.array(v.object({ state: v.string(), at: v.number() })),
+        lastStats: v.optional(
+          v.object({
+            at: v.number(),
+            packetsLost: v.optional(v.number()),
+            packetsReceived: v.optional(v.number()),
+            jitterMs: v.optional(v.number()),
+            roundTripMs: v.optional(v.number()),
+          }),
+        ),
+        worstStats: v.optional(
+          v.object({
+            packetsLostPct: v.optional(v.number()),
+            maxJitterMs: v.optional(v.number()),
+            maxRttMs: v.optional(v.number()),
+          }),
+        ),
+      }),
+    ),
     createdAt: v.number(),
     updatedAt: v.number(),
     submittedAt: v.optional(v.number()),

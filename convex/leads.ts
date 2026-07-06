@@ -61,6 +61,30 @@ const usageValidator = v.object({
   transcriptionOutputTokens: v.number(),
 });
 
+const transportValidator = v.object({
+  disconnectCount: v.number(),
+  recoveryCount: v.number(),
+  iceRestartCount: v.number(),
+  wasSpeakingAtClose: v.optional(v.boolean()),
+  transitions: v.array(v.object({ state: v.string(), at: v.number() })),
+  lastStats: v.optional(
+    v.object({
+      at: v.number(),
+      packetsLost: v.optional(v.number()),
+      packetsReceived: v.optional(v.number()),
+      jitterMs: v.optional(v.number()),
+      roundTripMs: v.optional(v.number()),
+    }),
+  ),
+  worstStats: v.optional(
+    v.object({
+      packetsLostPct: v.optional(v.number()),
+      maxJitterMs: v.optional(v.number()),
+      maxRttMs: v.optional(v.number()),
+    }),
+  ),
+});
+
 const voiceSessionValidator = v.object({
   reviewId: v.string(),
   sessionId: v.string(),
@@ -91,6 +115,7 @@ const voiceSessionValidator = v.object({
   rateLimits: v.array(v.any()),
   routeRequested: v.boolean(),
   submittedAt: v.optional(v.number()),
+  transport: v.optional(transportValidator),
 });
 
 const workflowStatusValidator = v.union(
@@ -260,6 +285,7 @@ export const recordVoiceSession = mutationGeneric({
       ...(typeof snapshot.variant !== "undefined" ? { variant: snapshot.variant } : {}),
       ...(snapshot.usage ? { usage: snapshot.usage } : {}),
       ...(typeof snapshot.submittedAt === "number" ? { submittedAt: snapshot.submittedAt } : {}),
+      ...(snapshot.transport ? { transport: snapshot.transport } : {}),
     };
     if (existing) {
       await ctx.db.patch(existing._id, patch);
@@ -286,6 +312,37 @@ export const setVoiceSessionFollowUp = mutationGeneric({
     if (!session) return { ok: false, reason: "not_found" };
     await ctx.db.patch(session._id, { followedUpAt: followedUp ? Date.now() : undefined });
     return { ok: true };
+  },
+});
+
+export const voiceSessionsForEval = queryGeneric({
+  args: { ingestSecret: v.string(), limit: v.optional(v.number()) },
+  handler: async (ctx, { ingestSecret, limit }) => {
+    requireIngestSecret(ingestSecret);
+    const take = Math.min(Math.max(limit ?? 50, 1), 200);
+    const sessions = await ctx.db.query("voiceSessions").withIndex("by_updated_at").order("desc").take(take);
+    return sessions.map((session) => ({
+      reviewId: session.reviewId,
+      sessionId: session.sessionId,
+      segment: session.segment,
+      status: session.status,
+      connectionStatus: session.connectionStatus,
+      closeReason: session.closeReason ?? null,
+      leadId: session.leadId ?? null,
+      connectStartedAt: session.connectStartedAt ?? null,
+      connectedAt: session.connectedAt ?? null,
+      firstEventAt: session.firstEventAt ?? null,
+      closedAt: session.closedAt ?? null,
+      transcript: session.transcript,
+      captured: session.captured,
+      usage: session.usage ?? null,
+      errors: session.errors,
+      transport: session.transport ?? null,
+      routeRequested: session.routeRequested,
+      submittedAt: session.submittedAt ?? null,
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt,
+    }));
   },
 });
 

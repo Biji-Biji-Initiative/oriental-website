@@ -139,6 +139,34 @@ export const voiceReviewSnapshotSchema = z.object({
     rateLimits: z.array(z.record(z.string(), z.unknown())).max(20).default([]),
     routeRequested: z.boolean().default(false),
     submittedAt: z.number().optional(),
+    transport: z
+      .object({
+        disconnectCount: z.number().int().nonnegative(),
+        recoveryCount: z.number().int().nonnegative(),
+        iceRestartCount: z.number().int().nonnegative(),
+        wasSpeakingAtClose: z.boolean().optional(),
+        transitions: z
+          .array(z.object({ state: z.string().max(24), at: z.number() }))
+          .max(60)
+          .default([]),
+        lastStats: z
+          .object({
+            at: z.number(),
+            packetsLost: z.number().optional(),
+            packetsReceived: z.number().optional(),
+            jitterMs: z.number().optional(),
+            roundTripMs: z.number().optional(),
+          })
+          .optional(),
+        worstStats: z
+          .object({
+            packetsLostPct: z.number().optional(),
+            maxJitterMs: z.number().optional(),
+            maxRttMs: z.number().optional(),
+          })
+          .optional(),
+      })
+      .optional(),
   }),
 });
 

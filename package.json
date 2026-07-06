@@ -16,6 +16,7 @@
     "convex:codegen": "convex codegen",
     "convex:deploy": "convex deploy",
     "check-secrets": "tsx scripts/check-secrets.ts",
+    "eval:voice": "tsx scripts/eval-voice.ts",
     "voice:debug": "tsx scripts/voice-debug.ts",
     "local:ngrok": "tsx scripts/local-ngrok.ts"
   },

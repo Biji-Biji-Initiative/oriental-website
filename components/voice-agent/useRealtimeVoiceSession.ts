@@ -5,6 +5,14 @@ import type { SegmentId } from "@/lib/segments";
 import type { RealtimeOutboundEvent } from "@/lib/voice/client-events";
 import { VOICE_SESSION_DEFAULTS } from "@/lib/voice/profile";
 import type { RealtimeServerEvent } from "@/lib/voice/realtime-events";
+import {
+  emptyTransportTelemetry,
+  foldTransportStats,
+  nextConnectionAction,
+  recordTransition,
+  sampleTransportStats,
+  type VoiceTransportTelemetry,
+} from "@/lib/voice/transport-telemetry";
 
 export type VoiceConnectionStatus = "idle" | "requesting_mic" | "connecting" | "listening";
 export type VoiceCloseReason =
@@ -30,6 +38,7 @@ export type VoiceReviewMetadata = {
   connectStartedAt?: number;
   connectedAt?: number;
   firstEventAt?: number;
+  transport?: VoiceTransportTelemetry;
 };
 
 type VoiceSessionResponse = {
@@ -66,6 +75,13 @@ type UseRealtimeVoiceSessionArgs = {
 const prewarmSessionHeadroomMs = 30_000;
 const sessionMintTimeoutMs = 12_000;
 const sdpExchangeTimeoutMs = 15_000;
+// A `disconnected` peer connection is transient: ICE usually self-heals within
+// a few seconds. Hold the session open this long (attempting an ICE restart)
+// before treating the drop as terminal, so a network blip mid-sentence no
+// longer kills the call.
+const iceRecoveryGraceMs = 6_000;
+// Cadence for sampling packet loss / jitter / RTT while the call is live.
+const statsSampleIntervalMs = 5_000;
 
 export function useRealtimeVoiceSession({
   audioRef,
@@ -85,6 +101,12 @@ export function useRealtimeVoiceSession({
   const idleClosingRef = useRef(false);
   const connectGateRef = useRef(false);
   const maxTimerRef = useRef<number | null>(null);
+  // ICE recovery grace timer + periodic getStats sampler.
+  const iceGraceTimerRef = useRef<number | null>(null);
+  const statsTimerRef = useRef<number | null>(null);
+  // Whether the visitor is currently mid-utterance, so a drop can record it.
+  const userSpeakingRef = useRef(false);
+  const transportRef = useRef<VoiceTransportTelemetry>(emptyTransportTelemetry());
   // Session policy from the server, falling back to compiled defaults.
   const limitsRef = useRef({
     maxDurationMs: VOICE_SESSION_DEFAULTS.maxDurationMs,
@@ -104,9 +126,13 @@ export function useRealtimeVoiceSession({
     if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
     if (idleWarningTimerRef.current) window.clearTimeout(idleWarningTimerRef.current);
     if (maxTimerRef.current) window.clearTimeout(maxTimerRef.current);
+    if (iceGraceTimerRef.current) window.clearTimeout(iceGraceTimerRef.current);
+    if (statsTimerRef.current) window.clearInterval(statsTimerRef.current);
     idleTimerRef.current = null;
     idleWarningTimerRef.current = null;
     maxTimerRef.current = null;
+    iceGraceTimerRef.current = null;
+    statsTimerRef.current = null;
   }, []);
 
   const teardownVoice = useCallback(
@@ -322,6 +348,8 @@ export function useRealtimeVoiceSession({
     connectGateRef.current = true;
     const connectStartedAt = Date.now();
     firstEventAtRef.current = undefined;
+    transportRef.current = emptyTransportTelemetry();
+    userSpeakingRef.current = false;
     try {
       const permission = await queryMicrophonePermission();
       // Fail fast on a known denial: no token mint, no spent voice quota.
@@ -351,12 +379,54 @@ export function useRealtimeVoiceSession({
 
       const peer = new RTCPeerConnection();
       connectionRef.current = peer;
+      // Push the latest transport telemetry onto the review metadata so the
+      // periodic + close snapshots persist why a call degraded or dropped.
+      const emitTransport = () => emitSessionReady(session, { transport: { ...transportRef.current } });
+      const captureCloseTelemetry = () => {
+        transportRef.current = { ...transportRef.current, wasSpeakingAtClose: userSpeakingRef.current };
+        emitTransport();
+      };
       peer.onconnectionstatechange = () => {
-        if (
-          connectionRef.current === peer &&
-          statusRef.current === "listening" &&
-          (peer.connectionState === "failed" || peer.connectionState === "disconnected")
-        ) {
+        if (connectionRef.current !== peer) return;
+        const state = peer.connectionState;
+        transportRef.current = recordTransition(transportRef.current, state, Date.now());
+        if (statusRef.current !== "listening") return;
+        const graceActive = iceGraceTimerRef.current !== null;
+        const action = nextConnectionAction(state, graceActive);
+        if (action === "start_grace") {
+          // Transient drop: hold the session open and try to self-heal instead
+          // of tearing down mid-sentence.
+          transportRef.current = { ...transportRef.current, disconnectCount: transportRef.current.disconnectCount + 1 };
+          try {
+            peer.restartIce();
+            transportRef.current = {
+              ...transportRef.current,
+              iceRestartCount: transportRef.current.iceRestartCount + 1,
+            };
+          } catch {
+            // restartIce is best-effort; built-in ICE recovery still applies.
+          }
+          emitTransport();
+          iceGraceTimerRef.current = window.setTimeout(() => {
+            iceGraceTimerRef.current = null;
+            if (connectionRef.current === peer && statusRef.current === "listening") {
+              captureCloseTelemetry();
+              teardownVoice("disconnected");
+            }
+          }, iceRecoveryGraceMs);
+        } else if (action === "recovered") {
+          if (iceGraceTimerRef.current) {
+            window.clearTimeout(iceGraceTimerRef.current);
+            iceGraceTimerRef.current = null;
+          }
+          transportRef.current = { ...transportRef.current, recoveryCount: transportRef.current.recoveryCount + 1 };
+          emitTransport();
+        } else if (action === "teardown") {
+          if (iceGraceTimerRef.current) {
+            window.clearTimeout(iceGraceTimerRef.current);
+            iceGraceTimerRef.current = null;
+          }
+          captureCloseTelemetry();
           teardownVoice("disconnected");
         }
       };
@@ -381,12 +451,24 @@ export function useRealtimeVoiceSession({
         });
         resetIdleTimer();
         armMaxTimer();
+        // Begin sampling network health so a later drop carries its cause.
+        if (statsTimerRef.current) window.clearInterval(statsTimerRef.current);
+        statsTimerRef.current = window.setInterval(() => {
+          const active = connectionRef.current;
+          if (!active) return;
+          void sampleTransportStats(active, Date.now()).then((sample) => {
+            transportRef.current = foldTransportStats(transportRef.current, sample);
+          });
+        }, statsSampleIntervalMs);
       };
       channel.onclose = () => {
         const wasCurrentChannel = dataChannelRef.current === channel;
         if (wasCurrentChannel) {
           dataChannelRef.current = null;
-          if (statusRef.current === "listening") teardownVoice("disconnected");
+          if (statusRef.current === "listening") {
+            captureCloseTelemetry();
+            teardownVoice("disconnected");
+          }
         }
       };
       channel.onmessage = (event) => {
@@ -398,7 +480,11 @@ export function useRealtimeVoiceSession({
         }
         if (parsed?.type === "input_audio_buffer.speech_started") {
           // The user came back during the goodbye window; resume the normal idle cycle.
+          userSpeakingRef.current = true;
           idleClosingRef.current = false;
+        }
+        if (parsed?.type === "input_audio_buffer.speech_stopped") {
+          userSpeakingRef.current = false;
         }
         if (!firstEventAtRef.current) {
           firstEventAtRef.current = Date.now();

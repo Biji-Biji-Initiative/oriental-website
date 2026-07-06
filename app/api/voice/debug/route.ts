@@ -63,6 +63,7 @@ export async function POST(request: Request) {
 const loggedErrorCounts = new Map<string, number>();
 const loggedSnapshotSignatures = new Map<string, string>();
 const loggedSubmissions = new Set<string>();
+const loggedDisconnectCounts = new Map<string, number>();
 
 // Surface voice session health in structured server logs without captured PII or transcript text.
 // Snapshots repost on every state change, so dedupe per review id.
@@ -100,6 +101,28 @@ function logVoiceSessionHealth(reviewId: string, snapshot: VoiceReviewSnapshotRe
       rateLimitCount: snapshot.rateLimits.length,
       usage: snapshot.usage ?? null,
       submittedAt: snapshot.submittedAt ?? null,
+      transport: summarizeTransport(snapshot.transport),
+    });
+  }
+
+  // A drop while the visitor is talking is the failure that "can't happen" —
+  // surface the network cause loudly, deduped per new disconnect.
+  const disconnectCount = snapshot.transport?.disconnectCount ?? 0;
+  if (disconnectCount > (loggedDisconnectCounts.get(reviewId) ?? 0)) {
+    loggedDisconnectCounts.set(reviewId, disconnectCount);
+    trimToRecent(loggedDisconnectCounts);
+    logWarn("voice_review.transport_degraded", {
+      reviewId,
+      sessionId: snapshot.sessionId,
+      connectionStatus: snapshot.connectionStatus,
+      closeReason: snapshot.closeReason ?? null,
+      disconnectCount,
+      recoveryCount: snapshot.transport?.recoveryCount ?? 0,
+      iceRestartCount: snapshot.transport?.iceRestartCount ?? 0,
+      wasSpeakingAtClose: snapshot.transport?.wasSpeakingAtClose ?? null,
+      worstStats: snapshot.transport?.worstStats ?? null,
+      lastStats: snapshot.transport?.lastStats ?? null,
+      transitionCount: snapshot.transport?.transitions.length ?? 0,
     });
   }
   if (snapshot.errors.length > (loggedErrorCounts.get(reviewId) ?? 0)) {
@@ -161,7 +184,23 @@ function buildHealthSnapshotSignature(snapshot: VoiceReviewSnapshotRequest["snap
     rateLimitCount: snapshot.rateLimits.length,
     usage: snapshot.usage ?? null,
     submitted: snapshot.status === "submitted",
+    transport: summarizeTransport(snapshot.transport),
   });
+}
+
+// Compact, PII-free view of the WebRTC transport for structured logs.
+function summarizeTransport(transport: VoiceReviewSnapshotRequest["snapshot"]["transport"]) {
+  if (!transport) return null;
+  return {
+    disconnectCount: transport.disconnectCount,
+    recoveryCount: transport.recoveryCount,
+    iceRestartCount: transport.iceRestartCount,
+    wasSpeakingAtClose: transport.wasSpeakingAtClose ?? null,
+    transitionCount: transport.transitions.length,
+    packetsLostPct: transport.worstStats?.packetsLostPct ?? null,
+    maxJitterMs: transport.worstStats?.maxJitterMs ?? null,
+    maxRttMs: transport.worstStats?.maxRttMs ?? null,
+  };
 }
 
 function buildCapturedFieldSummary(snapshot: VoiceReviewSnapshotRequest["snapshot"]["captured"]) {
