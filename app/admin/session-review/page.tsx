@@ -382,7 +382,9 @@ type EvalAttentionEntry = EvalAnalytics["attention"][number];
 type RekaFixAction = {
   key: string;
   title: string;
+  surface: string;
   change: string;
+  acceptance: string;
   why: string;
   count: number;
   tone: "neutral" | "blue" | "green" | "red" | "amber";
@@ -432,7 +434,15 @@ function VoiceQualityPanel({ data }: { data: DashboardData }) {
                     </span>
                   </div>
                   <h3 className="mt-3 text-xl font-semibold leading-tight text-mk-off-black">{primaryFix.title}</h3>
-                  <p className="mt-3 max-w-3xl text-sm leading-6 text-mk-ash">{primaryFix.detail}</p>
+                  <div className="mt-4 grid gap-2 md:grid-cols-3">
+                    <ActionDetail label="Runtime surface" value={primaryFix.surface} />
+                    <ActionDetail label="Patch" value={primaryFix.change} />
+                    <ActionDetail label="Verify" value={primaryFix.acceptance} />
+                  </div>
+                  <p className="mt-3 max-w-3xl text-sm leading-6 text-mk-ash">
+                    <span className="font-semibold text-mk-off-black">Why this is first: </span>
+                    {primaryFix.why}
+                  </p>
                   <a
                     className="mt-4 inline-flex h-9 items-center rounded-full bg-mk-off-black px-4 text-xs font-semibold uppercase tracking-[0.12em] text-white transition hover:bg-mk-blue"
                     href={primaryFix.href}
@@ -512,6 +522,15 @@ function ScoreSummaryRow({ label, value, invert }: { label: string; value: numbe
   );
 }
 
+function ActionDetail({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-amber-700/15 bg-white/80 p-3">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-900/65">{label}</div>
+      <div className="mt-1 text-sm leading-5 text-mk-off-black">{value}</div>
+    </div>
+  );
+}
+
 function RekaFixActionList({ actions }: { actions: RekaFixAction[] }) {
   if (actions.length === 0) {
     return (
@@ -531,8 +550,16 @@ function RekaFixActionList({ actions }: { actions: RekaFixAction[] }) {
           </div>
           <h3 className="mt-3 text-base font-semibold leading-snug">{action.title}</h3>
           <p className="mt-2 text-sm leading-6 text-mk-ash">
-            <span className="font-semibold text-mk-off-black">Change: </span>
+            <span className="font-semibold text-mk-off-black">Surface: </span>
+            {action.surface}
+          </p>
+          <p className="mt-2 text-sm leading-6 text-mk-ash">
+            <span className="font-semibold text-mk-off-black">Patch: </span>
             {action.change}
+          </p>
+          <p className="mt-2 text-xs leading-5 text-mk-ash">
+            <span className="font-semibold text-mk-off-black">Verify: </span>
+            {action.acceptance}
           </p>
           <p className="mt-2 text-xs leading-5 text-mk-ash">
             <span className="font-semibold text-mk-off-black">Evidence: </span>
@@ -561,21 +588,27 @@ function buildPrimaryRekaFix(actions: RekaFixAction[], evaluated: number) {
     return {
       badge: `${evaluated} evaluated`,
       cta: "Open diagnostics",
-      detail: "No repeated failure pattern is currently flagged. Use diagnostics only when a new session looks wrong.",
-      href: "#voice-diagnostics",
+      acceptance: "No runtime patch selected",
+      change: "",
       entries: [] as EvalAttentionEntry[],
+      href: "#voice-diagnostics",
+      surface: "No runtime patch selected",
       title: "Keep monitoring new sessions",
       tone: "green" as const,
+      why: "No repeated failure pattern is currently flagged. Use diagnostics only when a new session looks wrong.",
     };
   }
   return {
     badge: `${top.count} examples`,
     cta: "Open first evidence session",
-    detail: `${top.change} ${top.why}`,
-    href: `#${voiceSessionAnchorId(top.entries[0]?.reviewId ?? "")}`,
+    acceptance: top.acceptance,
+    change: top.change,
     entries: top.entries,
+    href: `#${voiceSessionAnchorId(top.entries[0]?.reviewId ?? "")}`,
+    surface: top.surface,
     title: top.title,
     tone: top.tone,
+    why: top.why,
   };
 }
 
@@ -583,9 +616,12 @@ function buildRekaFixActions(entries: EvalAttentionEntry[]): RekaFixAction[] {
   const issueActions: RekaFixAction[] = [
     {
       key: "capture",
-      title: "Capture useful lead facts before any handoff",
+      title: "Add one non-blocking quality pass before send",
+      surface: "lib/voice/profile.ts -> Tools, Entity Capture, Conversation Flow",
       change:
-        "Require name, valid email, organisation, and intended contribution before route_to_team; if email is malformed, stop and ask for a correction.",
+        "Before the first route_to_team call, ask once for missing name, organisation, or brief in one compact sentence ending with 'or I can send it now'; keep email as the only hard blocker.",
+      acceptance:
+        "After pnpm eval:voice -- --persist, capture completeness should rise above 3/5 without reducing submit rate; malformed emails must still fail before routing.",
       why: "The evaluator says Reka is losing essential lead details, which makes follow-up weak even when the visitor is interested.",
       count: 0,
       tone: "red",
@@ -593,9 +629,12 @@ function buildRekaFixActions(entries: EvalAttentionEntry[]): RekaFixAction[] {
     },
     {
       key: "routing",
-      title: "Confirm the partner segment before routing",
+      title: "Confirm uncertain partner segments once",
+      surface: "lib/voice/profile.ts -> Confirm step + set_partner_type usage",
       change:
-        "Have Reka summarise the inferred segment and ask one confirmation question before selecting the owner route.",
+        "When the segment is inferred rather than explicit, ask one short routing check, accept corrections immediately, then route; skip the check when the visitor's segment is obvious or they insist on sending.",
+      acceptance:
+        "Next eval run should show routing correctness above 3/5 and fewer summaries mentioning wrong segment or wrong owner.",
       why: "Routing failures mean the team receives the wrong context or wrong owner for otherwise recoverable conversations.",
       count: 0,
       tone: "amber",
@@ -603,9 +642,12 @@ function buildRekaFixActions(entries: EvalAttentionEntry[]): RekaFixAction[] {
     },
     {
       key: "engagement",
-      title: "Shorten the conversation and ask one concrete next question",
+      title: "Replace vague recovery with one concrete next question",
+      surface: "lib/voice/profile.ts -> Conversation Flow + sample phrases",
       change:
-        "Replace vague recovery turns with one specific question about what the visitor wants to bring to Oriental, then capture the answer.",
+        "If the visitor stalls, ask one specific question about what they want to bring to Oriental, capture the answer as brief, then move to the compact contact block.",
+      acceptance:
+        "Conversation quality should trend above 3/5 and frustration below 2.5/5 after the next persisted eval batch.",
       why: "Frustration and low-quality sessions point to unclear direction, low engagement, and conversations ending without useful data.",
       count: 0,
       tone: "amber",
@@ -614,8 +656,11 @@ function buildRekaFixActions(entries: EvalAttentionEntry[]): RekaFixAction[] {
     {
       key: "transport",
       title: "Inspect transport before changing the prompt",
+      surface: "components/voice-agent/useRealtimeVoiceSession.ts + Convex voiceSessions.transport",
       change:
-        "For dropped-mid-turn sessions, review WebRTC telemetry first; prompt changes will not fix network or session-transport failures.",
+        "For dropped-mid-turn sessions, review WebRTC telemetry first; prompt changes will not fix packet loss, SDP, or session-transport failures.",
+      acceptance:
+        "Dropped-mid-turn count stays at zero on new sessions, or every occurrence has transport telemetry attached.",
       why: "A spoken lead can be lost if the session drops while the visitor is talking.",
       count: 0,
       tone: "red",

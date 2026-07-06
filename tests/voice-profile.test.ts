@@ -16,9 +16,13 @@ describe("voice profile", () => {
     expect(prompt).toContain("You can update the visible handoff panel by calling capture_field");
     expect(prompt).toContain("Treat non-empty typed fields there as user-provided details");
     expect(prompt).toContain("call route_to_team immediately");
+    expect(prompt).toContain("one compact quality pass");
+    expect(prompt).toContain("or I can send it now");
+    expect(prompt).toContain("Never do this quality pass more than once");
+    expect(prompt).toContain("do not wait for optional fields");
     expect(prompt).toContain("call end_call");
     expect(prompt).toContain("not grounded");
-    expect(prompt).toContain("A valid email is the only required field");
+    expect(prompt).toContain("A valid email is the only hard blocker");
     expect(prompt).toContain("# Website Knowledge Base");
     expect(prompt).toContain("Academy of Tomorrow learning studios");
     expect(prompt).toContain("Academy of Tomorrow Learning Studios");
