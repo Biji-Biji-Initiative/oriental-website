@@ -371,7 +371,7 @@ describe("notifyClickUp", () => {
     );
     const init = fetchMock.mock.calls[0]?.[1];
     const payload = JSON.parse(String(init?.body));
-    expect(payload.name).toBe("Oriental lead: Alex Tan · Technology");
+    expect(payload.name).toBe("Oriental lead: Alex Tan · Technology · lead_123");
     expect(payload.markdown_content).toContain("**Lead ID:** lead_123");
     expect(payload.markdown_content).toContain("### Voice transcript");
     expect(payload.tags).toEqual(["oriental", "voice", "technology"]);

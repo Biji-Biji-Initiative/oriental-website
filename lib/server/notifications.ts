@@ -262,7 +262,7 @@ async function sendClickUpTask(lead: StoredLead): Promise<NotificationResult> {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      name: `Oriental lead: ${lead.form.name || lead.form.email} · ${segment.label}`,
+      name: `Oriental lead: ${lead.form.name || lead.form.email} · ${segment.label} · ${lead.id.slice(0, 8)}`,
       markdown_content: buildClickUpTaskMarkdown(lead),
       tags: uniqueClickUpTags(["oriental", lead.source, segment.id]),
       notify_all: false,

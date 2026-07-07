@@ -407,6 +407,15 @@ export const recent = queryGeneric({
   },
 });
 
+export const leadsForClickUpBackfill = queryGeneric({
+  args: { ingestSecret: v.string(), limit: v.optional(v.number()) },
+  handler: async (ctx, { ingestSecret, limit }) => {
+    requireIngestSecret(ingestSecret);
+    const take = Math.min(Math.max(Math.floor(limit ?? 500), 1), 1000);
+    return await ctx.db.query("leads").order("desc").take(take);
+  },
+});
+
 export const reviewDashboard = queryGeneric({
   args: { ingestSecret: v.string(), limit: v.optional(v.number()) },
   handler: async (ctx, { ingestSecret, limit }) => {
