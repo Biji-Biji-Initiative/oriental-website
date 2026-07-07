@@ -269,7 +269,10 @@ export const VOICE_PROFILE = {
       prompt:
         "Partner intake for the Oriental Building in Kuala Lumpur. Expect Malaysian English, Bahasa Melayu, Mandarin, and Tamil, often code-mixed. Expect personal names, organisation names, and email addresses spoken aloud, for example 'asha dot lim at example dot com'. Domain terms: Mereka, Biji-biji Initiative, Oriental, KL.",
     },
-    maxDurationMs: 150_000,
+    // A generous ceiling for an engaged partner conversation. The client never
+    // cuts a visitor off mid-utterance: at this cap it waits for a natural pause
+    // and says a short goodbye. Tunable via VOICE_MAX_DURATION_MS.
+    maxDurationMs: 600_000,
     idleTimeoutMs: 20_000,
     idleGoodbyeGraceMs: 6_000,
     truncation: {

@@ -88,6 +88,7 @@ const transportValidator = v.object({
 const voiceSessionValidator = v.object({
   reviewId: v.string(),
   sessionId: v.string(),
+  conversationId: v.optional(v.string()),
   leadId: v.optional(v.union(v.string(), v.null())),
   segment: v.string(),
   status: v.string(),
@@ -263,6 +264,7 @@ export const recordVoiceSession = mutationGeneric({
       .unique();
     const patch = {
       sessionId: snapshot.sessionId,
+      ...(snapshot.conversationId ? { conversationId: snapshot.conversationId } : {}),
       leadId: snapshot.leadId ?? null,
       segment: snapshot.segment,
       status: snapshot.status,
@@ -368,6 +370,7 @@ export const voiceSessionsForEval = queryGeneric({
     return sessions.map((session) => ({
       reviewId: session.reviewId,
       sessionId: session.sessionId,
+      conversationId: session.conversationId ?? null,
       segment: session.segment,
       status: session.status,
       connectionStatus: session.connectionStatus,

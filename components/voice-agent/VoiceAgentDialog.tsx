@@ -16,6 +16,7 @@ import {
   serializeTypedInterruption,
   serializeUserText,
 } from "@/lib/voice/client-events";
+import { endConversation, resolveConversationId, touchConversation } from "@/lib/voice/conversation";
 import { recallHandoff, rememberHandoff } from "@/lib/voice/handoff-memory";
 import {
   fetchWithTimeout,
@@ -51,6 +52,10 @@ import {
 import { useVoice } from "./voice-state";
 import { readTunerFlag } from "./voice-tuner";
 
+// How often a live call persists a full review snapshot, so state survives even
+// when the final close snapshot is lost to a tab close or network drop.
+const VOICE_HEARTBEAT_INTERVAL_MS = 12_000;
+
 type VoiceAgentDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -73,6 +78,9 @@ export function VoiceAgentDialog({
   const [status, setStatus] = useState<"idle" | "submitted">("idle");
   const [submitting, setSubmitting] = useState(false);
   const [activeTopicId, setActiveTopicId] = useState<string | null>(null);
+  // Stable across every call/reconnect in one intake; resolved on open so a
+  // dropped-and-resumed conversation stitches to a single thread in review.
+  const [conversationId, setConversationId] = useState<string>("");
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const submittingRef = useRef(false);
   const lastSyncedHandoffRef = useRef("");
@@ -155,6 +163,9 @@ export function VoiceAgentDialog({
         }
         const routedTo = getSegment(leadState.segment).routedTo;
         rememberHandoff(parsed.data, leadState.segment);
+        // The handoff landed: this conversation is complete, so a later enquiry
+        // begins a new thread rather than resuming this one.
+        endConversation();
         if (source === "voice") {
           const review = currentReviewCredentials();
           if (review) {
@@ -217,6 +228,7 @@ export function VoiceAgentDialog({
       },
       segment,
       variant: voiceVariant,
+      conversationId,
     });
   teardownVoiceRef.current = teardownVoice;
   sendClientEventsRef.current = sendClientEvents;
@@ -254,6 +266,9 @@ export function VoiceAgentDialog({
     // Returning visitors are greeted like known partners: identity fields and
     // segment come back from local memory; the brief always starts fresh.
     const remembered = recallHandoff();
+    // Resume the in-flight conversation if the visitor reopens soon after a
+    // drop; otherwise this starts a fresh thread.
+    setConversationId(resolveConversationId());
     runtime.reset({
       segment: intent ?? remembered?.segment ?? "other",
       email: prefill?.email || remembered?.email,
@@ -393,6 +408,40 @@ export function VoiceAgentDialog({
     if (!open) return;
     const timeout = window.setTimeout(() => postReviewSnapshot({ status }), 1500);
     return () => window.clearTimeout(timeout);
+  }, [open, postReviewSnapshot, status]);
+
+  // Heartbeat: persist a full snapshot every few seconds while the call is live.
+  // A long call used to leave only its 1.5s snapshot behind if the close post
+  // was lost; now the review always has state that is at most one beat stale,
+  // carrying the latest transcript, transport telemetry, and captured fields.
+  useEffect(() => {
+    if (!open || connectionStatus !== "listening") return;
+    const interval = window.setInterval(() => {
+      touchConversation();
+      postReviewSnapshot({ status });
+    }, VOICE_HEARTBEAT_INTERVAL_MS);
+    return () => window.clearInterval(interval);
+  }, [open, connectionStatus, postReviewSnapshot, status]);
+
+  // A page unload (tab close / navigation) never runs the normal teardown, so
+  // the close reason and final transport would be lost. Flush one keepalive
+  // snapshot on the way out whenever a call is still live.
+  useEffect(() => {
+    if (!open) return;
+    const flushOnExit = () => {
+      if (connectionStatusRef.current === "idle") return;
+      postReviewSnapshot({ status, closeReason: "page_hidden", closedAt: Date.now() }, { allowLocalReview: false });
+    };
+    const onPageHide = () => flushOnExit();
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") flushOnExit();
+    };
+    window.addEventListener("pagehide", onPageHide);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("pagehide", onPageHide);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [open, postReviewSnapshot, status]);
 
   useEffect(() => {

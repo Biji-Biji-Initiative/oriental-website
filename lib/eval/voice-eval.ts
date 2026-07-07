@@ -32,6 +32,7 @@ export type EvalTransport = {
 export type VoiceEvalSession = {
   reviewId: string;
   sessionId: string;
+  conversationId?: string | null;
   segment: string;
   status: string;
   connectionStatus: string;
@@ -46,6 +47,110 @@ export type VoiceEvalSession = {
   transport?: EvalTransport;
   routeRequested: boolean;
   submittedAt?: number | null;
+  /** Review ids of the call segments folded into this conversation (if merged). */
+  callReviewIds?: string[];
+};
+
+// ---------------------------------------------------------------------------
+// Conversation stitching — collapse many call rows into one conversation
+// ---------------------------------------------------------------------------
+
+/** Abnormal closes that indicate the visitor did not end the call cleanly. */
+const ABNORMAL_CLOSE_REASONS = new Set(["disconnected", "webrtc_failed", "error", "page_hidden"]);
+
+function callStartAt(session: VoiceEvalSession): number {
+  return session.connectStartedAt ?? session.connectedAt ?? session.firstEventAt ?? 0;
+}
+
+/**
+ * Union the transcripts of a conversation's call segments in chronological
+ * order, dropping exact duplicate turns. Same-dialog reconnects accumulate the
+ * full transcript on each row (later rows are supersets); reopen-after-close
+ * rows are disjoint. Order-preserving dedup yields the correct single thread in
+ * both cases.
+ */
+export function mergeConversationTranscripts(ordered: VoiceEvalSession[]): EvalTranscriptTurn[] {
+  const seen = new Set<string>();
+  const merged: EvalTranscriptTurn[] = [];
+  for (const session of ordered) {
+    for (const turn of session.transcript) {
+      const key = `${turn.role}::${turn.text.trim()}`;
+      if (turn.text.trim().length > 0 && seen.has(key)) continue;
+      if (turn.text.trim().length > 0) seen.add(key);
+      merged.push(turn);
+    }
+  }
+  return merged;
+}
+
+/**
+ * Group call rows by `conversationId` (falling back to `reviewId` for legacy
+ * rows without one) and fold each group into a single logical conversation, so
+ * a dropped-and-resumed intake reads as one conversation rather than many.
+ */
+export function mergeConversationSessions(sessions: VoiceEvalSession[]): VoiceEvalSession[] {
+  const groups = new Map<string, VoiceEvalSession[]>();
+  for (const session of sessions) {
+    const key = session.conversationId ?? session.reviewId;
+    const existing = groups.get(key);
+    if (existing) existing.push(session);
+    else groups.set(key, [session]);
+  }
+
+  const merged: VoiceEvalSession[] = [];
+  for (const group of groups.values()) {
+    if (group.length === 1) {
+      merged.push(group[0] as VoiceEvalSession);
+      continue;
+    }
+    const ordered = [...group].sort((a, b) => callStartAt(a) - callStartAt(b));
+    const head = ordered[ordered.length - 1] as VoiceEvalSession;
+    const submitted = ordered.find((s) => Boolean(s.submittedAt) || Boolean(s.leadId));
+    const transport = ordered.reduce<EvalTransport>((acc, s) => foldEvalTransport(acc, s.transport ?? null), null);
+    merged.push({
+      ...head,
+      // The latest call row heads the conversation, but timings and outcome span
+      // every segment.
+      conversationId: head.conversationId ?? head.reviewId,
+      connectStartedAt: min(ordered.map(callStartAt)),
+      connectedAt: min(ordered.map((s) => s.connectedAt).filter(isNumber)),
+      firstEventAt: min(ordered.map((s) => s.firstEventAt).filter(isNumber)),
+      closedAt: max(ordered.map((s) => s.closedAt).filter(isNumber)),
+      submittedAt: submitted?.submittedAt ?? head.submittedAt ?? null,
+      leadId: submitted?.leadId ?? head.leadId ?? null,
+      transcript: mergeConversationTranscripts(ordered),
+      errors: ordered.flatMap((s) => s.errors),
+      transport,
+      routeRequested: ordered.some((s) => s.routeRequested),
+      callReviewIds: ordered.map((s) => s.reviewId),
+    });
+  }
+  return merged;
+}
+
+function foldEvalTransport(acc: EvalTransport, next: EvalTransport): EvalTransport {
+  if (!next) return acc;
+  if (!acc) return next;
+  return {
+    disconnectCount: acc.disconnectCount + next.disconnectCount,
+    recoveryCount: acc.recoveryCount + next.recoveryCount,
+    iceRestartCount: acc.iceRestartCount + next.iceRestartCount,
+    wasSpeakingAtClose: next.wasSpeakingAtClose ?? acc.wasSpeakingAtClose,
+    worstStats: {
+      packetsLostPct: maxOrNull(acc.worstStats?.packetsLostPct, next.worstStats?.packetsLostPct),
+      maxJitterMs: maxOrNull(acc.worstStats?.maxJitterMs, next.worstStats?.maxJitterMs),
+      maxRttMs: maxOrNull(acc.worstStats?.maxRttMs, next.worstStats?.maxRttMs),
+    },
+  };
+}
+
+const isNumber = (value: number | null | undefined): value is number => typeof value === "number";
+const min = (values: number[]): number | null => (values.length === 0 ? null : Math.min(...values));
+const max = (values: number[]): number | null => (values.length === 0 ? null : Math.max(...values));
+const maxOrNull = (a: number | undefined, b: number | undefined): number | undefined => {
+  if (typeof a !== "number") return b;
+  if (typeof b !== "number") return a;
+  return Math.max(a, b);
 };
 
 // ---------------------------------------------------------------------------
@@ -66,7 +171,7 @@ export function deriveTransportSignals(session: VoiceEvalSession): TransportSign
   const disconnects = transport?.disconnectCount ?? 0;
   const recoveries = transport?.recoveryCount ?? 0;
   return {
-    droppedMidTurn: session.closeReason === "disconnected" && transport?.wasSpeakingAtClose === true,
+    droppedMidTurn: ABNORMAL_CLOSE_REASONS.has(session.closeReason ?? "") && transport?.wasSpeakingAtClose === true,
     hadDisconnect: disconnects > 0,
     recoveredAfterDisconnect: disconnects > 0 && recoveries >= disconnects,
     worstPacketsLostPct: transport?.worstStats?.packetsLostPct ?? null,
@@ -183,6 +288,8 @@ function coerceIntegers(value: unknown): unknown {
 
 export type SessionEval = {
   reviewId: string;
+  conversationId: string | null;
+  callCount: number;
   segment: string;
   closeReason: string | null;
   transport: TransportSignals;
@@ -193,6 +300,8 @@ export type SessionEval = {
 export function buildSessionEval(session: VoiceEvalSession, score: JudgeScore | null): SessionEval {
   return {
     reviewId: session.reviewId,
+    conversationId: session.conversationId ?? null,
+    callCount: session.callReviewIds?.length ?? 1,
     segment: session.segment,
     closeReason: session.closeReason ?? null,
     transport: deriveTransportSignals(session),

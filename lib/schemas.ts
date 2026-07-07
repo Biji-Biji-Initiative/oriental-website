@@ -78,6 +78,7 @@ export const voiceReviewSnapshotSchema = z.object({
   }),
   snapshot: z.object({
     sessionId: z.string().min(1).max(160),
+    conversationId: z.string().uuid().optional(),
     leadId: z.string().max(160).nullable().optional(),
     segment: segmentSchema,
     status: z.enum(["idle", "submitted"]).default("idle"),
@@ -93,6 +94,7 @@ export const voiceReviewSnapshotSchema = z.object({
         "session_failed",
         "webrtc_failed",
         "disconnected",
+        "page_hidden",
       ])
       .optional(),
     prewarmedAt: z.number().optional(),

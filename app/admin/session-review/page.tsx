@@ -2131,12 +2131,15 @@ function followUpMailto(session: VoiceSessionRow) {
 }
 
 function VoiceSessionsPanel({ sessions }: { sessions: VoiceSessionRow[] }) {
-  const reviewNeeded = sessions.filter(sessionNeedsVoiceReview);
-  const reviewIds = new Set(reviewNeeded.map((session) => session.reviewId));
-  const routine = sessions.filter((session) => !reviewIds.has(session.reviewId));
-  const pinnedRoutine = routine.filter(sessionNeedsEvalAttention);
-  const pinnedIds = new Set(pinnedRoutine.map((session) => session.reviewId));
-  const recentRoutine = routine.filter((session) => !pinnedIds.has(session.reviewId)).slice(0, 8);
+  // Collapse call rows into conversations before triage: a conversation needs
+  // review if any of its calls do, so a drop-and-resume is one entry, not many.
+  const conversations = collapseConversations(sessions);
+  const reviewNeeded = conversations.filter((conversation) => conversation.calls.some(sessionNeedsVoiceReview));
+  const reviewIds = new Set(reviewNeeded.map((conversation) => conversation.reviewId));
+  const routine = conversations.filter((conversation) => !reviewIds.has(conversation.reviewId));
+  const pinnedRoutine = routine.filter((conversation) => conversation.calls.some(sessionNeedsEvalAttention));
+  const pinnedIds = new Set(pinnedRoutine.map((conversation) => conversation.reviewId));
+  const recentRoutine = routine.filter((conversation) => !pinnedIds.has(conversation.reviewId)).slice(0, 8);
   const visibleRoutine = [...pinnedRoutine, ...recentRoutine];
   const hiddenRoutineCount = Math.max(routine.length - visibleRoutine.length, 0);
   return (
@@ -2182,8 +2185,9 @@ function VoiceSessionsPanel({ sessions }: { sessions: VoiceSessionRow[] }) {
   );
 }
 
-function VoiceSessionCompactDetails({ session }: { session: VoiceSessionRow }) {
+function VoiceSessionCompactDetails({ session }: { session: ConversationHead }) {
   const realErrorCount = realVoiceErrorCount(session);
+  const callCount = session.calls.length;
   return (
     <details
       className="rounded-lg border border-mk-ash/15 bg-white"
@@ -2201,6 +2205,7 @@ function VoiceSessionCompactDetails({ session }: { session: VoiceSessionRow }) {
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
+            {callCount > 1 ? <Badge tone="blue">{callCount} calls</Badge> : null}
             <Badge tone={session.leadId ? "green" : "neutral"}>{session.leadId ? "submitted" : session.status}</Badge>
             {session.eval?.conversationQuality && session.eval.conversationQuality <= 2 ? (
               <Badge tone="red">quality {session.eval.conversationQuality}</Badge>
@@ -2215,15 +2220,16 @@ function VoiceSessionCompactDetails({ session }: { session: VoiceSessionRow }) {
       <div className="border-t border-mk-ash/15 p-3">
         <SessionQualityFlags session={session} realErrorCount={realErrorCount} />
         <UsageSummary session={session} />
-        <AdminVoiceSessionTranscript expectedTurnCount={transcriptTurnCount(session)} reviewId={session.reviewId} />
+        <ConversationTranscript calls={session.calls} />
       </div>
     </details>
   );
 }
 
-function VoiceSessionDetails({ session }: { session: VoiceSessionRow }) {
+function VoiceSessionDetails({ session }: { session: ConversationHead }) {
   const realErrorCount = realVoiceErrorCount(session);
   const benignErrorCount = session.errors.length - realErrorCount;
+  const callCount = session.calls.length;
   return (
     <details
       className="rounded-lg border border-mk-ash/15 bg-white"
@@ -2242,6 +2248,7 @@ function VoiceSessionDetails({ session }: { session: VoiceSessionRow }) {
             ) : null}
           </div>
           <div className="flex flex-wrap gap-2">
+            {callCount > 1 ? <Badge tone="blue">{callCount} calls</Badge> : null}
             <Badge tone={session.leadId ? "green" : "neutral"}>{session.leadId ? "submitted" : session.status}</Badge>
             {session.variant ? <Badge tone="blue">{session.variant}</Badge> : null}
             {session.prewarmedAt ? <Badge tone="neutral">prewarmed</Badge> : null}
@@ -2326,7 +2333,7 @@ function VoiceSessionDetails({ session }: { session: VoiceSessionRow }) {
             ))}
           </div>
         ) : null}
-        <AdminVoiceSessionTranscript expectedTurnCount={transcriptTurnCount(session)} reviewId={session.reviewId} />
+        <ConversationTranscript calls={session.calls} />
       </div>
     </details>
   );
@@ -2627,9 +2634,64 @@ function voiceSessionAnchorId(reviewId: string) {
   return `voice-${reviewId.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 }
 
+type ConversationHead = VoiceSessionRow & { calls: VoiceSessionRow[] };
+
+/**
+ * Collapse call rows into one entry per conversation, so a dropped-and-resumed
+ * intake is reviewed as a single conversation instead of several. Legacy rows
+ * without a conversationId stand alone (keyed by reviewId). The latest call
+ * heads the entry; every call in the group is kept for per-call inspection.
+ */
+function collapseConversations(sessions: VoiceSessionRow[]): ConversationHead[] {
+  const groups = new Map<string, VoiceSessionRow[]>();
+  for (const session of sessions) {
+    const key = session.conversationId ?? session.reviewId;
+    const list = groups.get(key);
+    if (list) list.push(session);
+    else groups.set(key, [session]);
+  }
+  const heads: ConversationHead[] = [];
+  for (const group of groups.values()) {
+    const calls = [...group].sort((a, b) => a.updatedAt - b.updatedAt);
+    const head = calls[calls.length - 1] as VoiceSessionRow;
+    heads.push({ ...head, calls });
+  }
+  return heads.sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+/**
+ * Render a conversation's transcript. A single-call conversation shows one
+ * transcript; a multi-call one shows each call segment in order with its close
+ * reason, so a reviewer sees the whole thread and where each call dropped.
+ */
+function ConversationTranscript({ calls }: { calls: VoiceSessionRow[] }) {
+  const only = calls[0];
+  if (calls.length <= 1 && only) {
+    return <AdminVoiceSessionTranscript expectedTurnCount={transcriptTurnCount(only)} reviewId={only.reviewId} />;
+  }
+  return (
+    <div className="grid gap-2">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-mk-ash">
+        {calls.length} calls in this conversation
+      </div>
+      {calls.map((call, index) => (
+        <div className="rounded-md border border-mk-ash/15 bg-mk-paper/50 p-2" key={call.reviewId}>
+          <div className="mb-1 flex flex-wrap items-center gap-2 text-[11px] text-mk-ash">
+            <span className="font-semibold text-mk-ink">Call {index + 1}</span>
+            <span>{formatDate(call.updatedAt)}</span>
+            {call.closeReason ? <Badge tone={closeReasonTone(call.closeReason)}>{call.closeReason}</Badge> : null}
+            <span>{transcriptTurnCount(call)} turns</span>
+          </div>
+          <AdminVoiceSessionTranscript expectedTurnCount={transcriptTurnCount(call)} reviewId={call.reviewId} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function closeReasonTone(reason: string): "neutral" | "blue" | "green" | "red" | "amber" {
   if (reason === "manual" || reason === "idle_timeout" || reason === "max_duration") return "neutral";
-  if (reason === "voice_limit_reached" || reason === "mic_denied") return "amber";
+  if (reason === "voice_limit_reached" || reason === "mic_denied" || reason === "page_hidden") return "amber";
   return "red";
 }
 

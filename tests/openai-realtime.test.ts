@@ -39,7 +39,7 @@ describe("createRealtimeClientSecret", () => {
       variant: null,
       transcription_model: "gpt-4o-transcribe",
       noise_reduction: "far_field",
-      limits: { max_duration_ms: 150_000, idle_timeout_ms: 20_000 },
+      limits: { max_duration_ms: 600_000, idle_timeout_ms: 20_000 },
     });
 
     const init = fetchMock.mock.calls[0]?.[1];

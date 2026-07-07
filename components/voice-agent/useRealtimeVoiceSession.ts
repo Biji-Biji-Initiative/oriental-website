@@ -39,6 +39,8 @@ export type VoiceReviewMetadata = {
   connectedAt?: number;
   firstEventAt?: number;
   transport?: VoiceTransportTelemetry;
+  /** Correlation id shared by every call/reconnect in one intake conversation. */
+  conversationId?: string;
 };
 
 type VoiceSessionResponse = {
@@ -70,6 +72,8 @@ type UseRealtimeVoiceSessionArgs = {
   segment: SegmentId;
   /** Optional QA voice variant id, resolved server-side at mint time. */
   variant?: string;
+  /** Stable correlation id for this intake; reused across reconnects. */
+  conversationId?: string;
 };
 
 const prewarmSessionHeadroomMs = 30_000;
@@ -82,6 +86,13 @@ const sdpExchangeTimeoutMs = 15_000;
 const iceRecoveryGraceMs = 6_000;
 // Cadence for sampling packet loss / jitter / RTT while the call is live.
 const statsSampleIntervalMs = 5_000;
+// After the idle/max cutoff Reka has said her goodbye, this is how long the
+// closing line is given to play before the transport is actually torn down.
+const closingGoodbyeMs = 6_000;
+// A deferred close waits for the visitor to stop talking. If a `speech_stopped`
+// event never arrives (dropped channel, missed VAD), force the close after this
+// ceiling so a wedged `userSpeaking` flag can never hold a call open forever.
+const speakingDeferralCeilingMs = 45_000;
 
 export function useRealtimeVoiceSession({
   audioRef,
@@ -91,6 +102,7 @@ export function useRealtimeVoiceSession({
   onSessionReady,
   segment,
   variant,
+  conversationId,
 }: UseRealtimeVoiceSessionArgs) {
   const [connectionStatus, setConnectionStatus] = useState<VoiceConnectionStatus>("idle");
   const connectionRef = useRef<RTCPeerConnection | null>(null);
@@ -106,6 +118,13 @@ export function useRealtimeVoiceSession({
   const statsTimerRef = useRef<number | null>(null);
   // Whether the visitor is currently mid-utterance, so a drop can record it.
   const userSpeakingRef = useRef(false);
+  // A close (idle/max) that fired while the visitor was still talking: held
+  // here until `speech_stopped` so we never guillotine a live utterance.
+  const pendingCloseRef = useRef<(() => void) | null>(null);
+  const speakingDeferralTimerRef = useRef<number | null>(null);
+  // Pushes the latest transport telemetry (incl. wasSpeakingAtClose) onto the
+  // review metadata; assigned once the peer exists so teardown can flush it.
+  const captureCloseRef = useRef<(() => void) | null>(null);
   const transportRef = useRef<VoiceTransportTelemetry>(emptyTransportTelemetry());
   // Session policy from the server, falling back to compiled defaults.
   const limitsRef = useRef({
@@ -121,6 +140,8 @@ export function useRealtimeVoiceSession({
   variantRef.current = variant;
   const segmentRef = useRef(segment);
   segmentRef.current = segment;
+  const conversationIdRef = useRef(conversationId);
+  conversationIdRef.current = conversationId;
 
   const clearTimers = useCallback(() => {
     if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
@@ -128,11 +149,14 @@ export function useRealtimeVoiceSession({
     if (maxTimerRef.current) window.clearTimeout(maxTimerRef.current);
     if (iceGraceTimerRef.current) window.clearTimeout(iceGraceTimerRef.current);
     if (statsTimerRef.current) window.clearInterval(statsTimerRef.current);
+    if (speakingDeferralTimerRef.current) window.clearTimeout(speakingDeferralTimerRef.current);
     idleTimerRef.current = null;
     idleWarningTimerRef.current = null;
     maxTimerRef.current = null;
     iceGraceTimerRef.current = null;
     statsTimerRef.current = null;
+    speakingDeferralTimerRef.current = null;
+    pendingCloseRef.current = null;
   }, []);
 
   const teardownVoice = useCallback(
@@ -143,6 +167,11 @@ export function useRealtimeVoiceSession({
         Boolean(connectionRef.current) ||
         Boolean(localStreamRef.current);
       if (!hadActiveSession) return;
+      // Flush the final transport snapshot (including whether the visitor was
+      // mid-utterance) onto the review metadata before any close snapshot posts,
+      // so every close reason — not just WebRTC drops — carries diagnostics.
+      captureCloseRef.current?.();
+      captureCloseRef.current = null;
       clearTimers();
       idleClosingRef.current = false;
       const channel = dataChannelRef.current;
@@ -163,6 +192,34 @@ export function useRealtimeVoiceSession({
     [audioRef, clearTimers, onClose],
   );
 
+  // Run a close now if the visitor is silent; otherwise hold it until the
+  // current utterance ends. This is the single guarantee that a timeout can
+  // never cut someone off mid-sentence — both idle and max-duration route
+  // through it. `resumeDeferredClose` (on speech_stopped) fires the held close.
+  const deferrableClose = useCallback((proceed: () => void) => {
+    if (!userSpeakingRef.current) {
+      proceed();
+      return;
+    }
+    pendingCloseRef.current = proceed;
+    if (speakingDeferralTimerRef.current) window.clearTimeout(speakingDeferralTimerRef.current);
+    speakingDeferralTimerRef.current = window.setTimeout(() => {
+      const held = pendingCloseRef.current;
+      pendingCloseRef.current = null;
+      speakingDeferralTimerRef.current = null;
+      held?.();
+    }, speakingDeferralCeilingMs);
+  }, []);
+
+  const resumeDeferredClose = useCallback(() => {
+    const held = pendingCloseRef.current;
+    if (!held) return;
+    pendingCloseRef.current = null;
+    if (speakingDeferralTimerRef.current) window.clearTimeout(speakingDeferralTimerRef.current);
+    speakingDeferralTimerRef.current = null;
+    held();
+  }, []);
+
   const resetIdleTimer = useCallback(() => {
     // While the goodbye is playing, the agent's own audio events must not extend the session.
     if (idleClosingRef.current) return;
@@ -171,13 +228,16 @@ export function useRealtimeVoiceSession({
     const idleTimeoutMs = limitsRef.current.idleTimeoutMs;
     const graceMs = Math.min(VOICE_SESSION_DEFAULTS.idleGoodbyeGraceMs, idleTimeoutMs);
     idleWarningTimerRef.current = window.setTimeout(() => {
+      // Never interrupt a live utterance with the goodbye line; the idle
+      // teardown below defers on the same condition and plays it on the pause.
+      if (userSpeakingRef.current) return;
       idleClosingRef.current = true;
       onIdleWarningRef.current?.();
     }, idleTimeoutMs - graceMs);
     idleTimerRef.current = window.setTimeout(() => {
-      teardownVoice("idle_timeout");
+      deferrableClose(() => teardownVoice("idle_timeout"));
     }, idleTimeoutMs);
-  }, [teardownVoice]);
+  }, [deferrableClose, teardownVoice]);
 
   const sendClientEvents = useCallback((events: RealtimeOutboundEvent | RealtimeOutboundEvent[]) => {
     const channel = dataChannelRef.current;
@@ -191,9 +251,15 @@ export function useRealtimeVoiceSession({
   const armMaxTimer = useCallback(() => {
     if (maxTimerRef.current) window.clearTimeout(maxTimerRef.current);
     maxTimerRef.current = window.setTimeout(() => {
-      teardownVoice("max_duration");
+      // The session cap is a graceful wind-down, not a guillotine: wait for a
+      // natural pause, let Reka say a short goodbye, then tear down.
+      deferrableClose(() => {
+        idleClosingRef.current = true;
+        onIdleWarningRef.current?.();
+        maxTimerRef.current = window.setTimeout(() => teardownVoice("max_duration"), closingGoodbyeMs);
+      });
     }, limitsRef.current.maxDurationMs);
-  }, [teardownVoice]);
+  }, [deferrableClose, teardownVoice]);
 
   const setStatus = useCallback((status: VoiceConnectionStatus) => {
     setConnectionStatus(status);
@@ -268,6 +334,7 @@ export function useRealtimeVoiceSession({
         voice: session.voice,
         speed: session.speed,
         variant: session.variant ?? null,
+        conversationId: conversationIdRef.current,
         ...extras,
       });
     },
@@ -386,6 +453,9 @@ export function useRealtimeVoiceSession({
         transportRef.current = { ...transportRef.current, wasSpeakingAtClose: userSpeakingRef.current };
         emitTransport();
       };
+      // Let teardownVoice flush transport for every close reason, not only the
+      // WebRTC-drop paths that call captureCloseTelemetry directly.
+      captureCloseRef.current = captureCloseTelemetry;
       peer.onconnectionstatechange = () => {
         if (connectionRef.current !== peer) return;
         const state = peer.connectionState;
@@ -458,6 +528,9 @@ export function useRealtimeVoiceSession({
           if (!active) return;
           void sampleTransportStats(active, Date.now()).then((sample) => {
             transportRef.current = foldTransportStats(transportRef.current, sample);
+            // Keep the review metadata current so a lost close snapshot still
+            // leaves at most one sample's worth of transport data behind.
+            emitTransport();
           });
         }, statsSampleIntervalMs);
       };
@@ -485,6 +558,9 @@ export function useRealtimeVoiceSession({
         }
         if (parsed?.type === "input_audio_buffer.speech_stopped") {
           userSpeakingRef.current = false;
+          // A cutoff that arrived mid-utterance was held; now that the visitor
+          // has paused, let it complete gracefully.
+          resumeDeferredClose();
         }
         if (!firstEventAtRef.current) {
           firstEventAtRef.current = Date.now();
@@ -534,6 +610,7 @@ export function useRealtimeVoiceSession({
     obtainVoiceSession,
     onEvent,
     resetIdleTimer,
+    resumeDeferredClose,
     setStatus,
     teardownVoice,
   ]);

@@ -97,8 +97,8 @@ export function voiceCloseReasonToast(reason: VoiceCloseReason) {
   if (reason === "max_duration") {
     return {
       tone: "message" as const,
-      title: "Voice ended after 2.5 minutes.",
-      description: "Your details are still here.",
+      title: "Voice paused after a long chat.",
+      description: "Your details are still here — restart voice anytime to keep going.",
     };
   }
   return null;

@@ -56,6 +56,9 @@ export default defineSchema({
   voiceSessions: defineTable({
     reviewId: v.string(),
     sessionId: v.string(),
+    // Stable id shared by every call/reconnect in one intake conversation, so a
+    // dropped-and-resumed call reads as one conversation, not many rows.
+    conversationId: v.optional(v.string()),
     leadId: v.optional(v.union(v.string(), v.null())),
     segment: v.string(),
     status: v.string(),
@@ -150,5 +153,6 @@ export default defineSchema({
   })
     .index("by_review_id", ["reviewId"])
     .index("by_session_id", ["sessionId"])
+    .index("by_conversation", ["conversationId"])
     .index("by_updated_at", ["updatedAt"]),
 });

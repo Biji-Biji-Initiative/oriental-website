@@ -16,6 +16,7 @@ export type VoiceReviewCredentials = VoiceReviewSnapshotRequest["review"] & {
   connectedAt?: number;
   firstEventAt?: number;
   transport?: VoiceTransportTelemetry;
+  conversationId?: string;
 };
 
 export function buildVoiceReviewSnapshot(
@@ -32,6 +33,7 @@ export function buildVoiceReviewSnapshot(
 ): VoiceReviewSnapshotRequest["snapshot"] {
   return {
     sessionId: review.sessionId ?? review.id,
+    conversationId: review.conversationId,
     leadId: overrides.leadId,
     segment: state.segment,
     status: overrides.status ?? (overrides.submittedAt ? "submitted" : "idle"),

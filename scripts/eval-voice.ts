@@ -26,6 +26,7 @@ import {
   JUDGE_SYSTEM_PROMPT,
   type JudgeScore,
   meetsThreshold,
+  mergeConversationSessions,
   parseJudgeResponse,
   type SessionEval,
   type VoiceEvalSession,
@@ -138,14 +139,22 @@ async function main() {
   }
 
   const convex = new ConvexHttpClient(convexUrl);
-  const sessions = (await convex.query(api.leads.voiceSessionsForEval, {
+  const rawSessions = (await convex.query(api.leads.voiceSessionsForEval, {
     ingestSecret,
     limit: args.limit,
   })) as VoiceEvalSession[];
 
-  if (sessions.length === 0) {
+  if (rawSessions.length === 0) {
     console.log("No voice sessions to evaluate yet.");
     process.exit(0);
+  }
+
+  // Stitch dropped-and-resumed call rows into one conversation before judging,
+  // so a single intake is scored once — not once per reconnect.
+  const sessions = mergeConversationSessions(rawSessions);
+  const mergedCount = rawSessions.length - sessions.length;
+  if (mergedCount > 0) {
+    console.log(`Stitched ${rawSessions.length} call rows into ${sessions.length} conversations.`);
   }
 
   const openaiKey = requireEnv("OPENAI_API_KEY");
