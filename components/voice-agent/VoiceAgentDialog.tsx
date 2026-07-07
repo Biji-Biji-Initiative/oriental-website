@@ -42,6 +42,7 @@ import {
 } from "./useRealtimeVoiceSession";
 import { useVoiceRuntime } from "./useVoiceRuntime";
 import { VoiceSessionStage } from "./VoiceSessionStage";
+import { VoiceSubmittedConfirmation } from "./VoiceSubmittedConfirmation";
 import {
   idleGoodbyeInstruction,
   openingVoiceInstruction,
@@ -454,95 +455,115 @@ export function VoiceAgentDialog({
   }, [onOpenChange, open]);
 
   const selectedSegment = getSegment(segment);
+  const submitted = status === "submitted";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[94svh] w-[min(1500px,96vw)] overflow-hidden rounded-xl border-white/10 bg-mk-off-black p-0 text-white shadow-2xl sm:max-w-none">
+      <DialogContent
+        className={cn(
+          "max-h-[94svh] overflow-hidden rounded-xl border-white/10 bg-mk-off-black p-0 text-white shadow-2xl sm:max-w-none",
+          // Once sent, the intake collapses to a compact confirmation — no
+          // reason to hold a 1500px canvas for a done state.
+          submitted ? "w-[min(560px,94vw)]" : "w-[min(1500px,96vw)]",
+        )}
+      >
         <DialogTitle className="sr-only">Talk to Reka</DialogTitle>
-        <div className="grid max-h-[94svh] grid-cols-1 overflow-y-auto lg:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_360px]">
-          <aside className="order-2 border-t border-white/10 p-5 lg:order-none lg:row-span-2 lg:border-t-0 lg:border-r xl:row-span-1">
-            <div className="mb-5 text-xs uppercase tracking-[0.16em] text-white/48">Partner type</div>
-            <div className="flex gap-3 overflow-x-auto pb-2 lg:flex-col lg:overflow-visible">
-              {segmentOptions().map((option) => (
-                <button
-                  className={cn(
-                    "min-w-56 rounded-lg border border-white/10 p-4 text-left transition hover:border-white/28 hover:bg-white/8 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mk-horizon lg:min-w-0",
-                    option.id === segment && "border-mk-horizon bg-white/10",
-                  )}
-                  key={option.id}
-                  onClick={() => runtime.setSegment(option.id)}
-                  type="button"
-                >
-                  <div className="text-sm font-semibold">{option.label}</div>
-                  <div className="mt-1 text-xs leading-5 text-white/58">{option.blurb}</div>
-                </button>
-              ))}
-            </div>
-          </aside>
-
-          <main className="order-1 min-w-0 p-5 sm:p-8 lg:order-none">
-            {tunerEnabled ? (
-              <div className="mb-4 flex flex-wrap items-center gap-1.5">
-                <span className="mr-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/40">Voice</span>
-                {VOICE_VARIANTS.map((variant) => {
-                  const active = variant.id === (voiceVariant ?? DEFAULT_VOICE_VARIANT_ID);
-                  return (
-                    <button
-                      aria-label={`Switch Reka voice to ${variant.label}`}
-                      aria-pressed={active}
-                      className={cn(
-                        "rounded-full border px-2.5 py-1 text-[11px] font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mk-horizon",
-                        active
-                          ? "border-mk-horizon bg-white/12 text-white"
-                          : "border-white/12 text-white/55 hover:border-white/30 hover:text-white",
-                      )}
-                      key={variant.id}
-                      onClick={() => switchVoiceVariant(variant.id)}
-                      type="button"
-                    >
-                      {variant.label.replace("Reka · ", "")}
-                    </button>
-                  );
-                })}
-              </div>
-            ) : null}
-            <VoiceSessionStage
-              activeTopicId={activeTopicId}
-              assistantDraft={runtime.assistantDraft}
-              audioRef={audioRef}
+        {submitted ? (
+          <div className="max-h-[94svh] overflow-y-auto">
+            <VoiceSubmittedConfirmation
               captured={captured}
-              connectionStatus={connectionStatus}
-              getLocalStream={getLocalStream}
-              lastAssistantLine={transcript.findLast((entry) => entry.role === "assistant")?.text ?? ""}
-              onConnect={connectVoice}
-              onDisconnect={teardownVoice}
-              onSendText={handleSendText}
-              onTopicToggle={(topicId) => setActiveTopicId((current) => (current === topicId ? null : topicId))}
+              onClose={() => onOpenChange(false)}
               selectedSegment={selectedSegment}
-              status={status}
             />
-          </main>
+          </div>
+        ) : (
+          <div className="grid max-h-[94svh] grid-cols-1 overflow-y-auto lg:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_360px]">
+            <aside className="order-2 border-t border-white/10 p-5 lg:order-none lg:row-span-2 lg:border-t-0 lg:border-r xl:row-span-1">
+              <div className="mb-5 text-xs uppercase tracking-[0.16em] text-white/48">Partner type</div>
+              <div className="flex gap-3 overflow-x-auto pb-2 lg:flex-col lg:overflow-visible">
+                {segmentOptions().map((option) => (
+                  <button
+                    className={cn(
+                      "min-w-56 rounded-lg border border-white/10 p-4 text-left transition hover:border-white/28 hover:bg-white/8 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mk-horizon lg:min-w-0",
+                      option.id === segment && "border-mk-horizon bg-white/10",
+                    )}
+                    key={option.id}
+                    onClick={() => runtime.setSegment(option.id)}
+                    type="button"
+                  >
+                    <div className="text-sm font-semibold">{option.label}</div>
+                    <div className="mt-1 text-xs leading-5 text-white/58">{option.blurb}</div>
+                  </button>
+                ))}
+              </div>
+            </aside>
 
-          <HandoffPanel
-            captured={captured}
-            className="order-3 lg:order-none lg:col-start-2 xl:col-start-auto"
-            form={form}
-            onChange={runtime.updateCaptured}
-            onSubmit={(values) =>
-              submit("form", {
-                ...stateRef.current,
-                captured: values,
-                segment,
-                transcript,
-              })
-            }
-            ready={true}
-            selectedSegment={selectedSegment}
-            submitted={status === "submitted"}
-            submitting={submitting}
-            transcript={transcript}
-          />
-        </div>
+            <main className="order-1 min-w-0 p-5 sm:p-8 lg:order-none">
+              {tunerEnabled ? (
+                <div className="mb-4 flex flex-wrap items-center gap-1.5">
+                  <span className="mr-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/40">
+                    Voice
+                  </span>
+                  {VOICE_VARIANTS.map((variant) => {
+                    const active = variant.id === (voiceVariant ?? DEFAULT_VOICE_VARIANT_ID);
+                    return (
+                      <button
+                        aria-label={`Switch Reka voice to ${variant.label}`}
+                        aria-pressed={active}
+                        className={cn(
+                          "rounded-full border px-2.5 py-1 text-[11px] font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mk-horizon",
+                          active
+                            ? "border-mk-horizon bg-white/12 text-white"
+                            : "border-white/12 text-white/55 hover:border-white/30 hover:text-white",
+                        )}
+                        key={variant.id}
+                        onClick={() => switchVoiceVariant(variant.id)}
+                        type="button"
+                      >
+                        {variant.label.replace("Reka · ", "")}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+              <VoiceSessionStage
+                activeTopicId={activeTopicId}
+                assistantDraft={runtime.assistantDraft}
+                audioRef={audioRef}
+                captured={captured}
+                connectionStatus={connectionStatus}
+                getLocalStream={getLocalStream}
+                lastAssistantLine={transcript.findLast((entry) => entry.role === "assistant")?.text ?? ""}
+                onConnect={connectVoice}
+                onDisconnect={teardownVoice}
+                onSendText={handleSendText}
+                onTopicToggle={(topicId) => setActiveTopicId((current) => (current === topicId ? null : topicId))}
+                selectedSegment={selectedSegment}
+                status={status}
+              />
+            </main>
+
+            <HandoffPanel
+              captured={captured}
+              className="order-3 lg:order-none lg:col-start-2 xl:col-start-auto"
+              form={form}
+              onChange={runtime.updateCaptured}
+              onSubmit={(values) =>
+                submit("form", {
+                  ...stateRef.current,
+                  captured: values,
+                  segment,
+                  transcript,
+                })
+              }
+              ready={true}
+              selectedSegment={selectedSegment}
+              submitted={submitted}
+              submitting={submitting}
+              transcript={transcript}
+            />
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
