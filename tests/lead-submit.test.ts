@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import { leadSubmitErrorCopy, notificationDelivered } from "@/lib/voice/lead-submit";
 
 describe("lead submit helpers", () => {
-  it("detects either email or Slack notification delivery", () => {
+  it("detects email, Slack, or ClickUp notification delivery", () => {
     expect(notificationDelivered({ notifications: { slack: { ok: true, transport: "slack" } } })).toBe(true);
+    expect(notificationDelivered({ notifications: { clickup: { ok: true, transport: "clickup" } } })).toBe(true);
     expect(
       notificationDelivered({ notifications: { email: { ok: false }, slack: { ok: false, skipped: true } } }),
     ).toBe(false);

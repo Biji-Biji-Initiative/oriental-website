@@ -6,6 +6,7 @@ import {
   buildSubmitterConfirmation,
 } from "@/lib/server/notification-payloads";
 import {
+  notifyClickUp,
   notifyNewsletterSubscriber,
   notifyOwner,
   notifySlack,
@@ -242,6 +243,7 @@ describe("notifyOwner", () => {
   afterEach(() => {
     process.env = originalEnv;
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("does not retry or fall back after an SMTP transaction failure", async () => {
@@ -275,6 +277,22 @@ describe("notifyOwner", () => {
     expect(sendSmtpMail).toHaveBeenCalledTimes(1);
     expect(sendSmtpMail).toHaveBeenCalledWith(
       expect.objectContaining({ to: ["gurpreet@example.com", "team@mereka.io"] }),
+    );
+  });
+
+  it("accepts comma-separated team copy recipients and deduplicates them", async () => {
+    process.env.TEAM_NOTIFICATION_EMAIL = "team@mereka.io";
+    process.env.TEAM_NOTIFICATION_CC_EMAILS = " chewi@mereka.my, TEAM@mereka.io ; partners@mereka.io ";
+    vi.mocked(sendSmtpMail).mockResolvedValue(undefined);
+
+    await expect(notifyOwner(lead({ routedToEmail: "gurpreet@example.com" }))).resolves.toEqual({
+      ok: true,
+      transport: "smtp",
+    });
+    expect(sendSmtpMail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: ["gurpreet@example.com", "team@mereka.io", "chewi@mereka.my", "partners@mereka.io"],
+      }),
     );
   });
 
@@ -316,5 +334,70 @@ describe("notifyOwner", () => {
         subject: "You're on the Oriental Building updates list",
       }),
     );
+  });
+});
+
+describe("notifyClickUp", () => {
+  beforeEach(() => {
+    process.env = {
+      ...originalEnv,
+      NODE_ENV: "test",
+      CLICKUP_API_TOKEN: "clickup-token",
+      CLICKUP_LIST_URL: "https://app.clickup.com/2627356/v/li/901615726504",
+    };
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+    vi.unstubAllGlobals();
+  });
+
+  it("creates a ClickUp task in the configured list", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+      Response.json({ id: "task_123", url: "https://app.clickup.com/t/task_123" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(notifyClickUp(lead())).resolves.toEqual({ ok: true, transport: "clickup" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.clickup.com/api/v2/list/901615726504/task",
+      expect.objectContaining({
+        method: "POST",
+        headers: {
+          Authorization: "clickup-token",
+          "Content-Type": "application/json",
+        },
+      }),
+    );
+    const init = fetchMock.mock.calls[0]?.[1];
+    const payload = JSON.parse(String(init?.body));
+    expect(payload.name).toBe("Oriental lead: Alex Tan · Technology");
+    expect(payload.markdown_content).toContain("**Lead ID:** lead_123");
+    expect(payload.markdown_content).toContain("### Voice transcript");
+    expect(payload.tags).toEqual(["oriental", "voice", "technology"]);
+  });
+
+  it("skips cleanly when ClickUp is not configured", async () => {
+    delete process.env.CLICKUP_API_TOKEN;
+    delete process.env.CLICKUP_API_KEY;
+
+    await expect(notifyClickUp(lead())).resolves.toEqual({
+      ok: false,
+      skipped: true,
+      reason: "clickup_unconfigured",
+    });
+  });
+
+  it("returns ClickUp API failures without throwing", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ err: "list_not_found" }, { status: 404 })),
+    );
+
+    await expect(notifyClickUp(lead())).resolves.toEqual({
+      ok: false,
+      error: "list_not_found",
+      status: 404,
+    });
   });
 });

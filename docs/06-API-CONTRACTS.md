@@ -125,7 +125,7 @@ degraded-success case.
 | 429 | `rate_limited` | More than 12 lead attempts per IP per hour. |
 | 500 | `routing_unconfigured` | Production owner email missing for the resolved segment. |
 | 502 | `persistence_failed` | Production Convex persistence failed and no notification channel delivered the lead. |
-| 502 | `notification_failed` | Production lead persisted, but neither owner email nor Slack delivered. |
+| 502 | `notification_failed` | Production lead persisted, but no owner notification channel delivered. |
 
 ### Side Effects
 
@@ -135,15 +135,19 @@ degraded-success case.
    SESv2 when `AWS_REGION` is set. SMTP sends one message to all recipients in
    a single transaction. Owner email includes the lead id, source, segment,
    routed owner, contact fields, brief, and recent transcript context. A shared
-   team copy is sent only when `TEAM_NOTIFICATION_EMAIL` or `TEAM_INBOX_EMAIL`
-   is explicitly configured.
+   team copy is sent only when `TEAM_NOTIFICATION_EMAIL`, `TEAM_NOTIFICATION_EMAILS`,
+   `TEAM_NOTIFICATION_CC_EMAILS`, or `TEAM_INBOX_EMAIL` is explicitly configured.
 4. Slack notification is attempted through `SLACK_BOT_TOKEN` +
    `SLACK_CHANNEL_ID` first, with `SLACK_WEBHOOK_URL` as a fallback. Slack
    blocks include the same routing/contact fields plus a brief and transcript
    excerpt.
-5. Submitter confirmation email is attempted separately and is included in the
+5. ClickUp notification is attempted through `CLICKUP_API_TOKEN` plus
+   `CLICKUP_LIST_ID` / `CLICKUP_LIST_URL` when configured. It creates one task
+   with routing, contact, brief, and transcript context.
+6. Submitter confirmation email is attempted separately and is included in the
    response and persisted notification summary. Production lead success still
-   depends on owner email or Slack delivery, not on submitter confirmation alone.
+   depends on owner email, Slack, or ClickUp delivery, not on submitter
+   confirmation alone.
 
 In local and test environments, notification failures are represented in the
 `notifications` object and do not turn a successfully accepted lead into an

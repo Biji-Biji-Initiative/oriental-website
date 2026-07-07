@@ -12,12 +12,17 @@ export type LeadSubmitResponse = {
   notifications?: {
     email?: NotificationResult;
     slack?: NotificationResult;
+    clickup?: NotificationResult;
     confirmation?: NotificationResult;
   };
 };
 
 export function notificationDelivered(response: LeadSubmitResponse | null) {
-  return response?.notifications?.email?.ok === true || response?.notifications?.slack?.ok === true;
+  return (
+    response?.notifications?.email?.ok === true ||
+    response?.notifications?.slack?.ok === true ||
+    response?.notifications?.clickup?.ok === true
+  );
 }
 
 export async function fetchWithTimeout(

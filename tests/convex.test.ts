@@ -3,6 +3,7 @@ import {
   getAdminVoiceSession,
   persistLead,
   persistVoiceReviewSnapshot,
+  recordLeadNotificationStatus,
   updateAdminLeadWorkflow,
 } from "@/lib/server/convex";
 import type { StoredLead } from "@/lib/server/notifications";
@@ -28,6 +29,7 @@ vi.mock("@/convex/_generated/api", () => ({
   api: {
     leads: {
       createLead: "createLead",
+      recordLeadNotification: "recordLeadNotification",
       voiceSessionByReviewId: "voiceSessionByReviewId",
       updateLeadWorkflow: "updateLeadWorkflow",
       recordVoiceSession: "recordVoiceSession",
@@ -137,6 +139,48 @@ describe("getAdminVoiceSession", () => {
     mocks.query.mockResolvedValue(null);
 
     await expect(getAdminVoiceSession("missing")).resolves.toEqual({ ok: false, reason: "not_found" });
+  });
+});
+
+describe("recordLeadNotificationStatus", () => {
+  beforeEach(() => {
+    process.env = {
+      ...originalEnv,
+      CONVEX_URL: "https://convex.example",
+      CONVEX_INGEST_SECRET: "ingest-secret",
+    };
+    mocks.mutation.mockResolvedValue({ ok: true });
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+    vi.clearAllMocks();
+  });
+
+  it("persists channel-specific notification outcomes including ClickUp", async () => {
+    await expect(
+      recordLeadNotificationStatus(
+        "lead_123",
+        {
+          email: { ok: false, error: "smtp_down" },
+          slack: { ok: true, transport: "slack" },
+          clickup: { ok: true, transport: "clickup" },
+          confirmation: { ok: true, transport: "smtp" },
+        },
+        true,
+      ),
+    ).resolves.toEqual({ ok: true });
+
+    expect(mocks.mutation).toHaveBeenCalledWith("recordLeadNotification", {
+      ingestSecret: "ingest-secret",
+      leadId: "lead_123",
+      notificationDelivered: true,
+      emailOk: false,
+      slackOk: true,
+      clickupOk: true,
+      confirmationOk: true,
+      summary: "email=smtp_down slack=slack clickup=clickup confirmation=smtp",
+    });
   });
 });
 

@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   recordLeadNotificationStatus: vi.fn(),
   notifyOwner: vi.fn(),
   notifySlack: vi.fn(),
+  notifyClickUp: vi.fn(),
   notifySubmitter: vi.fn(),
 }));
 
@@ -21,6 +22,7 @@ vi.mock("@/lib/server/notifications", async (importOriginal) => {
     ...actual,
     notifyOwner: mocks.notifyOwner,
     notifySlack: mocks.notifySlack,
+    notifyClickUp: mocks.notifyClickUp,
     notifySubmitter: mocks.notifySubmitter,
   };
 });
@@ -74,6 +76,7 @@ describe("POST /api/leads", () => {
     mocks.recordLeadNotificationStatus.mockResolvedValue({ ok: true });
     mocks.notifyOwner.mockResolvedValue({ ok: false, skipped: true, reason: "email_unconfigured" });
     mocks.notifySlack.mockResolvedValue({ ok: true, transport: "slack" });
+    mocks.notifyClickUp.mockResolvedValue({ ok: false, skipped: true, reason: "clickup_unconfigured" });
     mocks.notifySubmitter.mockResolvedValue({ ok: true, transport: "smtp" });
   });
 
@@ -106,6 +109,7 @@ describe("POST /api/leads", () => {
       notifications: {
         email: { ok: false, skipped: true, reason: "email_unconfigured" },
         slack: { ok: true, transport: "slack" },
+        clickup: { ok: false, skipped: true, reason: "clickup_unconfigured" },
         confirmation: { ok: true, transport: "smtp" },
       },
     });
@@ -114,6 +118,7 @@ describe("POST /api/leads", () => {
       {
         email: body.notifications.email,
         slack: body.notifications.slack,
+        clickup: body.notifications.clickup,
         confirmation: body.notifications.confirmation,
       },
       true,
@@ -224,12 +229,14 @@ describe("POST /api/leads", () => {
         notifications: { slack: { ok: true, transport: "slack" } },
       });
       expect(mocks.notifySlack).toHaveBeenCalledTimes(1);
+      expect(mocks.notifyClickUp).toHaveBeenCalledTimes(1);
       expect(mocks.recordLeadNotificationStatus).not.toHaveBeenCalled();
     });
 
     it("returns 502 only when persistence and every notification channel fail", async () => {
       mocks.notifyOwner.mockResolvedValue({ ok: false, error: "smtp_down" });
       mocks.notifySlack.mockResolvedValue({ ok: false, error: "slack_http_error", status: 500 });
+      mocks.notifyClickUp.mockResolvedValue({ ok: false, error: "clickup_api_error", status: 500 });
 
       const response = await POST(request());
       const body = await response.json();

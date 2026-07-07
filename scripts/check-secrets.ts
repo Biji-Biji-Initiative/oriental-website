@@ -23,6 +23,7 @@ const slackRequired = ["SLACK_BOT_TOKEN", "SLACK_CHANNEL_ID"];
 const sentryRequired = ["SENTRY_DSN", "NEXT_PUBLIC_SENTRY_DSN", "SENTRY_ORG", "SENTRY_PROJECT"];
 const adminRequired = ["ADMIN_REVIEW_TOKEN"];
 const opsAlertRequired = ["OPS_ALERT_SLACK_CHANNEL_ID"];
+const clickUpRequired = ["CLICKUP_API_TOKEN", "CLICKUP_LIST_ID"];
 
 const supportedRealtimeVoices = new Set([
   "alloy",
@@ -77,6 +78,12 @@ if (process.env.NODE_ENV === "production") {
   const missingOpsAlerts = opsAlertRequired.filter((name) => !envValue(name));
   if (missingOpsAlerts.length > 0) {
     console.error(`Missing ops alert variables: ${missingOpsAlerts.join(", ")}`);
+    process.exit(1);
+  }
+
+  const missingClickUp = clickUpRequired.filter((name) => !envValue(name));
+  if (missingClickUp.length > 0) {
+    console.error(`Missing ClickUp lead mirror variables: ${missingClickUp.join(", ")}`);
     process.exit(1);
   }
 

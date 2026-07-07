@@ -17,20 +17,29 @@ export async function persistLead(lead: StoredLead) {
 
 export async function recordLeadNotificationStatus(
   leadId: string,
-  notifications: { email?: NotificationResult; slack?: NotificationResult; confirmation?: NotificationResult },
+  notifications: {
+    email?: NotificationResult;
+    slack?: NotificationResult;
+    clickup?: NotificationResult;
+    confirmation?: NotificationResult;
+  },
   notificationDelivered?: boolean,
 ) {
   const client = createConvexClient();
   if (!client) return { ok: false as const, reason: "convex_unconfigured" };
   const delivered =
     notificationDelivered ??
-    (notifications.email?.ok === true || notifications.slack?.ok === true || notifications.confirmation?.ok === true);
+    (notifications.email?.ok === true ||
+      notifications.slack?.ok === true ||
+      notifications.clickup?.ok === true ||
+      notifications.confirmation?.ok === true);
   const result = await client.client.mutation(api.leads.recordLeadNotification, {
     ingestSecret: client.ingestSecret,
     leadId,
     notificationDelivered: delivered,
     emailOk: notifications.email?.ok === true,
     slackOk: notifications.slack?.ok === true,
+    clickupOk: notifications.clickup?.ok === true,
     confirmationOk: notifications.confirmation?.ok === true,
     summary: notificationSummary(notifications),
   });
@@ -133,11 +142,13 @@ async function readAdminReviewDashboardFixture(fixturePath: string): Promise<Adm
 function notificationSummary(notifications: {
   email?: NotificationResult;
   slack?: NotificationResult;
+  clickup?: NotificationResult;
   confirmation?: NotificationResult;
 }) {
   return [
     notifications.email ? `email=${notificationStatus(notifications.email)}` : null,
     notifications.slack ? `slack=${notificationStatus(notifications.slack)}` : null,
+    notifications.clickup ? `clickup=${notificationStatus(notifications.clickup)}` : null,
     notifications.confirmation ? `confirmation=${notificationStatus(notifications.confirmation)}` : null,
   ]
     .filter(Boolean)

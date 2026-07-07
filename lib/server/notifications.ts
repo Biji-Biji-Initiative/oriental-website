@@ -22,7 +22,7 @@ export type StoredLead = RoutableLead & {
 };
 
 export type NotificationResult =
-  | { ok: true; transport: "smtp" | "sesv2" | "slack" }
+  | { ok: true; transport: "smtp" | "sesv2" | "slack" | "clickup" }
   | { ok: false; skipped?: true; reason?: string; error?: string; status?: number };
 
 const TRANSIENT_RETRY_DELAY_MS = 400;
@@ -33,6 +33,10 @@ export async function notifyOwner(lead: StoredLead): Promise<NotificationResult>
 
 export async function notifySlack(lead: StoredLead): Promise<NotificationResult> {
   return withTransientRetry(() => sendSlackMessage(lead));
+}
+
+export async function notifyClickUp(lead: StoredLead): Promise<NotificationResult> {
+  return withTransientRetry(() => sendClickUpTask(lead));
 }
 
 export async function notifySubmitter(lead: StoredLead): Promise<NotificationResult> {
@@ -65,7 +69,7 @@ function isTransientFailure(result: NotificationResult): boolean {
 
 async function sendOwnerEmail(lead: StoredLead): Promise<NotificationResult> {
   const notification = buildOwnerNotification(lead);
-  const recipients = uniqueEmails([lead.routedToEmail, teamNotificationEmail()]);
+  const recipients = uniqueEmails([lead.routedToEmail, ...teamNotificationEmails()]);
   if (recipients.length === 0) {
     return { ok: false, skipped: true, reason: "email_unconfigured" };
   }
@@ -171,12 +175,26 @@ async function sendConfiguredEmail(message: EmailMessage): Promise<NotificationR
   return { ok: true, transport: "sesv2" };
 }
 
-function teamNotificationEmail() {
-  return readEnv("TEAM_NOTIFICATION_EMAIL") ?? readEnv("TEAM_INBOX_EMAIL");
+function teamNotificationEmails() {
+  return uniqueEmails([
+    ...emailsFromEnv("TEAM_NOTIFICATION_EMAIL"),
+    ...emailsFromEnv("TEAM_NOTIFICATION_EMAILS"),
+    ...emailsFromEnv("TEAM_NOTIFICATION_CC_EMAILS"),
+    ...emailsFromEnv("TEAM_INBOX_EMAIL"),
+  ]);
 }
 
 function contactEmailAddress() {
-  return readEnv("SES_REPLY_TO") ?? teamNotificationEmail();
+  return readEnv("SES_REPLY_TO") ?? teamNotificationEmails()[0];
+}
+
+function emailsFromEnv(name: string) {
+  const value = readEnv(name);
+  if (!value) return [];
+  return value
+    .split(/[\s,;]+/)
+    .map((email) => email.trim())
+    .filter(Boolean);
 }
 
 function uniqueEmails(values: Array<string | null | undefined>) {
@@ -229,6 +247,77 @@ async function sendSlackMessage(lead: StoredLead): Promise<NotificationResult> {
     return { ok: false, error: "slack_http_error", status: response.status };
   }
   return { ok: true, transport: "slack" };
+}
+
+async function sendClickUpTask(lead: StoredLead): Promise<NotificationResult> {
+  const clickUpToken = readEnv("CLICKUP_API_TOKEN") ?? readEnv("CLICKUP_API_KEY");
+  const listId = clickUpListId();
+  if (!clickUpToken || !listId) return { ok: false, skipped: true, reason: "clickup_unconfigured" };
+
+  const segment = getSegment(lead.segment);
+  const response = await fetch(`https://api.clickup.com/api/v2/list/${encodeURIComponent(listId)}/task`, {
+    method: "POST",
+    headers: {
+      Authorization: clickUpToken,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      name: `Oriental lead: ${lead.form.name || lead.form.email} · ${segment.label}`,
+      markdown_content: buildClickUpTaskMarkdown(lead),
+      tags: uniqueClickUpTags(["oriental", lead.source, segment.id]),
+      notify_all: false,
+    }),
+    signal: AbortSignal.timeout(8_000),
+  });
+  const body = (await response.json().catch(() => null)) as { id?: string; err?: string; ECODE?: string } | null;
+  if (!response.ok || !body?.id) {
+    return { ok: false, error: body?.err ?? body?.ECODE ?? "clickup_api_error", status: response.status };
+  }
+  return { ok: true, transport: "clickup" };
+}
+
+function clickUpListId() {
+  const configured =
+    readEnv("CLICKUP_LIST_ID") ??
+    readEnv("CLICKUP_ORIENTAL_LIST_ID") ??
+    readEnv("CLICKUP_LIST_URL") ??
+    readEnv("CLICKUP_TARGET_URL");
+  if (!configured) return undefined;
+  const trimmed = configured.trim();
+  if (/^\d+$/.test(trimmed)) return trimmed;
+  return trimmed.match(/\/li\/(\d+)/)?.[1] ?? trimmed.match(/\/list\/(\d+)/)?.[1];
+}
+
+function buildClickUpTaskMarkdown(lead: StoredLead) {
+  const segment = getSegment(lead.segment);
+  const transcript = lead.transcript
+    .map((turn) => `- **${turn.role === "assistant" ? "Reka" : "Visitor"}:** ${turn.text}`)
+    .join("\n");
+  return [
+    `## New Oriental Building lead`,
+    ``,
+    `**Lead ID:** ${lead.id}`,
+    `**Segment:** ${segment.label} (${segment.id})`,
+    `**Source:** ${lead.source}`,
+    `**Routed to:** ${lead.routedTo}${lead.routedToEmail ? ` <${lead.routedToEmail}>` : ""}`,
+    ``,
+    `### Contact`,
+    `- **Name:** ${lead.form.name}`,
+    `- **Email:** ${lead.form.email}`,
+    `- **Organisation:** ${lead.form.org || "—"}`,
+    `- **Phone:** ${lead.form.phone || "—"}`,
+    `- **Website / socials:** ${lead.form.website || "—"}`,
+    ``,
+    `### Brief`,
+    lead.form.message || "—",
+    transcript ? `\n### Voice transcript\n${transcript}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function uniqueClickUpTags(tags: string[]) {
+  return [...new Set(tags.map((tag) => tag.toLowerCase().replace(/[^a-z0-9-]/g, "-")).filter(Boolean))];
 }
 
 export function routeLead(input: RoutableLead): StoredLead {

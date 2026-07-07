@@ -1899,7 +1899,17 @@ function priorityTone(priority: ReturnType<typeof normalizeAdminLeadPriority>) {
 }
 
 function notificationStatus(lead: LeadRow): { label: string; tone: "neutral" | "blue" | "green" | "red" | "amber" } {
-  if (lead.notificationDelivered === true) return { label: "notified", tone: "green" };
+  if (lead.notificationDelivered === true) {
+    const channels = [
+      lead.notificationEmailOk === true ? "email" : null,
+      lead.notificationSlackOk === true ? "slack" : null,
+      lead.notificationClickUpOk === true ? "clickup" : null,
+    ].filter(Boolean);
+    if (channels.includes("email"))
+      return { label: `email sent${channels.length > 1 ? ` +${channels.length - 1}` : ""}`, tone: "green" };
+    if (channels.length > 0) return { label: `sent via ${channels.join("+")}`, tone: "amber" };
+    return { label: "notified", tone: "green" };
+  }
   if (lead.notificationDelivered === false) return { label: "notify failed", tone: "red" };
   return { label: "notify pending", tone: "neutral" };
 }
@@ -2532,7 +2542,7 @@ function leadActionHint(lead: LeadRow) {
   const status = normalizeAdminLeadStatus(lead.status);
   const priority = normalizeAdminLeadPriority(lead.priority);
   if (lead.notificationDelivered === false)
-    return "Confirm whether email or Slack failed, then manually notify the routed owner.";
+    return "Confirm whether email, Slack, or ClickUp failed, then manually notify the routed owner.";
   if (!lead.owner?.trim()) return "Assign an owner so the handoff has a visible human accountable for follow-up.";
   if (priority === "urgent" || priority === "high")
     return "Contact this partner quickly and record the next agreed step.";
