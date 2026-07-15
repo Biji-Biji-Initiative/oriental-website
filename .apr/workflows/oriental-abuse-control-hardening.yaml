@@ -1,0 +1,38 @@
+name: oriental-abuse-control-hardening
+description: Focused security and release adjudication for Oriental client-IP trust and overload behavior
+
+documents:
+  readme: AGENTS.md
+  spec: .apr/specs/oriental-abuse-control-hardening.md
+  implementation: .apr/evidence/abuse-control-hardening.md
+
+oracle:
+  model: "gpt-5.6-sol"
+
+rounds:
+  output_dir: .apr/rounds/oriental-abuse-control-hardening
+  impl_every_n: 1
+
+template: |
+  Perform the focused correction review after APR round 1. Confirm that the
+  unproven X-Real-IP fallback was completely removed and malformed or missing
+  forwarded metadata now fails closed. Recheck proxy-chain selection,
+  Retry-After math, no-store preservation, schema/telemetry propagation, and
+  Realtime 429 recovery. Exact-merge-SHA staging proof necessarily occurs only
+  after merge; retain it as a mandatory production-promotion gate rather than
+  treating its pre-merge absence as a code-review blocker. Decide whether this
+  branch may merge for exact-SHA staging validation. End with `VERDICT: MERGE`
+  or `VERDICT: DO NOT MERGE` on its own final line; terminal punctuation is
+  permitted.
+
+template_with_impl: |
+  Perform the focused correction review after APR round 1. Confirm that the
+  unproven X-Real-IP fallback was completely removed and malformed or missing
+  forwarded metadata now fails closed. Recheck proxy-chain selection,
+  Retry-After math, no-store preservation, schema/telemetry propagation, and
+  Realtime 429 recovery. Exact-merge-SHA staging proof necessarily occurs only
+  after merge; retain it as a mandatory production-promotion gate rather than
+  treating its pre-merge absence as a code-review blocker. Decide whether this
+  branch may merge for exact-SHA staging validation. End with `VERDICT: MERGE`
+  or `VERDICT: DO NOT MERGE` on its own final line; terminal punctuation is
+  permitted.
