@@ -141,6 +141,25 @@ export const voiceReviewSnapshotSchema = z.object({
     rateLimits: z.array(z.record(z.string(), z.unknown())).max(20).default([]),
     routeRequested: z.boolean().default(false),
     submittedAt: z.number().optional(),
+    latency: z
+      .object({
+        version: z.literal(1),
+        turns: z
+          .array(
+            z.object({
+              sequence: z.number().int().nonnegative(),
+              inputPolicy: z.enum(["baseline", "fast", "patient"]),
+              speechDurationMs: z.number().nonnegative().max(600_000).optional(),
+              stopToResponseCreatedMs: z.number().nonnegative().max(120_000).optional(),
+              stopToFirstOutputEventMs: z.number().nonnegative().max(120_000).optional(),
+              responseDurationMs: z.number().nonnegative().max(600_000).optional(),
+              interrupted: z.boolean(),
+              rapidResume: z.boolean(),
+            }),
+          )
+          .max(80),
+      })
+      .optional(),
     transport: z
       .object({
         disconnectCount: z.number().int().nonnegative(),

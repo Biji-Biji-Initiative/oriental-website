@@ -110,6 +110,23 @@ export default defineSchema({
     ),
     rateLimits: v.array(v.any()),
     routeRequested: v.boolean(),
+    latency: v.optional(
+      v.object({
+        version: v.literal(1),
+        turns: v.array(
+          v.object({
+            sequence: v.number(),
+            inputPolicy: v.union(v.literal("baseline"), v.literal("fast"), v.literal("patient")),
+            speechDurationMs: v.optional(v.number()),
+            stopToResponseCreatedMs: v.optional(v.number()),
+            stopToFirstOutputEventMs: v.optional(v.number()),
+            responseDurationMs: v.optional(v.number()),
+            interrupted: v.boolean(),
+            rapidResume: v.boolean(),
+          }),
+        ),
+      }),
+    ),
     transport: v.optional(
       v.object({
         disconnectCount: v.number(),

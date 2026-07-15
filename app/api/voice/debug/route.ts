@@ -101,6 +101,7 @@ function logVoiceSessionHealth(reviewId: string, snapshot: VoiceReviewSnapshotRe
       rateLimitCount: snapshot.rateLimits.length,
       usage: snapshot.usage ?? null,
       submittedAt: snapshot.submittedAt ?? null,
+      latency: summarizeLatency(snapshot.latency),
       transport: summarizeTransport(snapshot.transport),
     });
   }
@@ -184,6 +185,7 @@ function buildHealthSnapshotSignature(snapshot: VoiceReviewSnapshotRequest["snap
     rateLimitCount: snapshot.rateLimits.length,
     usage: snapshot.usage ?? null,
     submitted: snapshot.status === "submitted",
+    latency: summarizeLatency(snapshot.latency),
     transport: summarizeTransport(snapshot.transport),
   });
 }
@@ -201,6 +203,35 @@ function summarizeTransport(transport: VoiceReviewSnapshotRequest["snapshot"]["t
     maxJitterMs: transport.worstStats?.maxJitterMs ?? null,
     maxRttMs: transport.worstStats?.maxRttMs ?? null,
   };
+}
+
+// Compact, PII-free turn timing summary for structured logs.
+function summarizeLatency(latency: VoiceReviewSnapshotRequest["snapshot"]["latency"]) {
+  if (!latency) return null;
+  const firstOutput = latency.turns.flatMap((turn) =>
+    typeof turn.stopToFirstOutputEventMs === "number" ? [turn.stopToFirstOutputEventMs] : [],
+  );
+  const responseCreated = latency.turns.flatMap((turn) =>
+    typeof turn.stopToResponseCreatedMs === "number" ? [turn.stopToResponseCreatedMs] : [],
+  );
+  return {
+    sampledTurns: latency.turns.length,
+    firstOutputSamples: firstOutput.length,
+    firstOutputP50Ms: percentile(firstOutput, 0.5),
+    firstOutputP95Ms: percentile(firstOutput, 0.95),
+    responseCreatedSamples: responseCreated.length,
+    responseCreatedP50Ms: percentile(responseCreated, 0.5),
+    responseCreatedP95Ms: percentile(responseCreated, 0.95),
+    interruptedTurns: latency.turns.filter((turn) => turn.interrupted).length,
+    rapidResumeTurns: latency.turns.filter((turn) => turn.rapidResume).length,
+  };
+}
+
+function percentile(values: number[], quantile: number) {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((left, right) => left - right);
+  const index = Math.min(Math.max(Math.ceil(sorted.length * quantile) - 1, 0), sorted.length - 1);
+  return Math.round(sorted[index] ?? 0);
 }
 
 function buildCapturedFieldSummary(snapshot: VoiceReviewSnapshotRequest["snapshot"]["captured"]) {

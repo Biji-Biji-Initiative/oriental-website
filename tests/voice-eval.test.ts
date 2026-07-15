@@ -4,6 +4,7 @@ import {
   buildJudgeUserPrompt,
   buildSessionEval,
   deriveEngagementSignals,
+  deriveLatencySignals,
   deriveTransportSignals,
   isJudgeable,
   meetsThreshold,
@@ -103,6 +104,18 @@ describe("mergeConversationSessions", () => {
       closedAt: 2_000,
       closeReason: "disconnected",
       transport: { disconnectCount: 1, recoveryCount: 0, iceRestartCount: 1, wasSpeakingAtClose: true },
+      latency: {
+        version: 1,
+        turns: [
+          {
+            sequence: 1,
+            inputPolicy: "baseline",
+            stopToFirstOutputEventMs: 600,
+            interrupted: true,
+            rapidResume: false,
+          },
+        ],
+      },
       transcript: [
         { role: "assistant", text: "Hi, I'm Reka." },
         { role: "user", text: "We build robots." },
@@ -120,6 +133,18 @@ describe("mergeConversationSessions", () => {
       leadId: "lead-9",
       closeReason: "manual",
       transport: { disconnectCount: 0, recoveryCount: 0, iceRestartCount: 0, wasSpeakingAtClose: false },
+      latency: {
+        version: 1,
+        turns: [
+          {
+            sequence: 1,
+            inputPolicy: "baseline",
+            stopToFirstOutputEventMs: 400,
+            interrupted: false,
+            rapidResume: true,
+          },
+        ],
+      },
       transcript: [
         { role: "assistant", text: "Hi, I'm Reka." },
         { role: "user", text: "We build robots." },
@@ -144,6 +169,7 @@ describe("mergeConversationSessions", () => {
     expect(conversation?.leadId).toBe("lead-9");
     // Transport counts sum across segments.
     expect(conversation?.transport?.disconnectCount).toBe(1);
+    expect(conversation?.latency?.turns).toHaveLength(2);
     expect(deriveEngagementSignals(conversation as VoiceEvalSession).submitted).toBe(true);
   });
 
@@ -153,6 +179,48 @@ describe("mergeConversationSessions", () => {
       session({ reviewId: "legacy-2", conversationId: null }),
     ]);
     expect(merged).toHaveLength(2);
+  });
+});
+
+describe("deriveLatencySignals", () => {
+  it("summarizes first-output and response-created timings without calling them audible latency", () => {
+    const signals = deriveLatencySignals(
+      session({
+        latency: {
+          version: 1,
+          turns: [
+            {
+              sequence: 1,
+              inputPolicy: "baseline",
+              stopToResponseCreatedMs: 120,
+              stopToFirstOutputEventMs: 300,
+              interrupted: false,
+              rapidResume: false,
+            },
+            {
+              sequence: 2,
+              inputPolicy: "baseline",
+              stopToResponseCreatedMs: 200,
+              stopToFirstOutputEventMs: 900,
+              interrupted: true,
+              rapidResume: true,
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(signals).toEqual({
+      sampledTurns: 2,
+      firstOutputSamples: 2,
+      firstOutputP50Ms: 300,
+      firstOutputP95Ms: 900,
+      responseCreatedSamples: 2,
+      responseCreatedP50Ms: 120,
+      responseCreatedP95Ms: 200,
+      interruptedTurns: 1,
+      rapidResumeTurns: 1,
+    });
   });
 });
 

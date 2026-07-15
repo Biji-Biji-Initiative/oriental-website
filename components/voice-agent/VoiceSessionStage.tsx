@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { tourTopics } from "@/lib/content";
 import type { getSegment } from "@/lib/segments";
 import { cn } from "@/lib/utils";
+import type { VoiceTurnPhase } from "@/lib/voice/latency";
 import type { CapturedLead } from "@/lib/voice/realtime-events";
 import type { VoiceCloseReason, VoiceConnectionStatus } from "./useRealtimeVoiceSession";
 import { useMicAudioLevel, useVoiceAudioLevel } from "./useVoiceAudioLevel";
@@ -29,6 +30,7 @@ type VoiceSessionStageProps = {
   onTopicToggle: (topicId: string) => void;
   selectedSegment: ReturnType<typeof getSegment>;
   status: "idle" | "submitted";
+  turnPhase: VoiceTurnPhase;
 };
 
 export function VoiceSessionStage({
@@ -45,6 +47,7 @@ export function VoiceSessionStage({
   onTopicToggle,
   selectedSegment,
   status,
+  turnPhase,
 }: VoiceSessionStageProps) {
   const activeTopic = tourTopics.find((topic) => topic.id === activeTopicId) ?? null;
   const statusCopy = voiceStatusCopy(connectionStatus);
@@ -93,6 +96,7 @@ export function VoiceSessionStage({
         <div
           className="voice-orb mt-8 grid size-44 place-items-center sm:size-56"
           data-status={connectionStatus}
+          data-turn={turnPhase}
           ref={orbRef}
         >
           <div aria-hidden className="voice-orb__aurora" />

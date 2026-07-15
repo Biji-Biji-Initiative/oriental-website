@@ -5,7 +5,7 @@
  * Usage (env-driven, run under Infisical so CONVEX/OPENAI creds are present):
  *   pnpm eval:voice                       # judge the last 50 sessions
  *   pnpm eval:voice -- --limit 100        # judge the last 100
- *   pnpm eval:voice -- --dry              # transport/engagement signals only, no LLM
+ *   pnpm eval:voice -- --dry              # transport/latency/engagement signals only, no LLM
  *   pnpm eval:voice -- --min-quality 3.5 --max-dropped 0   # CI gate
  *
  * Guardrail: the JSON report (which contains transcripts) is written only to the
@@ -160,7 +160,7 @@ async function main() {
   const openaiKey = requireEnv("OPENAI_API_KEY");
   const model = process.env.EVAL_JUDGE_MODEL ?? "gpt-4o-mini";
   const dry = args.dry || !openaiKey;
-  if (args.dry) console.log("Dry run: computing transport/engagement signals only (no LLM judge).");
+  if (args.dry) console.log("Dry run: computing transport/latency/engagement signals only (no LLM judge).");
   else if (!openaiKey) console.warn("OPENAI_API_KEY not set — falling back to dry run (no LLM judge).");
 
   console.log(`Evaluating ${sessions.length} sessions${dry ? "" : ` with judge model ${model}`}...`);

@@ -213,24 +213,31 @@ export function VoiceAgentDialog({
   });
   formRef.current = form;
 
-  const { connectVoice, connectionStatus, getLocalStream, prewarmVoiceSession, sendClientEvents, teardownVoice } =
-    useRealtimeVoiceSession({
-      audioRef,
-      onClose: handleVoiceClose,
-      onEvent: runtime.handleRealtimeEvent,
-      onIdleWarning: () => {
-        sendClientEventsRef.current?.(serializeResponseCreate(idleGoodbyeInstruction));
-      },
-      onSessionReady: (metadata) => {
-        const current = reviewRef.current;
-        const next = current?.id === metadata.id ? { ...current, ...metadata } : metadata;
-        reviewRef.current = next;
-        setReviewMetadata(next);
-      },
-      segment,
-      variant: voiceVariant,
-      conversationId,
-    });
+  const {
+    connectVoice,
+    connectionStatus,
+    getLocalStream,
+    prewarmVoiceSession,
+    sendClientEvents,
+    teardownVoice,
+    turnPhase,
+  } = useRealtimeVoiceSession({
+    audioRef,
+    onClose: handleVoiceClose,
+    onEvent: runtime.handleRealtimeEvent,
+    onIdleWarning: () => {
+      sendClientEventsRef.current?.(serializeResponseCreate(idleGoodbyeInstruction));
+    },
+    onSessionReady: (metadata) => {
+      const current = reviewRef.current;
+      const next = current?.id === metadata.id ? { ...current, ...metadata } : metadata;
+      reviewRef.current = next;
+      setReviewMetadata(next);
+    },
+    segment,
+    variant: voiceVariant,
+    conversationId,
+  });
   teardownVoiceRef.current = teardownVoice;
   sendClientEventsRef.current = sendClientEvents;
   connectionStatusRef.current = connectionStatus;
@@ -540,6 +547,7 @@ export function VoiceAgentDialog({
                 onTopicToggle={(topicId) => setActiveTopicId((current) => (current === topicId ? null : topicId))}
                 selectedSegment={selectedSegment}
                 status={status}
+                turnPhase={turnPhase}
               />
             </main>
 

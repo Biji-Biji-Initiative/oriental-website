@@ -2301,6 +2301,7 @@ function VoiceSessionDetails({ session }: { session: ConversationHead }) {
         </dl>
         <SessionQualityFlags session={session} realErrorCount={realErrorCount} />
         <SessionLifecycle session={session} />
+        <SessionLatency calls={session.calls} />
         <div className="mt-4 grid gap-3 rounded-lg bg-mk-paper p-3 text-sm leading-6">
           <div>
             <span className="font-semibold">Email:</span> {session.captured.email || "empty"}
@@ -2368,6 +2369,7 @@ function VoiceQaRollup({ sessions }: { sessions: VoiceSessionRow[] }) {
   const variantRows = summarizeVoiceVariants(sessions);
   const prewarmed = sessions.filter((session) => session.prewarmedAt).length;
   const connected = sessions.filter((session) => session.connectedAt).length;
+  const latency = summarizeSessionLatency(sessions);
   return (
     <div className="grid gap-3 rounded-lg border border-mk-ash/15 bg-mk-paper/70 p-3 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)]">
       <div>
@@ -2379,6 +2381,18 @@ function VoiceQaRollup({ sessions }: { sessions: VoiceSessionRow[] }) {
           <div>{sessions.filter((session) => Boolean(session.leadId)).length} submitted handoffs</div>
           <div>{recoverableVoiceSessions(sessions).length} recoverable unsent leads</div>
           <div>{sessions.filter((session) => session.routeRequested).length} route requests</div>
+          <div>{latency.sampledTurns} timed conversation turns</div>
+          <div>
+            First output p50/p95: {formatLatency(latency.firstOutput.p50Ms)} /{" "}
+            {formatLatency(latency.firstOutput.p95Ms)}
+          </div>
+          <div>
+            Response created p50/p95: {formatLatency(latency.responseCreated.p50Ms)} /{" "}
+            {formatLatency(latency.responseCreated.p95Ms)}
+          </div>
+          <div>
+            {latency.rapidResumeTurns} rapid resumes · {latency.interruptedTurns} interrupted replies
+          </div>
         </div>
       </div>
       <div className="overflow-x-auto">
@@ -2453,6 +2467,37 @@ function SessionLifecycle({ session }: { session: VoiceSessionRow }) {
           <div className="mt-1">{row.value}</div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function SessionLatency({ calls }: { calls: VoiceSessionRow[] }) {
+  const latency = summarizeSessionLatency(calls);
+  if (latency.sampledTurns === 0) return null;
+  const rows = [
+    { label: "Timed turns", value: String(latency.sampledTurns) },
+    { label: "First output p50", value: formatLatency(latency.firstOutput.p50Ms) },
+    { label: "First output p95", value: formatLatency(latency.firstOutput.p95Ms) },
+    { label: "Response created p50", value: formatLatency(latency.responseCreated.p50Ms) },
+    { label: "Response created p95", value: formatLatency(latency.responseCreated.p95Ms) },
+    { label: "Rapid resumes", value: String(latency.rapidResumeTurns) },
+    { label: "Interrupted replies", value: String(latency.interruptedTurns) },
+  ];
+  return (
+    <div className="mt-3 rounded-lg border border-mk-blue/15 bg-mk-blue/5 p-3 text-xs text-mk-ash">
+      <div className="font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">Conversation latency</div>
+      <div className="mt-2 grid gap-2 sm:grid-cols-3 xl:grid-cols-7">
+        {rows.map((row) => (
+          <div key={row.label}>
+            <div className="font-semibold text-mk-off-black/70">{row.label}</div>
+            <div className="mt-1">{row.value}</div>
+          </div>
+        ))}
+      </div>
+      <p className="mt-2 text-[11px] leading-5">
+        First output is the first Realtime audio/transcript event after detected speech stops; it is not yet measured
+        speaker playback.
+      </p>
     </div>
   );
 }
@@ -2638,6 +2683,34 @@ function summarizeVoiceVariants(sessions: VoiceSessionRow[]) {
       connectRate: Math.round((row.connected / row.sessions) * 100),
     }))
     .sort((left, right) => right.sessions - left.sessions || right.errorSessions - left.errorSessions);
+}
+
+function summarizeSessionLatency(sessions: VoiceSessionRow[]) {
+  const turns = sessions.flatMap((session) => session.latency?.turns ?? []);
+  const firstOutput = turns.flatMap((turn) =>
+    typeof turn.stopToFirstOutputEventMs === "number" ? [turn.stopToFirstOutputEventMs] : [],
+  );
+  const responseCreated = turns.flatMap((turn) =>
+    typeof turn.stopToResponseCreatedMs === "number" ? [turn.stopToResponseCreatedMs] : [],
+  );
+  return {
+    sampledTurns: turns.length,
+    firstOutput: latencyPercentiles(firstOutput),
+    responseCreated: latencyPercentiles(responseCreated),
+    interruptedTurns: turns.filter((turn) => turn.interrupted).length,
+    rapidResumeTurns: turns.filter((turn) => turn.rapidResume).length,
+  };
+}
+
+function latencyPercentiles(values: number[]) {
+  if (values.length === 0) return { p50Ms: null, p95Ms: null };
+  const sorted = [...values].sort((left, right) => left - right);
+  const at = (quantile: number) => sorted[Math.min(Math.ceil(sorted.length * quantile) - 1, sorted.length - 1)] ?? null;
+  return { p50Ms: at(0.5), p95Ms: at(0.95) };
+}
+
+function formatLatency(value: number | null) {
+  return value === null ? "--" : formatDuration(value);
 }
 
 function voiceSessionAnchorId(reviewId: string) {

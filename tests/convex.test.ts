@@ -202,6 +202,19 @@ describe("persistVoiceReviewSnapshot", () => {
       iceRestartCount: 1,
       transitions: [{ state: "disconnected", at: 10 }],
     },
+    latency: {
+      version: 1 as const,
+      turns: [
+        {
+          sequence: 1,
+          inputPolicy: "baseline" as const,
+          stopToResponseCreatedMs: 180,
+          stopToFirstOutputEventMs: 420,
+          interrupted: false,
+          rapidResume: false,
+        },
+      ],
+    },
   };
 
   beforeEach(() => {
@@ -217,18 +230,23 @@ describe("persistVoiceReviewSnapshot", () => {
     vi.clearAllMocks();
   });
 
-  it("persists the transport telemetry when Convex accepts it", async () => {
+  it("persists transport and latency telemetry when Convex accepts them", async () => {
     mocks.mutation.mockResolvedValue({ ok: true, id: "review_1" });
 
     await expect(persistVoiceReviewSnapshot(snapshot)).resolves.toEqual({ ok: true, id: "review_1" });
     expect(mocks.mutation).toHaveBeenCalledTimes(1);
     expect(mocks.mutation).toHaveBeenCalledWith(
       "recordVoiceSession",
-      expect.objectContaining({ snapshot: expect.objectContaining({ transport: expect.any(Object) }) }),
+      expect.objectContaining({
+        snapshot: expect.objectContaining({
+          transport: expect.any(Object),
+          latency: expect.objectContaining({ version: 1 }),
+        }),
+      }),
     );
   });
 
-  it("retries without transport when a pre-migration Convex rejects the unknown field", async () => {
+  it("retries without telemetry when a pre-migration Convex rejects an unknown field", async () => {
     mocks.mutation
       .mockRejectedValueOnce(new Error("ArgumentValidationError: unexpected field `transport`"))
       .mockResolvedValueOnce({ ok: true, id: "review_1" });
@@ -237,6 +255,7 @@ describe("persistVoiceReviewSnapshot", () => {
     expect(mocks.mutation).toHaveBeenCalledTimes(2);
     const retryArgs = mocks.mutation.mock.calls[1]?.[1] as { snapshot: Record<string, unknown> };
     expect(retryArgs.snapshot).not.toHaveProperty("transport");
+    expect(retryArgs.snapshot).not.toHaveProperty("latency");
     expect(retryArgs.snapshot).toMatchObject({ reviewId: "review_1" });
   });
 });

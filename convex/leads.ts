@@ -85,6 +85,22 @@ const transportValidator = v.object({
   ),
 });
 
+const latencyValidator = v.object({
+  version: v.literal(1),
+  turns: v.array(
+    v.object({
+      sequence: v.number(),
+      inputPolicy: v.union(v.literal("baseline"), v.literal("fast"), v.literal("patient")),
+      speechDurationMs: v.optional(v.number()),
+      stopToResponseCreatedMs: v.optional(v.number()),
+      stopToFirstOutputEventMs: v.optional(v.number()),
+      responseDurationMs: v.optional(v.number()),
+      interrupted: v.boolean(),
+      rapidResume: v.boolean(),
+    }),
+  ),
+});
+
 const voiceSessionValidator = v.object({
   reviewId: v.string(),
   sessionId: v.string(),
@@ -116,6 +132,7 @@ const voiceSessionValidator = v.object({
   rateLimits: v.array(v.any()),
   routeRequested: v.boolean(),
   submittedAt: v.optional(v.number()),
+  latency: v.optional(latencyValidator),
   transport: v.optional(transportValidator),
 });
 
@@ -292,6 +309,7 @@ export const recordVoiceSession = mutationGeneric({
       ...(typeof snapshot.variant !== "undefined" ? { variant: snapshot.variant } : {}),
       ...(snapshot.usage ? { usage: snapshot.usage } : {}),
       ...(typeof snapshot.submittedAt === "number" ? { submittedAt: snapshot.submittedAt } : {}),
+      ...(snapshot.latency ? { latency: snapshot.latency } : {}),
       ...(snapshot.transport ? { transport: snapshot.transport } : {}),
     };
     if (existing) {
@@ -389,6 +407,7 @@ export const voiceSessionsForEval = queryGeneric({
       captured: session.captured,
       usage: session.usage ?? null,
       errors: session.errors,
+      latency: session.latency ?? null,
       transport: session.transport ?? null,
       routeRequested: session.routeRequested,
       submittedAt: session.submittedAt ?? null,
@@ -441,6 +460,7 @@ export const reviewDashboard = queryGeneric({
     const engagedSessions = voiceSessions.filter(isEngagedVoiceSession);
     const submittedSessions = voiceSessions.filter((session) => Boolean(session.leadId)).length;
     const totalResponseTokens = voiceSessions.reduce((sum, session) => sum + (session.usage?.responseTokens ?? 0), 0);
+    const voiceLatency = summarizeVoiceLatency(voiceSessions);
     const evaluatedSessions = voiceSessions.filter((session) => session.eval);
     const evalAverages = averageEvalScores(evaluatedSessions);
     const droppedMidTurnEvals = evaluatedSessions.filter((session) => session.eval?.droppedMidTurn).length;
@@ -485,6 +505,7 @@ export const reviewDashboard = queryGeneric({
           withErrors: sessionsWithErrors,
           routeRequested: voiceSessions.filter((session) => session.routeRequested).length,
           totalResponseTokens,
+          latency: voiceLatency,
         },
         evals: {
           evaluated: evaluatedSessions.length,
@@ -571,6 +592,49 @@ function isEngagedVoiceSession(session: {
 function percent(numerator: number, denominator: number) {
   if (denominator <= 0) return 0;
   return Math.round((numerator / denominator) * 100);
+}
+
+type LatencySession = {
+  latency?: {
+    turns: Array<{
+      stopToResponseCreatedMs?: number;
+      stopToFirstOutputEventMs?: number;
+      interrupted: boolean;
+      rapidResume: boolean;
+    }>;
+  };
+};
+
+function summarizeVoiceLatency(sessions: LatencySession[]) {
+  const turns = sessions.flatMap((session) => session.latency?.turns ?? []);
+  const firstOutput = turns.flatMap((turn) =>
+    typeof turn.stopToFirstOutputEventMs === "number" ? [turn.stopToFirstOutputEventMs] : [],
+  );
+  const responseCreated = turns.flatMap((turn) =>
+    typeof turn.stopToResponseCreatedMs === "number" ? [turn.stopToResponseCreatedMs] : [],
+  );
+  return {
+    sampledTurns: turns.length,
+    firstOutput: percentileSummary(firstOutput),
+    responseCreated: percentileSummary(responseCreated),
+    interruptedTurns: turns.filter((turn) => turn.interrupted).length,
+    rapidResumeTurns: turns.filter((turn) => turn.rapidResume).length,
+  };
+}
+
+function percentileSummary(values: number[]) {
+  if (values.length === 0) return { samples: 0, p50Ms: null, p95Ms: null };
+  const sorted = [...values].sort((left, right) => left - right);
+  return {
+    samples: sorted.length,
+    p50Ms: percentile(sorted, 0.5),
+    p95Ms: percentile(sorted, 0.95),
+  };
+}
+
+function percentile(sorted: number[], quantile: number) {
+  const index = Math.min(Math.max(Math.ceil(sorted.length * quantile) - 1, 0), sorted.length - 1);
+  return Math.round(sorted[index] ?? 0);
 }
 
 type EvaluatedSession = {

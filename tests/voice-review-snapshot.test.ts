@@ -14,6 +14,21 @@ const review = {
   connectStartedAt: 2000,
   connectedAt: 2400,
   firstEventAt: 3100,
+  latency: {
+    version: 1 as const,
+    turns: [
+      {
+        sequence: 1,
+        inputPolicy: "baseline" as const,
+        speechDurationMs: 900,
+        stopToResponseCreatedMs: 180,
+        stopToFirstOutputEventMs: 420,
+        responseDurationMs: 1700,
+        interrupted: false,
+        rapidResume: false,
+      },
+    ],
+  },
 };
 
 function state(overrides: Partial<VoiceRuntimeState> = {}): VoiceRuntimeState {
@@ -50,6 +65,7 @@ describe("voice review snapshots", () => {
       voice: "marin",
       speed: 1.18,
       variant: "kl-polished",
+      latency: review.latency,
       captured: { name: "Asha" },
       transcript: [{ role: "user", text: "I want to run an AI literacy demo." }],
       routeRequested: true,

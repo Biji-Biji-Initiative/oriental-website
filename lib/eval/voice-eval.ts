@@ -29,6 +29,20 @@ export type EvalTransport = {
   worstStats?: { packetsLostPct?: number; maxJitterMs?: number; maxRttMs?: number } | null;
 } | null;
 
+export type EvalLatency = {
+  version: 1;
+  turns: Array<{
+    sequence: number;
+    inputPolicy: "baseline" | "fast" | "patient";
+    speechDurationMs?: number;
+    stopToResponseCreatedMs?: number;
+    stopToFirstOutputEventMs?: number;
+    responseDurationMs?: number;
+    interrupted: boolean;
+    rapidResume: boolean;
+  }>;
+} | null;
+
 export type VoiceEvalSession = {
   reviewId: string;
   sessionId: string;
@@ -45,6 +59,7 @@ export type VoiceEvalSession = {
   transcript: EvalTranscriptTurn[];
   errors: Array<{ code?: string; message: string }>;
   transport?: EvalTransport;
+  latency?: EvalLatency;
   routeRequested: boolean;
   submittedAt?: number | null;
   /** Review ids of the call segments folded into this conversation (if merged). */
@@ -107,6 +122,7 @@ export function mergeConversationSessions(sessions: VoiceEvalSession[]): VoiceEv
     const head = ordered[ordered.length - 1] as VoiceEvalSession;
     const submitted = ordered.find((s) => Boolean(s.submittedAt) || Boolean(s.leadId));
     const transport = ordered.reduce<EvalTransport>((acc, s) => foldEvalTransport(acc, s.transport ?? null), null);
+    const latency = foldEvalLatency(ordered.map((session) => session.latency ?? null));
     merged.push({
       ...head,
       // The latest call row heads the conversation, but timings and outcome span
@@ -121,11 +137,17 @@ export function mergeConversationSessions(sessions: VoiceEvalSession[]): VoiceEv
       transcript: mergeConversationTranscripts(ordered),
       errors: ordered.flatMap((s) => s.errors),
       transport,
+      latency,
       routeRequested: ordered.some((s) => s.routeRequested),
       callReviewIds: ordered.map((s) => s.reviewId),
     });
   }
   return merged;
+}
+
+function foldEvalLatency(latencies: EvalLatency[]): EvalLatency {
+  const turns = latencies.flatMap((latency) => latency?.turns ?? []);
+  return turns.length > 0 ? { version: 1, turns } : null;
 }
 
 function foldEvalTransport(acc: EvalTransport, next: EvalTransport): EvalTransport {
@@ -177,6 +199,46 @@ export function deriveTransportSignals(session: VoiceEvalSession): TransportSign
     worstPacketsLostPct: transport?.worstStats?.packetsLostPct ?? null,
     worstRttMs: transport?.worstStats?.maxRttMs ?? null,
   };
+}
+
+export type LatencySignals = {
+  sampledTurns: number;
+  firstOutputSamples: number;
+  firstOutputP50Ms: number | null;
+  firstOutputP95Ms: number | null;
+  responseCreatedSamples: number;
+  responseCreatedP50Ms: number | null;
+  responseCreatedP95Ms: number | null;
+  interruptedTurns: number;
+  rapidResumeTurns: number;
+};
+
+export function deriveLatencySignals(session: VoiceEvalSession): LatencySignals {
+  const turns = session.latency?.turns ?? [];
+  const firstOutput = turns.flatMap((turn) =>
+    typeof turn.stopToFirstOutputEventMs === "number" ? [turn.stopToFirstOutputEventMs] : [],
+  );
+  const responseCreated = turns.flatMap((turn) =>
+    typeof turn.stopToResponseCreatedMs === "number" ? [turn.stopToResponseCreatedMs] : [],
+  );
+  return {
+    sampledTurns: turns.length,
+    firstOutputSamples: firstOutput.length,
+    firstOutputP50Ms: percentile(firstOutput, 0.5),
+    firstOutputP95Ms: percentile(firstOutput, 0.95),
+    responseCreatedSamples: responseCreated.length,
+    responseCreatedP50Ms: percentile(responseCreated, 0.5),
+    responseCreatedP95Ms: percentile(responseCreated, 0.95),
+    interruptedTurns: turns.filter((turn) => turn.interrupted).length,
+    rapidResumeTurns: turns.filter((turn) => turn.rapidResume).length,
+  };
+}
+
+function percentile(values: number[], quantile: number): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((left, right) => left - right);
+  const index = Math.min(Math.max(Math.ceil(sorted.length * quantile) - 1, 0), sorted.length - 1);
+  return Math.round(sorted[index] ?? 0);
 }
 
 export type EngagementSignals = {
@@ -293,6 +355,7 @@ export type SessionEval = {
   segment: string;
   closeReason: string | null;
   transport: TransportSignals;
+  latency: LatencySignals;
   engagement: EngagementSignals;
   score: JudgeScore | null;
 };
@@ -305,6 +368,7 @@ export function buildSessionEval(session: VoiceEvalSession, score: JudgeScore | 
     segment: session.segment,
     closeReason: session.closeReason ?? null,
     transport: deriveTransportSignals(session),
+    latency: deriveLatencySignals(session),
     engagement: deriveEngagementSignals(session),
     score,
   };
