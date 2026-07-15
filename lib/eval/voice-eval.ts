@@ -81,7 +81,7 @@ export type VoiceEvalSession = {
 // ---------------------------------------------------------------------------
 
 /** Abnormal closes that indicate the visitor did not end the call cleanly. */
-const ABNORMAL_CLOSE_REASONS = new Set(["disconnected", "webrtc_failed", "error", "page_hidden"]);
+const ABNORMAL_CLOSE_REASONS = new Set(["disconnected", "realtime_busy", "webrtc_failed", "error", "page_hidden"]);
 
 function callStartAt(session: VoiceEvalSession): number {
   return session.connectStartedAt ?? session.connectedAt ?? session.firstEventAt ?? 0;

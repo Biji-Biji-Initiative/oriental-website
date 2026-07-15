@@ -112,6 +112,13 @@ export function voiceCloseReasonToast(reason: VoiceCloseReason) {
       description: "You can still send the handoff from the panel.",
     };
   }
+  if (reason === "realtime_busy") {
+    return {
+      tone: "warning" as const,
+      title: "Live voice is busy right now.",
+      description: "Your handoff is still here. Try voice again shortly, or keep typing while the service recovers.",
+    };
+  }
   if (reason === "disconnected") {
     return {
       tone: "warning" as const,

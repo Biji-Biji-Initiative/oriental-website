@@ -96,6 +96,7 @@ export const voiceReviewSnapshotSchema = z.object({
         "voice_limit_reached",
         "mic_denied",
         "session_failed",
+        "realtime_busy",
         "webrtc_failed",
         "disconnected",
         "page_hidden",

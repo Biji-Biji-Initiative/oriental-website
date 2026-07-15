@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { openingVoiceInstruction, voiceStatusCopy } from "@/components/voice-agent/voice-dialog-copy";
+import { realtimeCallCloseReason } from "@/components/voice-agent/useRealtimeVoiceSession";
+import {
+  openingVoiceInstruction,
+  voiceCloseReasonToast,
+  voiceStatusCopy,
+} from "@/components/voice-agent/voice-dialog-copy";
 
 describe("voice dialogue activation copy", () => {
   it("uses the reviewed one-sentence opener", () => {
@@ -20,5 +25,16 @@ describe("voice dialogue activation copy", () => {
   it("maps speaking phases to distinct live states", () => {
     expect(voiceStatusCopy("listening", "user_speaking").label).toBe("Listening");
     expect(voiceStatusCopy("listening", "assistant_speaking").label).toBe("Reka speaking");
+  });
+
+  it("distinguishes upstream Realtime capacity from a visitor's daily limit", () => {
+    expect(realtimeCallCloseReason(429)).toBe("realtime_busy");
+    expect(realtimeCallCloseReason(503)).toBe("webrtc_failed");
+    expect(voiceCloseReasonToast("realtime_busy")).toEqual({
+      tone: "warning",
+      title: "Live voice is busy right now.",
+      description: "Your handoff is still here. Try voice again shortly, or keep typing while the service recovers.",
+    });
+    expect(voiceCloseReasonToast("voice_limit_reached")?.title).toBe("Voice limit reached for today.");
   });
 });

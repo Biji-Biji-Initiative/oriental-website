@@ -39,8 +39,13 @@ export type VoiceCloseReason =
   | "voice_limit_reached"
   | "mic_denied"
   | "session_failed"
+  | "realtime_busy"
   | "webrtc_failed"
   | "disconnected";
+
+export function realtimeCallCloseReason(status: number): VoiceCloseReason {
+  return status === 429 ? "realtime_busy" : "webrtc_failed";
+}
 
 export type VoiceReviewMetadata = {
   id: string;
@@ -714,7 +719,7 @@ export function useRealtimeVoiceSession({
         throw new VoiceConnectionFailure("webrtc_failed");
       });
       if (connectionRef.current !== peer || statusRef.current === "idle") throw new VoiceConnectionFailure("manual");
-      if (!sdpResponse.ok) throw new VoiceConnectionFailure("webrtc_failed");
+      if (!sdpResponse.ok) throw new VoiceConnectionFailure(realtimeCallCloseReason(sdpResponse.status));
       const answerSdp = await sdpResponse.text();
       if (connectionRef.current !== peer || statusRef.current === "idle") throw new VoiceConnectionFailure("manual");
       await peer.setRemoteDescription({ type: "answer", sdp: answerSdp }).catch(() => {

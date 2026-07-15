@@ -69,6 +69,9 @@ describe("POST /api/voice/session", () => {
 
     const limited = await POST(request({ intent: "technology" }));
     expect(limited.status).toBe(429);
+    expect(limited.headers.get("retry-after")).toMatch(/^\d+$/);
+    expect(Number(limited.headers.get("retry-after"))).toBeGreaterThan(0);
+    expect(limited.headers.get("x-ratelimit-reset")).toMatch(/^\d+$/);
     expect(limited.headers.get("server-timing")).toMatch(/parse;dur=.+rate_limit;dur=.+total;dur=/);
     expect(await json(limited)).toMatchObject({ ok: false, error: "voice_limit_reached" });
     expect(fetchMock).toHaveBeenCalledTimes(3);

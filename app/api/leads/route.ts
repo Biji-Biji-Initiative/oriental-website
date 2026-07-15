@@ -6,7 +6,14 @@ import { durationSince, errorMeta, logError, logInfo, logWarn } from "@/lib/serv
 import { settledNotificationResult } from "@/lib/server/notification-results";
 import { notifyClickUp, notifyOwner, notifySlack, notifySubmitter, routeLead } from "@/lib/server/notifications";
 import { sendOpsAlert } from "@/lib/server/ops-alerts";
-import { checkRateLimit, hashIp, noStoreJson, requestIp, verifyTurnstile } from "@/lib/server/security";
+import {
+  checkRateLimit,
+  hashIp,
+  noStoreJson,
+  rateLimitResponseHeaders,
+  requestIp,
+  verifyTurnstile,
+} from "@/lib/server/security";
 import { verifyVoiceReviewCredentials } from "@/lib/server/voice-review-token";
 
 export const runtime = "nodejs";
@@ -26,7 +33,10 @@ export async function POST(request: NextRequest) {
       resetAt: new Date(limit.resetAt).toISOString(),
       durationMs: durationSince(startedAt),
     });
-    return noStoreJson({ ok: false, error: "rate_limited" }, { status: 429 });
+    return noStoreJson(
+      { ok: false, error: "rate_limited" },
+      { status: 429, headers: rateLimitResponseHeaders(limit.resetAt) },
+    );
   }
 
   const raw = await request.json().catch(() => null);

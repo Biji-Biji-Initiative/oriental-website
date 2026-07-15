@@ -1,15 +1,32 @@
 import { createHash } from "node:crypto";
+import { isIP } from "node:net";
 import type { NextRequest } from "next/server";
 import { isProductionEnv, readEnv } from "@/lib/env";
 
 export { checkRateLimit, resetRateLimitBucketsForTest } from "@/lib/server/rate-limit";
 
 export function requestIp(request: NextRequest): string {
-  return (
-    request.headers.get("cf-connecting-ip") ??
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    "127.0.0.1"
-  );
+  // Traefik owns X-Forwarded-For at the direct origin. Read from the trusted
+  // proxy side of the chain and never trust CF-Connecting-IP here: while the
+  // DNS record is unproxied, a client can supply that header directly.
+  const forwarded = request.headers
+    .get("x-forwarded-for")
+    ?.split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const proxyAddress = forwarded?.at(-1);
+  if (proxyAddress && isIP(proxyAddress)) return proxyAddress;
+
+  // A stable sentinel fails closed into a shared rate-limit bucket when proxy
+  // metadata is absent or malformed instead of accepting attacker input.
+  return "0.0.0.0";
+}
+
+export function rateLimitResponseHeaders(resetAt: number, now = Date.now()) {
+  return {
+    "Retry-After": String(Math.max(1, Math.ceil((resetAt - now) / 1000))),
+    "X-RateLimit-Reset": String(Math.ceil(resetAt / 1000)),
+  };
 }
 
 export function hashIp(ip: string, scope = "lead"): string {

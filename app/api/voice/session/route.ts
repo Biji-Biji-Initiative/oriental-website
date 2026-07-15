@@ -4,7 +4,7 @@ import { voiceSessionRequestSchema } from "@/lib/schemas";
 import { durationSince, errorMeta, logError, logInfo, logWarn } from "@/lib/server/logger";
 import { createRealtimeClientSecret, type RealtimeDeviceProfile } from "@/lib/server/openai-realtime";
 import { sendOpsAlert } from "@/lib/server/ops-alerts";
-import { checkRateLimit, hashIp, noStoreJson, requestIp } from "@/lib/server/security";
+import { checkRateLimit, hashIp, noStoreJson, rateLimitResponseHeaders, requestIp } from "@/lib/server/security";
 import { type ServerTimingMetrics, serializeServerTiming } from "@/lib/server/server-timing";
 import { createVoiceReviewCredentials } from "@/lib/server/voice-review-token";
 
@@ -46,7 +46,12 @@ export async function POST(request: NextRequest) {
       resetAt: new Date(limit.resetAt).toISOString(),
       durationMs: durationSince(startedAt),
     });
-    return timedJson({ ok: false, error: "voice_limit_reached" }, { status: 429 }, timings, timingStartedAt);
+    return timedJson(
+      { ok: false, error: "voice_limit_reached" },
+      { status: 429, headers: rateLimitResponseHeaders(limit.resetAt) },
+      timings,
+      timingStartedAt,
+    );
   }
 
   let mintStartedAt: number | undefined;
