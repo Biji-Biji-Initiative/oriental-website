@@ -95,6 +95,7 @@ describe("voice latency telemetry", () => {
         { type: "local_speech_ended", at: 420 },
         { type: "speech_stopped", at: 500 },
         { type: "response_created", at: 620 },
+        { type: "tool_completed", durationMs: 37.4 },
         { type: "first_output", at: 760 },
         { type: "remote_audio_started", at: 820 },
         { type: "response_done", at: 1_200 },
@@ -108,7 +109,21 @@ describe("voice latency telemetry", () => {
       localSpeechEndToSpeechStoppedMs: 80,
       stopToRemoteAudioMs: 320,
       firstOutputEventToRemoteAudioMs: 60,
+      toolDurationMs: 37,
     });
+  });
+
+  it("accumulates and bounds browser-side tool execution within one response chain", () => {
+    const state = reduce([
+      { type: "speech_started", at: 100 },
+      { type: "speech_stopped", at: 200 },
+      { type: "response_created", at: 300 },
+      { type: "tool_completed", durationMs: 40.4 },
+      { type: "tool_completed", durationMs: 130_000 },
+      { type: "response_done", at: 500 },
+    ]);
+
+    expect(state.telemetry.turns[0]?.toolDurationMs).toBe(120_000);
   });
 
   it("measures interruption clearing without losing the new user turn", () => {

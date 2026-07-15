@@ -4,6 +4,7 @@ import {
   emptyCapturedLead,
   isBenignVoiceError,
   reduceRealtimeServerEvent,
+  responseHasFunctionCall,
   type VoiceRuntimeState,
 } from "@/lib/voice/realtime-events";
 
@@ -17,6 +18,32 @@ function state(overrides: Partial<VoiceRuntimeState> = {}): VoiceRuntimeState {
 }
 
 describe("reduceRealtimeServerEvent", () => {
+  it("identifies tool-only response completions so timing waits for the spoken follow-up", () => {
+    expect(
+      responseHasFunctionCall({
+        type: "response.done",
+        response: { output: [{ type: "function_call", name: "lookup_oriental" }] },
+      }),
+    ).toBe(true);
+    expect(responseHasFunctionCall({ type: "response.done", response: { output: [{ type: "message" }] } })).toBe(false);
+  });
+
+  it("tentatively captures only an explicit literal visitor email", () => {
+    const typed = appendTypedUserMessage(state(), "My email is asha@example.com");
+    expect(typed.captured.email).toBe("asha@example.com");
+
+    const example = appendTypedUserMessage(state(), "The website uses team@example.com as an example.");
+    expect(example.captured.email).toBe("");
+  });
+
+  it("never overwrites an email the visitor already edited", () => {
+    const result = appendTypedUserMessage(
+      state({ captured: { ...emptyCapturedLead, email: "correct@example.com" } }),
+      "My email is other@example.com",
+    );
+    expect(result.captured.email).toBe("correct@example.com");
+  });
+
   it("captures function call fields from response.done output items", () => {
     const result = reduceRealtimeServerEvent(
       {

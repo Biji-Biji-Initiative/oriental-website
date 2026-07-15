@@ -168,6 +168,7 @@ export const voiceReviewSnapshotSchema = z.object({
               localSpeechEndToSpeechStoppedMs: z.number().nonnegative().max(120_000).optional(),
               stopToRemoteAudioMs: z.number().nonnegative().max(120_000).optional(),
               firstOutputEventToRemoteAudioMs: z.number().nonnegative().max(120_000).optional(),
+              toolDurationMs: z.number().nonnegative().max(120_000).optional(),
               bargeInToResponseDoneMs: z.number().nonnegative().max(120_000).optional(),
               responseDurationMs: z.number().nonnegative().max(600_000).optional(),
               interrupted: z.boolean(),

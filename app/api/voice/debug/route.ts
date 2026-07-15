@@ -214,6 +214,7 @@ function summarizeLatency(latency: VoiceReviewSnapshotRequest["snapshot"]["laten
   const responseCreated = latency.turns.flatMap((turn) =>
     typeof turn.stopToResponseCreatedMs === "number" ? [turn.stopToResponseCreatedMs] : [],
   );
+  const tool = latency.turns.flatMap((turn) => (typeof turn.toolDurationMs === "number" ? [turn.toolDurationMs] : []));
   return {
     sampledTurns: latency.turns.length,
     firstOutputSamples: firstOutput.length,
@@ -222,6 +223,9 @@ function summarizeLatency(latency: VoiceReviewSnapshotRequest["snapshot"]["laten
     responseCreatedSamples: responseCreated.length,
     responseCreatedP50Ms: percentile(responseCreated, 0.5),
     responseCreatedP95Ms: percentile(responseCreated, 0.95),
+    toolSamples: tool.length,
+    toolP50Ms: percentile(tool, 0.5),
+    toolP95Ms: percentile(tool, 0.95),
     interruptedTurns: latency.turns.filter((turn) => turn.interrupted).length,
     rapidResumeTurns: latency.turns.filter((turn) => turn.rapidResume).length,
   };

@@ -146,6 +146,7 @@ describe("voice review latency schema", () => {
     localSpeechEndToSpeechStoppedMs: 180,
     stopToRemoteAudioMs: 510,
     firstOutputEventToRemoteAudioMs: 90,
+    toolDurationMs: 35,
     bargeInToResponseDoneMs: 120,
     interrupted: false,
     rapidResume: false,
@@ -192,6 +193,15 @@ describe("voice review latency schema", () => {
         snapshot: {
           ...request.snapshot,
           latency: { version: 1, turns: [{ ...turn, stopToRemoteAudioMs: 120_001 }] },
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      voiceReviewSnapshotSchema.safeParse({
+        ...request,
+        snapshot: {
+          ...request.snapshot,
+          latency: { version: 1, turns: [{ ...turn, toolDurationMs: 120_001 }] },
         },
       }).success,
     ).toBe(false);

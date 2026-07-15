@@ -106,6 +106,7 @@ const latencyValidator = v.object({
       localSpeechEndToSpeechStoppedMs: v.optional(v.number()),
       stopToRemoteAudioMs: v.optional(v.number()),
       firstOutputEventToRemoteAudioMs: v.optional(v.number()),
+      toolDurationMs: v.optional(v.number()),
       bargeInToResponseDoneMs: v.optional(v.number()),
       responseDurationMs: v.optional(v.number()),
       interrupted: v.boolean(),
@@ -632,6 +633,7 @@ type LatencySession = {
       stopToRemoteAudioMs?: number;
       localSpeechEndToSpeechStoppedMs?: number;
       firstOutputEventToRemoteAudioMs?: number;
+      toolDurationMs?: number;
       bargeInToResponseDoneMs?: number;
       interrupted: boolean;
       rapidResume: boolean;
@@ -659,6 +661,7 @@ function summarizeVoiceLatency(sessions: LatencySession[]) {
   const bargeIn = turns.flatMap((turn) =>
     typeof turn.bargeInToResponseDoneMs === "number" ? [turn.bargeInToResponseDoneMs] : [],
   );
+  const tool = turns.flatMap((turn) => (typeof turn.toolDurationMs === "number" ? [turn.toolDurationMs] : []));
   const activation = sessions.flatMap((session) =>
     typeof session.latency?.activation?.tapToArmCueScheduledMs === "number"
       ? [session.latency.activation.tapToArmCueScheduledMs]
@@ -671,6 +674,7 @@ function summarizeVoiceLatency(sessions: LatencySession[]) {
     remoteAudio: percentileSummary(remoteAudio),
     endpoint: percentileSummary(endpoint),
     playout: percentileSummary(playout),
+    tool: percentileSummary(tool),
     bargeIn: percentileSummary(bargeIn),
     activation: percentileSummary(activation),
     interruptedTurns: turns.filter((turn) => turn.interrupted).length,

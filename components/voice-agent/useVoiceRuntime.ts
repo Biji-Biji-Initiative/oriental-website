@@ -23,6 +23,8 @@ type UseVoiceRuntimeArgs = {
   /** Persist the lead; resolves with the tool output returned to the model. */
   submitLead: (state: VoiceRuntimeState) => Promise<Record<string, unknown>>;
   onEndVoice: () => void;
+  /** Reports browser-side tool execution through result dispatch. */
+  onToolDuration: (durationMs: number) => void;
 };
 
 /**
@@ -30,14 +32,20 @@ type UseVoiceRuntimeArgs = {
  * the resulting React state, command dispatch back over the data channel, and
  * the user-facing toast policy for session errors and rejected captures.
  */
-export function useVoiceRuntime({ initialSegment, prefillEmail, submitLead, onEndVoice }: UseVoiceRuntimeArgs) {
+export function useVoiceRuntime({
+  initialSegment,
+  prefillEmail,
+  submitLead,
+  onEndVoice,
+  onToolDuration,
+}: UseVoiceRuntimeArgs) {
   const [segment, setSegment] = useState<SegmentId>(initialSegment);
   const [captured, setCaptured] = useState<CapturedLead>({ ...emptyCapturedLead, email: prefillEmail ?? "" });
   const [transcript, setTranscript] = useState<VoiceTranscriptEntry[]>([]);
   const [assistantDraft, setAssistantDraft] = useState("");
   const stateRef = useRef<VoiceRuntimeState>({ segment, captured, transcript, handledCallIds: [] });
-  const callbacksRef = useRef({ submitLead, onEndVoice });
-  callbacksRef.current = { submitLead, onEndVoice };
+  const callbacksRef = useRef({ submitLead, onEndVoice, onToolDuration });
+  callbacksRef.current = { submitLead, onEndVoice, onToolDuration };
   // The model retries a rejected capture on its own; only bother the visitor
   // when the same field keeps failing.
   const ungroundedRejectionsRef = useRef(0);
@@ -78,6 +86,7 @@ export function useVoiceRuntime({ initialSegment, prefillEmail, submitLead, onEn
       channel: RTCDataChannel,
       command: Extract<RealtimeClientCommand, { type: "submit_voice" }>,
       leadState: VoiceRuntimeState,
+      startedAt: number,
     ) => {
       callbacksRef.current
         .submitLead(leadState)
@@ -85,16 +94,17 @@ export function useVoiceRuntime({ initialSegment, prefillEmail, submitLead, onEn
           if (output.submitted !== true) {
             stateRef.current = { ...stateRef.current, routeRequested: false };
           }
-          sendRealtimeCommand(channel, {
+          const sent = sendRealtimeCommand(channel, {
             type: "function_result",
             callId: command.callId,
             createResponse: output.submitted !== true,
             output,
           });
+          if (sent) callbacksRef.current.onToolDuration(performance.now() - startedAt);
         })
         .catch((error) => {
           stateRef.current = { ...stateRef.current, routeRequested: false };
-          sendRealtimeCommand(channel, {
+          const sent = sendRealtimeCommand(channel, {
             type: "function_result",
             callId: command.callId,
             createResponse: true,
@@ -104,6 +114,7 @@ export function useVoiceRuntime({ initialSegment, prefillEmail, submitLead, onEn
               message: error instanceof Error ? error.message : "The lead submission failed.",
             },
           });
+          if (sent) callbacksRef.current.onToolDuration(performance.now() - startedAt);
           toast.error("Could not finish voice routing. You can still send from the handoff panel.");
         });
     },
@@ -112,6 +123,7 @@ export function useVoiceRuntime({ initialSegment, prefillEmail, submitLead, onEn
 
   const handleRealtimeEvent = useCallback(
     (serverEvent: RealtimeServerEvent, channel: RTCDataChannel) => {
+      const toolStartedAt = performance.now();
       const previousErrorCount = stateRef.current.errors?.length ?? 0;
       const reduced = reduceRealtimeServerEvent(serverEvent, stateRef.current);
       stateRef.current = reduced.state;
@@ -143,9 +155,10 @@ export function useVoiceRuntime({ initialSegment, prefillEmail, submitLead, onEn
               });
             }
           }
-          sendRealtimeCommand(channel, command);
+          const sent = sendRealtimeCommand(channel, command);
+          if (sent) callbacksRef.current.onToolDuration(performance.now() - toolStartedAt);
         }
-        if (command.type === "submit_voice") submitVoiceCommand(channel, command, reduced.state);
+        if (command.type === "submit_voice") submitVoiceCommand(channel, command, reduced.state, toolStartedAt);
         if (command.type === "end_voice") callbacksRef.current.onEndVoice();
       }
     },
@@ -170,8 +183,9 @@ function sendRealtimeCommand(
   channel: RTCDataChannel,
   command: Extract<RealtimeClientCommand, { type: "function_result" }>,
 ) {
-  if (channel.readyState !== "open") return;
+  if (channel.readyState !== "open") return false;
   for (const event of serializeRealtimeCommand(command)) {
     channel.send(JSON.stringify(event));
   }
+  return true;
 }

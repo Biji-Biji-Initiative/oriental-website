@@ -41,6 +41,7 @@ export type EvalLatency = {
     localSpeechEndToSpeechStoppedMs?: number;
     stopToRemoteAudioMs?: number;
     firstOutputEventToRemoteAudioMs?: number;
+    toolDurationMs?: number;
     bargeInToResponseDoneMs?: number;
     responseDurationMs?: number;
     interrupted: boolean;
@@ -226,6 +227,8 @@ export type LatencySignals = {
   endpointP95Ms: number | null;
   playoutP50Ms: number | null;
   playoutP95Ms: number | null;
+  toolP50Ms: number | null;
+  toolP95Ms: number | null;
   bargeInP95Ms: number | null;
   tapToArmCueMs: number | null;
   interruptedTurns: number;
@@ -252,6 +255,7 @@ export function deriveLatencySignals(session: VoiceEvalSession): LatencySignals 
   const bargeIn = turns.flatMap((turn) =>
     typeof turn.bargeInToResponseDoneMs === "number" ? [turn.bargeInToResponseDoneMs] : [],
   );
+  const tool = turns.flatMap((turn) => (typeof turn.toolDurationMs === "number" ? [turn.toolDurationMs] : []));
   return {
     sampledTurns: turns.length,
     firstOutputSamples: firstOutput.length,
@@ -267,6 +271,8 @@ export function deriveLatencySignals(session: VoiceEvalSession): LatencySignals 
     endpointP95Ms: percentile(endpoint, 0.95),
     playoutP50Ms: percentile(playout, 0.5),
     playoutP95Ms: percentile(playout, 0.95),
+    toolP50Ms: percentile(tool, 0.5),
+    toolP95Ms: percentile(tool, 0.95),
     bargeInP95Ms: percentile(bargeIn, 0.95),
     tapToArmCueMs: session.latency?.activation?.tapToArmCueScheduledMs ?? null,
     interruptedTurns: turns.filter((turn) => turn.interrupted).length,

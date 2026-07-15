@@ -136,6 +136,7 @@ export default defineSchema({
             localSpeechEndToSpeechStoppedMs: v.optional(v.number()),
             stopToRemoteAudioMs: v.optional(v.number()),
             firstOutputEventToRemoteAudioMs: v.optional(v.number()),
+            toolDurationMs: v.optional(v.number()),
             bargeInToResponseDoneMs: v.optional(v.number()),
             responseDurationMs: v.optional(v.number()),
             interrupted: v.boolean(),

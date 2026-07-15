@@ -12,7 +12,7 @@ import {
   type VoiceLatencyTelemetry,
   type VoiceTurnPhase,
 } from "@/lib/voice/latency";
-import type { RealtimeServerEvent } from "@/lib/voice/realtime-events";
+import { type RealtimeServerEvent, responseHasFunctionCall } from "@/lib/voice/realtime-events";
 import {
   inputPolicyForAssistantText,
   resolveVoiceRuntimeProfile,
@@ -653,7 +653,7 @@ export function useRealtimeVoiceSession({
         ) {
           recordLatencySignal({ type: "first_output", at: performance.now() });
         }
-        if (parsed?.type === "response.done") {
+        if (parsed?.type === "response.done" && !responseHasFunctionCall(parsed)) {
           recordLatencySignal(
             latencyRef.current.pendingBargeInAt !== undefined
               ? { type: "interruption_cleared", at: performance.now() }
@@ -738,6 +738,9 @@ export function useRealtimeVoiceSession({
   const recordRemoteAudioStarted = useCallback((at: number) => {
     recordLatencySignalRef.current?.({ type: "remote_audio_started", at });
   }, []);
+  const recordToolDuration = useCallback((durationMs: number) => {
+    recordLatencySignalRef.current?.({ type: "tool_completed", durationMs });
+  }, []);
 
   return {
     connectVoice,
@@ -746,6 +749,7 @@ export function useRealtimeVoiceSession({
     prewarmVoiceSession,
     recordLocalSpeechEnded,
     recordRemoteAudioStarted,
+    recordToolDuration,
     sendClientEvents,
     setVoiceActivation,
     teardownVoice,

@@ -2407,6 +2407,7 @@ function VoiceQaRollup({ sessions }: { sessions: VoiceSessionRow[] }) {
             {formatLatency(latency.remoteAudio.p95Ms)}
           </div>
           <div>Arm cue scheduling p95: {formatLatency(latency.activation.p95Ms)}</div>
+          <div>Browser tool execution p95: {formatLatency(latency.tool.p95Ms)}</div>
           <div>
             {latency.rapidResumeTurns} rapid resumes · {latency.interruptedTurns} interrupted replies
           </div>
@@ -2514,6 +2515,7 @@ function SessionLatency({ calls }: { calls: VoiceSessionRow[] }) {
     { label: "Remote audio p95", value: formatLatency(latency.remoteAudio.p95Ms) },
     { label: "Endpoint p95", value: formatLatency(latency.endpoint.p95Ms) },
     { label: "Playout p95", value: formatLatency(latency.playout.p95Ms) },
+    { label: "Browser tool execution p95", value: formatLatency(latency.tool.p95Ms) },
     { label: "Barge-in clear p95", value: formatLatency(latency.bargeIn.p95Ms) },
     { label: "Arm cue p95", value: formatLatency(latency.activation.p95Ms) },
     { label: "Rapid resumes", value: String(latency.rapidResumeTurns) },
@@ -2756,6 +2758,7 @@ function summarizeSessionLatency(sessions: VoiceSessionRow[]) {
   const bargeIn = turns.flatMap((turn) =>
     typeof turn.bargeInToResponseDoneMs === "number" ? [turn.bargeInToResponseDoneMs] : [],
   );
+  const tool = turns.flatMap((turn) => (typeof turn.toolDurationMs === "number" ? [turn.toolDurationMs] : []));
   const activation = sessions.flatMap((session) =>
     typeof session.latency?.activation?.tapToArmCueScheduledMs === "number"
       ? [session.latency.activation.tapToArmCueScheduledMs]
@@ -2768,6 +2771,7 @@ function summarizeSessionLatency(sessions: VoiceSessionRow[]) {
     remoteAudio: latencyPercentiles(remoteAudio),
     endpoint: latencyPercentiles(endpoint),
     playout: latencyPercentiles(playout),
+    tool: latencyPercentiles(tool),
     bargeIn: latencyPercentiles(bargeIn),
     activation: latencyPercentiles(activation),
     interruptedTurns: turns.filter((turn) => turn.interrupted).length,

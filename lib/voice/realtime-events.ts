@@ -1,5 +1,6 @@
 import { SEGMENT_IDS, type SegmentId } from "@/lib/segments";
 import { lookupOrientalKnowledge } from "@/lib/voice/knowledge";
+import { extractExplicitVisitorEmail } from "@/lib/voice/tentative-extraction";
 
 export type CapturedLead = {
   name: string;
@@ -89,6 +90,14 @@ export type RealtimeServerEvent = {
   response?: { output?: RealtimeOutputItem[]; usage?: RealtimeUsage };
 };
 
+export function responseHasFunctionCall(event: RealtimeServerEvent): boolean {
+  return (
+    event.type === "response.done" &&
+    Array.isArray(event.response?.output) &&
+    event.response.output.some((item) => item?.type === "function_call")
+  );
+}
+
 export const emptyCapturedLead: CapturedLead = {
   name: "",
   email: "",
@@ -124,7 +133,7 @@ export function isBenignVoiceError(error: VoiceRuntimeError) {
 
 /** Record a message the visitor typed into the live chat as a user transcript turn. */
 export function appendTypedUserMessage(state: VoiceRuntimeState, text: string): VoiceRuntimeState {
-  return appendTranscript(state, "user", text);
+  return applyTentativeEmail(appendTranscript(state, "user", text), text);
 }
 
 export function reduceRealtimeServerEvent(
@@ -159,6 +168,7 @@ export function reduceRealtimeServerEvent(
 
   if (event.type === "conversation.item.input_audio_transcription.completed" && eventTranscript) {
     state = appendTranscript(state, "user", eventTranscript);
+    state = applyTentativeEmail(state, eventTranscript);
     state = accumulateUsage(state, "transcription", event.usage);
   }
 
@@ -374,6 +384,12 @@ function appendTranscript(
   const previous = state.transcript.at(-1);
   if (previous?.role === role && previous.text === trimmed) return state;
   return { ...state, transcript: [...state.transcript, { role, text: trimmed }] };
+}
+
+function applyTentativeEmail(state: VoiceRuntimeState, text: string): VoiceRuntimeState {
+  if (state.captured.email.trim()) return state;
+  const email = extractExplicitVisitorEmail(text);
+  return email ? { ...state, captured: { ...state.captured, email } } : state;
 }
 
 function accumulateUsage(

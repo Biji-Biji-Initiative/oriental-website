@@ -99,6 +99,7 @@ export function VoiceAgentDialog({
   );
   const connectionStatusRef = useRef<VoiceConnectionStatus>("idle");
   const postCloseSnapshotRef = useRef<((reason: VoiceCloseReason) => void) | null>(null);
+  const recordToolDurationRef = useRef<((durationMs: number) => void) | null>(null);
   const prewarmSnapshotIdsRef = useRef<Set<string>>(new Set());
   const [reviewMetadata, setReviewMetadata] = useState<VoiceReviewMetadata | null>(null);
 
@@ -206,6 +207,7 @@ export function VoiceAgentDialog({
     prefillEmail: prefill?.email,
     submitLead: (leadState) => submit("voice", leadState),
     onEndVoice: () => teardownVoiceRef.current?.("manual"),
+    onToolDuration: (durationMs) => recordToolDurationRef.current?.(durationMs),
   });
   const { segment, captured, transcript, stateRef } = runtime;
 
@@ -225,6 +227,7 @@ export function VoiceAgentDialog({
     prewarmVoiceSession,
     recordLocalSpeechEnded,
     recordRemoteAudioStarted,
+    recordToolDuration,
     sendClientEvents,
     setVoiceActivation,
     teardownVoice,
@@ -249,6 +252,7 @@ export function VoiceAgentDialog({
   teardownVoiceRef.current = teardownVoice;
   sendClientEventsRef.current = sendClientEvents;
   connectionStatusRef.current = connectionStatus;
+  recordToolDurationRef.current = recordToolDuration;
 
   // Team voice tuning: switch Reka's register from inside the dialog. A switch
   // mid-call tears the session down and reconnects with the new voice — the
