@@ -111,5 +111,5 @@ REMOTE
 
 curl -fsS https://oriental.mereka.io/api/health
 printf '\n'
-curl -fsS https://oriental-staging.deploy.mereka.io/api/health
+curl -fsS https://staging.oriental.mereka.io/api/health
 printf '\n'
