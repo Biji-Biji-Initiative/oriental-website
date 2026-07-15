@@ -1,14 +1,41 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-sha="${1:-}"
+target=""
+sha=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --target)
+      target="${2:-}"
+      shift 2
+      ;;
+    -h|--help)
+      echo "Usage: $0 --target staging|production [git-sha]"
+      exit 0
+      ;;
+    *)
+      if [[ -n "$sha" ]]; then
+        echo "Usage: $0 --target staging|production [git-sha]" >&2
+        exit 2
+      fi
+      sha="$1"
+      shift
+      ;;
+  esac
+done
+
+if [[ "$target" != "staging" && "$target" != "production" ]]; then
+  echo "Usage: $0 --target staging|production [git-sha]" >&2
+  exit 2
+fi
+
 if [[ -z "$sha" ]]; then
   git fetch origin main --quiet
   sha="$(git rev-parse origin/main)"
 fi
 
 if ! [[ "$sha" =~ ^[0-9a-f]{7,40}$ ]]; then
-  echo "Usage: $0 [git-sha]" >&2
+  echo "Usage: $0 --target staging|production [git-sha]" >&2
   exit 2
 fi
 
@@ -21,15 +48,16 @@ prod_dir="/data/coolify/applications/${app_uuid}"
 staging_dir="/data/coolify/applications/oriental-staging"
 
 # shellcheck disable=SC2086 # COOLIFY_SSH_COMMAND may intentionally include flags.
-$ssh_command "$remote_host" "bash -s -- '$sha' '$app_uuid' '$repo_url' '$remote_cache_dir' '$prod_dir' '$staging_dir'" <<'REMOTE'
+$ssh_command "$remote_host" "bash -s -- '$target' '$sha' '$app_uuid' '$repo_url' '$remote_cache_dir' '$prod_dir' '$staging_dir'" <<'REMOTE'
 set -euo pipefail
 
-sha="$1"
-app_uuid="$2"
-repo_url="$3"
-remote_cache_dir="$4"
-prod_dir="$5"
-staging_dir="$6"
+target="$1"
+sha="$2"
+app_uuid="$3"
+repo_url="$4"
+remote_cache_dir="$5"
+prod_dir="$6"
+staging_dir="$7"
 short="${sha:0:7}"
 image="${app_uuid}:${sha}"
 mirror="${remote_cache_dir}/repo.git"
@@ -54,10 +82,19 @@ trap cleanup EXIT
 echo "building_image=${image}"
 DOCKER_BUILDKIT=1 docker build --progress=plain -t "$image" "$workdir"
 
-for dir in "$prod_dir" "$staging_dir"; do
-  cp -p "$dir/docker-compose.yaml" "$dir/docker-compose.yaml.deploy-backup-${timestamp}"
-  cp -p "$dir/.env" "$dir/.env.deploy-backup-${timestamp}"
-  python3 - "$dir" "$image" "$sha" <<'PY'
+if [[ "$target" == "production" ]]; then
+  target_dir="$prod_dir"
+  compose_project=""
+  container_filter="${app_uuid}-220859417413"
+else
+  target_dir="$staging_dir"
+  compose_project="oriental-staging"
+  container_filter="oriental-staging-1ff751c"
+fi
+
+cp -p "$target_dir/docker-compose.yaml" "$target_dir/docker-compose.yaml.deploy-backup-${timestamp}"
+cp -p "$target_dir/.env" "$target_dir/.env.deploy-backup-${timestamp}"
+python3 - "$target_dir" "$image" "$sha" <<'PY'
 from pathlib import Path
 import sys
 
@@ -94,22 +131,24 @@ for key, value in overrides.items():
         out.append(f"{key}={value}")
 env_path.write_text("\n".join(out) + "\n")
 PY
-done
 
-cd "$prod_dir"
-docker compose up -d --no-deps --force-recreate
-
-cd "$staging_dir"
-docker compose -p oriental-staging up -d --no-deps --force-recreate
+cd "$target_dir"
+if [[ -n "$compose_project" ]]; then
+  docker compose -p "$compose_project" up -d --no-deps --force-recreate
+else
+  docker compose up -d --no-deps --force-recreate
+fi
 
 sleep 8
 docker ps \
-  --filter name="${app_uuid}-220859417413" \
-  --filter name="oriental-staging-1ff751c" \
+  --filter name="$container_filter" \
   --format '{{.Names}}\t{{.Image}}\t{{.Status}}'
 REMOTE
 
-curl -fsS https://oriental.mereka.io/api/health
-printf '\n'
-curl -fsS https://staging.oriental.mereka.io/api/health
+if [[ "$target" == "production" ]]; then
+  health_url="https://oriental.mereka.io/api/health"
+else
+  health_url="https://staging.oriental.mereka.io/api/health"
+fi
+curl -fsS "$health_url"
 printf '\n'
