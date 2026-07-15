@@ -17,6 +17,7 @@ export type RateLimitResult = {
 
 const buckets = new Map<string, LimitBucket>();
 const redisTimeoutMs = 500;
+const redisReadyTimeoutMs = 450;
 
 declare global {
   // eslint-disable-next-line no-var
@@ -66,6 +67,7 @@ function getRedisClient() {
 }
 
 async function checkRedisLimit(redis: Redis, key: string, limit: number, windowMs: number): Promise<RateLimitResult> {
+  await ensureRedisReady(redis);
   const redisKey = `oriental:rate:${key}`;
   const results = await redis.pipeline().incr(redisKey).pttl(redisKey).exec();
   const count = Number(results?.[0]?.[1] ?? 0);
@@ -82,6 +84,53 @@ async function checkRedisLimit(redis: Redis, key: string, limit: number, windowM
     resetAt: Date.now() + Math.max(0, ttl),
     store: "redis",
   };
+}
+
+async function ensureRedisReady(redis: Redis) {
+  if (redis.status === "ready") return;
+  if (redis.status === "end") throw new Error("redis_connection_closed");
+
+  if (redis.status === "wait") {
+    await redis.connect();
+    return;
+  }
+
+  await waitForRedisReady(redis);
+}
+
+function waitForRedisReady(redis: Redis): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const cleanup = () => {
+      clearTimeout(timeout);
+      redis.off("ready", handleReady);
+      redis.off("end", handleEnd);
+      redis.off("error", handleError);
+    };
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve();
+    };
+    const handleReady = () => finish();
+    const handleEnd = () => finish(new Error("redis_connection_closed"));
+    const handleError = (error: Error) => finish(error);
+    const timeout = setTimeout(() => finish(new Error("redis_connect_timeout")), redisReadyTimeoutMs);
+
+    redis.once("ready", handleReady);
+    redis.once("end", handleEnd);
+    redis.once("error", handleError);
+
+    // The connection can become ready between the initial status check and
+    // listener registration, so recheck after the listeners are attached.
+    if (redis.status === "ready") finish();
+    if (redis.status === "end") finish(new Error("redis_connection_closed"));
+  });
 }
 
 function checkMemoryLimit(key: string, limit: number, windowMs: number): RateLimitResult {
