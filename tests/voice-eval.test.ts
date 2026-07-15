@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   aggregateEvals,
+  aggregateEvalsByExperimentCell,
+  aggregateEvalsByRuntimeProfile,
+  assessLatencyAutopilotGate,
   buildJudgeUserPrompt,
   buildSessionEval,
   deriveEngagementSignals,
+  deriveLatencySignals,
   deriveTransportSignals,
   isJudgeable,
   meetsThreshold,
@@ -11,6 +15,36 @@ import {
   parseJudgeResponse,
   type VoiceEvalSession,
 } from "@/lib/eval/voice-eval";
+
+function latencyGateSessions(
+  profile: "baseline" | "instant-v1",
+  options: { remoteAudioMs?: number; corrected?: boolean; rapidResumes?: number } = {},
+): VoiceEvalSession[] {
+  return Array.from({ length: 20 }, (_, sessionIndex) =>
+    session({
+      reviewId: `${profile}-${sessionIndex}`,
+      sessionId: `${profile}-session-${sessionIndex}`,
+      runtimeProfile: profile,
+      transcript: [
+        {
+          role: "user",
+          text: options.corrected ? "Actually, my email is visitor@example.com" : "My email is visitor@example.com",
+        },
+      ],
+      latency: {
+        version: 1,
+        turns: Array.from({ length: 5 }, (_, turnIndex) => ({
+          sequence: turnIndex + 1,
+          inputPolicy: profile === "instant-v1" ? "fast" : "baseline",
+          stopToRemoteAudioMs: options.remoteAudioMs ?? 500,
+          bargeInToResponseDoneMs: 200,
+          interrupted: true,
+          rapidResume: sessionIndex * 5 + turnIndex < (options.rapidResumes ?? 0),
+        })),
+      },
+    }),
+  );
+}
 
 function session(overrides: Partial<VoiceEvalSession> = {}): VoiceEvalSession {
   return {
@@ -103,6 +137,18 @@ describe("mergeConversationSessions", () => {
       closedAt: 2_000,
       closeReason: "disconnected",
       transport: { disconnectCount: 1, recoveryCount: 0, iceRestartCount: 1, wasSpeakingAtClose: true },
+      latency: {
+        version: 1,
+        turns: [
+          {
+            sequence: 1,
+            inputPolicy: "baseline",
+            stopToFirstOutputEventMs: 600,
+            interrupted: true,
+            rapidResume: false,
+          },
+        ],
+      },
       transcript: [
         { role: "assistant", text: "Hi, I'm Reka." },
         { role: "user", text: "We build robots." },
@@ -120,6 +166,18 @@ describe("mergeConversationSessions", () => {
       leadId: "lead-9",
       closeReason: "manual",
       transport: { disconnectCount: 0, recoveryCount: 0, iceRestartCount: 0, wasSpeakingAtClose: false },
+      latency: {
+        version: 1,
+        turns: [
+          {
+            sequence: 1,
+            inputPolicy: "baseline",
+            stopToFirstOutputEventMs: 400,
+            interrupted: false,
+            rapidResume: true,
+          },
+        ],
+      },
       transcript: [
         { role: "assistant", text: "Hi, I'm Reka." },
         { role: "user", text: "We build robots." },
@@ -144,6 +202,7 @@ describe("mergeConversationSessions", () => {
     expect(conversation?.leadId).toBe("lead-9");
     // Transport counts sum across segments.
     expect(conversation?.transport?.disconnectCount).toBe(1);
+    expect(conversation?.latency?.turns).toHaveLength(2);
     expect(deriveEngagementSignals(conversation as VoiceEvalSession).submitted).toBe(true);
   });
 
@@ -153,6 +212,107 @@ describe("mergeConversationSessions", () => {
       session({ reviewId: "legacy-2", conversationId: null }),
     ]);
     expect(merged).toHaveLength(2);
+  });
+});
+
+describe("deriveLatencySignals", () => {
+  it("summarizes first-output and response-created timings without calling them audible latency", () => {
+    const signals = deriveLatencySignals(
+      session({
+        latency: {
+          version: 1,
+          turns: [
+            {
+              sequence: 1,
+              inputPolicy: "baseline",
+              stopToResponseCreatedMs: 120,
+              stopToFirstOutputEventMs: 300,
+              toolDurationMs: 20,
+              interrupted: false,
+              rapidResume: false,
+            },
+            {
+              sequence: 2,
+              inputPolicy: "baseline",
+              stopToResponseCreatedMs: 200,
+              stopToFirstOutputEventMs: 900,
+              toolDurationMs: 80,
+              interrupted: true,
+              rapidResume: true,
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(signals).toEqual({
+      sampledTurns: 2,
+      firstOutputSamples: 2,
+      firstOutputP50Ms: 300,
+      firstOutputP95Ms: 900,
+      responseCreatedSamples: 2,
+      responseCreatedP50Ms: 120,
+      responseCreatedP95Ms: 200,
+      remoteAudioSamples: 0,
+      remoteAudioP50Ms: null,
+      remoteAudioP95Ms: null,
+      endpointP50Ms: null,
+      endpointP95Ms: null,
+      playoutP50Ms: null,
+      playoutP95Ms: null,
+      toolP50Ms: 20,
+      toolP95Ms: 80,
+      bargeInP95Ms: null,
+      tapToArmCueMs: null,
+      interruptedTurns: 1,
+      rapidResumeTurns: 1,
+    });
+  });
+});
+
+describe("assessLatencyAutopilotGate", () => {
+  it("refuses promotion while measurement evidence is sparse", () => {
+    const gate = assessLatencyAutopilotGate([
+      session({
+        runtimeProfile: "instant-v1",
+        latency: { version: 1, turns: [] },
+      }),
+    ]);
+
+    expect(gate.status).toBe("insufficient_data");
+    expect(gate.eligibleForAutomaticPromotion).toBe(false);
+    expect(gate.missingEvidence.length).toBeGreaterThan(0);
+  });
+
+  it("passes only with enough good remote-audio, endpoint, barge-in, and correction evidence", () => {
+    const gate = assessLatencyAutopilotGate([
+      ...latencyGateSessions("baseline", { corrected: true }),
+      ...latencyGateSessions("instant-v1", { rapidResumes: 1 }),
+    ]);
+
+    expect(gate.status).toBe("pass");
+    expect(gate.eligibleForAutomaticPromotion).toBe(true);
+    expect(gate.candidate.possibleFalseEndpointRate).toBe(0.01);
+    expect(gate.candidate.contactCorrectionRate).toBe(0);
+    expect(gate.control.contactCorrectionRate).toBe(1);
+  });
+
+  it("fails a fully sampled candidate that misses latency or correction quality", () => {
+    const gate = assessLatencyAutopilotGate([
+      ...latencyGateSessions("baseline"),
+      ...latencyGateSessions("instant-v1", { corrected: true, remoteAudioMs: 1_100, rapidResumes: 3 }),
+    ]);
+
+    expect(gate.status).toBe("fail");
+    expect(gate.eligibleForAutomaticPromotion).toBe(false);
+    expect(gate.failures).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("remote audio p50"),
+        expect.stringContaining("remote audio p95"),
+        expect.stringContaining("false-endpoint proxy"),
+        expect.stringContaining("contact correction rate"),
+      ]),
+    );
   });
 });
 
@@ -269,5 +429,27 @@ describe("aggregateEvals + meetsThreshold", () => {
     const aggregate = aggregateEvals([evals[0] as (typeof evals)[number]]);
     const gate = meetsThreshold(aggregate, { minRoutingCorrect: 3, maxFrustration: 3 });
     expect(gate.ok).toBe(true);
+  });
+
+  it("keeps runtime-profile comparisons separate from voice variants", () => {
+    const grouped = aggregateEvalsByRuntimeProfile([
+      buildSessionEval(session({ reviewId: "baseline", runtimeProfile: "baseline" }), null),
+      buildSessionEval(session({ reviewId: "instant", runtimeProfile: "instant-v1", submittedAt: 1 }), null),
+    ]);
+    expect(grouped.baseline?.sessionCount).toBe(1);
+    expect(grouped["instant-v1"]?.sessionCount).toBe(1);
+    expect(grouped["instant-v1"]?.submitRate).toBe(1);
+  });
+
+  it("compares controlled model and reasoning cells independently", () => {
+    const grouped = aggregateEvalsByExperimentCell([
+      buildSessionEval(session({ reviewId: "control", modelCell: "control", reasoningCell: "low" }), null),
+      buildSessionEval(
+        session({ reviewId: "candidate", modelCell: "candidate", reasoningCell: "minimal", submittedAt: 1 }),
+        null,
+      ),
+    ]);
+    expect(grouped["control/low"]?.sessionCount).toBe(1);
+    expect(grouped["candidate/minimal"]?.submitRate).toBe(1);
   });
 });

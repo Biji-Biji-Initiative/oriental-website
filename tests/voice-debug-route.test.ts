@@ -62,6 +62,22 @@ function snapshotRequest(review: { id: string; token: string } = createVoiceRevi
         errors: [],
         rateLimits: [],
         routeRequested: false,
+        latency: {
+          version: 1,
+          turns: [
+            {
+              sequence: 1,
+              inputPolicy: "baseline",
+              speechDurationMs: 900,
+              stopToResponseCreatedMs: 180,
+              stopToFirstOutputEventMs: 420,
+              toolDurationMs: 35,
+              responseDurationMs: 1700,
+              interrupted: false,
+              rapidResume: false,
+            },
+          ],
+        },
       },
     }),
   });
@@ -89,7 +105,11 @@ describe("POST /api/voice/debug", () => {
     expect(response.status).toBe(200);
     expect(body).toMatchObject({ ok: true, persisted: true });
     expect(mocks.persistVoiceReviewSnapshot).toHaveBeenCalledWith(
-      expect.objectContaining({ reviewId: expect.any(String), variant: "kl-polished" }),
+      expect.objectContaining({
+        reviewId: expect.any(String),
+        variant: "kl-polished",
+        latency: expect.objectContaining({ version: 1 }),
+      }),
     );
   });
 
@@ -124,6 +144,20 @@ describe("POST /api/voice/debug", () => {
         errorCount: 0,
         rateLimitCount: 0,
         usage: expect.objectContaining({ responseCount: 1, transcriptionCount: 1 }),
+        latency: {
+          sampledTurns: 1,
+          firstOutputSamples: 1,
+          firstOutputP50Ms: 420,
+          firstOutputP95Ms: 420,
+          responseCreatedSamples: 1,
+          responseCreatedP50Ms: 180,
+          responseCreatedP95Ms: 180,
+          toolSamples: 1,
+          toolP50Ms: 35,
+          toolP95Ms: 35,
+          interruptedTurns: 0,
+          rapidResumeTurns: 0,
+        },
       }),
     );
 

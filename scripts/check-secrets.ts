@@ -109,6 +109,28 @@ if (realtimeSpeed) {
   }
 }
 
+const runtimeProfile = envValue("VOICE_RUNTIME_PROFILE");
+if (runtimeProfile && runtimeProfile !== "baseline" && runtimeProfile !== "instant-v1") {
+  console.error("VOICE_RUNTIME_PROFILE must be baseline or instant-v1.");
+  process.exit(1);
+}
+
+const modelCell = envValue("VOICE_MODEL_CELL");
+if (modelCell && modelCell !== "control" && modelCell !== "candidate") {
+  console.error("VOICE_MODEL_CELL must be control or candidate.");
+  process.exit(1);
+}
+if (modelCell === "candidate" && !envValue("OPENAI_REALTIME_MODEL_CANDIDATE")) {
+  console.error("OPENAI_REALTIME_MODEL_CANDIDATE is required for the candidate model cell.");
+  process.exit(1);
+}
+
+const reasoningCell = envValue("VOICE_REASONING_CELL");
+if (reasoningCell && reasoningCell !== "low" && reasoningCell !== "minimal") {
+  console.error("VOICE_REASONING_CELL must be low or minimal.");
+  process.exit(1);
+}
+
 console.log("Secret contract satisfied.");
 
 function envValue(name: string) {

@@ -36,8 +36,12 @@ export const leadRequestSchema = z.object({
   voiceSessionId: z.string().max(160).optional(),
   voiceVariant: z.string().max(64).optional(),
   voiceModel: z.string().max(80).optional(),
+  voiceModelCell: z.enum(["control", "candidate"]).optional(),
+  voiceReasoningCell: z.enum(["low", "minimal"]).optional(),
   voiceName: z.string().max(80).optional(),
   voiceSpeed: z.number().min(0.25).max(1.5).optional(),
+  voiceRuntimeProfile: z.enum(["baseline", "instant-v1"]).optional(),
+  voiceInputPolicy: z.enum(["baseline", "fast", "patient"]).optional(),
   utm: utmSchema,
 });
 
@@ -103,9 +107,13 @@ export const voiceReviewSnapshotSchema = z.object({
     firstEventAt: z.number().optional(),
     closedAt: z.number().optional(),
     model: z.string().max(80).optional(),
+    modelCell: z.enum(["control", "candidate"]).optional(),
+    reasoningCell: z.enum(["low", "minimal"]).optional(),
     voice: z.string().max(80).optional(),
     speed: z.number().min(0.25).max(1.5).optional(),
     variant: z.string().max(64).nullable().optional(),
+    runtimeProfile: z.enum(["baseline", "instant-v1"]).optional(),
+    inputPolicy: z.enum(["baseline", "fast", "patient"]).optional(),
     captured: z.object({
       name: z.string().max(120).default(""),
       email: z.string().max(180).default(""),
@@ -141,6 +149,35 @@ export const voiceReviewSnapshotSchema = z.object({
     rateLimits: z.array(z.record(z.string(), z.unknown())).max(20).default([]),
     routeRequested: z.boolean().default(false),
     submittedAt: z.number().optional(),
+    latency: z
+      .object({
+        version: z.literal(1),
+        activation: z
+          .object({
+            tapToArmCueScheduledMs: z.number().nonnegative().max(10_000).optional(),
+          })
+          .optional(),
+        turns: z
+          .array(
+            z.object({
+              sequence: z.number().int().nonnegative(),
+              inputPolicy: z.enum(["baseline", "fast", "patient"]),
+              speechDurationMs: z.number().nonnegative().max(600_000).optional(),
+              stopToResponseCreatedMs: z.number().nonnegative().max(120_000).optional(),
+              stopToFirstOutputEventMs: z.number().nonnegative().max(120_000).optional(),
+              localSpeechEndToSpeechStoppedMs: z.number().nonnegative().max(120_000).optional(),
+              stopToRemoteAudioMs: z.number().nonnegative().max(120_000).optional(),
+              firstOutputEventToRemoteAudioMs: z.number().nonnegative().max(120_000).optional(),
+              toolDurationMs: z.number().nonnegative().max(120_000).optional(),
+              bargeInToResponseDoneMs: z.number().nonnegative().max(120_000).optional(),
+              responseDurationMs: z.number().nonnegative().max(600_000).optional(),
+              interrupted: z.boolean(),
+              rapidResume: z.boolean(),
+            }),
+          )
+          .max(80),
+      })
+      .optional(),
     transport: z
       .object({
         disconnectCount: z.number().int().nonnegative(),

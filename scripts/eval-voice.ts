@@ -5,7 +5,7 @@
  * Usage (env-driven, run under Infisical so CONVEX/OPENAI creds are present):
  *   pnpm eval:voice                       # judge the last 50 sessions
  *   pnpm eval:voice -- --limit 100        # judge the last 100
- *   pnpm eval:voice -- --dry              # transport/engagement signals only, no LLM
+ *   pnpm eval:voice -- --dry              # transport/latency/engagement signals only, no LLM
  *   pnpm eval:voice -- --min-quality 3.5 --max-dropped 0   # CI gate
  *
  * Guardrail: the JSON report (which contains transcripts) is written only to the
@@ -20,6 +20,9 @@ import OpenAI from "openai";
 import { api } from "../convex/_generated/api";
 import {
   aggregateEvals,
+  aggregateEvalsByExperimentCell,
+  aggregateEvalsByRuntimeProfile,
+  assessLatencyAutopilotGate,
   buildJudgeUserPrompt,
   buildSessionEval,
   isJudgeable,
@@ -160,7 +163,7 @@ async function main() {
   const openaiKey = requireEnv("OPENAI_API_KEY");
   const model = process.env.EVAL_JUDGE_MODEL ?? "gpt-4o-mini";
   const dry = args.dry || !openaiKey;
-  if (args.dry) console.log("Dry run: computing transport/engagement signals only (no LLM judge).");
+  if (args.dry) console.log("Dry run: computing transport/latency/engagement signals only (no LLM judge).");
   else if (!openaiKey) console.warn("OPENAI_API_KEY not set — falling back to dry run (no LLM judge).");
 
   console.log(`Evaluating ${sessions.length} sessions${dry ? "" : ` with judge model ${model}`}...`);
@@ -179,6 +182,9 @@ async function main() {
     buildSessionEval(session, scores.get(session.reviewId) ?? null),
   );
   const aggregate = aggregateEvals(evals);
+  const profileAggregates = aggregateEvalsByRuntimeProfile(evals);
+  const experimentAggregates = aggregateEvalsByExperimentCell(evals);
+  const latencyAutopilotGate = assessLatencyAutopilotGate(sessions);
 
   if (args.persist && !dry) {
     const payloads = evals
@@ -211,9 +217,16 @@ async function main() {
   mkdirSync(args.out, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const reportPath = join(args.out, `voice-eval-${stamp}.json`);
-  writeFileSync(reportPath, JSON.stringify({ generatedAt: stamp, aggregate, evals, sessions }, null, 2));
+  writeFileSync(
+    reportPath,
+    JSON.stringify(
+      { generatedAt: stamp, aggregate, profileAggregates, experimentAggregates, latencyAutopilotGate, evals, sessions },
+      null,
+      2,
+    ),
+  );
 
-  printSummary(aggregate, gate, reportPath, dry);
+  printSummary(aggregate, profileAggregates, experimentAggregates, latencyAutopilotGate, gate, reportPath, dry);
 
   const gateActive = Object.values(thresholds).some((value) => typeof value === "number");
   if (gateActive && !gate.ok) process.exit(2);
@@ -221,6 +234,9 @@ async function main() {
 
 function printSummary(
   aggregate: ReturnType<typeof aggregateEvals>,
+  profileAggregates: ReturnType<typeof aggregateEvalsByRuntimeProfile>,
+  experimentAggregates: ReturnType<typeof aggregateEvalsByExperimentCell>,
+  latencyAutopilotGate: ReturnType<typeof assessLatencyAutopilotGate>,
   gate: { ok: boolean; failures: string[] },
   reportPath: string,
   dry: boolean,
@@ -232,6 +248,22 @@ function printSummary(
   console.log(`dropped mid-turn:    ${aggregate.droppedMidTurnCount}`);
   console.log(`disconnect sessions: ${aggregate.disconnectSessions}  (clean recoveries ${aggregate.cleanRecoveries})`);
   console.log(`submit rate:         ${(aggregate.submitRate * 100).toFixed(0)}%`);
+  console.log("--- runtime profiles ---");
+  for (const [profile, profileAggregate] of Object.entries(profileAggregates)) {
+    console.log(
+      `${profile}: ${profileAggregate.sessionCount} sessions, ${(profileAggregate.submitRate * 100).toFixed(0)}% submit`,
+    );
+  }
+  console.log("--- model/reasoning cells ---");
+  for (const [cell, cellAggregate] of Object.entries(experimentAggregates)) {
+    console.log(
+      `${cell}: ${cellAggregate.sessionCount} sessions, ${(cellAggregate.submitRate * 100).toFixed(0)}% submit`,
+    );
+  }
+  console.log("--- latency promotion gate ---");
+  console.log(`status:               ${latencyAutopilotGate.status}`);
+  for (const reason of latencyAutopilotGate.missingEvidence) console.log(`  · ${reason}`);
+  for (const failure of latencyAutopilotGate.failures) console.log(`  ✗ ${failure}`);
   if (!dry) {
     console.log("--- LLM rubric (0-5) ---");
     console.log(`routingCorrect:      ${fmt(averages.routingCorrect)}`);

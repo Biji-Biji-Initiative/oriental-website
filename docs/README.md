@@ -27,6 +27,7 @@ then use as reference.
 | 10 | [`10-ROADMAP.md`](./10-ROADMAP.md) | PM | What's deferred, sequencing, dependencies |
 | 11 | [`11-INFRASTRUCTURE.md`](./11-INFRASTRUCTURE.md) | Eng, DevOps | Coolify + Cloudflare + Infisical — deploy, secrets, DNS, monitoring |
 | 12 | [`12-CHAT-RELEASE-RUNBOOK.md`](./12-CHAT-RELEASE-RUNBOOK.md) | QA, Eng | Chat-integration release: deploy order, voice QA script, watch list |
+| 13 | [`13-VOICE-INSTANT-RELEASE-SPEC.md`](./13-VOICE-INSTANT-RELEASE-SPEC.md) | QA, Eng, AI | Instant voice contracts, experiment gates, evidence mapping, and rollback |
 | ASSETS | [`ASSET-SOURCES.md`](./ASSET-SOURCES.md) | Eng, Brand | Runtime logo/favicon provenance and approval notes |
 
 ## Source of truth
@@ -41,8 +42,8 @@ disagree on intent, this doc wins.
 - **Domain** — `oriental.mereka.io`. The bare `mereka.io` → `corporate.mereka.io` (301).
 - **Stack** — Next.js 16 (App Router, Turbopack) · React 19 · Tailwind v4 · shadcn/ui
 - **Hosting** — Coolify on Mereka infrastructure. Single Docker service, Next.js standalone output.
-- **Edge / DNS / TLS / WAF** — Cloudflare in front of the Coolify origin (orange-cloud, Full Strict).
-- **Bot / abuse protection** — Cloudflare Turnstile on every intake POST (mandatory, server-verified).
+- **Edge / DNS / TLS** — Cloudflare authoritative DNS points directly to Coolify Traefik, which terminates TLS; the current records are DNS-only.
+- **Bot / abuse protection** — Turnstile is optional for form/newsletter intake; voice uses signed session credentials and Redis-backed rate limits.
 - **Secrets** — Infisical at `secrets.mereka.io`. Nothing in `.env` files, nothing in code. Coolify pulls at deploy time via a machine identity.
 - **Voice** — OpenAI Realtime API via ephemeral tokens, WebRTC client.
 - **Database** — Convex for launch lead and lead-event persistence.
@@ -64,4 +65,4 @@ Tracked in [`10-ROADMAP.md`](./10-ROADMAP.md) §Blockers. Highest-priority:
 
 ---
 
-*Last revised — production docs alignment, 2026-05-28.*
+*Last revised — instant voice contract alignment, 2026-07-15.*

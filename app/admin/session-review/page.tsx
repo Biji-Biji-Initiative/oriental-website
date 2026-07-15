@@ -1456,6 +1456,18 @@ function AnalyticsPanel({ data }: { data: DashboardData }) {
             values={countByVoiceSessions(data.voiceSessions, (session) => session.variant || "default")}
           />
           <CountList
+            title="Runtime profiles"
+            values={countByVoiceSessions(data.voiceSessions, (session) => session.runtimeProfile || "baseline")}
+          />
+          <CountList
+            title="Model cells"
+            values={countByVoiceSessions(data.voiceSessions, (session) => session.modelCell || "control")}
+          />
+          <CountList
+            title="Reasoning cells"
+            values={countByVoiceSessions(data.voiceSessions, (session) => session.reasoningCell || "low")}
+          />
+          <CountList
             title="Realtime voices"
             values={countByVoiceSessions(data.voiceSessions, (session) => session.voice || "unknown")}
           />
@@ -2301,6 +2313,7 @@ function VoiceSessionDetails({ session }: { session: ConversationHead }) {
         </dl>
         <SessionQualityFlags session={session} realErrorCount={realErrorCount} />
         <SessionLifecycle session={session} />
+        <SessionLatency calls={session.calls} />
         <div className="mt-4 grid gap-3 rounded-lg bg-mk-paper p-3 text-sm leading-6">
           <div>
             <span className="font-semibold">Email:</span> {session.captured.email || "empty"}
@@ -2368,6 +2381,7 @@ function VoiceQaRollup({ sessions }: { sessions: VoiceSessionRow[] }) {
   const variantRows = summarizeVoiceVariants(sessions);
   const prewarmed = sessions.filter((session) => session.prewarmedAt).length;
   const connected = sessions.filter((session) => session.connectedAt).length;
+  const latency = summarizeSessionLatency(sessions);
   return (
     <div className="grid gap-3 rounded-lg border border-mk-ash/15 bg-mk-paper/70 p-3 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)]">
       <div>
@@ -2379,6 +2393,24 @@ function VoiceQaRollup({ sessions }: { sessions: VoiceSessionRow[] }) {
           <div>{sessions.filter((session) => Boolean(session.leadId)).length} submitted handoffs</div>
           <div>{recoverableVoiceSessions(sessions).length} recoverable unsent leads</div>
           <div>{sessions.filter((session) => session.routeRequested).length} route requests</div>
+          <div>{latency.sampledTurns} timed conversation turns</div>
+          <div>
+            First output p50/p95: {formatLatency(latency.firstOutput.p50Ms)} /{" "}
+            {formatLatency(latency.firstOutput.p95Ms)}
+          </div>
+          <div>
+            Response created p50/p95: {formatLatency(latency.responseCreated.p50Ms)} /{" "}
+            {formatLatency(latency.responseCreated.p95Ms)}
+          </div>
+          <div>
+            Remote audio p50/p95: {formatLatency(latency.remoteAudio.p50Ms)} /{" "}
+            {formatLatency(latency.remoteAudio.p95Ms)}
+          </div>
+          <div>Arm cue scheduling p95: {formatLatency(latency.activation.p95Ms)}</div>
+          <div>Browser tool execution p95: {formatLatency(latency.tool.p95Ms)}</div>
+          <div>
+            {latency.rapidResumeTurns} rapid resumes · {latency.interruptedTurns} interrupted replies
+          </div>
         </div>
       </div>
       <div className="overflow-x-auto">
@@ -2386,18 +2418,28 @@ function VoiceQaRollup({ sessions }: { sessions: VoiceSessionRow[] }) {
           <thead className="text-mk-off-black/55">
             <tr className="border-b border-mk-ash/15">
               <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Variant</th>
+              <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Profile</th>
+              <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Model cell</th>
+              <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Reasoning</th>
               <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Voice</th>
               <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Sessions</th>
               <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Submit</th>
               <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Connect</th>
               <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Errors</th>
               <th className="py-2 font-semibold uppercase tracking-[0.12em]">Tokens</th>
+              <th className="py-2 font-semibold uppercase tracking-[0.12em]">Audio p50/p95</th>
             </tr>
           </thead>
           <tbody className="text-mk-ash">
             {variantRows.map((row) => (
-              <tr className="border-b border-mk-ash/10 last:border-0" key={`${row.variant}:${row.voice}`}>
+              <tr
+                className="border-b border-mk-ash/10 last:border-0"
+                key={`${row.runtimeProfile}:${row.modelCell}:${row.reasoningCell}:${row.variant}:${row.voice}`}
+              >
                 <td className="py-2 pr-3 font-medium text-mk-off-black">{row.variant}</td>
+                <td className="py-2 pr-3">{row.runtimeProfile}</td>
+                <td className="py-2 pr-3">{row.modelCell}</td>
+                <td className="py-2 pr-3">{row.reasoningCell}</td>
                 <td className="py-2 pr-3">{row.voice}</td>
                 <td className="py-2 pr-3">{row.sessions}</td>
                 <td className="py-2 pr-3">{row.submitRate}%</td>
@@ -2406,6 +2448,9 @@ function VoiceQaRollup({ sessions }: { sessions: VoiceSessionRow[] }) {
                   {row.errorSessions}
                 </td>
                 <td className="py-2">{row.responseTokens}</td>
+                <td className="py-2">
+                  {formatLatency(row.remoteAudio.p50Ms)} / {formatLatency(row.remoteAudio.p95Ms)}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -2453,6 +2498,44 @@ function SessionLifecycle({ session }: { session: VoiceSessionRow }) {
           <div className="mt-1">{row.value}</div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function SessionLatency({ calls }: { calls: VoiceSessionRow[] }) {
+  const latency = summarizeSessionLatency(calls);
+  if (latency.sampledTurns === 0) return null;
+  const rows = [
+    { label: "Timed turns", value: String(latency.sampledTurns) },
+    { label: "First output p50", value: formatLatency(latency.firstOutput.p50Ms) },
+    { label: "First output p95", value: formatLatency(latency.firstOutput.p95Ms) },
+    { label: "Response created p50", value: formatLatency(latency.responseCreated.p50Ms) },
+    { label: "Response created p95", value: formatLatency(latency.responseCreated.p95Ms) },
+    { label: "Remote audio p50", value: formatLatency(latency.remoteAudio.p50Ms) },
+    { label: "Remote audio p95", value: formatLatency(latency.remoteAudio.p95Ms) },
+    { label: "Endpoint p95", value: formatLatency(latency.endpoint.p95Ms) },
+    { label: "Playout p95", value: formatLatency(latency.playout.p95Ms) },
+    { label: "Browser tool execution p95", value: formatLatency(latency.tool.p95Ms) },
+    { label: "Barge-in clear p95", value: formatLatency(latency.bargeIn.p95Ms) },
+    { label: "Arm cue p95", value: formatLatency(latency.activation.p95Ms) },
+    { label: "Rapid resumes", value: String(latency.rapidResumeTurns) },
+    { label: "Interrupted replies", value: String(latency.interruptedTurns) },
+  ];
+  return (
+    <div className="mt-3 rounded-lg border border-mk-blue/15 bg-mk-blue/5 p-3 text-xs text-mk-ash">
+      <div className="font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">Conversation latency</div>
+      <div className="mt-2 grid gap-2 sm:grid-cols-3 xl:grid-cols-6">
+        {rows.map((row) => (
+          <div key={row.label}>
+            <div className="font-semibold text-mk-off-black/70">{row.label}</div>
+            <div className="mt-1">{row.value}</div>
+          </div>
+        ))}
+      </div>
+      <p className="mt-2 text-[11px] leading-5">
+        First output is a Realtime event. Remote audio is independently detected activity in the received media stream;
+        it still does not prove physical speaker output.
+      </p>
     </div>
   );
 }
@@ -2598,37 +2681,51 @@ function countTranscriptRoles(transcript: TranscriptRoleEntry[]) {
   );
 }
 
+type VoiceVariantSummaryRow = {
+  variant: string;
+  runtimeProfile: string;
+  modelCell: string;
+  reasoningCell: string;
+  voice: string;
+  sessions: number;
+  submitted: number;
+  connected: number;
+  errorSessions: number;
+  responseTokens: number;
+  remoteAudioSamples: number[];
+};
+
 function summarizeVoiceVariants(sessions: VoiceSessionRow[]) {
-  const rows = new Map<
-    string,
-    {
-      variant: string;
-      voice: string;
-      sessions: number;
-      submitted: number;
-      connected: number;
-      errorSessions: number;
-      responseTokens: number;
-    }
-  >();
+  const rows = new Map<string, VoiceVariantSummaryRow>();
   for (const session of sessions) {
     const variant = session.variant || "default";
+    const runtimeProfile = session.runtimeProfile || "baseline";
+    const modelCell = session.modelCell || "control";
+    const reasoningCell = session.reasoningCell || "low";
     const voice = session.voice || "unknown";
-    const key = `${variant}:${voice}`;
-    const row = rows.get(key) ?? {
+    const key = `${runtimeProfile}:${modelCell}:${reasoningCell}:${variant}:${voice}`;
+    const row: VoiceVariantSummaryRow = rows.get(key) ?? {
       variant,
+      runtimeProfile,
+      modelCell,
+      reasoningCell,
       voice,
       sessions: 0,
       submitted: 0,
       connected: 0,
       errorSessions: 0,
       responseTokens: 0,
+      remoteAudioSamples: [],
     };
     row.sessions += 1;
     row.submitted += session.leadId ? 1 : 0;
     row.connected += session.connectedAt ? 1 : 0;
     row.errorSessions += session.errors.some((error: VoiceRuntimeError) => !isBenignVoiceError(error)) ? 1 : 0;
     row.responseTokens += session.usage?.responseTokens ?? 0;
+    const timedTurns = (session.latency?.turns ?? []) as Array<{ stopToRemoteAudioMs?: number }>;
+    row.remoteAudioSamples.push(
+      ...timedTurns.flatMap((turn) => (typeof turn.stopToRemoteAudioMs === "number" ? [turn.stopToRemoteAudioMs] : [])),
+    );
     rows.set(key, row);
   }
   return [...rows.values()]
@@ -2636,8 +2733,61 @@ function summarizeVoiceVariants(sessions: VoiceSessionRow[]) {
       ...row,
       submitRate: Math.round((row.submitted / row.sessions) * 100),
       connectRate: Math.round((row.connected / row.sessions) * 100),
+      remoteAudio: latencyPercentiles(row.remoteAudioSamples),
     }))
     .sort((left, right) => right.sessions - left.sessions || right.errorSessions - left.errorSessions);
+}
+
+function summarizeSessionLatency(sessions: VoiceSessionRow[]) {
+  const turns = sessions.flatMap((session) => session.latency?.turns ?? []);
+  const firstOutput = turns.flatMap((turn) =>
+    typeof turn.stopToFirstOutputEventMs === "number" ? [turn.stopToFirstOutputEventMs] : [],
+  );
+  const responseCreated = turns.flatMap((turn) =>
+    typeof turn.stopToResponseCreatedMs === "number" ? [turn.stopToResponseCreatedMs] : [],
+  );
+  const remoteAudio = turns.flatMap((turn) =>
+    typeof turn.stopToRemoteAudioMs === "number" ? [turn.stopToRemoteAudioMs] : [],
+  );
+  const endpoint = turns.flatMap((turn) =>
+    typeof turn.localSpeechEndToSpeechStoppedMs === "number" ? [turn.localSpeechEndToSpeechStoppedMs] : [],
+  );
+  const playout = turns.flatMap((turn) =>
+    typeof turn.firstOutputEventToRemoteAudioMs === "number" ? [turn.firstOutputEventToRemoteAudioMs] : [],
+  );
+  const bargeIn = turns.flatMap((turn) =>
+    typeof turn.bargeInToResponseDoneMs === "number" ? [turn.bargeInToResponseDoneMs] : [],
+  );
+  const tool = turns.flatMap((turn) => (typeof turn.toolDurationMs === "number" ? [turn.toolDurationMs] : []));
+  const activation = sessions.flatMap((session) =>
+    typeof session.latency?.activation?.tapToArmCueScheduledMs === "number"
+      ? [session.latency.activation.tapToArmCueScheduledMs]
+      : [],
+  );
+  return {
+    sampledTurns: turns.length,
+    firstOutput: latencyPercentiles(firstOutput),
+    responseCreated: latencyPercentiles(responseCreated),
+    remoteAudio: latencyPercentiles(remoteAudio),
+    endpoint: latencyPercentiles(endpoint),
+    playout: latencyPercentiles(playout),
+    tool: latencyPercentiles(tool),
+    bargeIn: latencyPercentiles(bargeIn),
+    activation: latencyPercentiles(activation),
+    interruptedTurns: turns.filter((turn) => turn.interrupted).length,
+    rapidResumeTurns: turns.filter((turn) => turn.rapidResume).length,
+  };
+}
+
+function latencyPercentiles(values: number[]) {
+  if (values.length === 0) return { p50Ms: null, p95Ms: null };
+  const sorted = [...values].sort((left, right) => left - right);
+  const at = (quantile: number) => sorted[Math.min(Math.ceil(sorted.length * quantile) - 1, sorted.length - 1)] ?? null;
+  return { p50Ms: at(0.5), p95Ms: at(0.95) };
+}
+
+function formatLatency(value: number | null) {
+  return value === null ? "--" : formatDuration(value);
 }
 
 function voiceSessionAnchorId(reviewId: string) {

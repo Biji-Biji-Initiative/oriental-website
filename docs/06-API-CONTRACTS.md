@@ -245,13 +245,21 @@ type VoiceSessionResponse = {
   client_secret: { value: string; expires_at: number };
   session_id: string;
   model: string; // default "gpt-realtime-2"
+  model_cell: "control" | "candidate";
+  reasoning_cell: "low" | "minimal";
   voice: string; // source fallback "marin"; production currently "coral"; a selected variant overrides this
   speed: number; // source fallback 1.18; production currently 1.28; clamped to OpenAI's 0.25..1.5 range
   variant: string | null; // resolved voice variant id, or null when none selected
+  runtime_profile: "baseline" | "instant-v1";
+  input_policy: "baseline" | "fast" | "patient";
 
   transcription_model: string; // default "gpt-4o-transcribe" via OPENAI_REALTIME_TRANSCRIPTION_MODEL
   noise_reduction: "near_field" | "far_field"; // near_field for mobile user agents, far_field otherwise
-  limits: { max_duration_ms: number; idle_timeout_ms: number }; // VOICE_MAX_DURATION_MS / VOICE_IDLE_TIMEOUT_MS, defaults 150000 / 20000
+  limits: {
+    max_duration_ms: number;
+    idle_timeout_ms: number;
+    idle_goodbye_grace_ms: number;
+  }; // typed, bounded policy; defaults 600000 / 20000 / 6000
   review: { id: string; token: string }; // signed credentials for /api/voice/debug snapshots
 };
 ```
@@ -276,6 +284,8 @@ Server request:
 - `POST https://api.openai.com/v1/realtime/client_secrets`
 - `session.type = "realtime"`
 - `session.model = OPENAI_REALTIME_MODEL ?? "gpt-realtime-2"`
+- candidate model and reasoning combinations are independent controlled cells;
+  defaults remain `VOICE_MODEL_CELL=control` and `VOICE_REASONING_CELL=low`
 - `session.output_modalities = ["audio"]`
 - `session.audio.input.turn_detection` from `VOICE_SESSION_DEFAULTS`
   (`semantic_vad`, `eagerness: "auto"`)
@@ -288,7 +298,12 @@ Server request:
 - `session.audio.output.speed = OPENAI_REALTIME_SPEED ?? 1.18`
 - production Infisical/Coolify currently sets `OPENAI_REALTIME_VOICE=coral` and
   `OPENAI_REALTIME_SPEED=1.28`
-- tools from `VOICE_TOOLS`, including `wait_for_user`
+- compact prompt under 7 KB and tools from `VOICE_TOOLS`, including atomic
+  `capture_fields`, read-only `lookup_oriental`, and `wait_for_user`
+
+Successful and error responses include `Server-Timing` entries for the stages
+that ran: `parse`, `rate_limit`, `openai_mint`, and `total`. These are server
+route timings, not WebRTC or audible response latency.
 
 Browser WebRTC exchange:
 
@@ -300,9 +315,9 @@ Client-enforced caps come from the session response `limits` (env-tunable via
 `VOICE_MAX_DURATION_MS` / `VOICE_IDLE_TIMEOUT_MS`), falling back to
 `VOICE_SESSION_DEFAULTS`:
 
-- max duration: 150 seconds by default
+- max duration: 10 minutes by default
 - idle timeout: 20 seconds by default, with a 6-second goodbye grace window
-  (`idleGoodbyeGraceMs`) in which Reka wraps up before teardown
+  (`idle_goodbye_grace_ms`) in which Reka wraps up before teardown
 
 ## Voice diagnostics and review snapshots
 

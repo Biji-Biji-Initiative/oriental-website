@@ -8,6 +8,7 @@
       "!public/assets",
       "!public/*.svg",
       "!docs",
+      "!eval-reports",
       "!test-results",
       "!playwright-report",
       "!convex/_generated"

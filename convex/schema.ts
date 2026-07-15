@@ -24,8 +24,12 @@ export default defineSchema({
     voiceSessionId: v.optional(v.string()),
     voiceVariant: v.optional(v.string()),
     voiceModel: v.optional(v.string()),
+    voiceModelCell: v.optional(v.string()),
+    voiceReasoningCell: v.optional(v.string()),
     voiceName: v.optional(v.string()),
     voiceSpeed: v.optional(v.number()),
+    voiceRuntimeProfile: v.optional(v.string()),
+    voiceInputPolicy: v.optional(v.string()),
     utm: v.record(v.string(), v.string()),
     status: v.string(),
     priority: v.optional(v.string()),
@@ -71,9 +75,13 @@ export default defineSchema({
     firstEventAt: v.optional(v.number()),
     closedAt: v.optional(v.number()),
     model: v.optional(v.string()),
+    modelCell: v.optional(v.union(v.literal("control"), v.literal("candidate"))),
+    reasoningCell: v.optional(v.union(v.literal("low"), v.literal("minimal"))),
     voice: v.optional(v.string()),
     speed: v.optional(v.number()),
     variant: v.optional(v.union(v.string(), v.null())),
+    runtimeProfile: v.optional(v.union(v.literal("baseline"), v.literal("instant-v1"))),
+    inputPolicy: v.optional(v.union(v.literal("baseline"), v.literal("fast"), v.literal("patient"))),
     captured: v.object({
       name: v.string(),
       email: v.string(),
@@ -110,6 +118,33 @@ export default defineSchema({
     ),
     rateLimits: v.array(v.any()),
     routeRequested: v.boolean(),
+    latency: v.optional(
+      v.object({
+        version: v.literal(1),
+        activation: v.optional(
+          v.object({
+            tapToArmCueScheduledMs: v.optional(v.number()),
+          }),
+        ),
+        turns: v.array(
+          v.object({
+            sequence: v.number(),
+            inputPolicy: v.union(v.literal("baseline"), v.literal("fast"), v.literal("patient")),
+            speechDurationMs: v.optional(v.number()),
+            stopToResponseCreatedMs: v.optional(v.number()),
+            stopToFirstOutputEventMs: v.optional(v.number()),
+            localSpeechEndToSpeechStoppedMs: v.optional(v.number()),
+            stopToRemoteAudioMs: v.optional(v.number()),
+            firstOutputEventToRemoteAudioMs: v.optional(v.number()),
+            toolDurationMs: v.optional(v.number()),
+            bargeInToResponseDoneMs: v.optional(v.number()),
+            responseDurationMs: v.optional(v.number()),
+            interrupted: v.boolean(),
+            rapidResume: v.boolean(),
+          }),
+        ),
+      }),
+    ),
     transport: v.optional(
       v.object({
         disconnectCount: v.number(),

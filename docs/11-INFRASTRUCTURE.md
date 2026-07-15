@@ -10,7 +10,11 @@ user
   │
   ▼
 Cloudflare
-  DNS · TLS · proxy · WAF · Turnstile
+  authoritative DNS · Turnstile
+  │
+  ▼
+Coolify Traefik
+  TLS · routing
   │
   ▼
 Coolify application
@@ -32,12 +36,13 @@ mode as horizontally scalable.
 
 | Record | Value | Proxied |
 |---|---|---|
-| `oriental.mereka.io` | Coolify origin | Yes |
-| `oriental.deploy.mereka.io` | Coolify app host (`194.233.71.200`) | No |
-| `oriental-staging.deploy.mereka.io` | Coolify app host (`194.233.71.200`) | No |
-| `oriental.mereka.io` CAA | `letsencrypt.org` | n/a |
+| `oriental.mereka.io` | Coolify app host (`194.233.71.200`) | No |
+| `staging.oriental.mereka.io` | Coolify app host (`194.233.71.200`) | No |
 
-TLS terminates at Cloudflare and the origin should remain Full Strict.
+Cloudflare is the authoritative DNS provider. These direct-origin records are
+DNS-only, so TLS terminates at the Coolify Traefik proxy with Let's Encrypt
+certificates. The only application source-of-truth hostnames are the branded
+production and `staging.<service>.mereka.io` records above.
 
 ## Cloudflare
 
@@ -59,7 +64,9 @@ Runtime details:
 
 ### WAF / Cache
 
-Recommended:
+The current DNS-only records do not traverse Cloudflare's proxy, so Cloudflare
+WAF and edge caching are not active for Oriental. If proxying is enabled later,
+validate these controls before cutover:
 
 - block obvious automated traffic with no `User-Agent` on `/api/*`
 - apply Cloudflare managed bad-ASN/bot rules to `/api/*`
@@ -112,8 +119,13 @@ Secret contract is enforced by `scripts/check-secrets.ts`.
 | Health check | `GET /api/health` |
 | Build | Next.js `output: "standalone"` |
 
-Staging is available at `https://oriental-staging.deploy.mereka.io`. It is a lightweight Compose deployment on the same Coolify app host under `/data/coolify/applications/oriental-staging`, reusing the production image tag for the commit under review. It is routed through the Coolify Traefik network with `coolify.managed=false`, so it is host-managed rather than a full Coolify UI application until a dedicated Coolify staging app/API token is provisioned.
-
+Staging is available at `https://staging.oriental.mereka.io`, following the
+`staging.<service>.mereka.io` convention. It is a lightweight Compose deployment
+on the same Coolify app host under
+`/data/coolify/applications/oriental-staging`, reusing the production image tag
+for the commit under review. It is routed through the Coolify Traefik network
+with `coolify.managed=false`, so it is host-managed rather than a full Coolify
+UI application until a dedicated Coolify staging app/API token is provisioned.
 Current staging caveat: `/deploy/oriental-website` has no populated Infisical `staging` environment. The staging container therefore uses a host-local copy of the production runtime env with non-secret overrides such as `COOLIFY_FQDN`, `COOLIFY_URL`, `SOURCE_COMMIT`, `GIT_SHA`, `SENTRY_ENVIRONMENT=staging`, and `NEXT_PUBLIC_SENTRY_ENVIRONMENT=staging`. Do not treat staging submissions as an isolated data/notification sandbox until separate staging Convex, SES, Slack, Redis, and OpenAI secrets are created.
 
 Staging rollback/removal is host-local:
@@ -138,11 +150,8 @@ Convex function deployment is separate:
 CONVEX_DEPLOY_KEY='prod:...' pnpm exec convex deploy
 ```
 
-Current operational note: the app runtime secrets include `CONVEX_URL` and
-`CONVEX_INGEST_SECRET`, but no `CONVEX_DEPLOY_KEY` is currently stored in the
-Oriental Infisical folder. Schema/function changes require a deploy key from a
-Convex project admin before `/admin/session-review` can read new `voiceSessions`
-queries in production.
+Convex deploy credentials are read at deployment time from the Oriental
+Infisical scope and MUST never be copied into repo files or shell history.
 
 There is no `pnpm db:migrate` step and no launch `DATABASE_URL`.
 
@@ -268,6 +277,4 @@ Rotation means updating Infisical/Coolify and redeploying the app.
 - Define Convex backup/export process and retention.
 - Tune Sentry alerts, Slack alert thresholds, and dashboard review cadence after
   the first real traffic.
-- Confirm staging domain if one is required (`oriental-staging.mereka.io` or
-  Coolify preview URL).
 - Complete human listening QA for Reka's Malaysian-English voice quality.

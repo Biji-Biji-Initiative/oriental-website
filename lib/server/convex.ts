@@ -11,8 +11,18 @@ export async function persistLead(lead: StoredLead) {
     return { id: lead.id, persisted: false as const, reason: "convex_unconfigured" };
   }
   const client = new ConvexHttpClient(convexUrl);
-  const result = await client.mutation(api.leads.createLead, { lead, ingestSecret });
-  return { id: result.id, persisted: true as const };
+  try {
+    const result = await client.mutation(api.leads.createLead, { lead, ingestSecret });
+    return { id: result.id, persisted: true as const };
+  } catch (error) {
+    if (lead.voiceRuntimeProfile || lead.voiceInputPolicy || lead.voiceModelCell || lead.voiceReasoningCell) {
+      const { voiceRuntimeProfile: _runtimeProfile, voiceInputPolicy: _inputPolicy, ...legacyLead } = lead;
+      const { voiceModelCell: _modelCell, voiceReasoningCell: _reasoningCell, ...compatibleLead } = legacyLead;
+      const result = await client.mutation(api.leads.createLead, { lead: compatibleLead, ingestSecret });
+      return { id: result.id, persisted: true as const };
+    }
+    throw error;
+  }
 }
 
 export async function recordLeadNotificationStatus(
@@ -56,12 +66,26 @@ export async function persistVoiceReviewSnapshot(input: VoiceReviewSnapshotReque
     });
     return { ok: result.ok, id: result.id };
   } catch (error) {
-    // Forward-compatibility: a Convex deployment that predates the `transport`
-    // field rejects it as an unknown argument. Retry once without it so voice
-    // review persistence never regresses on deploy ordering — transport
-    // telemetry simply starts flowing once Convex functions are redeployed.
-    if (input.transport) {
-      const { transport: _transport, ...rest } = input;
+    // Forward-compatibility: a Convex deployment that predates evolvable
+    // telemetry fields rejects them as unknown arguments. Retry once without
+    // telemetry so review persistence never regresses on deploy ordering.
+    if (
+      input.transport ||
+      input.latency ||
+      input.runtimeProfile ||
+      input.inputPolicy ||
+      input.modelCell ||
+      input.reasoningCell
+    ) {
+      const {
+        transport: _transport,
+        latency: _latency,
+        runtimeProfile: _runtimeProfile,
+        inputPolicy: _inputPolicy,
+        modelCell: _modelCell,
+        reasoningCell: _reasoningCell,
+        ...rest
+      } = input;
       const result = await client.client.mutation(api.leads.recordVoiceSession, {
         ingestSecret: client.ingestSecret,
         snapshot: rest,

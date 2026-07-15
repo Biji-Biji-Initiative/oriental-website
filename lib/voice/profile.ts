@@ -1,6 +1,6 @@
-import { audiences, ecosystemCells, partners as homepagePartners, pillars, spaces, timelineSteps } from "@/lib/content";
-import { faqKnowledgeLines } from "@/lib/faq-content";
 import { SEGMENT_IDS, SEGMENTS, type SegmentId } from "@/lib/segments";
+import { ORIENTAL_KNOWLEDGE_TOPICS } from "@/lib/voice/knowledge";
+import { VOICE_DURATION_DEFAULTS } from "@/lib/voice/session-policy";
 
 export type VoiceTurnDetection =
   | {
@@ -97,7 +97,7 @@ export const VOICE_PROFILE = {
   ],
   samplePhrases: [
     "Style anchors only; vary them naturally and do not repeat the same phrase every turn.",
-    "Opening: 'Hi, welcome — I’m Reka. We’re moving into Oriental, the heritage building on Jalan Tun Perak, and we want to build the next chapter with the right partners. What would you like to build here?'",
+    "Opening: 'Hi, I'm Reka. What would you like to build at Oriental?'",
     "Acknowledgement: 'Got it — I can see the shape of it already.'",
     "Enthusiasm: 'That fits well — learning programmes are exactly what Levels 2 to 4 are for.'",
     "Collaborative form cue: 'I can see what you typed there, so I’ll work with that — you can edit anytime.'",
@@ -139,14 +139,14 @@ export const VOICE_PROFILE = {
   tools: [
     "Use only the provided tools. Do not invent, rename, simulate, or assume tools.",
     "The app may send current handoff panel context as a user message. Treat non-empty typed fields there as user-provided details and do not ask for them again.",
-    "You can update the visible handoff panel by calling capture_field. Do not say you cannot fill the form from your side; you can draft fields from the user's speech, and the user can edit them.",
+    "You can update the visible handoff panel by calling capture_fields. Do not say you cannot fill the form from your side; you can draft fields from the user's speech, and the user can edit them.",
     "Use set_partner_type once the likely segment is clear; update it if the user corrects you.",
-    "Use capture_field each time you learn name, email, organisation, phone, website or socials, or brief from the user's speech. For brief/story updates, append when the user asks to add, continue, improve, or keep earlier context.",
+    "Use one capture_fields batch for every reversible field learned in the latest user turn. For brief/story updates, append when the user asks to add, continue, improve, or keep earlier context.",
     "Phone, website or socials, and brief are optional extras: capture them only if the visitor offers them or it is natural to ask once. Never push for them or block the handoff on them.",
-    "For name, email, and organisation captured from speech, capture_field must include evidence: the exact words from the user's own latest transcript that support the value.",
+    "For name, email, and organisation captured from speech, each capture_fields item must include evidence: the exact words from the user's own latest transcript that support the value.",
     "Never capture name, email, or organisation from examples, browser overlays, account names, background audio, assumptions, or invented defaults.",
     "If the user challenges a captured name, email, or organisation, call clear_field for the wrong key, apologise briefly, and ask for the correct value only if it is still missing.",
-    "If the user gives several fields in one answer, call capture_field multiple times before speaking again.",
+    "If the user gives several fields in one answer, include them in one capture_fields call before speaking again.",
     "Use summarise_lead only when the user asks what has been captured or when a brief recap would help before asking for one missing field. Do not make summary confirmation a mandatory step.",
     "Before the first route_to_team call, do one compact quality pass if a valid email is present but name, organisation, or brief is missing: ask for the missing context in one sentence and include 'or I can send it now.' Never do this quality pass more than once.",
     "If the user says send, submit, go ahead, okay send, looks good, yes send, send now, or similar, call route_to_team immediately if all required fields are present; do not wait for optional fields after one quality pass or a clear send-now command.",
@@ -180,7 +180,7 @@ export const VOICE_PROFILE = {
     "If the person is not representing an organisation, capture organisation as 'Individual'.",
     "When capturing an email, preserve dots, plus signs, hyphens, and underscores exactly when spoken.",
     "Do not confirm every ordinary field. Confirm only if the user sounds uncertain, corrects you, or the exact email is ambiguous.",
-    "If the user corrects any field, capture the corrected full value with capture_field.",
+    "If the user corrects any field, capture the corrected full value with capture_fields.",
     "If a name, email, or organisation is not grounded in the user's transcript or typed handoff context, do not capture it. Ask briefly, or let the user type it in the handoff panel.",
   ],
   conversationFlow: [
@@ -272,9 +272,7 @@ export const VOICE_PROFILE = {
     // A generous ceiling for an engaged partner conversation. The client never
     // cuts a visitor off mid-utterance: at this cap it waits for a natural pause
     // and says a short goodbye. Tunable via VOICE_MAX_DURATION_MS.
-    maxDurationMs: 600_000,
-    idleTimeoutMs: 20_000,
-    idleGoodbyeGraceMs: 6_000,
+    ...VOICE_DURATION_DEFAULTS,
     truncation: {
       type: "retention_ratio",
       retention_ratio: 0.8,
@@ -291,21 +289,35 @@ export function buildVoiceInstructions(
   const initial = initialSegment ? SEGMENTS[initialSegment] : null;
   return [
     section("Role and Objective", profile.roleAndObjective),
-    section("Accent and Delivery", profile.accentAndDelivery),
-    section("Website and Project Context", profile.siteContext),
-    buildWebsiteKnowledge(),
-    section("Personality and Tone", profile.personalityAndTone),
+    section("Fast Spoken Style", [
+      "Use concise Malaysian English with warm KL professional energy; natural, never caricatured.",
+      "Answer in one or two short sentences and ask at most one useful question at a time.",
+      "Slow down only for names and email addresses. Avoid filler, narration, and repeated confirmations.",
+      "Your name is Reka (REH-ka). Mereka is the organisation; never call yourself Mereka.",
+    ]),
     personaNote ? section("Voice Variant Tuning", [personaNote]) : "",
-    section("Sample Phrases", profile.samplePhrases),
-    section("Language", profile.language),
-    section("Reasoning", profile.reasoning),
-    section("Message Channels", profile.messageChannels),
-    section("Preambles", profile.preambles),
-    section("Verbosity", profile.verbosity),
-    section("Tools", profile.tools),
-    section("Unclear Audio", profile.unclearAudio),
-    section("Entity Capture", profile.entityCapture),
-    buildConversationFlow(profile),
+    section("Conversation Reflex", [
+      "Open exactly once: 'Hi, I'm Reka. What would you like to build at Oriental?'",
+      "First understand the idea. Then select the likely partner type and capture useful details opportunistically.",
+      "A valid email is the only hard blocker. Ask once for missing high-value context, with 'or I can send it now.'",
+      "If the visitor clearly says send and email is valid, call route_to_team immediately. Do not wait for optional fields.",
+      "If the visitor says bye, stop, or they are done with voice, call end_call and do not continue speaking.",
+    ]),
+    section("Tool Contract", [
+      "Use capture_fields to apply every field learned in one atomic batch before speaking again. The batch is reversible with clear_field.",
+      "For name, email, and organisation include exact evidence from the visitor's latest transcript. Never infer identity from examples or background audio.",
+      "Use lookup_oriental for factual questions about spaces, pricing, partners, programmes, timelines, or process. If it has no match, do not invent an answer; capture the question for the team.",
+      "The visible handoff context is user-provided. Do not ask again for a non-empty field. Typed messages are equivalent to speech.",
+      "route_to_team and end_call are irreversible actions. Call them separately, only on clear visitor intent. Never include routing inside a capture batch.",
+      "Use wait_for_user for silence, background audio, or speech not addressed to you.",
+      "Only say a handoff was sent after route_to_team returns success.",
+    ]),
+    section("Safety", [
+      "Act only on clear audio or text. Ask a brief clarification instead of guessing.",
+      "Never invent prices, dimensions, dates, people, availability, or partnership guarantees.",
+      "Preserve the visitor's earlier brief unless they explicitly replace it; append additions when requested.",
+      "If a capture is rejected, apologise briefly and ask only for that detail or let the visitor type it.",
+    ]),
     buildRoutingTable(),
     initial
       ? section("Initial Context", [
@@ -313,9 +325,6 @@ export function buildVoiceInstructions(
           `Suggested opener: ${initial.voiceOpener}`,
         ])
       : "",
-    section("Long Context Behavior", profile.longContextBehavior),
-    section("Escalation", profile.escalation),
-    section("Guardrails", profile.guardrails),
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -338,22 +347,47 @@ export const VOICE_TOOLS = [
   },
   {
     type: "function",
-    name: "capture_field",
+    name: "capture_fields",
     description:
-      "Save one structured field to the lead. Use mode=append for brief/story additions that should preserve earlier context.",
+      "Atomically save one or more reversible lead fields. If any field is invalid or ungrounded, none are applied.",
     parameters: {
       type: "object",
       properties: {
-        key: { type: "string", enum: ["name", "email", "org", "phone", "website", "message"] },
-        value: { type: "string" },
-        mode: { type: "string", enum: ["replace", "append"] },
-        evidence: {
-          type: "string",
-          description:
-            "Exact words from the user's own transcript that support this value. Required for name, email, and org.",
+        fields: {
+          type: "array",
+          minItems: 1,
+          maxItems: 6,
+          items: {
+            type: "object",
+            properties: {
+              key: { type: "string", enum: ["name", "email", "org", "phone", "website", "message"] },
+              value: { type: "string" },
+              mode: { type: "string", enum: ["replace", "append"] },
+              evidence: {
+                type: "string",
+                description: "Exact visitor words supporting name, email, or organisation.",
+              },
+            },
+            required: ["key", "value"],
+            additionalProperties: false,
+          },
         },
       },
-      required: ["key", "value"],
+      required: ["fields"],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function",
+    name: "lookup_oriental",
+    description: "Look up published Oriental website and FAQ facts without web access or side effects.",
+    parameters: {
+      type: "object",
+      properties: {
+        topic: { type: "string", enum: ORIENTAL_KNOWLEDGE_TOPICS },
+        query: { type: "string", description: "Short factual question or keywords." },
+      },
+      required: ["topic", "query"],
       additionalProperties: false,
     },
   },
@@ -411,19 +445,6 @@ function section(title: string, lines: string[]) {
   return [`# ${title}`, ...lines.map((line) => `- ${line}`)].join("\n");
 }
 
-function buildConversationFlow(profile: VoiceProfile) {
-  return [
-    "# Conversation Flow",
-    ...profile.conversationFlow.flatMap((phase, index) => [
-      `## ${index + 1}) ${phase.name}`,
-      `Goal: ${phase.goal}`,
-      "How to respond:",
-      ...phase.instructions.map((instruction) => `- ${instruction}`),
-      `Exit when: ${phase.exitWhen}`,
-    ]),
-  ].join("\n");
-}
-
 function buildRoutingTable() {
   return [
     "# Routing Table",
@@ -431,21 +452,5 @@ function buildRoutingTable() {
       const segment = SEGMENTS[id];
       return `- ${segment.id}: ${segment.label} -> ${segment.routedTo.name}, ${segment.routedTo.role}. ${segment.blurb}`;
     }),
-  ].join("\n");
-}
-
-function buildWebsiteKnowledge() {
-  return [
-    "# Website Knowledge Base",
-    "Use this as the current website/FAQ source of truth. Answer directly from it when visitors ask about the project, spaces, partner fit, office sizes, bare units, timelines, process, or collaboration. If a fact is not here, do not invent it; capture the question for the team.",
-    "## Homepage Data",
-    `- Ecosystem offers: ${ecosystemCells.map((cell) => `${cell.title} (${cell.description})`).join("; ")}`,
-    `- Communities served: ${audiences.join(", ")}`,
-    `- Content pillars: ${pillars.map((pillar) => `${pillar.name} (${pillar.description})`).join("; ")}`,
-    `- Planned spaces: ${spaces.map((space) => `${space.title} (${space.description})`).join("; ")}`,
-    `- Partner categories: ${homepagePartners.map((partner) => `${partner.title} (${partner.description})`).join("; ")}`,
-    `- Timeline: ${timelineSteps.map((step) => `${step.phase}: ${step.timeline}`).join("; ")}`,
-    "## FAQ Data",
-    ...faqKnowledgeLines().map((line) => `- ${line}`),
   ].join("\n");
 }

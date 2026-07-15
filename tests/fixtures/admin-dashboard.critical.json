@@ -138,6 +138,21 @@
       ],
       "rateLimits": [],
       "routeRequested": true,
+      "latency": {
+        "version": 1,
+        "turns": [
+          {
+            "sequence": 1,
+            "inputPolicy": "baseline",
+            "speechDurationMs": 900,
+            "stopToResponseCreatedMs": 180,
+            "stopToFirstOutputEventMs": 420,
+            "responseDurationMs": 1700,
+            "interrupted": false,
+            "rapidResume": false
+          }
+        ]
+      },
       "createdAt": 1781711352327,
       "updatedAt": 1781713152327
     },
@@ -291,7 +306,21 @@
       "submitted": 1,
       "withErrors": 1,
       "routeRequested": 2,
-      "totalResponseTokens": 1760
+      "totalResponseTokens": 1760,
+      "latency": {
+        "sampledTurns": 1,
+        "firstOutput": { "samples": 1, "p50Ms": 420, "p95Ms": 420 },
+        "responseCreated": { "samples": 1, "p50Ms": 180, "p95Ms": 180 },
+        "interruptedTurns": 0,
+        "rapidResumeTurns": 0
+      }
+    },
+    "evals": {
+      "evaluated": 0,
+      "droppedMidTurn": 0,
+      "averages": null,
+      "trend": { "daily": [], "weekly": [] },
+      "attention": []
     }
   },
   "queues": {

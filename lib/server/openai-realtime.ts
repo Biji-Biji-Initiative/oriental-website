@@ -1,9 +1,12 @@
 import OpenAI, { APIError } from "openai";
 import type { ClientSecretCreateParams, ClientSecretCreateResponse } from "openai/resources/realtime/client-secrets";
 import type { RealtimeSessionCreateRequest } from "openai/resources/realtime/realtime";
-import { readEnv, readPositiveIntEnv } from "@/lib/env";
+import { readEnv } from "@/lib/env";
 import type { SegmentId } from "@/lib/segments";
+import { resolveVoiceExperimentConfig } from "@/lib/voice/experiments";
 import { buildVoiceInstructions, VOICE_SESSION_DEFAULTS, VOICE_TOOLS } from "@/lib/voice/profile";
+import { resolveVoiceRuntimeProfile } from "@/lib/voice/runtime-profile";
+import { resolveVoiceDurationPolicy } from "@/lib/voice/session-policy";
 import { getVoiceVariant } from "@/lib/voice/variants";
 
 export type RealtimeDeviceProfile = "mobile" | "desktop";
@@ -19,7 +22,13 @@ export async function createRealtimeClientSecret(
     throw new Error("openai_unconfigured");
   }
 
-  const model = readEnv("OPENAI_REALTIME_MODEL", "gpt-realtime-2") ?? "gpt-realtime-2";
+  const experiments = resolveVoiceExperimentConfig({
+    modelCell: readEnv("VOICE_MODEL_CELL", "control"),
+    controlModel: readEnv("OPENAI_REALTIME_MODEL", "gpt-realtime-2") ?? "gpt-realtime-2",
+    candidateModel: readEnv("OPENAI_REALTIME_MODEL_CANDIDATE", "gpt-realtime-2.1") ?? "gpt-realtime-2.1",
+    reasoningCell: readEnv("VOICE_REASONING_CELL", "low"),
+  });
+  const model = experiments.model;
   // A selected variant overrides voice/speed/persona; otherwise fall back to the
   // env-configured production defaults. Voice and persona are never taken from
   // the client directly — only a server-resolved variant from the catalog.
@@ -31,6 +40,12 @@ export async function createRealtimeClientSecret(
     VOICE_SESSION_DEFAULTS.transcription.model;
   // Phones are close-talking mics; laptops and desktops are far-field.
   const noiseReduction = deviceProfile === "mobile" ? "near_field" : "far_field";
+  const runtimeProfile = resolveVoiceRuntimeProfile(readEnv("VOICE_RUNTIME_PROFILE", "baseline"));
+  const durationPolicy = resolveVoiceDurationPolicy({
+    maxDurationMs: readEnv("VOICE_MAX_DURATION_MS"),
+    idleTimeoutMs: readEnv("VOICE_IDLE_TIMEOUT_MS"),
+    idleGoodbyeGraceMs: readEnv("VOICE_IDLE_GOODBYE_GRACE_MS"),
+  });
 
   const client = new OpenAI({ apiKey, dangerouslyAllowBrowser: process.env.NODE_ENV === "test" });
   const clientSecretRequest = {
@@ -40,11 +55,11 @@ export async function createRealtimeClientSecret(
       model,
       instructions: buildVoiceInstructions(undefined, initialSegment, variant?.personaNote),
       output_modalities: ["audio"],
-      reasoning: { effort: VOICE_SESSION_DEFAULTS.reasoningEffort },
+      reasoning: { effort: experiments.reasoningEffort },
       truncation: VOICE_SESSION_DEFAULTS.truncation,
       audio: {
         input: {
-          turn_detection: VOICE_SESSION_DEFAULTS.turnDetection,
+          turn_detection: runtimeProfile.turnDetection[runtimeProfile.defaultInputPolicy],
           transcription: { ...VOICE_SESSION_DEFAULTS.transcription, model: transcriptionModel },
           noise_reduction: { type: noiseReduction },
         },
@@ -83,16 +98,21 @@ export async function createRealtimeClientSecret(
     },
     session_id: data.session?.id ?? crypto.randomUUID(),
     model,
+    model_cell: experiments.modelCell,
+    reasoning_cell: experiments.reasoningCell,
     voice,
     speed,
     variant: variant?.id ?? null,
     transcription_model: transcriptionModel,
     noise_reduction: noiseReduction,
+    runtime_profile: runtimeProfile.id,
+    input_policy: runtimeProfile.defaultInputPolicy,
     // Session policy is server-tunable so the dominant UX constraints can be
     // adjusted from Infisical without a code deploy.
     limits: {
-      max_duration_ms: readPositiveIntEnv("VOICE_MAX_DURATION_MS", VOICE_SESSION_DEFAULTS.maxDurationMs),
-      idle_timeout_ms: readPositiveIntEnv("VOICE_IDLE_TIMEOUT_MS", VOICE_SESSION_DEFAULTS.idleTimeoutMs),
+      max_duration_ms: durationPolicy.maxDurationMs,
+      idle_timeout_ms: durationPolicy.idleTimeoutMs,
+      idle_goodbye_grace_ms: durationPolicy.idleGoodbyeGraceMs,
     },
   };
 }

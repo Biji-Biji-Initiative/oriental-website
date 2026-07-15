@@ -721,6 +721,18 @@
   box-shadow: 0 0 120px rgba(183, 216, 255, 0.5);
 }
 
+.voice-orb[data-turn="user_speaking"] {
+  box-shadow: 0 0 120px rgba(122, 196, 212, 0.52);
+}
+
+.voice-orb[data-turn="waiting_for_response"] {
+  box-shadow: 0 0 105px rgba(201, 213, 236, 0.42);
+}
+
+.voice-orb[data-turn="assistant_speaking"] {
+  box-shadow: 0 0 135px rgba(183, 216, 255, 0.58);
+}
+
 .voice-orb__aurora {
   position: absolute;
   inset: -3px;
@@ -797,11 +809,11 @@
 
   /* Ripples carry the voice: their opacity is multiplied by the live level,
      so they surge while Reka speaks and vanish in silence. */
-  .voice-orb[data-status="listening"] .voice-orb__ripple {
+  .voice-orb[data-turn="assistant_speaking"] .voice-orb__ripple {
     animation: voice-orb-ripple 1.8s ease-out infinite;
   }
 
-  .voice-orb[data-status="listening"] .voice-orb__ripple--late {
+  .voice-orb[data-turn="assistant_speaking"] .voice-orb__ripple--late {
     animation-delay: 0.9s;
   }
 

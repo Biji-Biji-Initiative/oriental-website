@@ -34,8 +34,12 @@ const leadValidator = v.object({
   voiceSessionId: v.optional(v.string()),
   voiceVariant: v.optional(v.string()),
   voiceModel: v.optional(v.string()),
+  voiceModelCell: v.optional(v.string()),
+  voiceReasoningCell: v.optional(v.string()),
   voiceName: v.optional(v.string()),
   voiceSpeed: v.optional(v.number()),
+  voiceRuntimeProfile: v.optional(v.string()),
+  voiceInputPolicy: v.optional(v.string()),
   turnstileToken: v.optional(v.string()),
   utm: v.record(v.string(), v.string()),
 });
@@ -85,6 +89,32 @@ const transportValidator = v.object({
   ),
 });
 
+const latencyValidator = v.object({
+  version: v.literal(1),
+  activation: v.optional(
+    v.object({
+      tapToArmCueScheduledMs: v.optional(v.number()),
+    }),
+  ),
+  turns: v.array(
+    v.object({
+      sequence: v.number(),
+      inputPolicy: v.union(v.literal("baseline"), v.literal("fast"), v.literal("patient")),
+      speechDurationMs: v.optional(v.number()),
+      stopToResponseCreatedMs: v.optional(v.number()),
+      stopToFirstOutputEventMs: v.optional(v.number()),
+      localSpeechEndToSpeechStoppedMs: v.optional(v.number()),
+      stopToRemoteAudioMs: v.optional(v.number()),
+      firstOutputEventToRemoteAudioMs: v.optional(v.number()),
+      toolDurationMs: v.optional(v.number()),
+      bargeInToResponseDoneMs: v.optional(v.number()),
+      responseDurationMs: v.optional(v.number()),
+      interrupted: v.boolean(),
+      rapidResume: v.boolean(),
+    }),
+  ),
+});
+
 const voiceSessionValidator = v.object({
   reviewId: v.string(),
   sessionId: v.string(),
@@ -100,9 +130,13 @@ const voiceSessionValidator = v.object({
   firstEventAt: v.optional(v.number()),
   closedAt: v.optional(v.number()),
   model: v.optional(v.string()),
+  modelCell: v.optional(v.union(v.literal("control"), v.literal("candidate"))),
+  reasoningCell: v.optional(v.union(v.literal("low"), v.literal("minimal"))),
   voice: v.optional(v.string()),
   speed: v.optional(v.number()),
   variant: v.optional(v.union(v.string(), v.null())),
+  runtimeProfile: v.optional(v.union(v.literal("baseline"), v.literal("instant-v1"))),
+  inputPolicy: v.optional(v.union(v.literal("baseline"), v.literal("fast"), v.literal("patient"))),
   captured: capturedValidator,
   transcript: transcriptValidator,
   usage: v.optional(usageValidator),
@@ -116,6 +150,7 @@ const voiceSessionValidator = v.object({
   rateLimits: v.array(v.any()),
   routeRequested: v.boolean(),
   submittedAt: v.optional(v.number()),
+  latency: v.optional(latencyValidator),
   transport: v.optional(transportValidator),
 });
 
@@ -152,8 +187,12 @@ export const createLead = mutationGeneric({
       ...(lead.voiceSessionId ? { voiceSessionId: lead.voiceSessionId } : {}),
       ...(lead.voiceVariant ? { voiceVariant: lead.voiceVariant } : {}),
       ...(lead.voiceModel ? { voiceModel: lead.voiceModel } : {}),
+      ...(lead.voiceModelCell ? { voiceModelCell: lead.voiceModelCell } : {}),
+      ...(lead.voiceReasoningCell ? { voiceReasoningCell: lead.voiceReasoningCell } : {}),
       ...(lead.voiceName ? { voiceName: lead.voiceName } : {}),
       ...(typeof lead.voiceSpeed === "number" ? { voiceSpeed: lead.voiceSpeed } : {}),
+      ...(lead.voiceRuntimeProfile ? { voiceRuntimeProfile: lead.voiceRuntimeProfile } : {}),
+      ...(lead.voiceInputPolicy ? { voiceInputPolicy: lead.voiceInputPolicy } : {}),
       utm: lead.utm,
       status: "new",
       priority: "normal",
@@ -287,11 +326,16 @@ export const recordVoiceSession = mutationGeneric({
       routeRequested: snapshot.routeRequested,
       updatedAt: now,
       ...(snapshot.model ? { model: snapshot.model } : {}),
+      ...(snapshot.modelCell ? { modelCell: snapshot.modelCell } : {}),
+      ...(snapshot.reasoningCell ? { reasoningCell: snapshot.reasoningCell } : {}),
       ...(snapshot.voice ? { voice: snapshot.voice } : {}),
       ...(typeof snapshot.speed === "number" ? { speed: snapshot.speed } : {}),
       ...(typeof snapshot.variant !== "undefined" ? { variant: snapshot.variant } : {}),
+      ...(snapshot.runtimeProfile ? { runtimeProfile: snapshot.runtimeProfile } : {}),
+      ...(snapshot.inputPolicy ? { inputPolicy: snapshot.inputPolicy } : {}),
       ...(snapshot.usage ? { usage: snapshot.usage } : {}),
       ...(typeof snapshot.submittedAt === "number" ? { submittedAt: snapshot.submittedAt } : {}),
+      ...(snapshot.latency ? { latency: snapshot.latency } : {}),
       ...(snapshot.transport ? { transport: snapshot.transport } : {}),
     };
     if (existing) {
@@ -389,7 +433,12 @@ export const voiceSessionsForEval = queryGeneric({
       captured: session.captured,
       usage: session.usage ?? null,
       errors: session.errors,
+      latency: session.latency ?? null,
       transport: session.transport ?? null,
+      runtimeProfile: session.runtimeProfile ?? null,
+      inputPolicy: session.inputPolicy ?? null,
+      modelCell: session.modelCell ?? null,
+      reasoningCell: session.reasoningCell ?? null,
       routeRequested: session.routeRequested,
       submittedAt: session.submittedAt ?? null,
       createdAt: session.createdAt,
@@ -441,6 +490,7 @@ export const reviewDashboard = queryGeneric({
     const engagedSessions = voiceSessions.filter(isEngagedVoiceSession);
     const submittedSessions = voiceSessions.filter((session) => Boolean(session.leadId)).length;
     const totalResponseTokens = voiceSessions.reduce((sum, session) => sum + (session.usage?.responseTokens ?? 0), 0);
+    const voiceLatency = summarizeVoiceLatency(voiceSessions);
     const evaluatedSessions = voiceSessions.filter((session) => session.eval);
     const evalAverages = averageEvalScores(evaluatedSessions);
     const droppedMidTurnEvals = evaluatedSessions.filter((session) => session.eval?.droppedMidTurn).length;
@@ -485,6 +535,7 @@ export const reviewDashboard = queryGeneric({
           withErrors: sessionsWithErrors,
           routeRequested: voiceSessions.filter((session) => session.routeRequested).length,
           totalResponseTokens,
+          latency: voiceLatency,
         },
         evals: {
           evaluated: evaluatedSessions.length,
@@ -571,6 +622,79 @@ function isEngagedVoiceSession(session: {
 function percent(numerator: number, denominator: number) {
   if (denominator <= 0) return 0;
   return Math.round((numerator / denominator) * 100);
+}
+
+type LatencySession = {
+  latency?: {
+    activation?: { tapToArmCueScheduledMs?: number };
+    turns: Array<{
+      stopToResponseCreatedMs?: number;
+      stopToFirstOutputEventMs?: number;
+      stopToRemoteAudioMs?: number;
+      localSpeechEndToSpeechStoppedMs?: number;
+      firstOutputEventToRemoteAudioMs?: number;
+      toolDurationMs?: number;
+      bargeInToResponseDoneMs?: number;
+      interrupted: boolean;
+      rapidResume: boolean;
+    }>;
+  };
+};
+
+function summarizeVoiceLatency(sessions: LatencySession[]) {
+  const turns = sessions.flatMap((session) => session.latency?.turns ?? []);
+  const firstOutput = turns.flatMap((turn) =>
+    typeof turn.stopToFirstOutputEventMs === "number" ? [turn.stopToFirstOutputEventMs] : [],
+  );
+  const responseCreated = turns.flatMap((turn) =>
+    typeof turn.stopToResponseCreatedMs === "number" ? [turn.stopToResponseCreatedMs] : [],
+  );
+  const remoteAudio = turns.flatMap((turn) =>
+    typeof turn.stopToRemoteAudioMs === "number" ? [turn.stopToRemoteAudioMs] : [],
+  );
+  const endpoint = turns.flatMap((turn) =>
+    typeof turn.localSpeechEndToSpeechStoppedMs === "number" ? [turn.localSpeechEndToSpeechStoppedMs] : [],
+  );
+  const playout = turns.flatMap((turn) =>
+    typeof turn.firstOutputEventToRemoteAudioMs === "number" ? [turn.firstOutputEventToRemoteAudioMs] : [],
+  );
+  const bargeIn = turns.flatMap((turn) =>
+    typeof turn.bargeInToResponseDoneMs === "number" ? [turn.bargeInToResponseDoneMs] : [],
+  );
+  const tool = turns.flatMap((turn) => (typeof turn.toolDurationMs === "number" ? [turn.toolDurationMs] : []));
+  const activation = sessions.flatMap((session) =>
+    typeof session.latency?.activation?.tapToArmCueScheduledMs === "number"
+      ? [session.latency.activation.tapToArmCueScheduledMs]
+      : [],
+  );
+  return {
+    sampledTurns: turns.length,
+    firstOutput: percentileSummary(firstOutput),
+    responseCreated: percentileSummary(responseCreated),
+    remoteAudio: percentileSummary(remoteAudio),
+    endpoint: percentileSummary(endpoint),
+    playout: percentileSummary(playout),
+    tool: percentileSummary(tool),
+    bargeIn: percentileSummary(bargeIn),
+    activation: percentileSummary(activation),
+    interruptedTurns: turns.filter((turn) => turn.interrupted).length,
+    rapidResumeTurns: turns.filter((turn) => turn.rapidResume).length,
+  };
+}
+
+function percentileSummary(values: number[]) {
+  if (values.length === 0) return { samples: 0, p50Ms: null, p95Ms: null };
+  const sorted = [...values].sort((left, right) => left - right);
+  return {
+    samples: sorted.length,
+    p50Ms: percentile(sorted, 0.5),
+    p95Ms: percentile(sorted, 0.95),
+  };
+}
+
+function percentile(sorted: number[], quantile: number) {
+  const index = Math.min(Math.max(Math.ceil(sorted.length * quantile) - 1, 0), sorted.length - 1);
+  return Math.round(sorted[index] ?? 0);
 }
 
 type EvaluatedSession = {

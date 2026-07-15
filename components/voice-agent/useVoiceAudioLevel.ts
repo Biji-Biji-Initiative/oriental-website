@@ -1,34 +1,44 @@
 "use client";
 
 import { type RefObject, useEffect, useRef } from "react";
+import { type AudioActivityState, detectAudioActivity } from "@/lib/voice/audio-activity";
 
 type StreamSource = () => MediaStream | null;
+type ActivityCallbacks = {
+  onActivityStart?: (at: number) => void;
+  onActivityStop?: (at: number) => void;
+};
 
 /**
  * Mirrors a live audio level onto a CSS custom property (0..1) on the target
- * element. Writes styles directly — no React re-renders at audio frame rate —
- * and stays inert when the user prefers reduced motion.
+ * element. Detection remains active under reduced-motion preferences; only
+ * visual writes are suppressed. This keeps latency measurement independent of
+ * animation while avoiding React re-renders at audio frame rate.
  */
 function useStreamLevel(
   getStream: StreamSource,
   targetRef: RefObject<HTMLElement | null>,
   cssVar: string,
   active: boolean,
+  callbacks: ActivityCallbacks = {},
 ) {
   const getStreamRef = useRef(getStream);
   getStreamRef.current = getStream;
+  const callbacksRef = useRef(callbacks);
+  callbacksRef.current = callbacks;
 
   useEffect(() => {
     const target = targetRef.current;
     if (!active || !target) return;
     if (typeof window.AudioContext === "undefined") return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
     let context: AudioContext | null = null;
     let source: MediaStreamAudioSourceNode | null = null;
     let frame = 0;
     let pollTimer = 0;
     let cancelled = false;
+    let activity: AudioActivityState = { active: false };
 
     const start = (stream: MediaStream) => {
       context = new AudioContext();
@@ -45,7 +55,12 @@ function useStreamLevel(
         let sum = 0;
         for (const value of bins) sum += value;
         const level = Math.min(1, (sum / bins.length / 255) * 2.4);
-        target.style.setProperty(cssVar, level.toFixed(3));
+        const at = performance.now();
+        const detected = detectAudioActivity(activity, level, at);
+        activity = detected.state;
+        if (detected.transition === "started") callbacksRef.current.onActivityStart?.(at);
+        if (detected.transition === "stopped") callbacksRef.current.onActivityStop?.(at);
+        if (!reduceMotion) target.style.setProperty(cssVar, level.toFixed(3));
         frame = requestAnimationFrame(tick);
       };
       tick();
@@ -80,6 +95,7 @@ export function useVoiceAudioLevel(
   audioRef: RefObject<HTMLAudioElement | null>,
   targetRef: RefObject<HTMLElement | null>,
   active: boolean,
+  callbacks: ActivityCallbacks = {},
 ) {
   useStreamLevel(
     () => {
@@ -89,6 +105,7 @@ export function useVoiceAudioLevel(
     targetRef,
     "--voice-level",
     active,
+    callbacks,
   );
 }
 
@@ -97,6 +114,7 @@ export function useMicAudioLevel(
   getLocalStream: StreamSource,
   targetRef: RefObject<HTMLElement | null>,
   active: boolean,
+  callbacks: ActivityCallbacks = {},
 ) {
-  useStreamLevel(getLocalStream, targetRef, "--user-level", active);
+  useStreamLevel(getLocalStream, targetRef, "--user-level", active, callbacks);
 }

@@ -29,6 +29,26 @@ export type EvalTransport = {
   worstStats?: { packetsLostPct?: number; maxJitterMs?: number; maxRttMs?: number } | null;
 } | null;
 
+export type EvalLatency = {
+  version: 1;
+  activation?: { tapToArmCueScheduledMs?: number };
+  turns: Array<{
+    sequence: number;
+    inputPolicy: "baseline" | "fast" | "patient";
+    speechDurationMs?: number;
+    stopToResponseCreatedMs?: number;
+    stopToFirstOutputEventMs?: number;
+    localSpeechEndToSpeechStoppedMs?: number;
+    stopToRemoteAudioMs?: number;
+    firstOutputEventToRemoteAudioMs?: number;
+    toolDurationMs?: number;
+    bargeInToResponseDoneMs?: number;
+    responseDurationMs?: number;
+    interrupted: boolean;
+    rapidResume: boolean;
+  }>;
+} | null;
+
 export type VoiceEvalSession = {
   reviewId: string;
   sessionId: string;
@@ -42,9 +62,14 @@ export type VoiceEvalSession = {
   connectedAt?: number | null;
   firstEventAt?: number | null;
   closedAt?: number | null;
+  runtimeProfile?: "baseline" | "instant-v1" | null;
+  inputPolicy?: "baseline" | "fast" | "patient" | null;
+  modelCell?: "control" | "candidate" | null;
+  reasoningCell?: "low" | "minimal" | null;
   transcript: EvalTranscriptTurn[];
   errors: Array<{ code?: string; message: string }>;
   transport?: EvalTransport;
+  latency?: EvalLatency;
   routeRequested: boolean;
   submittedAt?: number | null;
   /** Review ids of the call segments folded into this conversation (if merged). */
@@ -107,6 +132,7 @@ export function mergeConversationSessions(sessions: VoiceEvalSession[]): VoiceEv
     const head = ordered[ordered.length - 1] as VoiceEvalSession;
     const submitted = ordered.find((s) => Boolean(s.submittedAt) || Boolean(s.leadId));
     const transport = ordered.reduce<EvalTransport>((acc, s) => foldEvalTransport(acc, s.transport ?? null), null);
+    const latency = foldEvalLatency(ordered.map((session) => session.latency ?? null));
     merged.push({
       ...head,
       // The latest call row heads the conversation, but timings and outcome span
@@ -121,11 +147,18 @@ export function mergeConversationSessions(sessions: VoiceEvalSession[]): VoiceEv
       transcript: mergeConversationTranscripts(ordered),
       errors: ordered.flatMap((s) => s.errors),
       transport,
+      latency,
       routeRequested: ordered.some((s) => s.routeRequested),
       callReviewIds: ordered.map((s) => s.reviewId),
     });
   }
   return merged;
+}
+
+function foldEvalLatency(latencies: EvalLatency[]): EvalLatency {
+  const turns = latencies.flatMap((latency) => latency?.turns ?? []);
+  const activation = latencies.find((latency) => latency?.activation)?.activation;
+  return turns.length > 0 || activation ? { version: 1, ...(activation ? { activation } : {}), turns } : null;
 }
 
 function foldEvalTransport(acc: EvalTransport, next: EvalTransport): EvalTransport {
@@ -177,6 +210,244 @@ export function deriveTransportSignals(session: VoiceEvalSession): TransportSign
     worstPacketsLostPct: transport?.worstStats?.packetsLostPct ?? null,
     worstRttMs: transport?.worstStats?.maxRttMs ?? null,
   };
+}
+
+export type LatencySignals = {
+  sampledTurns: number;
+  firstOutputSamples: number;
+  firstOutputP50Ms: number | null;
+  firstOutputP95Ms: number | null;
+  responseCreatedSamples: number;
+  responseCreatedP50Ms: number | null;
+  responseCreatedP95Ms: number | null;
+  remoteAudioSamples: number;
+  remoteAudioP50Ms: number | null;
+  remoteAudioP95Ms: number | null;
+  endpointP50Ms: number | null;
+  endpointP95Ms: number | null;
+  playoutP50Ms: number | null;
+  playoutP95Ms: number | null;
+  toolP50Ms: number | null;
+  toolP95Ms: number | null;
+  bargeInP95Ms: number | null;
+  tapToArmCueMs: number | null;
+  interruptedTurns: number;
+  rapidResumeTurns: number;
+};
+
+export function deriveLatencySignals(session: VoiceEvalSession): LatencySignals {
+  const turns = session.latency?.turns ?? [];
+  const firstOutput = turns.flatMap((turn) =>
+    typeof turn.stopToFirstOutputEventMs === "number" ? [turn.stopToFirstOutputEventMs] : [],
+  );
+  const responseCreated = turns.flatMap((turn) =>
+    typeof turn.stopToResponseCreatedMs === "number" ? [turn.stopToResponseCreatedMs] : [],
+  );
+  const remoteAudio = turns.flatMap((turn) =>
+    typeof turn.stopToRemoteAudioMs === "number" ? [turn.stopToRemoteAudioMs] : [],
+  );
+  const endpoint = turns.flatMap((turn) =>
+    typeof turn.localSpeechEndToSpeechStoppedMs === "number" ? [turn.localSpeechEndToSpeechStoppedMs] : [],
+  );
+  const playout = turns.flatMap((turn) =>
+    typeof turn.firstOutputEventToRemoteAudioMs === "number" ? [turn.firstOutputEventToRemoteAudioMs] : [],
+  );
+  const bargeIn = turns.flatMap((turn) =>
+    typeof turn.bargeInToResponseDoneMs === "number" ? [turn.bargeInToResponseDoneMs] : [],
+  );
+  const tool = turns.flatMap((turn) => (typeof turn.toolDurationMs === "number" ? [turn.toolDurationMs] : []));
+  return {
+    sampledTurns: turns.length,
+    firstOutputSamples: firstOutput.length,
+    firstOutputP50Ms: percentile(firstOutput, 0.5),
+    firstOutputP95Ms: percentile(firstOutput, 0.95),
+    responseCreatedSamples: responseCreated.length,
+    responseCreatedP50Ms: percentile(responseCreated, 0.5),
+    responseCreatedP95Ms: percentile(responseCreated, 0.95),
+    remoteAudioSamples: remoteAudio.length,
+    remoteAudioP50Ms: percentile(remoteAudio, 0.5),
+    remoteAudioP95Ms: percentile(remoteAudio, 0.95),
+    endpointP50Ms: percentile(endpoint, 0.5),
+    endpointP95Ms: percentile(endpoint, 0.95),
+    playoutP50Ms: percentile(playout, 0.5),
+    playoutP95Ms: percentile(playout, 0.95),
+    toolP50Ms: percentile(tool, 0.5),
+    toolP95Ms: percentile(tool, 0.95),
+    bargeInP95Ms: percentile(bargeIn, 0.95),
+    tapToArmCueMs: session.latency?.activation?.tapToArmCueScheduledMs ?? null,
+    interruptedTurns: turns.filter((turn) => turn.interrupted).length,
+    rapidResumeTurns: turns.filter((turn) => turn.rapidResume).length,
+  };
+}
+
+function percentile(values: number[], quantile: number): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((left, right) => left - right);
+  const index = Math.min(Math.max(Math.ceil(sorted.length * quantile) - 1, 0), sorted.length - 1);
+  return Math.round(sorted[index] ?? 0);
+}
+
+// ---------------------------------------------------------------------------
+// Guarded latency promotion gate
+// ---------------------------------------------------------------------------
+
+export const LATENCY_AUTOPILOT_THRESHOLDS = {
+  minRemoteAudioSamples: 30,
+  minFalseEndpointTurns: 100,
+  minBargeInSamples: 20,
+  minContactConversationsPerProfile: 20,
+  maxRemoteAudioP50Ms: 650,
+  maxRemoteAudioP95Ms: 1_000,
+  maxFalseEndpointRate: 0.02,
+  maxBargeInP95Ms: 250,
+} as const;
+
+type ProfileLatencyGateMetrics = {
+  sessions: number;
+  sampledTurns: number;
+  remoteAudioSamples: number;
+  remoteAudioP50Ms: number | null;
+  remoteAudioP95Ms: number | null;
+  bargeInSamples: number;
+  bargeInP95Ms: number | null;
+  rapidResumeTurns: number;
+  /** Rapid-resume proxy for a possible false server-VAD endpoint. */
+  possibleFalseEndpointRate: number | null;
+  contactConversations: number;
+  contactCorrectionConversations: number;
+  contactCorrectionRate: number | null;
+};
+
+export type LatencyAutopilotGate = {
+  status: "insufficient_data" | "pass" | "fail";
+  eligibleForAutomaticPromotion: boolean;
+  candidate: ProfileLatencyGateMetrics;
+  control: ProfileLatencyGateMetrics;
+  missingEvidence: string[];
+  failures: string[];
+};
+
+/**
+ * Assess whether instant-v1 has enough evidence to be eligible for promotion.
+ * This function never mutates runtime configuration; a pass is an advisory
+ * release signal that still requires the normal reviewed deployment path.
+ */
+export function assessLatencyAutopilotGate(sessions: VoiceEvalSession[]): LatencyAutopilotGate {
+  const candidate = profileLatencyGateMetrics(sessions.filter((session) => session.runtimeProfile === "instant-v1"));
+  const control = profileLatencyGateMetrics(
+    sessions.filter((session) => (session.runtimeProfile ?? "baseline") === "baseline"),
+  );
+  const missingEvidence: string[] = [];
+
+  if (candidate.remoteAudioSamples < LATENCY_AUTOPILOT_THRESHOLDS.minRemoteAudioSamples) {
+    missingEvidence.push(
+      `instant-v1 remote-audio samples ${candidate.remoteAudioSamples}/${LATENCY_AUTOPILOT_THRESHOLDS.minRemoteAudioSamples}`,
+    );
+  }
+  if (candidate.sampledTurns < LATENCY_AUTOPILOT_THRESHOLDS.minFalseEndpointTurns) {
+    missingEvidence.push(
+      `instant-v1 endpoint turns ${candidate.sampledTurns}/${LATENCY_AUTOPILOT_THRESHOLDS.minFalseEndpointTurns}`,
+    );
+  }
+  if (candidate.bargeInSamples < LATENCY_AUTOPILOT_THRESHOLDS.minBargeInSamples) {
+    missingEvidence.push(
+      `instant-v1 barge-in samples ${candidate.bargeInSamples}/${LATENCY_AUTOPILOT_THRESHOLDS.minBargeInSamples}`,
+    );
+  }
+  for (const [label, metrics] of [
+    ["instant-v1", candidate],
+    ["baseline", control],
+  ] as const) {
+    if (metrics.contactConversations < LATENCY_AUTOPILOT_THRESHOLDS.minContactConversationsPerProfile) {
+      missingEvidence.push(
+        `${label} contact conversations ${metrics.contactConversations}/${LATENCY_AUTOPILOT_THRESHOLDS.minContactConversationsPerProfile}`,
+      );
+    }
+  }
+
+  const failures: string[] = [];
+  if (missingEvidence.length === 0) {
+    if ((candidate.remoteAudioP50Ms ?? Number.POSITIVE_INFINITY) >= LATENCY_AUTOPILOT_THRESHOLDS.maxRemoteAudioP50Ms) {
+      failures.push(`remote audio p50 must be under ${LATENCY_AUTOPILOT_THRESHOLDS.maxRemoteAudioP50Ms} ms`);
+    }
+    if ((candidate.remoteAudioP95Ms ?? Number.POSITIVE_INFINITY) >= LATENCY_AUTOPILOT_THRESHOLDS.maxRemoteAudioP95Ms) {
+      failures.push(`remote audio p95 must be under ${LATENCY_AUTOPILOT_THRESHOLDS.maxRemoteAudioP95Ms} ms`);
+    }
+    if (
+      (candidate.possibleFalseEndpointRate ?? Number.POSITIVE_INFINITY) >=
+      LATENCY_AUTOPILOT_THRESHOLDS.maxFalseEndpointRate
+    ) {
+      failures.push(
+        `possible false-endpoint proxy must be under ${LATENCY_AUTOPILOT_THRESHOLDS.maxFalseEndpointRate * 100}%`,
+      );
+    }
+    if ((candidate.bargeInP95Ms ?? Number.POSITIVE_INFINITY) >= LATENCY_AUTOPILOT_THRESHOLDS.maxBargeInP95Ms) {
+      failures.push(`barge-in p95 must be under ${LATENCY_AUTOPILOT_THRESHOLDS.maxBargeInP95Ms} ms`);
+    }
+    if (
+      (candidate.contactCorrectionRate ?? Number.POSITIVE_INFINITY) >
+      (control.contactCorrectionRate ?? Number.NEGATIVE_INFINITY)
+    ) {
+      failures.push("contact correction rate must be no worse than baseline");
+    }
+  }
+
+  const status = missingEvidence.length > 0 ? "insufficient_data" : failures.length > 0 ? "fail" : "pass";
+  return {
+    status,
+    eligibleForAutomaticPromotion: status === "pass",
+    candidate,
+    control,
+    missingEvidence,
+    failures,
+  };
+}
+
+function profileLatencyGateMetrics(sessions: VoiceEvalSession[]): ProfileLatencyGateMetrics {
+  const turns = sessions.flatMap((session) => session.latency?.turns ?? []);
+  const remoteAudio = turns.flatMap((turn) =>
+    typeof turn.stopToRemoteAudioMs === "number" ? [turn.stopToRemoteAudioMs] : [],
+  );
+  const bargeIn = turns.flatMap((turn) =>
+    typeof turn.bargeInToResponseDoneMs === "number" ? [turn.bargeInToResponseDoneMs] : [],
+  );
+  const contactSessions = sessions.filter(hasContactConversation);
+  const contactCorrectionConversations = contactSessions.filter(hasExplicitContactCorrection).length;
+  return {
+    sessions: sessions.length,
+    sampledTurns: turns.length,
+    remoteAudioSamples: remoteAudio.length,
+    remoteAudioP50Ms: percentile(remoteAudio, 0.5),
+    remoteAudioP95Ms: percentile(remoteAudio, 0.95),
+    bargeInSamples: bargeIn.length,
+    bargeInP95Ms: percentile(bargeIn, 0.95),
+    rapidResumeTurns: turns.filter((turn) => turn.rapidResume).length,
+    possibleFalseEndpointRate:
+      turns.length > 0 ? roundRate(turns.filter((turn) => turn.rapidResume).length / turns.length) : null,
+    contactConversations: contactSessions.length,
+    contactCorrectionConversations,
+    contactCorrectionRate:
+      contactSessions.length > 0 ? roundRate(contactCorrectionConversations / contactSessions.length) : null,
+  };
+}
+
+const LITERAL_CONTACT_PATTERN = /(?:\b(?:e-?mail|phone|mobile|name|organisation|organization|company)\b|@)/i;
+const EXPLICIT_CORRECTION_PATTERN =
+  /(?:\b(?:actually|correction|i said)\b|\b(?:no|sorry)\b.{0,24}\b(?:my|it(?:'s| is)|that(?:'s| is))\b|\bnot\b.{1,40}\b(?:but|rather)\b)/i;
+
+function hasContactConversation(session: VoiceEvalSession): boolean {
+  return session.transcript.some((turn) => turn.role === "user" && LITERAL_CONTACT_PATTERN.test(turn.text));
+}
+
+export function hasExplicitContactCorrection(session: VoiceEvalSession): boolean {
+  return session.transcript.some(
+    (turn) =>
+      turn.role === "user" && LITERAL_CONTACT_PATTERN.test(turn.text) && EXPLICIT_CORRECTION_PATTERN.test(turn.text),
+  );
+}
+
+function roundRate(value: number): number {
+  return Math.round(value * 10_000) / 10_000;
 }
 
 export type EngagementSignals = {
@@ -292,7 +563,12 @@ export type SessionEval = {
   callCount: number;
   segment: string;
   closeReason: string | null;
+  runtimeProfile: "baseline" | "instant-v1";
+  inputPolicy: "baseline" | "fast" | "patient";
+  modelCell: "control" | "candidate";
+  reasoningCell: "low" | "minimal";
   transport: TransportSignals;
+  latency: LatencySignals;
   engagement: EngagementSignals;
   score: JudgeScore | null;
 };
@@ -304,7 +580,12 @@ export function buildSessionEval(session: VoiceEvalSession, score: JudgeScore | 
     callCount: session.callReviewIds?.length ?? 1,
     segment: session.segment,
     closeReason: session.closeReason ?? null,
+    runtimeProfile: session.runtimeProfile ?? "baseline",
+    inputPolicy: session.inputPolicy ?? "baseline",
+    modelCell: session.modelCell ?? "control",
+    reasoningCell: session.reasoningCell ?? "low",
     transport: deriveTransportSignals(session),
+    latency: deriveLatencySignals(session),
     engagement: deriveEngagementSignals(session),
     score,
   };
@@ -362,6 +643,27 @@ export function aggregateEvals(evals: SessionEval[]): EvalAggregate {
     },
     worstSessions,
   };
+}
+
+export function aggregateEvalsByRuntimeProfile(evals: SessionEval[]): Record<string, EvalAggregate> {
+  const groups = new Map<string, SessionEval[]>();
+  for (const entry of evals) {
+    const group = groups.get(entry.runtimeProfile);
+    if (group) group.push(entry);
+    else groups.set(entry.runtimeProfile, [entry]);
+  }
+  return Object.fromEntries([...groups.entries()].map(([profile, entries]) => [profile, aggregateEvals(entries)]));
+}
+
+export function aggregateEvalsByExperimentCell(evals: SessionEval[]): Record<string, EvalAggregate> {
+  const groups = new Map<string, SessionEval[]>();
+  for (const entry of evals) {
+    const key = `${entry.modelCell}/${entry.reasoningCell}`;
+    const group = groups.get(key);
+    if (group) group.push(entry);
+    else groups.set(key, [entry]);
+  }
+  return Object.fromEntries([...groups.entries()].map(([cell, entries]) => [cell, aggregateEvals(entries)]));
 }
 
 export type EvalThresholds = {

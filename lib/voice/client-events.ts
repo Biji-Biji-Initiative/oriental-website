@@ -1,4 +1,6 @@
 import { getSegment } from "@/lib/segments";
+import type { VoiceInputPolicy } from "@/lib/voice/latency";
+import type { VoiceTurnDetection } from "@/lib/voice/profile";
 import type { RealtimeClientCommand, VoiceRuntimeState, VoiceTranscriptEntry } from "@/lib/voice/realtime-events";
 
 export type RealtimeOutboundEvent =
@@ -28,7 +30,15 @@ export type RealtimeOutboundEvent =
       };
     }
   | { type: "response.cancel"; event_id: string }
-  | { type: "output_audio_buffer.clear"; event_id: string };
+  | { type: "output_audio_buffer.clear"; event_id: string }
+  | {
+      type: "session.update";
+      event_id: string;
+      session: {
+        type: "realtime";
+        audio: { input: { turn_detection: VoiceTurnDetection } };
+      };
+    };
 
 type EventIdFactory = () => string;
 
@@ -130,6 +140,21 @@ export function serializeResponseCreate(
     type: "response.create",
     event_id: createEventId(),
     ...(instructions ? { response: { instructions } } : {}),
+  };
+}
+
+export function serializeInputPolicyUpdate(
+  _policy: VoiceInputPolicy,
+  turnDetection: VoiceTurnDetection,
+  createEventId: EventIdFactory = defaultEventId,
+): RealtimeOutboundEvent {
+  return {
+    type: "session.update",
+    event_id: createEventId(),
+    session: {
+      type: "realtime",
+      audio: { input: { turn_detection: turnDetection } },
+    },
   };
 }
 

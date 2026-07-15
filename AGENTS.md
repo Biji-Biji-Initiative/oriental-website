@@ -61,6 +61,8 @@ lib/
   schemas.ts              # Zod request shapes (API + client)
   voice/
     profile.ts            # VOICE_PROFILE — instructions, tools, session tuning
+    latency.ts            # bounded turn/activation latency reducer and telemetry
+    runtime-profile.ts    # baseline/instant-v1 endpointing policies
     realtime-events.ts    # pure event reducer (tested)
     client-events.ts      # client-side event helpers
   server/
@@ -171,8 +173,8 @@ sequenceDiagram
 ```
 
 - **Profile:** `VOICE_PROFILE` in `lib/voice/profile.ts` drives instructions, tools, turn detection, truncation.
-- **Events:** `lib/voice/realtime-events.ts` is the pure reducer; add tests in `tests/realtime-events.test.ts`.
-- **Spec:** `docs/05-VOICE-AGENT-SPEC.md` for product flow; verify against code before assuming parity.
+- **Events:** `lib/voice/realtime-events.ts` handles grounded state/tool events; `lib/voice/latency.ts` handles bounded turn timing. Add focused tests for either reducer.
+- **Specs:** `docs/05-VOICE-AGENT-SPEC.md` covers product flow and `docs/13-VOICE-INSTANT-RELEASE-SPEC.md` covers the staged latency/endpointing release contract; verify both against code before assuming parity.
 
 ---
 
@@ -191,6 +193,7 @@ Read in order on first pass, then cherry-pick:
 | [`docs/08-COMPONENT-MAP.md`](docs/08-COMPONENT-MAP.md) | Current production component map |
 | [`docs/09-LAUNCH-CHECKLIST.md`](docs/09-LAUNCH-CHECKLIST.md) | Pre-launch gates |
 | [`docs/11-INFRASTRUCTURE.md`](docs/11-INFRASTRUCTURE.md) | Coolify, Cloudflare, Infisical |
+| [`docs/13-VOICE-INSTANT-RELEASE-SPEC.md`](docs/13-VOICE-INSTANT-RELEASE-SPEC.md) | Instant voice requirements, evidence gates, rollout, rollback |
 | [`docs/ASSET-SOURCES.md`](docs/ASSET-SOURCES.md) | Logo and favicon provenance |
 | [`README.md`](README.md) | Human quickstart, env list, standalone run |
 

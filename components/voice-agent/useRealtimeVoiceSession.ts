@@ -2,9 +2,24 @@
 
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
 import type { SegmentId } from "@/lib/segments";
-import type { RealtimeOutboundEvent } from "@/lib/voice/client-events";
-import { VOICE_SESSION_DEFAULTS } from "@/lib/voice/profile";
-import type { RealtimeServerEvent } from "@/lib/voice/realtime-events";
+import { type RealtimeOutboundEvent, serializeInputPolicyUpdate } from "@/lib/voice/client-events";
+import type { VoiceModelCell, VoiceReasoningCell } from "@/lib/voice/experiments";
+import {
+  createVoiceLatencyState,
+  reduceVoiceLatency,
+  type VoiceInputPolicy,
+  type VoiceLatencySignal,
+  type VoiceLatencyTelemetry,
+  type VoiceTurnPhase,
+} from "@/lib/voice/latency";
+import { type RealtimeServerEvent, responseHasFunctionCall } from "@/lib/voice/realtime-events";
+import {
+  inputPolicyForAssistantText,
+  resolveVoiceRuntimeProfile,
+  type VoiceRuntimeProfile,
+  type VoiceRuntimeProfileId,
+} from "@/lib/voice/runtime-profile";
+import { VOICE_DURATION_DEFAULTS } from "@/lib/voice/session-policy";
 import {
   emptyTransportTelemetry,
   foldTransportStats,
@@ -31,14 +46,19 @@ export type VoiceReviewMetadata = {
   token: string;
   sessionId: string;
   model?: string;
+  modelCell?: VoiceModelCell;
+  reasoningCell?: VoiceReasoningCell;
   voice?: string;
   speed?: number;
   variant?: string | null;
+  runtimeProfile?: VoiceRuntimeProfileId;
+  inputPolicy?: VoiceInputPolicy;
   prewarmedAt?: number;
   connectStartedAt?: number;
   connectedAt?: number;
   firstEventAt?: number;
   transport?: VoiceTransportTelemetry;
+  latency?: VoiceLatencyTelemetry;
   /** Correlation id shared by every call/reconnect in one intake conversation. */
   conversationId?: string;
 };
@@ -50,10 +70,14 @@ type VoiceSessionResponse = {
   session_id?: string;
   review?: { id?: string; token?: string };
   model?: string;
+  model_cell?: VoiceModelCell;
+  reasoning_cell?: VoiceReasoningCell;
   voice?: string;
   speed?: number;
   variant?: string | null;
-  limits?: { max_duration_ms?: number; idle_timeout_ms?: number };
+  runtime_profile?: VoiceRuntimeProfileId;
+  input_policy?: VoiceInputPolicy;
+  limits?: { max_duration_ms?: number; idle_timeout_ms?: number; idle_goodbye_grace_ms?: number };
 };
 
 class VoiceConnectionFailure extends Error {
@@ -105,6 +129,7 @@ export function useRealtimeVoiceSession({
   conversationId,
 }: UseRealtimeVoiceSessionArgs) {
   const [connectionStatus, setConnectionStatus] = useState<VoiceConnectionStatus>("idle");
+  const [turnPhase, setTurnPhase] = useState<VoiceTurnPhase>("quiet");
   const connectionRef = useRef<RTCPeerConnection | null>(null);
   const dataChannelRef = useRef<RTCDataChannel | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -126,10 +151,15 @@ export function useRealtimeVoiceSession({
   // review metadata; assigned once the peer exists so teardown can flush it.
   const captureCloseRef = useRef<(() => void) | null>(null);
   const transportRef = useRef<VoiceTransportTelemetry>(emptyTransportTelemetry());
+  const latencyRef = useRef(createVoiceLatencyState());
+  const runtimeProfileRef = useRef<VoiceRuntimeProfile>(resolveVoiceRuntimeProfile("baseline"));
+  const inputPolicyRef = useRef<VoiceInputPolicy>("baseline");
+  const patientReplyPendingRef = useRef(false);
+  const nextActivationRef = useRef<VoiceLatencyTelemetry["activation"]>(undefined);
+  const recordLatencySignalRef = useRef<((signal: VoiceLatencySignal) => void) | null>(null);
   // Session policy from the server, falling back to compiled defaults.
   const limitsRef = useRef({
-    maxDurationMs: VOICE_SESSION_DEFAULTS.maxDurationMs,
-    idleTimeoutMs: VOICE_SESSION_DEFAULTS.idleTimeoutMs,
+    ...VOICE_DURATION_DEFAULTS,
   });
   const statusRef = useRef<VoiceConnectionStatus>("idle");
   const onIdleWarningRef = useRef(onIdleWarning);
@@ -172,6 +202,8 @@ export function useRealtimeVoiceSession({
       // so every close reason — not just WebRTC drops — carries diagnostics.
       captureCloseRef.current?.();
       captureCloseRef.current = null;
+      recordLatencySignalRef.current = null;
+      patientReplyPendingRef.current = false;
       clearTimers();
       idleClosingRef.current = false;
       const channel = dataChannelRef.current;
@@ -186,6 +218,7 @@ export function useRealtimeVoiceSession({
       localStreamRef.current = null;
       if (audioRef.current) audioRef.current.srcObject = null;
       setConnectionStatus("idle");
+      setTurnPhase("quiet");
       statusRef.current = "idle";
       onClose(reason);
     },
@@ -226,7 +259,7 @@ export function useRealtimeVoiceSession({
     if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
     if (idleWarningTimerRef.current) window.clearTimeout(idleWarningTimerRef.current);
     const idleTimeoutMs = limitsRef.current.idleTimeoutMs;
-    const graceMs = Math.min(VOICE_SESSION_DEFAULTS.idleGoodbyeGraceMs, idleTimeoutMs);
+    const graceMs = Math.min(limitsRef.current.idleGoodbyeGraceMs, idleTimeoutMs);
     idleWarningTimerRef.current = window.setTimeout(() => {
       // Never interrupt a live utterance with the goodbye line; the idle
       // teardown below defers on the same condition and plays it on the pause.
@@ -306,8 +339,9 @@ export function useRealtimeVoiceSession({
       throw new VoiceConnectionFailure("session_failed");
     }
     limitsRef.current = {
-      maxDurationMs: positiveOr(session.limits?.max_duration_ms, VOICE_SESSION_DEFAULTS.maxDurationMs),
-      idleTimeoutMs: positiveOr(session.limits?.idle_timeout_ms, VOICE_SESSION_DEFAULTS.idleTimeoutMs),
+      maxDurationMs: positiveOr(session.limits?.max_duration_ms, VOICE_DURATION_DEFAULTS.maxDurationMs),
+      idleTimeoutMs: positiveOr(session.limits?.idle_timeout_ms, VOICE_DURATION_DEFAULTS.idleTimeoutMs),
+      idleGoodbyeGraceMs: positiveOr(session.limits?.idle_goodbye_grace_ms, VOICE_DURATION_DEFAULTS.idleGoodbyeGraceMs),
     };
     return { ...session, client_secret: { ...session.client_secret, value: clientSecret } };
   }, []);
@@ -331,9 +365,13 @@ export function useRealtimeVoiceSession({
         token: session.review.token,
         sessionId: session.session_id ?? session.review.id,
         model: session.model,
+        modelCell: session.model_cell ?? "control",
+        reasoningCell: session.reasoning_cell ?? "low",
         voice: session.voice,
         speed: session.speed,
         variant: session.variant ?? null,
+        runtimeProfile: session.runtime_profile ?? "baseline",
+        inputPolicy: session.input_policy ?? "baseline",
         conversationId: conversationIdRef.current,
         ...extras,
       });
@@ -414,8 +452,11 @@ export function useRealtimeVoiceSession({
     if (connectGateRef.current || statusRef.current !== "idle") return;
     connectGateRef.current = true;
     const connectStartedAt = Date.now();
+    const activation = nextActivationRef.current;
     firstEventAtRef.current = undefined;
     transportRef.current = emptyTransportTelemetry();
+    nextActivationRef.current = undefined;
+    setTurnPhase("quiet");
     userSpeakingRef.current = false;
     try {
       const permission = await queryMicrophonePermission();
@@ -442,6 +483,13 @@ export function useRealtimeVoiceSession({
         session = await obtainVoiceSession();
       }
 
+      const runtimeProfile = resolveVoiceRuntimeProfile(session.runtime_profile);
+      const initialInputPolicy = session.input_policy ?? runtimeProfile.defaultInputPolicy;
+      runtimeProfileRef.current = runtimeProfile;
+      inputPolicyRef.current = initialInputPolicy;
+      patientReplyPendingRef.current = false;
+      latencyRef.current = createVoiceLatencyState(initialInputPolicy, activation);
+
       emitSessionReady(session, { prewarmedAt: activePrewarmedAtRef.current, connectStartedAt });
 
       const peer = new RTCPeerConnection();
@@ -449,8 +497,22 @@ export function useRealtimeVoiceSession({
       // Push the latest transport telemetry onto the review metadata so the
       // periodic + close snapshots persist why a call degraded or dropped.
       const emitTransport = () => emitSessionReady(session, { transport: { ...transportRef.current } });
+      const emitLatency = () => emitSessionReady(session, { latency: latencyRef.current.telemetry });
+      const recordLatencySignal = (signal: VoiceLatencySignal) => {
+        const previous = latencyRef.current;
+        const next = reduceVoiceLatency(previous, signal);
+        latencyRef.current = next;
+        if (next.phase !== previous.phase) setTurnPhase(next.phase);
+        // Metadata only changes when a sample completes or the session closes;
+        // output deltas never trigger review rerenders or snapshot churn.
+        if (next.telemetry.turns.length !== previous.telemetry.turns.length || signal.type === "session_closed") {
+          emitLatency();
+        }
+      };
+      recordLatencySignalRef.current = recordLatencySignal;
       const captureCloseTelemetry = () => {
         transportRef.current = { ...transportRef.current, wasSpeakingAtClose: userSpeakingRef.current };
+        recordLatencySignal({ type: "session_closed", at: performance.now() });
         emitTransport();
       };
       // Let teardownVoice flush transport for every close reason, not only the
@@ -466,7 +528,10 @@ export function useRealtimeVoiceSession({
         if (action === "start_grace") {
           // Transient drop: hold the session open and try to self-heal instead
           // of tearing down mid-sentence.
-          transportRef.current = { ...transportRef.current, disconnectCount: transportRef.current.disconnectCount + 1 };
+          transportRef.current = {
+            ...transportRef.current,
+            disconnectCount: transportRef.current.disconnectCount + 1,
+          };
           try {
             peer.restartIce();
             transportRef.current = {
@@ -512,6 +577,17 @@ export function useRealtimeVoiceSession({
 
       const channel = peer.createDataChannel("oai-events");
       dataChannelRef.current = channel;
+      const setInputPolicy = (inputPolicy: VoiceInputPolicy) => {
+        if (inputPolicyRef.current === inputPolicy) return;
+        const sent = sendClientEvents(
+          serializeInputPolicyUpdate(inputPolicy, runtimeProfile.turnDetection[inputPolicy]),
+        );
+        if (!sent) return;
+        inputPolicyRef.current = inputPolicy;
+        session.input_policy = inputPolicy;
+        recordLatencySignal({ type: "input_policy_changed", inputPolicy });
+        emitSessionReady(session, { inputPolicy });
+      };
       channel.onopen = () => {
         setStatus("listening");
         emitSessionReady(session, {
@@ -552,15 +628,45 @@ export function useRealtimeVoiceSession({
           // Non-JSON data channel messages are ignored.
         }
         if (parsed?.type === "input_audio_buffer.speech_started") {
+          recordLatencySignal({ type: "speech_started", at: performance.now() });
           // The user came back during the goodbye window; resume the normal idle cycle.
           userSpeakingRef.current = true;
           idleClosingRef.current = false;
         }
         if (parsed?.type === "input_audio_buffer.speech_stopped") {
+          recordLatencySignal({ type: "speech_stopped", at: performance.now() });
           userSpeakingRef.current = false;
           // A cutoff that arrived mid-utterance was held; now that the visitor
           // has paused, let it complete gracefully.
           resumeDeferredClose();
+        }
+        if (parsed?.type === "response.created") {
+          recordLatencySignal({ type: "response_created", at: performance.now() });
+          if (patientReplyPendingRef.current) {
+            patientReplyPendingRef.current = false;
+            setInputPolicy(runtimeProfile.defaultInputPolicy);
+          }
+        }
+        if (
+          parsed?.type === "response.output_audio.delta" ||
+          parsed?.type === "response.output_audio_transcript.delta"
+        ) {
+          recordLatencySignal({ type: "first_output", at: performance.now() });
+        }
+        if (parsed?.type === "response.done" && !responseHasFunctionCall(parsed)) {
+          recordLatencySignal(
+            latencyRef.current.pendingBargeInAt !== undefined
+              ? { type: "interruption_cleared", at: performance.now() }
+              : { type: "response_done", at: performance.now() },
+          );
+        }
+        if (parsed?.type === "response.output_audio_transcript.done") {
+          const transcript = typeof parsed.transcript === "string" ? parsed.transcript : "";
+          const policy = inputPolicyForAssistantText(transcript, runtimeProfile);
+          if (policy === "patient") {
+            patientReplyPendingRef.current = true;
+            setInputPolicy(policy);
+          }
         }
         if (!firstEventAtRef.current) {
           firstEventAtRef.current = Date.now();
@@ -611,6 +717,7 @@ export function useRealtimeVoiceSession({
     onEvent,
     resetIdleTimer,
     resumeDeferredClose,
+    sendClientEvents,
     setStatus,
     teardownVoice,
   ]);
@@ -622,8 +729,32 @@ export function useRealtimeVoiceSession({
   useEffect(() => teardownVoice, [teardownVoice]);
 
   const getLocalStream = useCallback(() => localStreamRef.current, []);
+  const setVoiceActivation = useCallback((activation: VoiceLatencyTelemetry["activation"]) => {
+    nextActivationRef.current = activation;
+  }, []);
+  const recordLocalSpeechEnded = useCallback((at: number) => {
+    recordLatencySignalRef.current?.({ type: "local_speech_ended", at });
+  }, []);
+  const recordRemoteAudioStarted = useCallback((at: number) => {
+    recordLatencySignalRef.current?.({ type: "remote_audio_started", at });
+  }, []);
+  const recordToolDuration = useCallback((durationMs: number) => {
+    recordLatencySignalRef.current?.({ type: "tool_completed", durationMs });
+  }, []);
 
-  return { connectVoice, connectionStatus, getLocalStream, prewarmVoiceSession, sendClientEvents, teardownVoice };
+  return {
+    connectVoice,
+    connectionStatus,
+    getLocalStream,
+    prewarmVoiceSession,
+    recordLocalSpeechEnded,
+    recordRemoteAudioStarted,
+    recordToolDuration,
+    sendClientEvents,
+    setVoiceActivation,
+    teardownVoice,
+    turnPhase,
+  };
 }
 
 function positiveOr(value: number | undefined, fallback: number) {

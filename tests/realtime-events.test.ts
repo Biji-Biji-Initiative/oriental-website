@@ -4,6 +4,7 @@ import {
   emptyCapturedLead,
   isBenignVoiceError,
   reduceRealtimeServerEvent,
+  responseHasFunctionCall,
   type VoiceRuntimeState,
 } from "@/lib/voice/realtime-events";
 
@@ -17,6 +18,32 @@ function state(overrides: Partial<VoiceRuntimeState> = {}): VoiceRuntimeState {
 }
 
 describe("reduceRealtimeServerEvent", () => {
+  it("identifies tool-only response completions so timing waits for the spoken follow-up", () => {
+    expect(
+      responseHasFunctionCall({
+        type: "response.done",
+        response: { output: [{ type: "function_call", name: "lookup_oriental" }] },
+      }),
+    ).toBe(true);
+    expect(responseHasFunctionCall({ type: "response.done", response: { output: [{ type: "message" }] } })).toBe(false);
+  });
+
+  it("tentatively captures only an explicit literal visitor email", () => {
+    const typed = appendTypedUserMessage(state(), "My email is asha@example.com");
+    expect(typed.captured.email).toBe("asha@example.com");
+
+    const example = appendTypedUserMessage(state(), "The website uses team@example.com as an example.");
+    expect(example.captured.email).toBe("");
+  });
+
+  it("never overwrites an email the visitor already edited", () => {
+    const result = appendTypedUserMessage(
+      state({ captured: { ...emptyCapturedLead, email: "correct@example.com" } }),
+      "My email is other@example.com",
+    );
+    expect(result.captured.email).toBe("correct@example.com");
+  });
+
   it("captures function call fields from response.done output items", () => {
     const result = reduceRealtimeServerEvent(
       {
@@ -49,6 +76,133 @@ describe("reduceRealtimeServerEvent", () => {
         },
       },
     ]);
+  });
+
+  it("captures several grounded fields atomically", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_fields",
+              call_id: "call_batch",
+              arguments: JSON.stringify({
+                fields: [
+                  { key: "name", value: "Asha Lim", evidence: "Asha Lim" },
+                  { key: "email", value: "asha@example.com", evidence: "asha at example dot com" },
+                  { key: "message", value: "We run robotics workshops." },
+                ],
+              }),
+            },
+          ],
+        },
+      },
+      state({
+        transcript: [{ role: "user", text: "I'm Asha Lim, asha at example dot com. We run robotics workshops." }],
+      }),
+    );
+
+    expect(result.state.captured).toMatchObject({
+      name: "Asha Lim",
+      email: "asha@example.com",
+      message: "We run robotics workshops.",
+    });
+    expect(result.commands[0]).toMatchObject({
+      type: "function_result",
+      output: { ok: true, fields: [{ key: "name" }, { key: "email" }, { key: "message" }] },
+    });
+  });
+
+  it("rejects the whole capture batch when one identity field is ungrounded", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_fields",
+              call_id: "call_atomic_reject",
+              arguments: JSON.stringify({
+                fields: [
+                  { key: "message", value: "A robotics workshop." },
+                  { key: "email", value: "invented@example.com", evidence: "invented at example dot com" },
+                ],
+              }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "We want to run a robotics workshop." }] }),
+    );
+
+    expect(result.state.captured).toEqual(emptyCapturedLead);
+    expect(result.commands[0]).toMatchObject({
+      type: "function_result",
+      output: {
+        ok: false,
+        error: "atomic_capture_rejected",
+        failedIndex: 1,
+        detail: { error: "ungrounded_identity_capture", key: "email" },
+      },
+    });
+  });
+
+  it("rejects duplicate keys instead of applying ambiguous batch order", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_fields",
+              call_id: "call_duplicate_batch",
+              arguments: JSON.stringify({
+                fields: [
+                  { key: "message", value: "First." },
+                  { key: "message", value: "Second.", mode: "append" },
+                ],
+              }),
+            },
+          ],
+        },
+      },
+      state(),
+    );
+
+    expect(result.state.captured.message).toBe("");
+    expect(result.commands[0]).toMatchObject({
+      output: { ok: false, error: "atomic_capture_rejected", detail: { error: "duplicate_field" } },
+    });
+  });
+
+  it("answers factual lookup calls from the bounded local knowledge base", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "lookup_oriental",
+              call_id: "call_lookup",
+              arguments: JSON.stringify({ topic: "pricing", query: "full floor size" }),
+            },
+          ],
+        },
+      },
+      state(),
+    );
+
+    expect(result.state.captured).toEqual(emptyCapturedLead);
+    expect(result.commands[0]).toMatchObject({
+      type: "function_result",
+      output: { ok: true, topic: "pricing", matches: expect.any(Array) },
+    });
+    expect(JSON.stringify(result.commands[0])).toContain("2,800–3,000 sq ft");
   });
 
   it("waits for response.done before executing function calls", () => {

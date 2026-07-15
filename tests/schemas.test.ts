@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { adminLeadWorkflowSchema, adminLoginSchema, leadRequestSchema } from "@/lib/schemas";
+import { adminLeadWorkflowSchema, adminLoginSchema, leadRequestSchema, voiceReviewSnapshotSchema } from "@/lib/schemas";
 
 describe("lead request schema", () => {
   it("accepts a complete form lead", () => {
@@ -27,8 +27,12 @@ describe("lead request schema", () => {
       voiceSessionId: "sess_123",
       voiceVariant: "kl-polished",
       voiceModel: "gpt-realtime-2",
+      voiceModelCell: "candidate",
+      voiceReasoningCell: "minimal",
       voiceName: "marin",
       voiceSpeed: 1.22,
+      voiceRuntimeProfile: "instant-v1",
+      voiceInputPolicy: "fast",
       form: {
         name: "Asha",
         email: "asha@example.com",
@@ -114,5 +118,92 @@ describe("admin lead workflow schema", () => {
     expect(adminLeadWorkflowSchema.safeParse({ status: "done", priority: "normal", owner: "", note: "" }).success).toBe(
       false,
     );
+  });
+});
+
+describe("voice review latency schema", () => {
+  const request = {
+    review: {
+      id: "5a8c25b1-cd50-4e47-89bf-84947c805add",
+      token: "review-token-that-is-long-enough",
+    },
+    snapshot: {
+      sessionId: "sess_123",
+      segment: "technology",
+      status: "idle",
+      connectionStatus: "listening",
+      captured: { name: "", email: "", org: "", phone: "", website: "", message: "" },
+      transcript: [],
+      errors: [],
+      rateLimits: [],
+      routeRequested: false,
+    },
+  };
+  const turn = {
+    sequence: 1,
+    inputPolicy: "baseline",
+    stopToFirstOutputEventMs: 420,
+    localSpeechEndToSpeechStoppedMs: 180,
+    stopToRemoteAudioMs: 510,
+    firstOutputEventToRemoteAudioMs: 90,
+    toolDurationMs: 35,
+    bargeInToResponseDoneMs: 120,
+    interrupted: false,
+    rapidResume: false,
+  };
+
+  it("accepts bounded first-output telemetry", () => {
+    expect(
+      voiceReviewSnapshotSchema.safeParse({
+        ...request,
+        snapshot: {
+          ...request.snapshot,
+          runtimeProfile: "instant-v1",
+          inputPolicy: "fast",
+          modelCell: "candidate",
+          reasoningCell: "minimal",
+          latency: { version: 1, activation: { tapToArmCueScheduledMs: 4 }, turns: [turn] },
+        },
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects unbounded turn arrays and timing values", () => {
+    expect(
+      voiceReviewSnapshotSchema.safeParse({
+        ...request,
+        snapshot: {
+          ...request.snapshot,
+          latency: { version: 1, turns: Array.from({ length: 81 }, (_, sequence) => ({ ...turn, sequence })) },
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      voiceReviewSnapshotSchema.safeParse({
+        ...request,
+        snapshot: {
+          ...request.snapshot,
+          latency: { version: 1, turns: [{ ...turn, stopToFirstOutputEventMs: 120_001 }] },
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      voiceReviewSnapshotSchema.safeParse({
+        ...request,
+        snapshot: {
+          ...request.snapshot,
+          latency: { version: 1, turns: [{ ...turn, stopToRemoteAudioMs: 120_001 }] },
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      voiceReviewSnapshotSchema.safeParse({
+        ...request,
+        snapshot: {
+          ...request.snapshot,
+          latency: { version: 1, turns: [{ ...turn, toolDurationMs: 120_001 }] },
+        },
+      }).success,
+    ).toBe(false);
   });
 });

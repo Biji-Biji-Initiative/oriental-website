@@ -33,7 +33,7 @@ import {
 } from "@/lib/voice/review-snapshot";
 import { DEFAULT_VOICE_VARIANT_ID, VOICE_VARIANTS } from "@/lib/voice/variants";
 import { HandoffPanel } from "./HandoffPanel";
-import { playLiveChime } from "./live-chime";
+import { playArmCue, playLiveCue } from "./live-chime";
 import {
   useRealtimeVoiceSession,
   type VoiceCloseReason,
@@ -61,7 +61,12 @@ type VoiceAgentDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   intent?: SegmentId;
-  prefill?: { email?: string; mode?: "voice" | "form"; autoStart?: boolean };
+  prefill?: {
+    email?: string;
+    mode?: "voice" | "form";
+    autoStart?: boolean;
+    activation?: ReturnType<typeof playArmCue>;
+  };
   /** Bumped on talk-CTA hover/focus: pre-mint a session before the tap. */
   prewarmSignal?: number;
   /** QA voice variant id, threaded to the session mint. */
@@ -94,6 +99,7 @@ export function VoiceAgentDialog({
   );
   const connectionStatusRef = useRef<VoiceConnectionStatus>("idle");
   const postCloseSnapshotRef = useRef<((reason: VoiceCloseReason) => void) | null>(null);
+  const recordToolDurationRef = useRef<((durationMs: number) => void) | null>(null);
   const prewarmSnapshotIdsRef = useRef<Set<string>>(new Set());
   const [reviewMetadata, setReviewMetadata] = useState<VoiceReviewMetadata | null>(null);
 
@@ -201,6 +207,7 @@ export function VoiceAgentDialog({
     prefillEmail: prefill?.email,
     submitLead: (leadState) => submit("voice", leadState),
     onEndVoice: () => teardownVoiceRef.current?.("manual"),
+    onToolDuration: (durationMs) => recordToolDurationRef.current?.(durationMs),
   });
   const { segment, captured, transcript, stateRef } = runtime;
 
@@ -213,27 +220,39 @@ export function VoiceAgentDialog({
   });
   formRef.current = form;
 
-  const { connectVoice, connectionStatus, getLocalStream, prewarmVoiceSession, sendClientEvents, teardownVoice } =
-    useRealtimeVoiceSession({
-      audioRef,
-      onClose: handleVoiceClose,
-      onEvent: runtime.handleRealtimeEvent,
-      onIdleWarning: () => {
-        sendClientEventsRef.current?.(serializeResponseCreate(idleGoodbyeInstruction));
-      },
-      onSessionReady: (metadata) => {
-        const current = reviewRef.current;
-        const next = current?.id === metadata.id ? { ...current, ...metadata } : metadata;
-        reviewRef.current = next;
-        setReviewMetadata(next);
-      },
-      segment,
-      variant: voiceVariant,
-      conversationId,
-    });
+  const {
+    connectVoice,
+    connectionStatus,
+    getLocalStream,
+    prewarmVoiceSession,
+    recordLocalSpeechEnded,
+    recordRemoteAudioStarted,
+    recordToolDuration,
+    sendClientEvents,
+    setVoiceActivation,
+    teardownVoice,
+    turnPhase,
+  } = useRealtimeVoiceSession({
+    audioRef,
+    onClose: handleVoiceClose,
+    onEvent: runtime.handleRealtimeEvent,
+    onIdleWarning: () => {
+      sendClientEventsRef.current?.(serializeResponseCreate(idleGoodbyeInstruction));
+    },
+    onSessionReady: (metadata) => {
+      const current = reviewRef.current;
+      const next = current?.id === metadata.id ? { ...current, ...metadata } : metadata;
+      reviewRef.current = next;
+      setReviewMetadata(next);
+    },
+    segment,
+    variant: voiceVariant,
+    conversationId,
+  });
   teardownVoiceRef.current = teardownVoice;
   sendClientEventsRef.current = sendClientEvents;
   connectionStatusRef.current = connectionStatus;
+  recordToolDurationRef.current = recordToolDuration;
 
   // Team voice tuning: switch Reka's register from inside the dialog. A switch
   // mid-call tears the session down and reconnects with the new voice — the
@@ -324,8 +343,9 @@ export function VoiceAgentDialog({
     }
     if (!prefill?.autoStart || autoStartedRef.current || status !== "idle") return;
     autoStartedRef.current = true;
+    setVoiceActivation(prefill.activation);
     void connectVoice();
-  }, [open, prefill?.autoStart, status, connectVoice]);
+  }, [open, prefill?.activation, prefill?.autoStart, status, connectVoice, setVoiceActivation]);
 
   // Closing the workspace must always release the microphone — a live mic
   // behind a closed dialog is a privacy bug, not a resumable session.
@@ -339,7 +359,7 @@ export function VoiceAgentDialog({
       return;
     }
     // The chime is the "she's live" cue — presence you hear, not another toast.
-    playLiveChime();
+    playLiveCue();
     const current = { segment: stateRef.current.segment, captured: stateRef.current.captured };
     const resumedTranscript = stateRef.current.transcript.slice(-12);
     const knownVisitor = current.captured.name.trim().length > 0 || current.captured.org.trim().length > 0;
@@ -534,12 +554,18 @@ export function VoiceAgentDialog({
                 connectionStatus={connectionStatus}
                 getLocalStream={getLocalStream}
                 lastAssistantLine={transcript.findLast((entry) => entry.role === "assistant")?.text ?? ""}
-                onConnect={connectVoice}
+                onConnect={() => {
+                  setVoiceActivation(playArmCue());
+                  void connectVoice();
+                }}
                 onDisconnect={teardownVoice}
                 onSendText={handleSendText}
                 onTopicToggle={(topicId) => setActiveTopicId((current) => (current === topicId ? null : topicId))}
                 selectedSegment={selectedSegment}
                 status={status}
+                turnPhase={turnPhase}
+                onLocalSpeechEnded={recordLocalSpeechEnded}
+                onRemoteAudioStarted={recordRemoteAudioStarted}
               />
             </main>
 
@@ -581,7 +607,11 @@ function buildVoiceLeadMetadata(review: VoiceReviewCredentials | null) {
     voiceSessionId: review.sessionId,
     voiceVariant: review.variant ?? undefined,
     voiceModel: review.model,
+    voiceModelCell: review.modelCell,
+    voiceReasoningCell: review.reasoningCell,
     voiceName: review.voice,
     voiceSpeed: review.speed,
+    voiceRuntimeProfile: review.runtimeProfile,
+    voiceInputPolicy: review.inputPolicy,
   };
 }

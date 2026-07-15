@@ -1,5 +1,8 @@
 import type { VoiceReviewSnapshotRequest } from "@/lib/schemas";
+import type { VoiceModelCell, VoiceReasoningCell } from "@/lib/voice/experiments";
+import type { VoiceInputPolicy, VoiceLatencyTelemetry } from "@/lib/voice/latency";
 import type { VoiceRuntimeState } from "@/lib/voice/realtime-events";
+import type { VoiceRuntimeProfileId } from "@/lib/voice/runtime-profile";
 import type { VoiceTransportTelemetry } from "@/lib/voice/transport-telemetry";
 
 type VoiceReviewConnectionStatus = VoiceReviewSnapshotRequest["snapshot"]["connectionStatus"];
@@ -8,14 +11,19 @@ type VoiceReviewStatus = VoiceReviewSnapshotRequest["snapshot"]["status"];
 export type VoiceReviewCredentials = VoiceReviewSnapshotRequest["review"] & {
   sessionId?: string;
   model?: string;
+  modelCell?: VoiceModelCell;
+  reasoningCell?: VoiceReasoningCell;
   voice?: string;
   speed?: number;
   variant?: string | null;
+  runtimeProfile?: VoiceRuntimeProfileId;
+  inputPolicy?: VoiceInputPolicy;
   prewarmedAt?: number;
   connectStartedAt?: number;
   connectedAt?: number;
   firstEventAt?: number;
   transport?: VoiceTransportTelemetry;
+  latency?: VoiceLatencyTelemetry;
   conversationId?: string;
 };
 
@@ -45,10 +53,15 @@ export function buildVoiceReviewSnapshot(
     firstEventAt: review.firstEventAt,
     closedAt: overrides.closedAt,
     transport: review.transport,
+    latency: review.latency,
     model: review.model,
+    modelCell: review.modelCell,
+    reasoningCell: review.reasoningCell,
     voice: review.voice,
     speed: review.speed,
     variant: review.variant,
+    runtimeProfile: review.runtimeProfile,
+    inputPolicy: review.inputPolicy,
     captured: state.captured,
     transcript: state.transcript,
     usage: state.usage,

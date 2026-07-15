@@ -46,3 +46,7 @@ next-env.d.ts
 
 # voice eval reports (contain transcripts — never commit)
 /eval-reports
+
+# Automated Plan Reviser runtime state (review rounds remain trackable)
+/.apr/.locks/
+/.apr/logs/

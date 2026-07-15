@@ -12,7 +12,7 @@ Next.js 16 microsite for the Oriental Building partner-intake launch. The site t
 - OpenAI Realtime client-secret minting via `/api/voice/session`
 - Optional Cloudflare Turnstile enforcement for form/newsletter posts, Redis-backed rate limiting with memory fallback, SES/SMTP, and Slack Web API notifications
 - Sentry error tracking, Slack ops alerts, and a token-gated internal session review dashboard
-- Docker standalone runtime for Coolify (`oriental.mereka.io`; staging at `oriental-staging.deploy.mereka.io`)
+- Docker standalone runtime for Coolify (`oriental.mereka.io`; staging at `staging.oriental.mereka.io`)
 
 ## Development
 
@@ -37,7 +37,7 @@ Copy `.env.local.example` to `.env.local` for local work. The Convex URL is non-
 
 The production app-scoped Infisical folder is `/deploy/oriental-website` in project `6bfac905-9bb1-449e-8be8-f25f9634802b`. It mirrors the Coolify runtime variable names below so env syncs do not need ad hoc `ORIENTAL_*` remapping.
 
-Staging is live at `https://oriental-staging.deploy.mereka.io` on the Coolify app host. Its container currently reuses the production image and a host-local env copy with staging metadata overrides; the Infisical `staging` environment for `/deploy/oriental-website` is intentionally not documented as authoritative until separate staging secrets are populated.
+Staging is live at `https://staging.oriental.mereka.io` on the Coolify app host. Its container currently reuses the production image and a host-local env copy with staging metadata overrides; the Infisical `staging` environment for `/deploy/oriental-website` is intentionally not documented as authoritative until separate staging secrets are populated.
 
 Required production variables:
 
@@ -47,8 +47,15 @@ CONVEX_URL=
 CONVEX_INGEST_SECRET=
 OPENAI_API_KEY=
 OPENAI_REALTIME_MODEL=gpt-realtime-2
+OPENAI_REALTIME_MODEL_CANDIDATE=gpt-realtime-2.1
+VOICE_MODEL_CELL=control # candidate is an explicit measured release cell
+VOICE_REASONING_CELL=low # minimal is the independent reasoning cell
 OPENAI_REALTIME_VOICE=coral
 OPENAI_REALTIME_SPEED=1.28
+VOICE_RUNTIME_PROFILE=baseline # rollback-safe default; instant-v1 enables adaptive semantic VAD
+VOICE_MAX_DURATION_MS=600000
+VOICE_IDLE_TIMEOUT_MS=20000
+VOICE_IDLE_GOODBYE_GRACE_MS=6000
 REDIS_URL=
 TURNSTILE_SITE_KEY=
 TURNSTILE_SECRET_KEY=

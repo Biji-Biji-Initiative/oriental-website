@@ -85,6 +85,28 @@ describe("persistLead", () => {
     });
   });
 
+  it("retries profiled leads against a pre-profile Convex deployment", async () => {
+    mocks.mutation
+      .mockRejectedValueOnce(new Error("ArgumentValidationError: unexpected field `voiceRuntimeProfile`"))
+      .mockResolvedValueOnce({ id: "lead_123" });
+
+    await expect(
+      persistLead({
+        ...lead(),
+        voiceRuntimeProfile: "instant-v1",
+        voiceInputPolicy: "fast",
+        voiceModelCell: "candidate",
+        voiceReasoningCell: "minimal",
+      }),
+    ).resolves.toEqual({ id: "lead_123", persisted: true });
+
+    const retryArgs = mocks.mutation.mock.calls[1]?.[1] as { lead: Record<string, unknown> };
+    expect(retryArgs.lead).not.toHaveProperty("voiceRuntimeProfile");
+    expect(retryArgs.lead).not.toHaveProperty("voiceInputPolicy");
+    expect(retryArgs.lead).not.toHaveProperty("voiceModelCell");
+    expect(retryArgs.lead).not.toHaveProperty("voiceReasoningCell");
+  });
+
   it("applies admin workflow mutations through Convex", async () => {
     mocks.mutation.mockResolvedValue({ ok: true });
 
@@ -196,11 +218,28 @@ describe("persistVoiceReviewSnapshot", () => {
     errors: [],
     rateLimits: [],
     routeRequested: false,
+    runtimeProfile: "instant-v1" as const,
+    inputPolicy: "fast" as const,
+    modelCell: "candidate" as const,
+    reasoningCell: "minimal" as const,
     transport: {
       disconnectCount: 1,
       recoveryCount: 1,
       iceRestartCount: 1,
       transitions: [{ state: "disconnected", at: 10 }],
+    },
+    latency: {
+      version: 1 as const,
+      turns: [
+        {
+          sequence: 1,
+          inputPolicy: "baseline" as const,
+          stopToResponseCreatedMs: 180,
+          stopToFirstOutputEventMs: 420,
+          interrupted: false,
+          rapidResume: false,
+        },
+      ],
     },
   };
 
@@ -217,18 +256,23 @@ describe("persistVoiceReviewSnapshot", () => {
     vi.clearAllMocks();
   });
 
-  it("persists the transport telemetry when Convex accepts it", async () => {
+  it("persists transport and latency telemetry when Convex accepts them", async () => {
     mocks.mutation.mockResolvedValue({ ok: true, id: "review_1" });
 
     await expect(persistVoiceReviewSnapshot(snapshot)).resolves.toEqual({ ok: true, id: "review_1" });
     expect(mocks.mutation).toHaveBeenCalledTimes(1);
     expect(mocks.mutation).toHaveBeenCalledWith(
       "recordVoiceSession",
-      expect.objectContaining({ snapshot: expect.objectContaining({ transport: expect.any(Object) }) }),
+      expect.objectContaining({
+        snapshot: expect.objectContaining({
+          transport: expect.any(Object),
+          latency: expect.objectContaining({ version: 1 }),
+        }),
+      }),
     );
   });
 
-  it("retries without transport when a pre-migration Convex rejects the unknown field", async () => {
+  it("retries without telemetry when a pre-migration Convex rejects an unknown field", async () => {
     mocks.mutation
       .mockRejectedValueOnce(new Error("ArgumentValidationError: unexpected field `transport`"))
       .mockResolvedValueOnce({ ok: true, id: "review_1" });
@@ -237,6 +281,11 @@ describe("persistVoiceReviewSnapshot", () => {
     expect(mocks.mutation).toHaveBeenCalledTimes(2);
     const retryArgs = mocks.mutation.mock.calls[1]?.[1] as { snapshot: Record<string, unknown> };
     expect(retryArgs.snapshot).not.toHaveProperty("transport");
+    expect(retryArgs.snapshot).not.toHaveProperty("latency");
+    expect(retryArgs.snapshot).not.toHaveProperty("runtimeProfile");
+    expect(retryArgs.snapshot).not.toHaveProperty("inputPolicy");
+    expect(retryArgs.snapshot).not.toHaveProperty("modelCell");
+    expect(retryArgs.snapshot).not.toHaveProperty("reasoningCell");
     expect(retryArgs.snapshot).toMatchObject({ reviewId: "review_1" });
   });
 });

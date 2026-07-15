@@ -59,6 +59,18 @@ test.describe("admin session review console", () => {
     await expect(page.locator("#voice-voice-critical-1")).toBeVisible();
   });
 
+  test("labels Realtime first-output timing without claiming speaker playback latency", async ({ page }) => {
+    const diagnostics = page.locator("#voice-diagnostics");
+    await diagnostics.locator(":scope > summary").click();
+
+    const session = page.locator("#voice-voice-critical-1");
+    await session.locator(":scope > summary").click();
+
+    await expect(session.getByText("Conversation latency")).toBeVisible();
+    await expect(session.getByText("420ms").first()).toBeVisible();
+    await expect(session.getByText(/does not prove physical speaker output/i)).toBeVisible();
+  });
+
   test("submits a workflow update from a collapsed lead card", async ({ page }, testInfo) => {
     test.skip(testInfo.project.name === "mobile", "Workflow mutation smoke runs once on desktop.");
     let sawWorkflowUpdate = false;

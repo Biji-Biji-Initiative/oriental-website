@@ -5,6 +5,7 @@ import { durationSince, errorMeta, logError, logInfo, logWarn } from "@/lib/serv
 import { createRealtimeClientSecret, type RealtimeDeviceProfile } from "@/lib/server/openai-realtime";
 import { sendOpsAlert } from "@/lib/server/ops-alerts";
 import { checkRateLimit, hashIp, noStoreJson, requestIp } from "@/lib/server/security";
+import { type ServerTimingMetrics, serializeServerTiming } from "@/lib/server/server-timing";
 import { createVoiceReviewCredentials } from "@/lib/server/voice-review-token";
 
 export const runtime = "nodejs";
@@ -12,20 +13,31 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   const startedAt = Date.now();
+  const timingStartedAt = performance.now();
+  const timings: ServerTimingMetrics = {};
   const requestId = crypto.randomUUID();
   const ip = requestIp(request);
   const ipHash = hashIp(ip, "voice-session");
+  const parseStartedAt = performance.now();
   const raw = await request.json().catch(() => null);
   const parsed = voiceSessionRequestSchema.safeParse(raw);
+  timings.parse = performance.now() - parseStartedAt;
   if (!parsed.success) {
     logWarn("voice_session.invalid_payload", { requestId, ipHash, durationMs: durationSince(startedAt) });
-    return noStoreJson({ ok: false, error: "invalid_payload", details: parsed.error.flatten() }, { status: 400 });
+    return timedJson(
+      { ok: false, error: "invalid_payload", details: parsed.error.flatten() },
+      { status: 400 },
+      timings,
+      timingStartedAt,
+    );
   }
 
   // Page-load prewarming mints a short-lived session before a real call starts,
   // so the budget covers browsing behaviour, not only connected calls.
   const dailyLimit = readPositiveIntEnv("VOICE_SESSION_DAILY_LIMIT", 80);
+  const rateLimitStartedAt = performance.now();
   const limit = await checkRateLimit(`voice:${ipHash}`, dailyLimit, 24 * 60 * 60 * 1000);
+  timings.rate_limit = performance.now() - rateLimitStartedAt;
   if (!limit.ok) {
     logWarn("voice_session.rate_limited", {
       requestId,
@@ -34,26 +46,33 @@ export async function POST(request: NextRequest) {
       resetAt: new Date(limit.resetAt).toISOString(),
       durationMs: durationSince(startedAt),
     });
-    return noStoreJson({ ok: false, error: "voice_limit_reached" }, { status: 429 });
+    return timedJson({ ok: false, error: "voice_limit_reached" }, { status: 429 }, timings, timingStartedAt);
   }
 
+  let mintStartedAt: number | undefined;
   try {
     const deviceProfile = detectDeviceProfile(request.headers.get("user-agent"));
+    mintStartedAt = performance.now();
     const secret = await createRealtimeClientSecret(
       hashIp(ip, "openai-safety"),
       parsed.data.intent,
       deviceProfile,
       parsed.data.variant,
     );
+    timings.openai_mint = performance.now() - mintStartedAt;
     const review = createVoiceReviewCredentials();
     logInfo("voice_session.created", {
       requestId,
       ipHash,
       intent: parsed.data.intent ?? "none",
       model: secret.model,
+      modelCell: secret.model_cell,
+      reasoningCell: secret.reasoning_cell,
       voice: secret.voice,
       speed: secret.speed,
       variant: secret.variant ?? "default",
+      runtimeProfile: secret.runtime_profile,
+      inputPolicy: secret.input_policy,
       transcriptionModel: secret.transcription_model,
       noiseReduction: secret.noise_reduction,
       deviceProfile,
@@ -62,8 +81,9 @@ export async function POST(request: NextRequest) {
       remaining: limit.remaining,
       durationMs: durationSince(startedAt),
     });
-    return noStoreJson({ ok: true, ...secret, review });
+    return timedJson({ ok: true, ...secret, review }, {}, timings, timingStartedAt);
   } catch (error) {
+    if (mintStartedAt !== undefined) timings.openai_mint = performance.now() - mintStartedAt;
     const message = error instanceof Error ? error.message : "openai_unavailable";
     logError("voice_session.openai_failed", {
       requestId,
@@ -78,10 +98,21 @@ export async function POST(request: NextRequest) {
       meta: { requestId, ipHash, message, durationMs: durationSince(startedAt) },
       fingerprint: message,
     });
-    return noStoreJson({ ok: false, error: message }, { status: message === "openai_unconfigured" ? 503 : 502 });
+    return timedJson(
+      { ok: false, error: message },
+      { status: message === "openai_unconfigured" ? 503 : 502 },
+      timings,
+      timingStartedAt,
+    );
   }
 }
 
 function detectDeviceProfile(userAgent: string | null): RealtimeDeviceProfile {
   return userAgent && /mobile|android|iphone/i.test(userAgent) ? "mobile" : "desktop";
+}
+
+function timedJson(data: unknown, init: ResponseInit, timings: ServerTimingMetrics, timingStartedAt: number) {
+  const headers = new Headers(init.headers);
+  headers.set("Server-Timing", serializeServerTiming({ ...timings, total: performance.now() - timingStartedAt }));
+  return noStoreJson(data, { ...init, headers });
 }
