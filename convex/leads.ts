@@ -94,6 +94,7 @@ const latencyValidator = v.object({
   activation: v.optional(
     v.object({
       tapToArmCueScheduledMs: v.optional(v.number()),
+      tapToLiveMs: v.optional(v.number()),
     }),
   ),
   turns: v.array(
@@ -626,7 +627,7 @@ function percent(numerator: number, denominator: number) {
 
 type LatencySession = {
   latency?: {
-    activation?: { tapToArmCueScheduledMs?: number };
+    activation?: { tapToArmCueScheduledMs?: number; tapToLiveMs?: number };
     turns: Array<{
       stopToResponseCreatedMs?: number;
       stopToFirstOutputEventMs?: number;
@@ -667,6 +668,9 @@ function summarizeVoiceLatency(sessions: LatencySession[]) {
       ? [session.latency.activation.tapToArmCueScheduledMs]
       : [],
   );
+  const tapToLive = sessions.flatMap((session) =>
+    typeof session.latency?.activation?.tapToLiveMs === "number" ? [session.latency.activation.tapToLiveMs] : [],
+  );
   return {
     sampledTurns: turns.length,
     firstOutput: percentileSummary(firstOutput),
@@ -677,6 +681,7 @@ function summarizeVoiceLatency(sessions: LatencySession[]) {
     tool: percentileSummary(tool),
     bargeIn: percentileSummary(bargeIn),
     activation: percentileSummary(activation),
+    tapToLive: percentileSummary(tapToLive),
     interruptedTurns: turns.filter((turn) => turn.interrupted).length,
     rapidResumeTurns: turns.filter((turn) => turn.rapidResume).length,
   };

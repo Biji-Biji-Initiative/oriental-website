@@ -264,6 +264,7 @@ describe("deriveLatencySignals", () => {
       toolP95Ms: 80,
       bargeInP95Ms: null,
       tapToArmCueMs: null,
+      tapToLiveMs: null,
       interruptedTurns: 1,
       rapidResumeTurns: 1,
     });
@@ -412,9 +413,39 @@ describe("aggregateEvals + meetsThreshold", () => {
     expect(aggregate.droppedMidTurnCount).toBe(1);
     expect(aggregate.averages.conversationQuality).toBe(3); // (4 + 2) / 2
     expect(aggregate.submitRate).toBeCloseTo(0.33, 2);
+    expect(aggregate.activation.tapToLiveSamples).toBe(0);
     const reasons = aggregate.worstSessions.map((entry) => entry.reason);
     expect(reasons).toContain("dropped mid-utterance");
     expect(reasons).toContain("high visitor frustration");
+  });
+
+  it("reports exact tap-to-live percentiles for profile and model-cell comparisons", () => {
+    const evalsWithActivation = [120, 480, 700].map((tapToLiveMs, index) =>
+      buildSessionEval(
+        session({
+          reviewId: `activation-${index}`,
+          runtimeProfile: index === 0 ? "baseline" : "instant-v1",
+          modelCell: index === 2 ? "candidate" : "control",
+          latency: {
+            version: 1,
+            activation: { tapToArmCueScheduledMs: 4 + index, tapToLiveMs },
+            turns: [],
+          },
+        }),
+        null,
+      ),
+    );
+
+    const aggregate = aggregateEvals(evalsWithActivation);
+    expect(aggregate.activation).toEqual({
+      tapToLiveSamples: 3,
+      tapToLiveP50Ms: 480,
+      tapToLiveP95Ms: 700,
+      armCueSamples: 3,
+      armCueP95Ms: 6,
+    });
+    expect(aggregateEvalsByRuntimeProfile(evalsWithActivation)["instant-v1"]?.activation.tapToLiveP50Ms).toBe(480);
+    expect(aggregateEvalsByExperimentCell(evalsWithActivation)["candidate/low"]?.activation.tapToLiveP50Ms).toBe(700);
   });
 
   it("fails the gate when a threshold is breached", () => {

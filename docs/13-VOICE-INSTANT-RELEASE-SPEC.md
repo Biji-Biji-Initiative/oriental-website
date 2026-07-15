@@ -55,6 +55,10 @@ dimension, and prove the exact staged commit before promotion.
 
 - The initiating action MUST schedule a local arm cue and expose the scheduling
   duration separately from speaker output.
+- Direct-talk activation MUST measure the initiating tap through the Realtime
+  data channel becoming live. Only the duration is persisted; the monotonic tap
+  marker MUST remain browser-local. Returning-visitor tap-to-live is an
+  experimental SLO of less than 500 ms p50, not a claim about current results.
 - `connectionStatus` MUST remain transport state; conversational activity MUST
   use orthogonal `turnPhase` state.
 - Waiting copy MUST be delayed approximately 300 ms and MUST not claim semantic
@@ -122,7 +126,10 @@ dimension, and prove the exact staged commit before promotion.
   `tests/realtime-events.test.ts`.
 - [x] AC-09 — Sparse/pass/fail promotion states:
   `tests/voice-eval.test.ts`.
-- [ ] AC-10 — Staging release proof before merge.
+- [x] AC-10 — Exact tap-to-live telemetry and independent profile/cell rollups:
+  `tests/voice-cues.test.ts`, `tests/voice-eval.test.ts`, and the voice QA admin
+  table.
+- [ ] AC-11 — Staging release proof and human observation.
   - [x] A real staged WebRTC call produced live remote audio.
   - [x] A typed interruption exercised cancellation/barge-in and recovered to a
     new spoken response.
@@ -146,15 +153,43 @@ dimension, and prove the exact staged commit before promotion.
 - A temporarily older Convex deployment MUST receive a compatibility retry
   without evolvable latency/transport/profile fields.
 
+## Controlled Evaluation Protocol
+
+Every comparison MUST hold voice variant, device, network class, and scripted
+utterance order constant. Change only one dimension at a time:
+
+| Comparison | Control | Candidate |
+|---|---|---|
+| Endpointing | `baseline` | `instant-v1` |
+| Model | `control` | `candidate` |
+| Reasoning | `low` | `minimal` |
+| Prompt/tools | exact `b4a11f1` source boundary | compact prompt + lookup + atomic capture |
+
+The same corpus is required for each comparison: a normal uninterrupted brief;
+a thought with a 700–1,200 ms pause; a slowly dictated email with a mid-address
+pause; an explicit name/email correction; natural Malaysian English/Manglish;
+a Bahasa Melayu turn followed by English; a barge-in while Reka speaks; and a
+noisy or unclear utterance that should trigger clarification. Record the exact
+commit and selected cells with every result.
+
+Report tap-to-live, local endpoint-to-server-stop, stop-to-remote-audio,
+first-output-to-remote-audio, tool duration, barge-in silence, rapid-resume
+proxy, contact-correction rate, submission rate, and the conversation-quality
+judge. A cell with faster latency but worse correction, overlap, false-endpoint,
+or human listening results MUST NOT be promoted. Until this corpus and the
+minimum sample gate are complete, the candidate cells remain evidence-gated;
+an unperformed listening result is never a pass.
+
 ## Observability
 
 - `/api/voice/session` emits `Server-Timing` for parse, rate-limit, OpenAI mint,
   and total route duration.
 - `/admin/session-review` shows endpoint, response-created, first-output,
-  remote-audio, playout, browser-tool, and barge-in summaries plus runtime/model
-  cells.
+  remote-audio, playout, browser-tool, barge-in, and exact tap-to-live summaries
+  plus runtime/model cells.
 - `pnpm eval:voice -- --dry` writes a gitignored report containing the guarded
-  promotion status and aggregate-only console output.
+  promotion status and aggregate-only console output, including tap-to-live
+  p50/p95 by runtime profile and model/reasoning cell.
 - Raw transcripts and captured PII MUST NOT appear in structured route logs.
 
 ## Rollout and Rollback
@@ -177,11 +212,13 @@ dimension, and prove the exact staged commit before promotion.
 - APR round 1: `.apr/rounds/oriental-voice-instant/round_1.md`.
 - Command, CI, Convex, staging, live-call, and production non-change evidence:
   `.apr/evidence/round-1-verification.md`.
-- Merge vehicle: PR 13. PRs 11 and 12 are superseded; their independently
-  attributable commits remain in PR 13 history.
-- PR4 code is staged for review, not approved for production. Its presence does
-  not satisfy or bypass the PR3 sample gate; production remains
-  baseline/control/low.
+- PR 13 merged as `7fb9fdc58b49f97f5dcd70ccd7da89ca26e5d1c7`.
+  PRs 11 and 12 are superseded; their independently attributable commits remain
+  in the merge history.
+- PR4 prompt/tool code is part of the reviewed merge and has its own exact
+  rollback boundary at `b4a11f160f0be50fb1c878b019fdfe4d7fe64e03`.
+  Its presence does not satisfy or bypass the PR3 runtime-profile sample gate;
+  production runtime selection remains baseline/control/low.
 
 ## Evidence-gated Decisions
 
@@ -196,6 +233,8 @@ dimension, and prove the exact staged commit before promotion.
 
 ## Open Questions
 
-- Human Malaysian voice-quality sign-off remains required before merge.
-- Production promotion remains blocked by that sign-off and by the measured
-  gate when `instant-v1` is the proposed production profile.
+- Human Malaysian voice-quality sign-off remains unknown and MUST NOT be
+  represented as passed.
+- The measured gate blocks `instant-v1`, candidate model, and minimal reasoning
+  promotion. It does not block the owner's explicitly authorized deployment of
+  the reviewed web code while production stays baseline/control/low.

@@ -71,6 +71,14 @@ test.describe("admin session review console", () => {
     await expect(session.getByText(/does not prove physical speaker output/i)).toBeVisible();
   });
 
+  test("shows exact tap-to-live timing separately from the local arm cue", async ({ page }) => {
+    const diagnostics = page.locator("#voice-diagnostics");
+    await diagnostics.locator(":scope > summary").click();
+
+    await expect(page.getByText("Tap to live p50/p95: 480ms / 480ms")).toBeVisible();
+    await expect(page.getByText("Arm cue scheduling p95: 4ms")).toBeVisible();
+  });
+
   test("submits a workflow update from a collapsed lead card", async ({ page }, testInfo) => {
     test.skip(testInfo.project.name === "mobile", "Workflow mutation smoke runs once on desktop.");
     let sawWorkflowUpdate = false;

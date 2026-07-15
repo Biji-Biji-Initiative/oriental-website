@@ -31,7 +31,7 @@ export type EvalTransport = {
 
 export type EvalLatency = {
   version: 1;
-  activation?: { tapToArmCueScheduledMs?: number };
+  activation?: { tapToArmCueScheduledMs?: number; tapToLiveMs?: number };
   turns: Array<{
     sequence: number;
     inputPolicy: "baseline" | "fast" | "patient";
@@ -231,6 +231,7 @@ export type LatencySignals = {
   toolP95Ms: number | null;
   bargeInP95Ms: number | null;
   tapToArmCueMs: number | null;
+  tapToLiveMs: number | null;
   interruptedTurns: number;
   rapidResumeTurns: number;
 };
@@ -275,6 +276,7 @@ export function deriveLatencySignals(session: VoiceEvalSession): LatencySignals 
     toolP95Ms: percentile(tool, 0.95),
     bargeInP95Ms: percentile(bargeIn, 0.95),
     tapToArmCueMs: session.latency?.activation?.tapToArmCueScheduledMs ?? null,
+    tapToLiveMs: session.latency?.activation?.tapToLiveMs ?? null,
     interruptedTurns: turns.filter((turn) => turn.interrupted).length,
     rapidResumeTurns: turns.filter((turn) => turn.rapidResume).length,
   };
@@ -598,6 +600,13 @@ export type EvalAggregate = {
   disconnectSessions: number;
   cleanRecoveries: number;
   submitRate: number;
+  activation: {
+    tapToLiveSamples: number;
+    tapToLiveP50Ms: number | null;
+    tapToLiveP95Ms: number | null;
+    armCueSamples: number;
+    armCueP95Ms: number | null;
+  };
   averages: {
     routingCorrect: number | null;
     captureCompleteness: number | null;
@@ -617,6 +626,12 @@ export function aggregateEvals(evals: SessionEval[]): EvalAggregate {
       : round(scored.reduce((sum, entry) => sum + pick(entry.score as JudgeScore), 0) / scored.length);
 
   const droppedMidTurn = evals.filter((entry) => entry.transport.droppedMidTurn);
+  const tapToLive = evals.flatMap((entry) =>
+    typeof entry.latency.tapToLiveMs === "number" ? [entry.latency.tapToLiveMs] : [],
+  );
+  const armCue = evals.flatMap((entry) =>
+    typeof entry.latency.tapToArmCueMs === "number" ? [entry.latency.tapToArmCueMs] : [],
+  );
   const worstSessions = [
     ...droppedMidTurn.map((entry) => ({ reviewId: entry.reviewId, reason: "dropped mid-utterance" })),
     ...scored
@@ -635,6 +650,13 @@ export function aggregateEvals(evals: SessionEval[]): EvalAggregate {
     cleanRecoveries: evals.filter((entry) => entry.transport.recoveredAfterDisconnect).length,
     submitRate:
       evals.length === 0 ? 0 : round(evals.filter((entry) => entry.engagement.submitted).length / evals.length),
+    activation: {
+      tapToLiveSamples: tapToLive.length,
+      tapToLiveP50Ms: percentile(tapToLive, 0.5),
+      tapToLiveP95Ms: percentile(tapToLive, 0.95),
+      armCueSamples: armCue.length,
+      armCueP95Ms: percentile(armCue, 0.95),
+    },
     averages: {
       routingCorrect: average((score) => score.routingCorrect),
       captureCompleteness: average((score) => score.captureCompleteness),

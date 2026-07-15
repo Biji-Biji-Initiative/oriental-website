@@ -124,6 +124,7 @@ export default defineSchema({
         activation: v.optional(
           v.object({
             tapToArmCueScheduledMs: v.optional(v.number()),
+            tapToLiveMs: v.optional(v.number()),
           }),
         ),
         turns: v.array(

@@ -248,16 +248,19 @@ function printSummary(
   console.log(`dropped mid-turn:    ${aggregate.droppedMidTurnCount}`);
   console.log(`disconnect sessions: ${aggregate.disconnectSessions}  (clean recoveries ${aggregate.cleanRecoveries})`);
   console.log(`submit rate:         ${(aggregate.submitRate * 100).toFixed(0)}%`);
+  console.log(
+    `tap to live p50/p95: ${fmtMs(aggregate.activation.tapToLiveP50Ms)} / ${fmtMs(aggregate.activation.tapToLiveP95Ms)} (${aggregate.activation.tapToLiveSamples} samples)`,
+  );
   console.log("--- runtime profiles ---");
   for (const [profile, profileAggregate] of Object.entries(profileAggregates)) {
     console.log(
-      `${profile}: ${profileAggregate.sessionCount} sessions, ${(profileAggregate.submitRate * 100).toFixed(0)}% submit`,
+      `${profile}: ${profileAggregate.sessionCount} sessions, ${(profileAggregate.submitRate * 100).toFixed(0)}% submit, tap→live ${fmtMs(profileAggregate.activation.tapToLiveP50Ms)}/${fmtMs(profileAggregate.activation.tapToLiveP95Ms)} p50/p95`,
     );
   }
   console.log("--- model/reasoning cells ---");
   for (const [cell, cellAggregate] of Object.entries(experimentAggregates)) {
     console.log(
-      `${cell}: ${cellAggregate.sessionCount} sessions, ${(cellAggregate.submitRate * 100).toFixed(0)}% submit`,
+      `${cell}: ${cellAggregate.sessionCount} sessions, ${(cellAggregate.submitRate * 100).toFixed(0)}% submit, tap→live ${fmtMs(cellAggregate.activation.tapToLiveP50Ms)}/${fmtMs(cellAggregate.activation.tapToLiveP95Ms)} p50/p95`,
     );
   }
   console.log("--- latency promotion gate ---");
@@ -280,6 +283,10 @@ function printSummary(
     for (const failure of gate.failures) console.log(`  ✗ ${failure}`);
   }
   console.log(`\nFull report: ${reportPath}`);
+}
+
+function fmtMs(value: number | null) {
+  return value === null ? "n/a" : `${value}ms`;
 }
 
 void main();

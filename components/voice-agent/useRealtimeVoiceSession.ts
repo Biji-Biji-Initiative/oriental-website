@@ -1,6 +1,7 @@
 "use client";
 
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
+import { measureTapToLive, type VoiceActivationCue } from "@/components/voice-agent/live-chime";
 import type { SegmentId } from "@/lib/segments";
 import { type RealtimeOutboundEvent, serializeInputPolicyUpdate } from "@/lib/voice/client-events";
 import type { VoiceModelCell, VoiceReasoningCell } from "@/lib/voice/experiments";
@@ -155,7 +156,7 @@ export function useRealtimeVoiceSession({
   const runtimeProfileRef = useRef<VoiceRuntimeProfile>(resolveVoiceRuntimeProfile("baseline"));
   const inputPolicyRef = useRef<VoiceInputPolicy>("baseline");
   const patientReplyPendingRef = useRef(false);
-  const nextActivationRef = useRef<VoiceLatencyTelemetry["activation"]>(undefined);
+  const nextActivationRef = useRef<VoiceActivationCue | undefined>(undefined);
   const recordLatencySignalRef = useRef<((signal: VoiceLatencySignal) => void) | null>(null);
   // Session policy from the server, falling back to compiled defaults.
   const limitsRef = useRef({
@@ -488,7 +489,10 @@ export function useRealtimeVoiceSession({
       runtimeProfileRef.current = runtimeProfile;
       inputPolicyRef.current = initialInputPolicy;
       patientReplyPendingRef.current = false;
-      latencyRef.current = createVoiceLatencyState(initialInputPolicy, activation);
+      latencyRef.current = createVoiceLatencyState(
+        initialInputPolicy,
+        activation ? { tapToArmCueScheduledMs: activation.tapToArmCueScheduledMs } : undefined,
+      );
 
       emitSessionReady(session, { prewarmedAt: activePrewarmedAtRef.current, connectStartedAt });
 
@@ -590,6 +594,19 @@ export function useRealtimeVoiceSession({
       };
       channel.onopen = () => {
         setStatus("listening");
+        if (activation) {
+          latencyRef.current = {
+            ...latencyRef.current,
+            telemetry: {
+              ...latencyRef.current.telemetry,
+              activation: {
+                ...latencyRef.current.telemetry.activation,
+                tapToLiveMs: measureTapToLive(activation),
+              },
+            },
+          };
+          emitLatency();
+        }
         emitSessionReady(session, {
           prewarmedAt: activePrewarmedAtRef.current,
           connectStartedAt,
@@ -729,7 +746,7 @@ export function useRealtimeVoiceSession({
   useEffect(() => teardownVoice, [teardownVoice]);
 
   const getLocalStream = useCallback(() => localStreamRef.current, []);
-  const setVoiceActivation = useCallback((activation: VoiceLatencyTelemetry["activation"]) => {
+  const setVoiceActivation = useCallback((activation: VoiceActivationCue | undefined) => {
     nextActivationRef.current = activation;
   }, []);
   const recordLocalSpeechEnded = useCallback((at: number) => {
