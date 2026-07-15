@@ -1,3 +1,5 @@
+import { hasShellEscapedQuoteWrapper, unwrapEnvValue } from "../lib/env";
+
 const required = [
   "OPENAI_API_KEY",
   "OPENAI_REALTIME_MODEL",
@@ -25,6 +27,37 @@ const adminRequired = ["ADMIN_REVIEW_TOKEN"];
 const opsAlertRequired = ["OPS_ALERT_SLACK_CHANNEL_ID"];
 const clickUpRequired = ["CLICKUP_API_TOKEN", "CLICKUP_LIST_ID"];
 
+const managedEnvironment = [
+  ...required,
+  ...smtpRequired,
+  ...sesRequired,
+  ...slackRequired,
+  ...sentryRequired,
+  ...adminRequired,
+  ...opsAlertRequired,
+  ...clickUpRequired,
+  "NEXT_PUBLIC_TURNSTILE_SITE_KEY",
+  "OPENAI_REALTIME_MODEL_CANDIDATE",
+  "OPENAI_REALTIME_VOICE",
+  "OPENAI_REALTIME_SPEED",
+  "OPENAI_REALTIME_TRANSCRIPTION_MODEL",
+  "VOICE_RUNTIME_PROFILE",
+  "VOICE_MODEL_CELL",
+  "VOICE_REASONING_CELL",
+  "VOICE_MAX_DURATION_MS",
+  "VOICE_IDLE_TIMEOUT_MS",
+  "VOICE_IDLE_GOODBYE_GRACE_MS",
+  "REDIS_URL",
+  "SENTRY_ENVIRONMENT",
+  "NEXT_PUBLIC_SENTRY_ENVIRONMENT",
+  "SES_REPLY_TO",
+  "TEAM_NOTIFICATION_EMAIL",
+  "TEAM_NOTIFICATION_CC_EMAILS",
+  "COOLIFY_ORIENTAL_APPLICATION_UUID",
+  "CONVEX_DEPLOY_KEY",
+  "SENTRY_AUTH_TOKEN",
+];
+
 const supportedRealtimeVoices = new Set([
   "alloy",
   "ash",
@@ -41,6 +74,12 @@ const supportedRealtimeVoices = new Set([
 if (!process.env.INFISICAL_TOKEN && !process.env.CONVEX_DEPLOY_KEY && process.env.NODE_ENV !== "production") {
   console.log("Skipping secret check: no Infisical/Convex deployment credentials in local development.");
   process.exit(0);
+}
+
+const malformed = [...new Set(managedEnvironment)].filter((name) => hasShellEscapedQuoteWrapper(process.env[name]));
+if (malformed.length > 0) {
+  console.error(`Malformed shell-escaped environment variables: ${malformed.join(", ")}`);
+  process.exit(1);
 }
 
 const missing = required.filter((name) => !envValue(name));
@@ -134,13 +173,5 @@ if (reasoningCell && reasoningCell !== "low" && reasoningCell !== "minimal") {
 console.log("Secret contract satisfied.");
 
 function envValue(name: string) {
-  const value = process.env[name];
-  if (!value) return undefined;
-  let trimmed = value.trim();
-  for (let depth = 0; depth < 2; depth += 1) {
-    const quote = trimmed[0];
-    if ((quote !== "'" && quote !== '"') || trimmed.at(-1) !== quote) break;
-    trimmed = trimmed.slice(1, -1).trim();
-  }
-  return trimmed || undefined;
+  return unwrapEnvValue(process.env[name]);
 }
