@@ -12,7 +12,6 @@ import {
   type VoiceLatencyTelemetry,
   type VoiceTurnPhase,
 } from "@/lib/voice/latency";
-import { VOICE_SESSION_DEFAULTS } from "@/lib/voice/profile";
 import type { RealtimeServerEvent } from "@/lib/voice/realtime-events";
 import {
   inputPolicyForAssistantText,
@@ -20,6 +19,7 @@ import {
   type VoiceRuntimeProfile,
   type VoiceRuntimeProfileId,
 } from "@/lib/voice/runtime-profile";
+import { VOICE_DURATION_DEFAULTS } from "@/lib/voice/session-policy";
 import {
   emptyTransportTelemetry,
   foldTransportStats,
@@ -77,7 +77,7 @@ type VoiceSessionResponse = {
   variant?: string | null;
   runtime_profile?: VoiceRuntimeProfileId;
   input_policy?: VoiceInputPolicy;
-  limits?: { max_duration_ms?: number; idle_timeout_ms?: number };
+  limits?: { max_duration_ms?: number; idle_timeout_ms?: number; idle_goodbye_grace_ms?: number };
 };
 
 class VoiceConnectionFailure extends Error {
@@ -159,8 +159,7 @@ export function useRealtimeVoiceSession({
   const recordLatencySignalRef = useRef<((signal: VoiceLatencySignal) => void) | null>(null);
   // Session policy from the server, falling back to compiled defaults.
   const limitsRef = useRef({
-    maxDurationMs: VOICE_SESSION_DEFAULTS.maxDurationMs,
-    idleTimeoutMs: VOICE_SESSION_DEFAULTS.idleTimeoutMs,
+    ...VOICE_DURATION_DEFAULTS,
   });
   const statusRef = useRef<VoiceConnectionStatus>("idle");
   const onIdleWarningRef = useRef(onIdleWarning);
@@ -260,7 +259,7 @@ export function useRealtimeVoiceSession({
     if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
     if (idleWarningTimerRef.current) window.clearTimeout(idleWarningTimerRef.current);
     const idleTimeoutMs = limitsRef.current.idleTimeoutMs;
-    const graceMs = Math.min(VOICE_SESSION_DEFAULTS.idleGoodbyeGraceMs, idleTimeoutMs);
+    const graceMs = Math.min(limitsRef.current.idleGoodbyeGraceMs, idleTimeoutMs);
     idleWarningTimerRef.current = window.setTimeout(() => {
       // Never interrupt a live utterance with the goodbye line; the idle
       // teardown below defers on the same condition and plays it on the pause.
@@ -340,8 +339,9 @@ export function useRealtimeVoiceSession({
       throw new VoiceConnectionFailure("session_failed");
     }
     limitsRef.current = {
-      maxDurationMs: positiveOr(session.limits?.max_duration_ms, VOICE_SESSION_DEFAULTS.maxDurationMs),
-      idleTimeoutMs: positiveOr(session.limits?.idle_timeout_ms, VOICE_SESSION_DEFAULTS.idleTimeoutMs),
+      maxDurationMs: positiveOr(session.limits?.max_duration_ms, VOICE_DURATION_DEFAULTS.maxDurationMs),
+      idleTimeoutMs: positiveOr(session.limits?.idle_timeout_ms, VOICE_DURATION_DEFAULTS.idleTimeoutMs),
+      idleGoodbyeGraceMs: positiveOr(session.limits?.idle_goodbye_grace_ms, VOICE_DURATION_DEFAULTS.idleGoodbyeGraceMs),
     };
     return { ...session, client_secret: { ...session.client_secret, value: clientSecret } };
   }, []);

@@ -43,7 +43,7 @@ describe("createRealtimeClientSecret", () => {
       input_policy: "baseline",
       transcription_model: "gpt-4o-transcribe",
       noise_reduction: "far_field",
-      limits: { max_duration_ms: 600_000, idle_timeout_ms: 20_000 },
+      limits: { max_duration_ms: 600_000, idle_timeout_ms: 20_000, idle_goodbye_grace_ms: 6_000 },
     });
 
     const init = fetchMock.mock.calls[0]?.[1];
@@ -194,6 +194,7 @@ describe("createRealtimeClientSecret", () => {
   it("serves env-tuned session limits to the client", async () => {
     process.env.VOICE_MAX_DURATION_MS = "300000";
     process.env.VOICE_IDLE_TIMEOUT_MS = "30000";
+    process.env.VOICE_IDLE_GOODBYE_GRACE_MS = "8000";
     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
       Response.json({
         client_secret: { value: "client-secret", expires_at: 123 },
@@ -204,7 +205,11 @@ describe("createRealtimeClientSecret", () => {
 
     const result = await createRealtimeClientSecret("safe-user", "technology");
 
-    expect(result.limits).toEqual({ max_duration_ms: 300_000, idle_timeout_ms: 30_000 });
+    expect(result.limits).toEqual({
+      max_duration_ms: 300_000,
+      idle_timeout_ms: 30_000,
+      idle_goodbye_grace_ms: 8_000,
+    });
   });
 
   it("allows overriding the transcription model from the environment", async () => {

@@ -1,11 +1,12 @@
 import OpenAI, { APIError } from "openai";
 import type { ClientSecretCreateParams, ClientSecretCreateResponse } from "openai/resources/realtime/client-secrets";
 import type { RealtimeSessionCreateRequest } from "openai/resources/realtime/realtime";
-import { readEnv, readPositiveIntEnv } from "@/lib/env";
+import { readEnv } from "@/lib/env";
 import type { SegmentId } from "@/lib/segments";
 import { resolveVoiceExperimentConfig } from "@/lib/voice/experiments";
 import { buildVoiceInstructions, VOICE_SESSION_DEFAULTS, VOICE_TOOLS } from "@/lib/voice/profile";
 import { resolveVoiceRuntimeProfile } from "@/lib/voice/runtime-profile";
+import { resolveVoiceDurationPolicy } from "@/lib/voice/session-policy";
 import { getVoiceVariant } from "@/lib/voice/variants";
 
 export type RealtimeDeviceProfile = "mobile" | "desktop";
@@ -40,6 +41,11 @@ export async function createRealtimeClientSecret(
   // Phones are close-talking mics; laptops and desktops are far-field.
   const noiseReduction = deviceProfile === "mobile" ? "near_field" : "far_field";
   const runtimeProfile = resolveVoiceRuntimeProfile(readEnv("VOICE_RUNTIME_PROFILE", "baseline"));
+  const durationPolicy = resolveVoiceDurationPolicy({
+    maxDurationMs: readEnv("VOICE_MAX_DURATION_MS"),
+    idleTimeoutMs: readEnv("VOICE_IDLE_TIMEOUT_MS"),
+    idleGoodbyeGraceMs: readEnv("VOICE_IDLE_GOODBYE_GRACE_MS"),
+  });
 
   const client = new OpenAI({ apiKey, dangerouslyAllowBrowser: process.env.NODE_ENV === "test" });
   const clientSecretRequest = {
@@ -104,8 +110,9 @@ export async function createRealtimeClientSecret(
     // Session policy is server-tunable so the dominant UX constraints can be
     // adjusted from Infisical without a code deploy.
     limits: {
-      max_duration_ms: readPositiveIntEnv("VOICE_MAX_DURATION_MS", VOICE_SESSION_DEFAULTS.maxDurationMs),
-      idle_timeout_ms: readPositiveIntEnv("VOICE_IDLE_TIMEOUT_MS", VOICE_SESSION_DEFAULTS.idleTimeoutMs),
+      max_duration_ms: durationPolicy.maxDurationMs,
+      idle_timeout_ms: durationPolicy.idleTimeoutMs,
+      idle_goodbye_grace_ms: durationPolicy.idleGoodbyeGraceMs,
     },
   };
 }

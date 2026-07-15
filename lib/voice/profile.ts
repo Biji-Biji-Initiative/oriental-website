@@ -1,5 +1,6 @@
 import { SEGMENT_IDS, SEGMENTS, type SegmentId } from "@/lib/segments";
 import { ORIENTAL_KNOWLEDGE_TOPICS } from "@/lib/voice/knowledge";
+import { VOICE_DURATION_DEFAULTS } from "@/lib/voice/session-policy";
 
 export type VoiceTurnDetection =
   | {
@@ -271,9 +272,7 @@ export const VOICE_PROFILE = {
     // A generous ceiling for an engaged partner conversation. The client never
     // cuts a visitor off mid-utterance: at this cap it waits for a natural pause
     // and says a short goodbye. Tunable via VOICE_MAX_DURATION_MS.
-    maxDurationMs: 600_000,
-    idleTimeoutMs: 20_000,
-    idleGoodbyeGraceMs: 6_000,
+    ...VOICE_DURATION_DEFAULTS,
     truncation: {
       type: "retention_ratio",
       retention_ratio: 0.8,

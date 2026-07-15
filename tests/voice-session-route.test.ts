@@ -52,11 +52,15 @@ describe("POST /api/voice/session", () => {
 
     const invalid = await POST(request("not-json"));
     expect(invalid.status).toBe(400);
+    expect(invalid.headers.get("server-timing")).toMatch(/parse;dur=.+total;dur=/);
     expect(await json(invalid)).toMatchObject({ ok: false, error: "invalid_payload" });
 
     for (let index = 0; index < 3; index += 1) {
       const response = await POST(request({ intent: "technology" }));
       expect(response.status).toBe(200);
+      expect(response.headers.get("server-timing")).toMatch(
+        /parse;dur=.+rate_limit;dur=.+openai_mint;dur=.+total;dur=/,
+      );
       expect(await json(response)).toMatchObject({
         ok: true,
         review: { id: expect.any(String), token: expect.any(String) },
@@ -65,6 +69,7 @@ describe("POST /api/voice/session", () => {
 
     const limited = await POST(request({ intent: "technology" }));
     expect(limited.status).toBe(429);
+    expect(limited.headers.get("server-timing")).toMatch(/parse;dur=.+rate_limit;dur=.+total;dur=/);
     expect(await json(limited)).toMatchObject({ ok: false, error: "voice_limit_reached" });
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
