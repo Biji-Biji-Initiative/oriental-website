@@ -3,6 +3,7 @@ import {
   aggregateEvals,
   aggregateEvalsByExperimentCell,
   aggregateEvalsByRuntimeProfile,
+  assessLatencyAutopilotGate,
   buildJudgeUserPrompt,
   buildSessionEval,
   deriveEngagementSignals,
@@ -14,6 +15,36 @@ import {
   parseJudgeResponse,
   type VoiceEvalSession,
 } from "@/lib/eval/voice-eval";
+
+function latencyGateSessions(
+  profile: "baseline" | "instant-v1",
+  options: { remoteAudioMs?: number; corrected?: boolean; rapidResumes?: number } = {},
+): VoiceEvalSession[] {
+  return Array.from({ length: 20 }, (_, sessionIndex) =>
+    session({
+      reviewId: `${profile}-${sessionIndex}`,
+      sessionId: `${profile}-session-${sessionIndex}`,
+      runtimeProfile: profile,
+      transcript: [
+        {
+          role: "user",
+          text: options.corrected ? "Actually, my email is visitor@example.com" : "My email is visitor@example.com",
+        },
+      ],
+      latency: {
+        version: 1,
+        turns: Array.from({ length: 5 }, (_, turnIndex) => ({
+          sequence: turnIndex + 1,
+          inputPolicy: profile === "instant-v1" ? "fast" : "baseline",
+          stopToRemoteAudioMs: options.remoteAudioMs ?? 500,
+          bargeInToResponseDoneMs: 200,
+          interrupted: true,
+          rapidResume: sessionIndex * 5 + turnIndex < (options.rapidResumes ?? 0),
+        })),
+      },
+    }),
+  );
+}
 
 function session(overrides: Partial<VoiceEvalSession> = {}): VoiceEvalSession {
   return {
@@ -236,6 +267,52 @@ describe("deriveLatencySignals", () => {
       interruptedTurns: 1,
       rapidResumeTurns: 1,
     });
+  });
+});
+
+describe("assessLatencyAutopilotGate", () => {
+  it("refuses promotion while measurement evidence is sparse", () => {
+    const gate = assessLatencyAutopilotGate([
+      session({
+        runtimeProfile: "instant-v1",
+        latency: { version: 1, turns: [] },
+      }),
+    ]);
+
+    expect(gate.status).toBe("insufficient_data");
+    expect(gate.eligibleForAutomaticPromotion).toBe(false);
+    expect(gate.missingEvidence.length).toBeGreaterThan(0);
+  });
+
+  it("passes only with enough good remote-audio, endpoint, barge-in, and correction evidence", () => {
+    const gate = assessLatencyAutopilotGate([
+      ...latencyGateSessions("baseline", { corrected: true }),
+      ...latencyGateSessions("instant-v1", { rapidResumes: 1 }),
+    ]);
+
+    expect(gate.status).toBe("pass");
+    expect(gate.eligibleForAutomaticPromotion).toBe(true);
+    expect(gate.candidate.possibleFalseEndpointRate).toBe(0.01);
+    expect(gate.candidate.contactCorrectionRate).toBe(0);
+    expect(gate.control.contactCorrectionRate).toBe(1);
+  });
+
+  it("fails a fully sampled candidate that misses latency or correction quality", () => {
+    const gate = assessLatencyAutopilotGate([
+      ...latencyGateSessions("baseline"),
+      ...latencyGateSessions("instant-v1", { corrected: true, remoteAudioMs: 1_100, rapidResumes: 3 }),
+    ]);
+
+    expect(gate.status).toBe("fail");
+    expect(gate.eligibleForAutomaticPromotion).toBe(false);
+    expect(gate.failures).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("remote audio p50"),
+        expect.stringContaining("remote audio p95"),
+        expect.stringContaining("false-endpoint proxy"),
+        expect.stringContaining("contact correction rate"),
+      ]),
+    );
   });
 });
 

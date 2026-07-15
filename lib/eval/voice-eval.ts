@@ -287,6 +287,169 @@ function percentile(values: number[], quantile: number): number | null {
   return Math.round(sorted[index] ?? 0);
 }
 
+// ---------------------------------------------------------------------------
+// Guarded latency promotion gate
+// ---------------------------------------------------------------------------
+
+export const LATENCY_AUTOPILOT_THRESHOLDS = {
+  minRemoteAudioSamples: 30,
+  minFalseEndpointTurns: 100,
+  minBargeInSamples: 20,
+  minContactConversationsPerProfile: 20,
+  maxRemoteAudioP50Ms: 650,
+  maxRemoteAudioP95Ms: 1_000,
+  maxFalseEndpointRate: 0.02,
+  maxBargeInP95Ms: 250,
+} as const;
+
+type ProfileLatencyGateMetrics = {
+  sessions: number;
+  sampledTurns: number;
+  remoteAudioSamples: number;
+  remoteAudioP50Ms: number | null;
+  remoteAudioP95Ms: number | null;
+  bargeInSamples: number;
+  bargeInP95Ms: number | null;
+  rapidResumeTurns: number;
+  /** Rapid-resume proxy for a possible false server-VAD endpoint. */
+  possibleFalseEndpointRate: number | null;
+  contactConversations: number;
+  contactCorrectionConversations: number;
+  contactCorrectionRate: number | null;
+};
+
+export type LatencyAutopilotGate = {
+  status: "insufficient_data" | "pass" | "fail";
+  eligibleForAutomaticPromotion: boolean;
+  candidate: ProfileLatencyGateMetrics;
+  control: ProfileLatencyGateMetrics;
+  missingEvidence: string[];
+  failures: string[];
+};
+
+/**
+ * Assess whether instant-v1 has enough evidence to be eligible for promotion.
+ * This function never mutates runtime configuration; a pass is an advisory
+ * release signal that still requires the normal reviewed deployment path.
+ */
+export function assessLatencyAutopilotGate(sessions: VoiceEvalSession[]): LatencyAutopilotGate {
+  const candidate = profileLatencyGateMetrics(sessions.filter((session) => session.runtimeProfile === "instant-v1"));
+  const control = profileLatencyGateMetrics(
+    sessions.filter((session) => (session.runtimeProfile ?? "baseline") === "baseline"),
+  );
+  const missingEvidence: string[] = [];
+
+  if (candidate.remoteAudioSamples < LATENCY_AUTOPILOT_THRESHOLDS.minRemoteAudioSamples) {
+    missingEvidence.push(
+      `instant-v1 remote-audio samples ${candidate.remoteAudioSamples}/${LATENCY_AUTOPILOT_THRESHOLDS.minRemoteAudioSamples}`,
+    );
+  }
+  if (candidate.sampledTurns < LATENCY_AUTOPILOT_THRESHOLDS.minFalseEndpointTurns) {
+    missingEvidence.push(
+      `instant-v1 endpoint turns ${candidate.sampledTurns}/${LATENCY_AUTOPILOT_THRESHOLDS.minFalseEndpointTurns}`,
+    );
+  }
+  if (candidate.bargeInSamples < LATENCY_AUTOPILOT_THRESHOLDS.minBargeInSamples) {
+    missingEvidence.push(
+      `instant-v1 barge-in samples ${candidate.bargeInSamples}/${LATENCY_AUTOPILOT_THRESHOLDS.minBargeInSamples}`,
+    );
+  }
+  for (const [label, metrics] of [
+    ["instant-v1", candidate],
+    ["baseline", control],
+  ] as const) {
+    if (metrics.contactConversations < LATENCY_AUTOPILOT_THRESHOLDS.minContactConversationsPerProfile) {
+      missingEvidence.push(
+        `${label} contact conversations ${metrics.contactConversations}/${LATENCY_AUTOPILOT_THRESHOLDS.minContactConversationsPerProfile}`,
+      );
+    }
+  }
+
+  const failures: string[] = [];
+  if (missingEvidence.length === 0) {
+    if ((candidate.remoteAudioP50Ms ?? Number.POSITIVE_INFINITY) >= LATENCY_AUTOPILOT_THRESHOLDS.maxRemoteAudioP50Ms) {
+      failures.push(`remote audio p50 must be under ${LATENCY_AUTOPILOT_THRESHOLDS.maxRemoteAudioP50Ms} ms`);
+    }
+    if ((candidate.remoteAudioP95Ms ?? Number.POSITIVE_INFINITY) >= LATENCY_AUTOPILOT_THRESHOLDS.maxRemoteAudioP95Ms) {
+      failures.push(`remote audio p95 must be under ${LATENCY_AUTOPILOT_THRESHOLDS.maxRemoteAudioP95Ms} ms`);
+    }
+    if (
+      (candidate.possibleFalseEndpointRate ?? Number.POSITIVE_INFINITY) >=
+      LATENCY_AUTOPILOT_THRESHOLDS.maxFalseEndpointRate
+    ) {
+      failures.push(
+        `possible false-endpoint proxy must be under ${LATENCY_AUTOPILOT_THRESHOLDS.maxFalseEndpointRate * 100}%`,
+      );
+    }
+    if ((candidate.bargeInP95Ms ?? Number.POSITIVE_INFINITY) >= LATENCY_AUTOPILOT_THRESHOLDS.maxBargeInP95Ms) {
+      failures.push(`barge-in p95 must be under ${LATENCY_AUTOPILOT_THRESHOLDS.maxBargeInP95Ms} ms`);
+    }
+    if (
+      (candidate.contactCorrectionRate ?? Number.POSITIVE_INFINITY) >
+      (control.contactCorrectionRate ?? Number.NEGATIVE_INFINITY)
+    ) {
+      failures.push("contact correction rate must be no worse than baseline");
+    }
+  }
+
+  const status = missingEvidence.length > 0 ? "insufficient_data" : failures.length > 0 ? "fail" : "pass";
+  return {
+    status,
+    eligibleForAutomaticPromotion: status === "pass",
+    candidate,
+    control,
+    missingEvidence,
+    failures,
+  };
+}
+
+function profileLatencyGateMetrics(sessions: VoiceEvalSession[]): ProfileLatencyGateMetrics {
+  const turns = sessions.flatMap((session) => session.latency?.turns ?? []);
+  const remoteAudio = turns.flatMap((turn) =>
+    typeof turn.stopToRemoteAudioMs === "number" ? [turn.stopToRemoteAudioMs] : [],
+  );
+  const bargeIn = turns.flatMap((turn) =>
+    typeof turn.bargeInToResponseDoneMs === "number" ? [turn.bargeInToResponseDoneMs] : [],
+  );
+  const contactSessions = sessions.filter(hasContactConversation);
+  const contactCorrectionConversations = contactSessions.filter(hasExplicitContactCorrection).length;
+  return {
+    sessions: sessions.length,
+    sampledTurns: turns.length,
+    remoteAudioSamples: remoteAudio.length,
+    remoteAudioP50Ms: percentile(remoteAudio, 0.5),
+    remoteAudioP95Ms: percentile(remoteAudio, 0.95),
+    bargeInSamples: bargeIn.length,
+    bargeInP95Ms: percentile(bargeIn, 0.95),
+    rapidResumeTurns: turns.filter((turn) => turn.rapidResume).length,
+    possibleFalseEndpointRate:
+      turns.length > 0 ? roundRate(turns.filter((turn) => turn.rapidResume).length / turns.length) : null,
+    contactConversations: contactSessions.length,
+    contactCorrectionConversations,
+    contactCorrectionRate:
+      contactSessions.length > 0 ? roundRate(contactCorrectionConversations / contactSessions.length) : null,
+  };
+}
+
+const LITERAL_CONTACT_PATTERN = /(?:\b(?:e-?mail|phone|mobile|name|organisation|organization|company)\b|@)/i;
+const EXPLICIT_CORRECTION_PATTERN =
+  /(?:\b(?:actually|correction|i said)\b|\b(?:no|sorry)\b.{0,24}\b(?:my|it(?:'s| is)|that(?:'s| is))\b|\bnot\b.{1,40}\b(?:but|rather)\b)/i;
+
+function hasContactConversation(session: VoiceEvalSession): boolean {
+  return session.transcript.some((turn) => turn.role === "user" && LITERAL_CONTACT_PATTERN.test(turn.text));
+}
+
+export function hasExplicitContactCorrection(session: VoiceEvalSession): boolean {
+  return session.transcript.some(
+    (turn) =>
+      turn.role === "user" && LITERAL_CONTACT_PATTERN.test(turn.text) && EXPLICIT_CORRECTION_PATTERN.test(turn.text),
+  );
+}
+
+function roundRate(value: number): number {
+  return Math.round(value * 10_000) / 10_000;
+}
+
 export type EngagementSignals = {
   turnCount: number;
   userTurns: number;

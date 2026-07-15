@@ -22,6 +22,7 @@ import {
   aggregateEvals,
   aggregateEvalsByExperimentCell,
   aggregateEvalsByRuntimeProfile,
+  assessLatencyAutopilotGate,
   buildJudgeUserPrompt,
   buildSessionEval,
   isJudgeable,
@@ -183,6 +184,7 @@ async function main() {
   const aggregate = aggregateEvals(evals);
   const profileAggregates = aggregateEvalsByRuntimeProfile(evals);
   const experimentAggregates = aggregateEvalsByExperimentCell(evals);
+  const latencyAutopilotGate = assessLatencyAutopilotGate(sessions);
 
   if (args.persist && !dry) {
     const payloads = evals
@@ -218,13 +220,13 @@ async function main() {
   writeFileSync(
     reportPath,
     JSON.stringify(
-      { generatedAt: stamp, aggregate, profileAggregates, experimentAggregates, evals, sessions },
+      { generatedAt: stamp, aggregate, profileAggregates, experimentAggregates, latencyAutopilotGate, evals, sessions },
       null,
       2,
     ),
   );
 
-  printSummary(aggregate, profileAggregates, experimentAggregates, gate, reportPath, dry);
+  printSummary(aggregate, profileAggregates, experimentAggregates, latencyAutopilotGate, gate, reportPath, dry);
 
   const gateActive = Object.values(thresholds).some((value) => typeof value === "number");
   if (gateActive && !gate.ok) process.exit(2);
@@ -234,6 +236,7 @@ function printSummary(
   aggregate: ReturnType<typeof aggregateEvals>,
   profileAggregates: ReturnType<typeof aggregateEvalsByRuntimeProfile>,
   experimentAggregates: ReturnType<typeof aggregateEvalsByExperimentCell>,
+  latencyAutopilotGate: ReturnType<typeof assessLatencyAutopilotGate>,
   gate: { ok: boolean; failures: string[] },
   reportPath: string,
   dry: boolean,
@@ -257,6 +260,10 @@ function printSummary(
       `${cell}: ${cellAggregate.sessionCount} sessions, ${(cellAggregate.submitRate * 100).toFixed(0)}% submit`,
     );
   }
+  console.log("--- latency promotion gate ---");
+  console.log(`status:               ${latencyAutopilotGate.status}`);
+  for (const reason of latencyAutopilotGate.missingEvidence) console.log(`  · ${reason}`);
+  for (const failure of latencyAutopilotGate.failures) console.log(`  ✗ ${failure}`);
   if (!dry) {
     console.log("--- LLM rubric (0-5) ---");
     console.log(`routingCorrect:      ${fmt(averages.routingCorrect)}`);
