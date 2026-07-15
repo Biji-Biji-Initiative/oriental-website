@@ -1456,6 +1456,10 @@ function AnalyticsPanel({ data }: { data: DashboardData }) {
             values={countByVoiceSessions(data.voiceSessions, (session) => session.variant || "default")}
           />
           <CountList
+            title="Runtime profiles"
+            values={countByVoiceSessions(data.voiceSessions, (session) => session.runtimeProfile || "baseline")}
+          />
+          <CountList
             title="Realtime voices"
             values={countByVoiceSessions(data.voiceSessions, (session) => session.voice || "unknown")}
           />
@@ -2405,18 +2409,24 @@ function VoiceQaRollup({ sessions }: { sessions: VoiceSessionRow[] }) {
           <thead className="text-mk-off-black/55">
             <tr className="border-b border-mk-ash/15">
               <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Variant</th>
+              <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Profile</th>
               <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Voice</th>
               <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Sessions</th>
               <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Submit</th>
               <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Connect</th>
               <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Errors</th>
               <th className="py-2 font-semibold uppercase tracking-[0.12em]">Tokens</th>
+              <th className="py-2 font-semibold uppercase tracking-[0.12em]">Audio p50/p95</th>
             </tr>
           </thead>
           <tbody className="text-mk-ash">
             {variantRows.map((row) => (
-              <tr className="border-b border-mk-ash/10 last:border-0" key={`${row.variant}:${row.voice}`}>
+              <tr
+                className="border-b border-mk-ash/10 last:border-0"
+                key={`${row.runtimeProfile}:${row.variant}:${row.voice}`}
+              >
                 <td className="py-2 pr-3 font-medium text-mk-off-black">{row.variant}</td>
+                <td className="py-2 pr-3">{row.runtimeProfile}</td>
                 <td className="py-2 pr-3">{row.voice}</td>
                 <td className="py-2 pr-3">{row.sessions}</td>
                 <td className="py-2 pr-3">{row.submitRate}%</td>
@@ -2425,6 +2435,9 @@ function VoiceQaRollup({ sessions }: { sessions: VoiceSessionRow[] }) {
                   {row.errorSessions}
                 </td>
                 <td className="py-2">{row.responseTokens}</td>
+                <td className="py-2">
+                  {formatLatency(row.remoteAudio.p50Ms)} / {formatLatency(row.remoteAudio.p95Ms)}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -2654,37 +2667,45 @@ function countTranscriptRoles(transcript: TranscriptRoleEntry[]) {
   );
 }
 
+type VoiceVariantSummaryRow = {
+  variant: string;
+  runtimeProfile: string;
+  voice: string;
+  sessions: number;
+  submitted: number;
+  connected: number;
+  errorSessions: number;
+  responseTokens: number;
+  remoteAudioSamples: number[];
+};
+
 function summarizeVoiceVariants(sessions: VoiceSessionRow[]) {
-  const rows = new Map<
-    string,
-    {
-      variant: string;
-      voice: string;
-      sessions: number;
-      submitted: number;
-      connected: number;
-      errorSessions: number;
-      responseTokens: number;
-    }
-  >();
+  const rows = new Map<string, VoiceVariantSummaryRow>();
   for (const session of sessions) {
     const variant = session.variant || "default";
+    const runtimeProfile = session.runtimeProfile || "baseline";
     const voice = session.voice || "unknown";
-    const key = `${variant}:${voice}`;
-    const row = rows.get(key) ?? {
+    const key = `${runtimeProfile}:${variant}:${voice}`;
+    const row: VoiceVariantSummaryRow = rows.get(key) ?? {
       variant,
+      runtimeProfile,
       voice,
       sessions: 0,
       submitted: 0,
       connected: 0,
       errorSessions: 0,
       responseTokens: 0,
+      remoteAudioSamples: [],
     };
     row.sessions += 1;
     row.submitted += session.leadId ? 1 : 0;
     row.connected += session.connectedAt ? 1 : 0;
     row.errorSessions += session.errors.some((error: VoiceRuntimeError) => !isBenignVoiceError(error)) ? 1 : 0;
     row.responseTokens += session.usage?.responseTokens ?? 0;
+    const timedTurns = (session.latency?.turns ?? []) as Array<{ stopToRemoteAudioMs?: number }>;
+    row.remoteAudioSamples.push(
+      ...timedTurns.flatMap((turn) => (typeof turn.stopToRemoteAudioMs === "number" ? [turn.stopToRemoteAudioMs] : [])),
+    );
     rows.set(key, row);
   }
   return [...rows.values()]
@@ -2692,6 +2713,7 @@ function summarizeVoiceVariants(sessions: VoiceSessionRow[]) {
       ...row,
       submitRate: Math.round((row.submitted / row.sessions) * 100),
       connectRate: Math.round((row.connected / row.sessions) * 100),
+      remoteAudio: latencyPercentiles(row.remoteAudioSamples),
     }))
     .sort((left, right) => right.sessions - left.sessions || right.errorSessions - left.errorSessions);
 }

@@ -38,6 +38,8 @@ export const leadRequestSchema = z.object({
   voiceModel: z.string().max(80).optional(),
   voiceName: z.string().max(80).optional(),
   voiceSpeed: z.number().min(0.25).max(1.5).optional(),
+  voiceRuntimeProfile: z.enum(["baseline", "instant-v1"]).optional(),
+  voiceInputPolicy: z.enum(["baseline", "fast", "patient"]).optional(),
   utm: utmSchema,
 });
 
@@ -106,6 +108,8 @@ export const voiceReviewSnapshotSchema = z.object({
     voice: z.string().max(80).optional(),
     speed: z.number().min(0.25).max(1.5).optional(),
     variant: z.string().max(64).nullable().optional(),
+    runtimeProfile: z.enum(["baseline", "instant-v1"]).optional(),
+    inputPolicy: z.enum(["baseline", "fast", "patient"]).optional(),
     captured: z.object({
       name: z.string().max(120).default(""),
       email: z.string().max(180).default(""),

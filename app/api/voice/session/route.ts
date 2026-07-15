@@ -54,6 +54,8 @@ export async function POST(request: NextRequest) {
       voice: secret.voice,
       speed: secret.speed,
       variant: secret.variant ?? "default",
+      runtimeProfile: secret.runtime_profile,
+      inputPolicy: secret.input_policy,
       transcriptionModel: secret.transcription_model,
       noiseReduction: secret.noise_reduction,
       deviceProfile,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   aggregateEvals,
+  aggregateEvalsByRuntimeProfile,
   buildJudgeUserPrompt,
   buildSessionEval,
   deriveEngagementSignals,
@@ -346,5 +347,15 @@ describe("aggregateEvals + meetsThreshold", () => {
     const aggregate = aggregateEvals([evals[0] as (typeof evals)[number]]);
     const gate = meetsThreshold(aggregate, { minRoutingCorrect: 3, maxFrustration: 3 });
     expect(gate.ok).toBe(true);
+  });
+
+  it("keeps runtime-profile comparisons separate from voice variants", () => {
+    const grouped = aggregateEvalsByRuntimeProfile([
+      buildSessionEval(session({ reviewId: "baseline", runtimeProfile: "baseline" }), null),
+      buildSessionEval(session({ reviewId: "instant", runtimeProfile: "instant-v1", submittedAt: 1 }), null),
+    ]);
+    expect(grouped.baseline?.sessionCount).toBe(1);
+    expect(grouped["instant-v1"]?.sessionCount).toBe(1);
+    expect(grouped["instant-v1"]?.submitRate).toBe(1);
   });
 });

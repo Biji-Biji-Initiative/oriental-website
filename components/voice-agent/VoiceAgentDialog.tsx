@@ -605,5 +605,7 @@ function buildVoiceLeadMetadata(review: VoiceReviewCredentials | null) {
     voiceModel: review.model,
     voiceName: review.voice,
     voiceSpeed: review.speed,
+    voiceRuntimeProfile: review.runtimeProfile,
+    voiceInputPolicy: review.inputPolicy,
   };
 }

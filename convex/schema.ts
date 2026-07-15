@@ -26,6 +26,8 @@ export default defineSchema({
     voiceModel: v.optional(v.string()),
     voiceName: v.optional(v.string()),
     voiceSpeed: v.optional(v.number()),
+    voiceRuntimeProfile: v.optional(v.string()),
+    voiceInputPolicy: v.optional(v.string()),
     utm: v.record(v.string(), v.string()),
     status: v.string(),
     priority: v.optional(v.string()),
@@ -74,6 +76,8 @@ export default defineSchema({
     voice: v.optional(v.string()),
     speed: v.optional(v.number()),
     variant: v.optional(v.union(v.string(), v.null())),
+    runtimeProfile: v.optional(v.union(v.literal("baseline"), v.literal("instant-v1"))),
+    inputPolicy: v.optional(v.union(v.literal("baseline"), v.literal("fast"), v.literal("patient"))),
     captured: v.object({
       name: v.string(),
       email: v.string(),

@@ -109,6 +109,12 @@ if (realtimeSpeed) {
   }
 }
 
+const runtimeProfile = envValue("VOICE_RUNTIME_PROFILE");
+if (runtimeProfile && runtimeProfile !== "baseline" && runtimeProfile !== "instant-v1") {
+  console.error("VOICE_RUNTIME_PROFILE must be baseline or instant-v1.");
+  process.exit(1);
+}
+
 console.log("Secret contract satisfied.");
 
 function envValue(name: string) {

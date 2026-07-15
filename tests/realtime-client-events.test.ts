@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   serializeHandoffContext,
+  serializeInputPolicyUpdate,
   serializeRealtimeCommand,
   serializeResponseCreate,
   serializeTypedInterruption,
@@ -134,6 +135,32 @@ describe("serializeRealtimeCommand", () => {
       type: "response.create",
       event_id: "evt_response",
       response: { instructions: "Start as Reka." },
+    });
+  });
+
+  it("serializes a scoped session.update for deterministic VAD changes", () => {
+    expect(
+      serializeInputPolicyUpdate(
+        "patient",
+        { type: "semantic_vad", eagerness: "low", create_response: true, interrupt_response: true },
+        nextEventId(["evt_policy"]),
+      ),
+    ).toEqual({
+      type: "session.update",
+      event_id: "evt_policy",
+      session: {
+        type: "realtime",
+        audio: {
+          input: {
+            turn_detection: {
+              type: "semantic_vad",
+              eagerness: "low",
+              create_response: true,
+              interrupt_response: true,
+            },
+          },
+        },
+      },
     });
   });
 });

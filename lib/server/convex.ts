@@ -11,8 +11,17 @@ export async function persistLead(lead: StoredLead) {
     return { id: lead.id, persisted: false as const, reason: "convex_unconfigured" };
   }
   const client = new ConvexHttpClient(convexUrl);
-  const result = await client.mutation(api.leads.createLead, { lead, ingestSecret });
-  return { id: result.id, persisted: true as const };
+  try {
+    const result = await client.mutation(api.leads.createLead, { lead, ingestSecret });
+    return { id: result.id, persisted: true as const };
+  } catch (error) {
+    if (lead.voiceRuntimeProfile || lead.voiceInputPolicy) {
+      const { voiceRuntimeProfile: _runtimeProfile, voiceInputPolicy: _inputPolicy, ...legacyLead } = lead;
+      const result = await client.mutation(api.leads.createLead, { lead: legacyLead, ingestSecret });
+      return { id: result.id, persisted: true as const };
+    }
+    throw error;
+  }
 }
 
 export async function recordLeadNotificationStatus(
@@ -59,8 +68,14 @@ export async function persistVoiceReviewSnapshot(input: VoiceReviewSnapshotReque
     // Forward-compatibility: a Convex deployment that predates evolvable
     // telemetry fields rejects them as unknown arguments. Retry once without
     // telemetry so review persistence never regresses on deploy ordering.
-    if (input.transport || input.latency) {
-      const { transport: _transport, latency: _latency, ...rest } = input;
+    if (input.transport || input.latency || input.runtimeProfile || input.inputPolicy) {
+      const {
+        transport: _transport,
+        latency: _latency,
+        runtimeProfile: _runtimeProfile,
+        inputPolicy: _inputPolicy,
+        ...rest
+      } = input;
       const result = await client.client.mutation(api.leads.recordVoiceSession, {
         ingestSecret: client.ingestSecret,
         snapshot: rest,

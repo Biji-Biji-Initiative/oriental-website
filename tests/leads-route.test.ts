@@ -48,6 +48,8 @@ function leadBody(overrides: Record<string, unknown> = {}) {
     voiceModel: "gpt-realtime-2",
     voiceName: "marin",
     voiceSpeed: 1.22,
+    voiceRuntimeProfile: "instant-v1",
+    voiceInputPolicy: "fast",
     turnstileToken: "local-dev",
     utm: {},
     ...overrides,
@@ -131,6 +133,8 @@ describe("POST /api/leads", () => {
         voiceModel: "gpt-realtime-2",
         voiceName: "marin",
         voiceSpeed: 1.22,
+        voiceRuntimeProfile: "instant-v1",
+        voiceInputPolicy: "fast",
       }),
     );
     expect(mocks.persistLead.mock.calls[0]?.[0]).not.toHaveProperty("voiceReviewToken");
@@ -188,6 +192,8 @@ describe("POST /api/leads", () => {
           voiceModel: undefined,
           voiceName: undefined,
           voiceSpeed: undefined,
+          voiceRuntimeProfile: undefined,
+          voiceInputPolicy: undefined,
         },
         "203.0.113.10",
       ),

@@ -37,6 +37,8 @@ describe("createRealtimeClientSecret", () => {
       voice: "marin",
       speed: 1.12,
       variant: null,
+      runtime_profile: "baseline",
+      input_policy: "baseline",
       transcription_model: "gpt-4o-transcribe",
       noise_reduction: "far_field",
       limits: { max_duration_ms: 600_000, idle_timeout_ms: 20_000 },
@@ -87,6 +89,25 @@ describe("createRealtimeClientSecret", () => {
     expect(body.session.audio.input.transcription.prompt).toContain("Bahasa Melayu");
     expect(body.session.audio.input.transcription.language).toBeUndefined();
     expect(body.session.tools.map((tool: { name: string }) => tool.name)).toContain("wait_for_user");
+  });
+
+  it("keeps the latency profile independent from the selected voice variant", async () => {
+    process.env.VOICE_RUNTIME_PROFILE = "instant-v1";
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+      Response.json({
+        client_secret: { value: "client-secret", expires_at: 123 },
+        session: { id: "sess_instant" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await createRealtimeClientSecret("safe-user", "technology", "desktop", "malay-warm");
+
+    expect(result.runtime_profile).toBe("instant-v1");
+    expect(result.input_policy).toBe("fast");
+    expect(result.variant).toBe("malay-warm");
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(body.session.audio.input.turn_detection).toMatchObject({ type: "semantic_vad", eagerness: "high" });
   });
 
   it("uses near-field noise reduction for mobile sessions", async () => {

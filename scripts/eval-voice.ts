@@ -20,6 +20,7 @@ import OpenAI from "openai";
 import { api } from "../convex/_generated/api";
 import {
   aggregateEvals,
+  aggregateEvalsByRuntimeProfile,
   buildJudgeUserPrompt,
   buildSessionEval,
   isJudgeable,
@@ -179,6 +180,7 @@ async function main() {
     buildSessionEval(session, scores.get(session.reviewId) ?? null),
   );
   const aggregate = aggregateEvals(evals);
+  const profileAggregates = aggregateEvalsByRuntimeProfile(evals);
 
   if (args.persist && !dry) {
     const payloads = evals
@@ -211,9 +213,12 @@ async function main() {
   mkdirSync(args.out, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const reportPath = join(args.out, `voice-eval-${stamp}.json`);
-  writeFileSync(reportPath, JSON.stringify({ generatedAt: stamp, aggregate, evals, sessions }, null, 2));
+  writeFileSync(
+    reportPath,
+    JSON.stringify({ generatedAt: stamp, aggregate, profileAggregates, evals, sessions }, null, 2),
+  );
 
-  printSummary(aggregate, gate, reportPath, dry);
+  printSummary(aggregate, profileAggregates, gate, reportPath, dry);
 
   const gateActive = Object.values(thresholds).some((value) => typeof value === "number");
   if (gateActive && !gate.ok) process.exit(2);
@@ -221,6 +226,7 @@ async function main() {
 
 function printSummary(
   aggregate: ReturnType<typeof aggregateEvals>,
+  profileAggregates: ReturnType<typeof aggregateEvalsByRuntimeProfile>,
   gate: { ok: boolean; failures: string[] },
   reportPath: string,
   dry: boolean,
@@ -232,6 +238,12 @@ function printSummary(
   console.log(`dropped mid-turn:    ${aggregate.droppedMidTurnCount}`);
   console.log(`disconnect sessions: ${aggregate.disconnectSessions}  (clean recoveries ${aggregate.cleanRecoveries})`);
   console.log(`submit rate:         ${(aggregate.submitRate * 100).toFixed(0)}%`);
+  console.log("--- runtime profiles ---");
+  for (const [profile, profileAggregate] of Object.entries(profileAggregates)) {
+    console.log(
+      `${profile}: ${profileAggregate.sessionCount} sessions, ${(profileAggregate.submitRate * 100).toFixed(0)}% submit`,
+    );
+  }
   if (!dry) {
     console.log("--- LLM rubric (0-5) ---");
     console.log(`routingCorrect:      ${fmt(averages.routingCorrect)}`);

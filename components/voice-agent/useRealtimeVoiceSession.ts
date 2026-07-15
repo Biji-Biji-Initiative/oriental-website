@@ -2,16 +2,23 @@
 
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
 import type { SegmentId } from "@/lib/segments";
-import type { RealtimeOutboundEvent } from "@/lib/voice/client-events";
+import { type RealtimeOutboundEvent, serializeInputPolicyUpdate } from "@/lib/voice/client-events";
 import {
   createVoiceLatencyState,
   reduceVoiceLatency,
+  type VoiceInputPolicy,
   type VoiceLatencySignal,
   type VoiceLatencyTelemetry,
   type VoiceTurnPhase,
 } from "@/lib/voice/latency";
 import { VOICE_SESSION_DEFAULTS } from "@/lib/voice/profile";
 import type { RealtimeServerEvent } from "@/lib/voice/realtime-events";
+import {
+  inputPolicyForAssistantText,
+  resolveVoiceRuntimeProfile,
+  type VoiceRuntimeProfile,
+  type VoiceRuntimeProfileId,
+} from "@/lib/voice/runtime-profile";
 import {
   emptyTransportTelemetry,
   foldTransportStats,
@@ -41,6 +48,8 @@ export type VoiceReviewMetadata = {
   voice?: string;
   speed?: number;
   variant?: string | null;
+  runtimeProfile?: VoiceRuntimeProfileId;
+  inputPolicy?: VoiceInputPolicy;
   prewarmedAt?: number;
   connectStartedAt?: number;
   connectedAt?: number;
@@ -61,6 +70,8 @@ type VoiceSessionResponse = {
   voice?: string;
   speed?: number;
   variant?: string | null;
+  runtime_profile?: VoiceRuntimeProfileId;
+  input_policy?: VoiceInputPolicy;
   limits?: { max_duration_ms?: number; idle_timeout_ms?: number };
 };
 
@@ -136,6 +147,9 @@ export function useRealtimeVoiceSession({
   const captureCloseRef = useRef<(() => void) | null>(null);
   const transportRef = useRef<VoiceTransportTelemetry>(emptyTransportTelemetry());
   const latencyRef = useRef(createVoiceLatencyState());
+  const runtimeProfileRef = useRef<VoiceRuntimeProfile>(resolveVoiceRuntimeProfile("baseline"));
+  const inputPolicyRef = useRef<VoiceInputPolicy>("baseline");
+  const patientReplyPendingRef = useRef(false);
   const nextActivationRef = useRef<VoiceLatencyTelemetry["activation"]>(undefined);
   const recordLatencySignalRef = useRef<((signal: VoiceLatencySignal) => void) | null>(null);
   // Session policy from the server, falling back to compiled defaults.
@@ -185,6 +199,7 @@ export function useRealtimeVoiceSession({
       captureCloseRef.current?.();
       captureCloseRef.current = null;
       recordLatencySignalRef.current = null;
+      patientReplyPendingRef.current = false;
       clearTimers();
       idleClosingRef.current = false;
       const channel = dataChannelRef.current;
@@ -348,6 +363,8 @@ export function useRealtimeVoiceSession({
         voice: session.voice,
         speed: session.speed,
         variant: session.variant ?? null,
+        runtimeProfile: session.runtime_profile ?? "baseline",
+        inputPolicy: session.input_policy ?? "baseline",
         conversationId: conversationIdRef.current,
         ...extras,
       });
@@ -428,9 +445,9 @@ export function useRealtimeVoiceSession({
     if (connectGateRef.current || statusRef.current !== "idle") return;
     connectGateRef.current = true;
     const connectStartedAt = Date.now();
+    const activation = nextActivationRef.current;
     firstEventAtRef.current = undefined;
     transportRef.current = emptyTransportTelemetry();
-    latencyRef.current = createVoiceLatencyState("baseline", nextActivationRef.current);
     nextActivationRef.current = undefined;
     setTurnPhase("quiet");
     userSpeakingRef.current = false;
@@ -458,6 +475,13 @@ export function useRealtimeVoiceSession({
         setStatus("connecting");
         session = await obtainVoiceSession();
       }
+
+      const runtimeProfile = resolveVoiceRuntimeProfile(session.runtime_profile);
+      const initialInputPolicy = session.input_policy ?? runtimeProfile.defaultInputPolicy;
+      runtimeProfileRef.current = runtimeProfile;
+      inputPolicyRef.current = initialInputPolicy;
+      patientReplyPendingRef.current = false;
+      latencyRef.current = createVoiceLatencyState(initialInputPolicy, activation);
 
       emitSessionReady(session, { prewarmedAt: activePrewarmedAtRef.current, connectStartedAt });
 
@@ -546,6 +570,17 @@ export function useRealtimeVoiceSession({
 
       const channel = peer.createDataChannel("oai-events");
       dataChannelRef.current = channel;
+      const setInputPolicy = (inputPolicy: VoiceInputPolicy) => {
+        if (inputPolicyRef.current === inputPolicy) return;
+        const sent = sendClientEvents(
+          serializeInputPolicyUpdate(inputPolicy, runtimeProfile.turnDetection[inputPolicy]),
+        );
+        if (!sent) return;
+        inputPolicyRef.current = inputPolicy;
+        session.input_policy = inputPolicy;
+        recordLatencySignal({ type: "input_policy_changed", inputPolicy });
+        emitSessionReady(session, { inputPolicy });
+      };
       channel.onopen = () => {
         setStatus("listening");
         emitSessionReady(session, {
@@ -600,6 +635,10 @@ export function useRealtimeVoiceSession({
         }
         if (parsed?.type === "response.created") {
           recordLatencySignal({ type: "response_created", at: performance.now() });
+          if (patientReplyPendingRef.current) {
+            patientReplyPendingRef.current = false;
+            setInputPolicy(runtimeProfile.defaultInputPolicy);
+          }
         }
         if (
           parsed?.type === "response.output_audio.delta" ||
@@ -613,6 +652,14 @@ export function useRealtimeVoiceSession({
               ? { type: "interruption_cleared", at: performance.now() }
               : { type: "response_done", at: performance.now() },
           );
+        }
+        if (parsed?.type === "response.output_audio_transcript.done") {
+          const transcript = typeof parsed.transcript === "string" ? parsed.transcript : "";
+          const policy = inputPolicyForAssistantText(transcript, runtimeProfile);
+          if (policy === "patient") {
+            patientReplyPendingRef.current = true;
+            setInputPolicy(policy);
+          }
         }
         if (!firstEventAtRef.current) {
           firstEventAtRef.current = Date.now();
@@ -663,6 +710,7 @@ export function useRealtimeVoiceSession({
     onEvent,
     resetIdleTimer,
     resumeDeferredClose,
+    sendClientEvents,
     setStatus,
     teardownVoice,
   ]);

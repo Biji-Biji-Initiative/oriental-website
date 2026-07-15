@@ -61,6 +61,8 @@ export type VoiceEvalSession = {
   connectedAt?: number | null;
   firstEventAt?: number | null;
   closedAt?: number | null;
+  runtimeProfile?: "baseline" | "instant-v1" | null;
+  inputPolicy?: "baseline" | "fast" | "patient" | null;
   transcript: EvalTranscriptTurn[];
   errors: Array<{ code?: string; message: string }>;
   transport?: EvalTransport;
@@ -390,6 +392,8 @@ export type SessionEval = {
   callCount: number;
   segment: string;
   closeReason: string | null;
+  runtimeProfile: "baseline" | "instant-v1";
+  inputPolicy: "baseline" | "fast" | "patient";
   transport: TransportSignals;
   latency: LatencySignals;
   engagement: EngagementSignals;
@@ -403,6 +407,8 @@ export function buildSessionEval(session: VoiceEvalSession, score: JudgeScore | 
     callCount: session.callReviewIds?.length ?? 1,
     segment: session.segment,
     closeReason: session.closeReason ?? null,
+    runtimeProfile: session.runtimeProfile ?? "baseline",
+    inputPolicy: session.inputPolicy ?? "baseline",
     transport: deriveTransportSignals(session),
     latency: deriveLatencySignals(session),
     engagement: deriveEngagementSignals(session),
@@ -462,6 +468,16 @@ export function aggregateEvals(evals: SessionEval[]): EvalAggregate {
     },
     worstSessions,
   };
+}
+
+export function aggregateEvalsByRuntimeProfile(evals: SessionEval[]): Record<string, EvalAggregate> {
+  const groups = new Map<string, SessionEval[]>();
+  for (const entry of evals) {
+    const group = groups.get(entry.runtimeProfile);
+    if (group) group.push(entry);
+    else groups.set(entry.runtimeProfile, [entry]);
+  }
+  return Object.fromEntries([...groups.entries()].map(([profile, entries]) => [profile, aggregateEvals(entries)]));
 }
 
 export type EvalThresholds = {

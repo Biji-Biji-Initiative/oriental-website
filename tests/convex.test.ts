@@ -85,6 +85,20 @@ describe("persistLead", () => {
     });
   });
 
+  it("retries profiled leads against a pre-profile Convex deployment", async () => {
+    mocks.mutation
+      .mockRejectedValueOnce(new Error("ArgumentValidationError: unexpected field `voiceRuntimeProfile`"))
+      .mockResolvedValueOnce({ id: "lead_123" });
+
+    await expect(
+      persistLead({ ...lead(), voiceRuntimeProfile: "instant-v1", voiceInputPolicy: "fast" }),
+    ).resolves.toEqual({ id: "lead_123", persisted: true });
+
+    const retryArgs = mocks.mutation.mock.calls[1]?.[1] as { lead: Record<string, unknown> };
+    expect(retryArgs.lead).not.toHaveProperty("voiceRuntimeProfile");
+    expect(retryArgs.lead).not.toHaveProperty("voiceInputPolicy");
+  });
+
   it("applies admin workflow mutations through Convex", async () => {
     mocks.mutation.mockResolvedValue({ ok: true });
 
@@ -196,6 +210,8 @@ describe("persistVoiceReviewSnapshot", () => {
     errors: [],
     rateLimits: [],
     routeRequested: false,
+    runtimeProfile: "instant-v1" as const,
+    inputPolicy: "fast" as const,
     transport: {
       disconnectCount: 1,
       recoveryCount: 1,
@@ -256,6 +272,8 @@ describe("persistVoiceReviewSnapshot", () => {
     const retryArgs = mocks.mutation.mock.calls[1]?.[1] as { snapshot: Record<string, unknown> };
     expect(retryArgs.snapshot).not.toHaveProperty("transport");
     expect(retryArgs.snapshot).not.toHaveProperty("latency");
+    expect(retryArgs.snapshot).not.toHaveProperty("runtimeProfile");
+    expect(retryArgs.snapshot).not.toHaveProperty("inputPolicy");
     expect(retryArgs.snapshot).toMatchObject({ reviewId: "review_1" });
   });
 });

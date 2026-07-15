@@ -29,6 +29,8 @@ describe("lead request schema", () => {
       voiceModel: "gpt-realtime-2",
       voiceName: "marin",
       voiceSpeed: 1.22,
+      voiceRuntimeProfile: "instant-v1",
+      voiceInputPolicy: "fast",
       form: {
         name: "Asha",
         email: "asha@example.com",
@@ -153,6 +155,8 @@ describe("voice review latency schema", () => {
         ...request,
         snapshot: {
           ...request.snapshot,
+          runtimeProfile: "instant-v1",
+          inputPolicy: "fast",
           latency: { version: 1, activation: { tapToArmCueScheduledMs: 4 }, turns: [turn] },
         },
       }).success,

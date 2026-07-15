@@ -4,6 +4,7 @@ import type { RealtimeSessionCreateRequest } from "openai/resources/realtime/rea
 import { readEnv, readPositiveIntEnv } from "@/lib/env";
 import type { SegmentId } from "@/lib/segments";
 import { buildVoiceInstructions, VOICE_SESSION_DEFAULTS, VOICE_TOOLS } from "@/lib/voice/profile";
+import { resolveVoiceRuntimeProfile } from "@/lib/voice/runtime-profile";
 import { getVoiceVariant } from "@/lib/voice/variants";
 
 export type RealtimeDeviceProfile = "mobile" | "desktop";
@@ -31,6 +32,7 @@ export async function createRealtimeClientSecret(
     VOICE_SESSION_DEFAULTS.transcription.model;
   // Phones are close-talking mics; laptops and desktops are far-field.
   const noiseReduction = deviceProfile === "mobile" ? "near_field" : "far_field";
+  const runtimeProfile = resolveVoiceRuntimeProfile(readEnv("VOICE_RUNTIME_PROFILE", "baseline"));
 
   const client = new OpenAI({ apiKey, dangerouslyAllowBrowser: process.env.NODE_ENV === "test" });
   const clientSecretRequest = {
@@ -44,7 +46,7 @@ export async function createRealtimeClientSecret(
       truncation: VOICE_SESSION_DEFAULTS.truncation,
       audio: {
         input: {
-          turn_detection: VOICE_SESSION_DEFAULTS.turnDetection,
+          turn_detection: runtimeProfile.turnDetection[runtimeProfile.defaultInputPolicy],
           transcription: { ...VOICE_SESSION_DEFAULTS.transcription, model: transcriptionModel },
           noise_reduction: { type: noiseReduction },
         },
@@ -88,6 +90,8 @@ export async function createRealtimeClientSecret(
     variant: variant?.id ?? null,
     transcription_model: transcriptionModel,
     noise_reduction: noiseReduction,
+    runtime_profile: runtimeProfile.id,
+    input_policy: runtimeProfile.defaultInputPolicy,
     // Session policy is server-tunable so the dominant UX constraints can be
     // adjusted from Infisical without a code deploy.
     limits: {
