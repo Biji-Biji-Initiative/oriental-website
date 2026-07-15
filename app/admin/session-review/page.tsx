@@ -2868,7 +2868,13 @@ function ConversationTranscript({ calls }: { calls: VoiceSessionRow[] }) {
 
 function closeReasonTone(reason: string): "neutral" | "blue" | "green" | "red" | "amber" {
   if (reason === "manual" || reason === "idle_timeout" || reason === "max_duration") return "neutral";
-  if (reason === "voice_limit_reached" || reason === "mic_denied" || reason === "page_hidden") return "amber";
+  if (
+    reason === "voice_limit_reached" ||
+    reason === "realtime_busy" ||
+    reason === "mic_denied" ||
+    reason === "page_hidden"
+  )
+    return "amber";
   return "red";
 }
 

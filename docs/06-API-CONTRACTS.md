@@ -484,7 +484,12 @@ degraded fallback for local development or Redis outages.
 | `/api/newsletter` | 20 / hour / IP |
 | `/api/voice/session` | `VOICE_SESSION_DAILY_LIMIT` minted sessions / day / IP; default 80 |
 
-429 responses currently do not include `Retry-After`.
+Every `429` response includes `Retry-After` as positive whole seconds and
+`X-RateLimit-Reset` as a Unix timestamp in seconds. Client identity comes from
+the proxy-owned rightmost valid `X-Forwarded-For` address, with validated
+proxy metadata required on every request. The DNS-direct origin deliberately
+ignores both client-supplied `CF-Connecting-IP` and `X-Real-IP` values; missing
+or malformed forwarded metadata shares one fail-closed rate-limit identity.
 
 Structured logs for rate-limited requests include `event`, `requestId`, hashed
 IP metadata, `rateLimitStore`, `resetAt`, and `durationMs`. In production, a
