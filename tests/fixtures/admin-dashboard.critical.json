@@ -203,6 +203,11 @@
       "errors": [],
       "rateLimits": [],
       "routeRequested": true,
+      "latency": {
+        "version": 1,
+        "activation": { "tapToArmCueScheduledMs": 4, "tapToLiveMs": 480 },
+        "turns": []
+      },
       "createdAt": 1781704152327,
       "updatedAt": 1781704812327,
       "submittedAt": 1781704812327

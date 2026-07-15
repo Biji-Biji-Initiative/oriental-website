@@ -2,6 +2,8 @@ let chimeContext: AudioContext | null = null;
 
 export type VoiceActivationCue = {
   tapToArmCueScheduledMs: number;
+  /** Monotonic browser marker used only to derive tap-to-live; never persisted. */
+  tapStartedAt: number;
 };
 
 /**
@@ -12,7 +14,15 @@ export type VoiceActivationCue = {
 export function playArmCue(): VoiceActivationCue {
   const tappedAt = performance.now();
   playNotes([[523.25, 0, 0.085]], 0.032);
-  return { tapToArmCueScheduledMs: Math.max(0, Math.round(performance.now() - tappedAt)) };
+  return {
+    tapToArmCueScheduledMs: Math.max(0, Math.round(performance.now() - tappedAt)),
+    tapStartedAt: tappedAt,
+  };
+}
+
+/** Complete the activation measurement when the Realtime channel is usable. */
+export function measureTapToLive(cue: VoiceActivationCue, liveAt = performance.now()): number {
+  return Math.max(0, Math.round(liveAt - cue.tapStartedAt));
 }
 
 /**

@@ -155,6 +155,7 @@ export const voiceReviewSnapshotSchema = z.object({
         activation: z
           .object({
             tapToArmCueScheduledMs: z.number().nonnegative().max(10_000).optional(),
+            tapToLiveMs: z.number().nonnegative().max(120_000).optional(),
           })
           .optional(),
         turns: z

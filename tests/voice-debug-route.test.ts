@@ -64,6 +64,7 @@ function snapshotRequest(review: { id: string; token: string } = createVoiceRevi
         routeRequested: false,
         latency: {
           version: 1,
+          activation: { tapToArmCueScheduledMs: 4, tapToLiveMs: 480 },
           turns: [
             {
               sequence: 1,

@@ -42,6 +42,8 @@ export type VoiceLatencyTelemetry = {
   activation?: {
     /** Initiating tap to scheduling the local arm cue; this is not speaker output. */
     tapToArmCueScheduledMs?: number;
+    /** Initiating tap to the Realtime data channel becoming live. */
+    tapToLiveMs?: number;
   };
   turns: VoiceTurnLatencySample[];
 };

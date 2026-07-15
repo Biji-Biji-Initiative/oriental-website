@@ -2407,6 +2407,9 @@ function VoiceQaRollup({ sessions }: { sessions: VoiceSessionRow[] }) {
             {formatLatency(latency.remoteAudio.p95Ms)}
           </div>
           <div>Arm cue scheduling p95: {formatLatency(latency.activation.p95Ms)}</div>
+          <div>
+            Tap to live p50/p95: {formatLatency(latency.tapToLive.p50Ms)} / {formatLatency(latency.tapToLive.p95Ms)}
+          </div>
           <div>Browser tool execution p95: {formatLatency(latency.tool.p95Ms)}</div>
           <div>
             {latency.rapidResumeTurns} rapid resumes · {latency.interruptedTurns} interrupted replies
@@ -2427,6 +2430,7 @@ function VoiceQaRollup({ sessions }: { sessions: VoiceSessionRow[] }) {
               <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Connect</th>
               <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Errors</th>
               <th className="py-2 font-semibold uppercase tracking-[0.12em]">Tokens</th>
+              <th className="py-2 font-semibold uppercase tracking-[0.12em]">Tap→live p50/p95</th>
               <th className="py-2 font-semibold uppercase tracking-[0.12em]">Audio p50/p95</th>
             </tr>
           </thead>
@@ -2448,6 +2452,9 @@ function VoiceQaRollup({ sessions }: { sessions: VoiceSessionRow[] }) {
                   {row.errorSessions}
                 </td>
                 <td className="py-2">{row.responseTokens}</td>
+                <td className="py-2">
+                  {formatLatency(row.tapToLive.p50Ms)} / {formatLatency(row.tapToLive.p95Ms)}
+                </td>
                 <td className="py-2">
                   {formatLatency(row.remoteAudio.p50Ms)} / {formatLatency(row.remoteAudio.p95Ms)}
                 </td>
@@ -2692,6 +2699,7 @@ type VoiceVariantSummaryRow = {
   connected: number;
   errorSessions: number;
   responseTokens: number;
+  tapToLiveSamples: number[];
   remoteAudioSamples: number[];
 };
 
@@ -2715,6 +2723,7 @@ function summarizeVoiceVariants(sessions: VoiceSessionRow[]) {
       connected: 0,
       errorSessions: 0,
       responseTokens: 0,
+      tapToLiveSamples: [],
       remoteAudioSamples: [],
     };
     row.sessions += 1;
@@ -2722,6 +2731,9 @@ function summarizeVoiceVariants(sessions: VoiceSessionRow[]) {
     row.connected += session.connectedAt ? 1 : 0;
     row.errorSessions += session.errors.some((error: VoiceRuntimeError) => !isBenignVoiceError(error)) ? 1 : 0;
     row.responseTokens += session.usage?.responseTokens ?? 0;
+    if (typeof session.latency?.activation?.tapToLiveMs === "number") {
+      row.tapToLiveSamples.push(session.latency.activation.tapToLiveMs);
+    }
     const timedTurns = (session.latency?.turns ?? []) as Array<{ stopToRemoteAudioMs?: number }>;
     row.remoteAudioSamples.push(
       ...timedTurns.flatMap((turn) => (typeof turn.stopToRemoteAudioMs === "number" ? [turn.stopToRemoteAudioMs] : [])),
@@ -2733,6 +2745,7 @@ function summarizeVoiceVariants(sessions: VoiceSessionRow[]) {
       ...row,
       submitRate: Math.round((row.submitted / row.sessions) * 100),
       connectRate: Math.round((row.connected / row.sessions) * 100),
+      tapToLive: latencyPercentiles(row.tapToLiveSamples),
       remoteAudio: latencyPercentiles(row.remoteAudioSamples),
     }))
     .sort((left, right) => right.sessions - left.sessions || right.errorSessions - left.errorSessions);
@@ -2764,6 +2777,9 @@ function summarizeSessionLatency(sessions: VoiceSessionRow[]) {
       ? [session.latency.activation.tapToArmCueScheduledMs]
       : [],
   );
+  const tapToLive = sessions.flatMap((session) =>
+    typeof session.latency?.activation?.tapToLiveMs === "number" ? [session.latency.activation.tapToLiveMs] : [],
+  );
   return {
     sampledTurns: turns.length,
     firstOutput: latencyPercentiles(firstOutput),
@@ -2774,6 +2790,7 @@ function summarizeSessionLatency(sessions: VoiceSessionRow[]) {
     tool: latencyPercentiles(tool),
     bargeIn: latencyPercentiles(bargeIn),
     activation: latencyPercentiles(activation),
+    tapToLive: latencyPercentiles(tapToLive),
     interruptedTurns: turns.filter((turn) => turn.interrupted).length,
     rapidResumeTurns: turns.filter((turn) => turn.rapidResume).length,
   };

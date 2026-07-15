@@ -20,6 +20,7 @@ const review = {
   firstEventAt: 3100,
   latency: {
     version: 1 as const,
+    activation: { tapToArmCueScheduledMs: 4, tapToLiveMs: 480 },
     turns: [
       {
         sequence: 1,

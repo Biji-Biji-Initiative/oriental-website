@@ -137,6 +137,16 @@ These are recommendations, not automatically part of PR 1:
 - Break latency into endpoint/VAD, model, tool, and playout waits.
 - Add `/api/voice/session` `Server-Timing` for parsing, rate-limit lookup,
   OpenAI minting, and total duration.
+- Retain click-to-live startup telemetry and evaluate the returning-visitor
+  target of less than 500 ms p50 separately from local tap feedback.
+- Verify the session route is colocated with its dominant users, does not add a
+  cross-region Redis hop, reuses outbound connections, and benchmark rather
+  than assume an edge-compatible rewrite is faster.
+- Evaluate the controlled model/reasoning/VAD/prompt/tool cells with the same
+  scripted pauses, email dictation, corrections, Manglish, and Bahasa Melayu
+  utterances before enabling a candidate globally.
+- Track assistant-overlap/false-endpoint and contact-correction quality costs,
+  not latency alone.
 - Consider a cancellable local hedged backchannel after 250–350 ms.
 - Consider deterministic tentative extraction for obvious contact details.
 - Consider full WebRTC peer pre-negotiation only if evidence shows negotiation
@@ -175,6 +185,30 @@ These are recommendations, not automatically part of PR 1:
   `606f46e`.
 - The tracked verification evidence is
   `.apr/evidence/round-1-verification.md`.
+- PR 13 merged into `main` at merge commit
+  `7fb9fdc58b49f97f5dcd70ccd7da89ca26e5d1c7`; main-branch CI run
+  `29416201140` passed.
+- Canonical staging currently serves the exact final source commit
+  `da715af152261d69d9a49be78e3f74911e16692e`; the merge commit has the
+  same source tree but has not yet been rebuilt into the staging image.
+- Production still serves `606f46e`. The owner has now explicitly authorized
+  production deployment, but has not provided a subjective Malaysian
+  voice-quality listening result.
+- Production environment does not set the experimental runtime/model/reasoning
+  selectors, so code defaults remain `baseline` / `control` / `low`. Shipping
+  the reviewed web code is distinct from enabling the `instant-v1` candidate.
+- The pre-production closure evidence is
+  `.apr/evidence/pre-production-closure.md`.
+- Closure commit `b94e0896b7359e5c892bed66d15a3be293471363` adds
+  exact initiating tap-to-live measurement and runtime/profile/cell rollups;
+  its local and browser verification is recorded in the closure evidence.
+- The concise final APR adjudication is
+  `.apr/rounds/oriental-voice-final-verdict/round_1.md` and concludes
+  `VERDICT: SHIP SAFE DEFAULTS`, while retaining all empirical candidate gates.
+- Focused correction review
+  `.apr/rounds/oriental-voice-final-verdict/round_2.md` found no ship blocker,
+  corrected one reduced-motion evidence attribution, and reaffirmed the same
+  safe-default verdict.
 
 ## Required APR output
 
@@ -187,3 +221,10 @@ These are recommendations, not automatically part of PR 1:
    to production.
 6. The smallest defensible next step, respecting the sequential plan.
 7. No speculative redesign unless it is needed to explain a concrete gap.
+8. Identify any requirement present in the source conversation but missing
+   from this plan or the release contract, especially cold-start, controlled
+   language/correction evaluation, and quality-cost measurement.
+9. Decide whether deploying the code to production with the safe
+   baseline/control/low defaults is defensible while the `instant-v1` sample
+   gate remains `insufficient_data`; do not equate web deployment with
+   candidate-profile enablement.
