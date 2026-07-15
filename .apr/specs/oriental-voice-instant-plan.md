@@ -145,11 +145,11 @@ These are recommendations, not automatically part of PR 1:
 - Build an eventual latency autopilot only after trustworthy measurements and
   false-cutoff/correction quality gates exist.
 
-## Current claimed implementation evidence to verify
+## Historical seed evidence from the source conversation
 
-- Candidate implementation commit:
+- Initial telemetry-only candidate commit:
   `7f7d045e6d7c2d7235449c0540205de2bd13ff48`.
-- Candidate PR:
+- Initial telemetry-only PR, now superseded by the integration vehicle:
   `https://github.com/Biji-Biji-Initiative/oriental-website/pull/11`.
 - Claimed checks: lint, typecheck, 170 unit tests, production build, focused
   Playwright/browser proof, and dry evaluation.
@@ -158,7 +158,23 @@ These are recommendations, not automatically part of PR 1:
 - Claimed staging web deployment: exact candidate commit, healthy at
   `https://staging.oriental.mereka.io/api/health`.
 - Claimed production web version remains `606f46e` and was not promoted.
-- PR 11 is expected to remain open unless current GitHub evidence says otherwise.
+- PR 11 may be closed once a reviewed integration PR contains the same commit.
+
+## Current integration evidence
+
+- Product implementation baseline:
+  `d085cac0f649e8f718c5b9b4f43447869be59664`.
+- Review-tool configuration baseline:
+  `2b58932bbe3df42c156ba2d2f022c578c1a99ba4`.
+- Canonical merge vehicle:
+  `https://github.com/Biji-Biji-Initiative/oriental-website/pull/13`.
+- PRs 11 and 12 are superseded by PR 13; their commits remain independently
+  attributable in the integration branch history.
+- Staging web health proved product version `d085cac` at
+  `https://staging.oriental.mereka.io/api/health`; production remained
+  `606f46e`.
+- The tracked verification evidence is
+  `.apr/evidence/round-1-verification.md`.
 
 ## Required APR output
 

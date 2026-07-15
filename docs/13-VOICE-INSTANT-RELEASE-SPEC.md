@@ -1,7 +1,7 @@
 ---
 title: "Oriental Instant Voice Architecture v1"
 type: "voice_ai_spec"
-status: "in_review"
+status: "staged"
 owner: "Mereka Engineering"
 vehicle: "web_webrtc"
 last_updated: "2026-07-15"
@@ -122,9 +122,16 @@ dimension, and prove the exact staged commit before promotion.
   `tests/realtime-events.test.ts`.
 - [x] AC-09 — Sparse/pass/fail promotion states:
   `tests/voice-eval.test.ts`.
-- [ ] AC-10 — Engineering manually verifies a real staged voice call, Malaysian
-  voice quality, cancellation/barge-in, and exact `/api/health` commit at
-  `https://staging.oriental.mereka.io` before merge.
+- [ ] AC-10 — Staging release proof before merge.
+  - [x] A real staged WebRTC call produced live remote audio.
+  - [x] A typed interruption exercised cancellation/barge-in and recovered to a
+    new spoken response.
+  - [x] Voice mint and review persistence returned HTTP 200 without browser
+    errors.
+  - [x] `/api/health` proved product version `d085cac` at
+    `https://staging.oriental.mereka.io` while production remained `606f46e`.
+  - [ ] A human listener approves Malaysian voice quality; automation cannot
+    make this subjective release judgment.
 
 ## Edge Cases
 
@@ -160,8 +167,21 @@ dimension, and prove the exact staged commit before promotion.
 4. Keep `VOICE_RUNTIME_PROFILE=baseline`, `VOICE_MODEL_CELL=control`, and
    `VOICE_REASONING_CELL=low` until the promotion gate and human review pass.
 5. Roll back endpointing with `VOICE_RUNTIME_PROFILE=baseline`; roll back model
-   or reasoning independently with their control env values; roll back web by
+   or reasoning independently with their control env values. Roll back the
+   prompt/tool slice independently by redeploying exact pre-slice commit
+   `b4a11f160f0be50fb1c878b019fdfe4d7fe64e03`; roll back the full web release by
    redeploying the previous exact image/commit.
+
+## Release Evidence
+
+- APR round 1: `.apr/rounds/oriental-voice-instant/round_1.md`.
+- Command, CI, Convex, staging, live-call, and production non-change evidence:
+  `.apr/evidence/round-1-verification.md`.
+- Merge vehicle: PR 13. PRs 11 and 12 are superseded; their independently
+  attributable commits remain in PR 13 history.
+- PR4 code is staged for review, not approved for production. Its presence does
+  not satisfy or bypass the PR3 sample gate; production remains
+  baseline/control/low.
 
 ## Evidence-gated Decisions
 
@@ -176,5 +196,6 @@ dimension, and prove the exact staged commit before promotion.
 
 ## Open Questions
 
-- None block staging. Production promotion remains blocked by AC-10 and by the
-  measured gate when `instant-v1` is the proposed production profile.
+- Human Malaysian voice-quality sign-off remains required before merge.
+- Production promotion remains blocked by that sign-off and by the measured
+  gate when `instant-v1` is the proposed production profile.
