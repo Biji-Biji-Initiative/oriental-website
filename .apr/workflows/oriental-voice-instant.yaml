@@ -1,0 +1,48 @@
+name: oriental-voice-instant
+description: Final completion audit for the Oriental Instant Voice Architecture v1 review
+
+documents:
+  readme: AGENTS.md
+  spec: .apr/specs/oriental-voice-instant-plan.md
+  implementation: docs/13-VOICE-INSTANT-RELEASE-SPEC.md
+
+oracle:
+  model: "5.2 Thinking"
+
+rounds:
+  output_dir: .apr/rounds/oriental-voice-instant
+  impl_every_n: 1
+
+template: |
+  Perform a strict completion audit of the attached Oriental Instant Voice
+  Architecture plan. The project guide describes the repository and its
+  verification conventions. Do not redesign the product or add speculative
+  scope. For every required PR and additional experiment, classify it as
+  complete, partial, not started, intentionally deferred by the plan's own
+  evidence gate, or blocked. Cite the attached evidence for every conclusion.
+
+  Directly answer whether all work is complete end to end. Distinguish code,
+  Convex deployment, staging web deployment, merge, and production promotion.
+  Treat a conditional "consider" item as properly completed only when the
+  implementation or an explicit evidence-gated decision satisfies the original
+  condition. Report any contradiction, untested claim, unsafe metric name,
+  missing rollback, or documentation drift. End with the smallest defensible
+  remaining steps, if any.
+
+template_with_impl: |
+  Perform a strict final completion audit of the attached Oriental Instant
+  Voice Architecture plan against the attached implemented release contract and
+  repository guide. Do not redesign the product or add speculative scope. For
+  this canonical pass, use the release contract generated at commit d085cac as
+  the implementation evidence baseline. For
+  every required PR and additional experiment, classify it as complete,
+  partial, not started, intentionally deferred by the plan's own evidence gate,
+  or blocked. Cite concrete file/test/operational evidence for every conclusion.
+
+  Directly answer whether all work is complete end to end. Distinguish code,
+  Convex deployment, staging web deployment, merge, and production promotion.
+  Treat a conditional "consider" item as properly completed only when the
+  implementation or an explicit evidence-gated decision satisfies the original
+  condition. Report any contradiction, untested claim, unsafe metric name,
+  missing rollback, or documentation drift. End with the smallest defensible
+  remaining steps, if any.
