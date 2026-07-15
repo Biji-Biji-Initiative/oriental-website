@@ -34,6 +34,8 @@ describe("createRealtimeClientSecret", () => {
       client_secret: { value: "client-secret", expires_at: 123 },
       session_id: "sess_123",
       model: "gpt-realtime-2",
+      model_cell: "control",
+      reasoning_cell: "low",
       voice: "marin",
       speed: 1.12,
       variant: null,
@@ -109,6 +111,29 @@ describe("createRealtimeClientSecret", () => {
     expect(result.variant).toBe("malay-warm");
     const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
     expect(body.session.audio.input.turn_detection).toMatchObject({ type: "semantic_vad", eagerness: "high" });
+  });
+
+  it("selects a candidate model and minimal reasoning as independent cells", async () => {
+    process.env.VOICE_MODEL_CELL = "candidate";
+    process.env.OPENAI_REALTIME_MODEL_CANDIDATE = "gpt-realtime-2.1";
+    process.env.VOICE_REASONING_CELL = "minimal";
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+      Response.json({
+        client_secret: { value: "client-secret", expires_at: 123 },
+        session: { id: "sess_candidate" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await createRealtimeClientSecret("safe-user", "technology");
+
+    expect(result).toMatchObject({
+      model: "gpt-realtime-2.1",
+      model_cell: "candidate",
+      reasoning_cell: "minimal",
+    });
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(body.session).toMatchObject({ model: "gpt-realtime-2.1", reasoning: { effort: "minimal" } });
   });
 
   it("uses near-field noise reduction for mobile sessions", async () => {

@@ -603,6 +603,8 @@ function buildVoiceLeadMetadata(review: VoiceReviewCredentials | null) {
     voiceSessionId: review.sessionId,
     voiceVariant: review.variant ?? undefined,
     voiceModel: review.model,
+    voiceModelCell: review.modelCell,
+    voiceReasoningCell: review.reasoningCell,
     voiceName: review.voice,
     voiceSpeed: review.speed,
     voiceRuntimeProfile: review.runtimeProfile,

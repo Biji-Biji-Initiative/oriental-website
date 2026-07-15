@@ -1,4 +1,5 @@
 import type { VoiceReviewSnapshotRequest } from "@/lib/schemas";
+import type { VoiceModelCell, VoiceReasoningCell } from "@/lib/voice/experiments";
 import type { VoiceInputPolicy, VoiceLatencyTelemetry } from "@/lib/voice/latency";
 import type { VoiceRuntimeState } from "@/lib/voice/realtime-events";
 import type { VoiceRuntimeProfileId } from "@/lib/voice/runtime-profile";
@@ -10,6 +11,8 @@ type VoiceReviewStatus = VoiceReviewSnapshotRequest["snapshot"]["status"];
 export type VoiceReviewCredentials = VoiceReviewSnapshotRequest["review"] & {
   sessionId?: string;
   model?: string;
+  modelCell?: VoiceModelCell;
+  reasoningCell?: VoiceReasoningCell;
   voice?: string;
   speed?: number;
   variant?: string | null;
@@ -52,6 +55,8 @@ export function buildVoiceReviewSnapshot(
     transport: review.transport,
     latency: review.latency,
     model: review.model,
+    modelCell: review.modelCell,
+    reasoningCell: review.reasoningCell,
     voice: review.voice,
     speed: review.speed,
     variant: review.variant,

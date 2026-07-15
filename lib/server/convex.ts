@@ -15,9 +15,10 @@ export async function persistLead(lead: StoredLead) {
     const result = await client.mutation(api.leads.createLead, { lead, ingestSecret });
     return { id: result.id, persisted: true as const };
   } catch (error) {
-    if (lead.voiceRuntimeProfile || lead.voiceInputPolicy) {
+    if (lead.voiceRuntimeProfile || lead.voiceInputPolicy || lead.voiceModelCell || lead.voiceReasoningCell) {
       const { voiceRuntimeProfile: _runtimeProfile, voiceInputPolicy: _inputPolicy, ...legacyLead } = lead;
-      const result = await client.mutation(api.leads.createLead, { lead: legacyLead, ingestSecret });
+      const { voiceModelCell: _modelCell, voiceReasoningCell: _reasoningCell, ...compatibleLead } = legacyLead;
+      const result = await client.mutation(api.leads.createLead, { lead: compatibleLead, ingestSecret });
       return { id: result.id, persisted: true as const };
     }
     throw error;
@@ -68,12 +69,21 @@ export async function persistVoiceReviewSnapshot(input: VoiceReviewSnapshotReque
     // Forward-compatibility: a Convex deployment that predates evolvable
     // telemetry fields rejects them as unknown arguments. Retry once without
     // telemetry so review persistence never regresses on deploy ordering.
-    if (input.transport || input.latency || input.runtimeProfile || input.inputPolicy) {
+    if (
+      input.transport ||
+      input.latency ||
+      input.runtimeProfile ||
+      input.inputPolicy ||
+      input.modelCell ||
+      input.reasoningCell
+    ) {
       const {
         transport: _transport,
         latency: _latency,
         runtimeProfile: _runtimeProfile,
         inputPolicy: _inputPolicy,
+        modelCell: _modelCell,
+        reasoningCell: _reasoningCell,
         ...rest
       } = input;
       const result = await client.client.mutation(api.leads.recordVoiceSession, {

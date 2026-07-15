@@ -3,6 +3,7 @@
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
 import type { SegmentId } from "@/lib/segments";
 import { type RealtimeOutboundEvent, serializeInputPolicyUpdate } from "@/lib/voice/client-events";
+import type { VoiceModelCell, VoiceReasoningCell } from "@/lib/voice/experiments";
 import {
   createVoiceLatencyState,
   reduceVoiceLatency,
@@ -45,6 +46,8 @@ export type VoiceReviewMetadata = {
   token: string;
   sessionId: string;
   model?: string;
+  modelCell?: VoiceModelCell;
+  reasoningCell?: VoiceReasoningCell;
   voice?: string;
   speed?: number;
   variant?: string | null;
@@ -67,6 +70,8 @@ type VoiceSessionResponse = {
   session_id?: string;
   review?: { id?: string; token?: string };
   model?: string;
+  model_cell?: VoiceModelCell;
+  reasoning_cell?: VoiceReasoningCell;
   voice?: string;
   speed?: number;
   variant?: string | null;
@@ -360,6 +365,8 @@ export function useRealtimeVoiceSession({
         token: session.review.token,
         sessionId: session.session_id ?? session.review.id,
         model: session.model,
+        modelCell: session.model_cell ?? "control",
+        reasoningCell: session.reasoning_cell ?? "low",
         voice: session.voice,
         speed: session.speed,
         variant: session.variant ?? null,

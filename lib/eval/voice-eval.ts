@@ -63,6 +63,8 @@ export type VoiceEvalSession = {
   closedAt?: number | null;
   runtimeProfile?: "baseline" | "instant-v1" | null;
   inputPolicy?: "baseline" | "fast" | "patient" | null;
+  modelCell?: "control" | "candidate" | null;
+  reasoningCell?: "low" | "minimal" | null;
   transcript: EvalTranscriptTurn[];
   errors: Array<{ code?: string; message: string }>;
   transport?: EvalTransport;
@@ -394,6 +396,8 @@ export type SessionEval = {
   closeReason: string | null;
   runtimeProfile: "baseline" | "instant-v1";
   inputPolicy: "baseline" | "fast" | "patient";
+  modelCell: "control" | "candidate";
+  reasoningCell: "low" | "minimal";
   transport: TransportSignals;
   latency: LatencySignals;
   engagement: EngagementSignals;
@@ -409,6 +413,8 @@ export function buildSessionEval(session: VoiceEvalSession, score: JudgeScore | 
     closeReason: session.closeReason ?? null,
     runtimeProfile: session.runtimeProfile ?? "baseline",
     inputPolicy: session.inputPolicy ?? "baseline",
+    modelCell: session.modelCell ?? "control",
+    reasoningCell: session.reasoningCell ?? "low",
     transport: deriveTransportSignals(session),
     latency: deriveLatencySignals(session),
     engagement: deriveEngagementSignals(session),
@@ -478,6 +484,17 @@ export function aggregateEvalsByRuntimeProfile(evals: SessionEval[]): Record<str
     else groups.set(entry.runtimeProfile, [entry]);
   }
   return Object.fromEntries([...groups.entries()].map(([profile, entries]) => [profile, aggregateEvals(entries)]));
+}
+
+export function aggregateEvalsByExperimentCell(evals: SessionEval[]): Record<string, EvalAggregate> {
+  const groups = new Map<string, SessionEval[]>();
+  for (const entry of evals) {
+    const key = `${entry.modelCell}/${entry.reasoningCell}`;
+    const group = groups.get(key);
+    if (group) group.push(entry);
+    else groups.set(key, [entry]);
+  }
+  return Object.fromEntries([...groups.entries()].map(([cell, entries]) => [cell, aggregateEvals(entries)]));
 }
 
 export type EvalThresholds = {

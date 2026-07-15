@@ -1460,6 +1460,14 @@ function AnalyticsPanel({ data }: { data: DashboardData }) {
             values={countByVoiceSessions(data.voiceSessions, (session) => session.runtimeProfile || "baseline")}
           />
           <CountList
+            title="Model cells"
+            values={countByVoiceSessions(data.voiceSessions, (session) => session.modelCell || "control")}
+          />
+          <CountList
+            title="Reasoning cells"
+            values={countByVoiceSessions(data.voiceSessions, (session) => session.reasoningCell || "low")}
+          />
+          <CountList
             title="Realtime voices"
             values={countByVoiceSessions(data.voiceSessions, (session) => session.voice || "unknown")}
           />
@@ -2410,6 +2418,8 @@ function VoiceQaRollup({ sessions }: { sessions: VoiceSessionRow[] }) {
             <tr className="border-b border-mk-ash/15">
               <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Variant</th>
               <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Profile</th>
+              <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Model cell</th>
+              <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Reasoning</th>
               <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Voice</th>
               <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Sessions</th>
               <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Submit</th>
@@ -2423,10 +2433,12 @@ function VoiceQaRollup({ sessions }: { sessions: VoiceSessionRow[] }) {
             {variantRows.map((row) => (
               <tr
                 className="border-b border-mk-ash/10 last:border-0"
-                key={`${row.runtimeProfile}:${row.variant}:${row.voice}`}
+                key={`${row.runtimeProfile}:${row.modelCell}:${row.reasoningCell}:${row.variant}:${row.voice}`}
               >
                 <td className="py-2 pr-3 font-medium text-mk-off-black">{row.variant}</td>
                 <td className="py-2 pr-3">{row.runtimeProfile}</td>
+                <td className="py-2 pr-3">{row.modelCell}</td>
+                <td className="py-2 pr-3">{row.reasoningCell}</td>
                 <td className="py-2 pr-3">{row.voice}</td>
                 <td className="py-2 pr-3">{row.sessions}</td>
                 <td className="py-2 pr-3">{row.submitRate}%</td>
@@ -2670,6 +2682,8 @@ function countTranscriptRoles(transcript: TranscriptRoleEntry[]) {
 type VoiceVariantSummaryRow = {
   variant: string;
   runtimeProfile: string;
+  modelCell: string;
+  reasoningCell: string;
   voice: string;
   sessions: number;
   submitted: number;
@@ -2684,11 +2698,15 @@ function summarizeVoiceVariants(sessions: VoiceSessionRow[]) {
   for (const session of sessions) {
     const variant = session.variant || "default";
     const runtimeProfile = session.runtimeProfile || "baseline";
+    const modelCell = session.modelCell || "control";
+    const reasoningCell = session.reasoningCell || "low";
     const voice = session.voice || "unknown";
-    const key = `${runtimeProfile}:${variant}:${voice}`;
+    const key = `${runtimeProfile}:${modelCell}:${reasoningCell}:${variant}:${voice}`;
     const row: VoiceVariantSummaryRow = rows.get(key) ?? {
       variant,
       runtimeProfile,
+      modelCell,
+      reasoningCell,
       voice,
       sessions: 0,
       submitted: 0,

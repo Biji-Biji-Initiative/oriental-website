@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   aggregateEvals,
+  aggregateEvalsByExperimentCell,
   aggregateEvalsByRuntimeProfile,
   buildJudgeUserPrompt,
   buildSessionEval,
@@ -357,5 +358,17 @@ describe("aggregateEvals + meetsThreshold", () => {
     expect(grouped.baseline?.sessionCount).toBe(1);
     expect(grouped["instant-v1"]?.sessionCount).toBe(1);
     expect(grouped["instant-v1"]?.submitRate).toBe(1);
+  });
+
+  it("compares controlled model and reasoning cells independently", () => {
+    const grouped = aggregateEvalsByExperimentCell([
+      buildSessionEval(session({ reviewId: "control", modelCell: "control", reasoningCell: "low" }), null),
+      buildSessionEval(
+        session({ reviewId: "candidate", modelCell: "candidate", reasoningCell: "minimal", submittedAt: 1 }),
+        null,
+      ),
+    ]);
+    expect(grouped["control/low"]?.sessionCount).toBe(1);
+    expect(grouped["candidate/minimal"]?.submitRate).toBe(1);
   });
 });

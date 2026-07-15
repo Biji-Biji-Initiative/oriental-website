@@ -3,6 +3,7 @@ import type { ClientSecretCreateParams, ClientSecretCreateResponse } from "opena
 import type { RealtimeSessionCreateRequest } from "openai/resources/realtime/realtime";
 import { readEnv, readPositiveIntEnv } from "@/lib/env";
 import type { SegmentId } from "@/lib/segments";
+import { resolveVoiceExperimentConfig } from "@/lib/voice/experiments";
 import { buildVoiceInstructions, VOICE_SESSION_DEFAULTS, VOICE_TOOLS } from "@/lib/voice/profile";
 import { resolveVoiceRuntimeProfile } from "@/lib/voice/runtime-profile";
 import { getVoiceVariant } from "@/lib/voice/variants";
@@ -20,7 +21,13 @@ export async function createRealtimeClientSecret(
     throw new Error("openai_unconfigured");
   }
 
-  const model = readEnv("OPENAI_REALTIME_MODEL", "gpt-realtime-2") ?? "gpt-realtime-2";
+  const experiments = resolveVoiceExperimentConfig({
+    modelCell: readEnv("VOICE_MODEL_CELL", "control"),
+    controlModel: readEnv("OPENAI_REALTIME_MODEL", "gpt-realtime-2") ?? "gpt-realtime-2",
+    candidateModel: readEnv("OPENAI_REALTIME_MODEL_CANDIDATE", "gpt-realtime-2.1") ?? "gpt-realtime-2.1",
+    reasoningCell: readEnv("VOICE_REASONING_CELL", "low"),
+  });
+  const model = experiments.model;
   // A selected variant overrides voice/speed/persona; otherwise fall back to the
   // env-configured production defaults. Voice and persona are never taken from
   // the client directly — only a server-resolved variant from the catalog.
@@ -42,7 +49,7 @@ export async function createRealtimeClientSecret(
       model,
       instructions: buildVoiceInstructions(undefined, initialSegment, variant?.personaNote),
       output_modalities: ["audio"],
-      reasoning: { effort: VOICE_SESSION_DEFAULTS.reasoningEffort },
+      reasoning: { effort: experiments.reasoningEffort },
       truncation: VOICE_SESSION_DEFAULTS.truncation,
       audio: {
         input: {
@@ -85,6 +92,8 @@ export async function createRealtimeClientSecret(
     },
     session_id: data.session?.id ?? crypto.randomUUID(),
     model,
+    model_cell: experiments.modelCell,
+    reasoning_cell: experiments.reasoningCell,
     voice,
     speed,
     variant: variant?.id ?? null,

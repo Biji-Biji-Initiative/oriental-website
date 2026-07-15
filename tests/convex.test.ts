@@ -91,12 +91,20 @@ describe("persistLead", () => {
       .mockResolvedValueOnce({ id: "lead_123" });
 
     await expect(
-      persistLead({ ...lead(), voiceRuntimeProfile: "instant-v1", voiceInputPolicy: "fast" }),
+      persistLead({
+        ...lead(),
+        voiceRuntimeProfile: "instant-v1",
+        voiceInputPolicy: "fast",
+        voiceModelCell: "candidate",
+        voiceReasoningCell: "minimal",
+      }),
     ).resolves.toEqual({ id: "lead_123", persisted: true });
 
     const retryArgs = mocks.mutation.mock.calls[1]?.[1] as { lead: Record<string, unknown> };
     expect(retryArgs.lead).not.toHaveProperty("voiceRuntimeProfile");
     expect(retryArgs.lead).not.toHaveProperty("voiceInputPolicy");
+    expect(retryArgs.lead).not.toHaveProperty("voiceModelCell");
+    expect(retryArgs.lead).not.toHaveProperty("voiceReasoningCell");
   });
 
   it("applies admin workflow mutations through Convex", async () => {
@@ -212,6 +220,8 @@ describe("persistVoiceReviewSnapshot", () => {
     routeRequested: false,
     runtimeProfile: "instant-v1" as const,
     inputPolicy: "fast" as const,
+    modelCell: "candidate" as const,
+    reasoningCell: "minimal" as const,
     transport: {
       disconnectCount: 1,
       recoveryCount: 1,
@@ -274,6 +284,8 @@ describe("persistVoiceReviewSnapshot", () => {
     expect(retryArgs.snapshot).not.toHaveProperty("latency");
     expect(retryArgs.snapshot).not.toHaveProperty("runtimeProfile");
     expect(retryArgs.snapshot).not.toHaveProperty("inputPolicy");
+    expect(retryArgs.snapshot).not.toHaveProperty("modelCell");
+    expect(retryArgs.snapshot).not.toHaveProperty("reasoningCell");
     expect(retryArgs.snapshot).toMatchObject({ reviewId: "review_1" });
   });
 });

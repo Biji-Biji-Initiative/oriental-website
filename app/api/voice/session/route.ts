@@ -51,6 +51,8 @@ export async function POST(request: NextRequest) {
       ipHash,
       intent: parsed.data.intent ?? "none",
       model: secret.model,
+      modelCell: secret.model_cell,
+      reasoningCell: secret.reasoning_cell,
       voice: secret.voice,
       speed: secret.speed,
       variant: secret.variant ?? "default",

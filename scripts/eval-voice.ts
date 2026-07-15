@@ -20,6 +20,7 @@ import OpenAI from "openai";
 import { api } from "../convex/_generated/api";
 import {
   aggregateEvals,
+  aggregateEvalsByExperimentCell,
   aggregateEvalsByRuntimeProfile,
   buildJudgeUserPrompt,
   buildSessionEval,
@@ -181,6 +182,7 @@ async function main() {
   );
   const aggregate = aggregateEvals(evals);
   const profileAggregates = aggregateEvalsByRuntimeProfile(evals);
+  const experimentAggregates = aggregateEvalsByExperimentCell(evals);
 
   if (args.persist && !dry) {
     const payloads = evals
@@ -215,10 +217,14 @@ async function main() {
   const reportPath = join(args.out, `voice-eval-${stamp}.json`);
   writeFileSync(
     reportPath,
-    JSON.stringify({ generatedAt: stamp, aggregate, profileAggregates, evals, sessions }, null, 2),
+    JSON.stringify(
+      { generatedAt: stamp, aggregate, profileAggregates, experimentAggregates, evals, sessions },
+      null,
+      2,
+    ),
   );
 
-  printSummary(aggregate, profileAggregates, gate, reportPath, dry);
+  printSummary(aggregate, profileAggregates, experimentAggregates, gate, reportPath, dry);
 
   const gateActive = Object.values(thresholds).some((value) => typeof value === "number");
   if (gateActive && !gate.ok) process.exit(2);
@@ -227,6 +233,7 @@ async function main() {
 function printSummary(
   aggregate: ReturnType<typeof aggregateEvals>,
   profileAggregates: ReturnType<typeof aggregateEvalsByRuntimeProfile>,
+  experimentAggregates: ReturnType<typeof aggregateEvalsByExperimentCell>,
   gate: { ok: boolean; failures: string[] },
   reportPath: string,
   dry: boolean,
@@ -242,6 +249,12 @@ function printSummary(
   for (const [profile, profileAggregate] of Object.entries(profileAggregates)) {
     console.log(
       `${profile}: ${profileAggregate.sessionCount} sessions, ${(profileAggregate.submitRate * 100).toFixed(0)}% submit`,
+    );
+  }
+  console.log("--- model/reasoning cells ---");
+  for (const [cell, cellAggregate] of Object.entries(experimentAggregates)) {
+    console.log(
+      `${cell}: ${cellAggregate.sessionCount} sessions, ${(cellAggregate.submitRate * 100).toFixed(0)}% submit`,
     );
   }
   if (!dry) {
