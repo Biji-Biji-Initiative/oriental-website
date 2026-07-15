@@ -34,30 +34,51 @@ async function run() {
   const consoleErrors: string[] = [];
   const sessionMintStatuses: number[] = [];
   const debugStatuses: number[] = [];
+  const failedResponses: Array<{ host: string; path: string; status: number; retryAfter?: string }> = [];
+  let rejectUpstreamFailure: ((error: Error) => void) | undefined;
+  const upstreamFailure = new Promise<never>((_, reject) => {
+    rejectUpstreamFailure = reject;
+  });
+  let page: Page | undefined;
 
   try {
     const context = await browser.newContext();
     await context.grantPermissions(["microphone"], { origin: targetOrigin });
-    const page = await context.newPage();
+    page = await context.newPage();
     page.on("pageerror", (error) => pageErrors.push(error.message));
     page.on("console", (message) => {
       if (message.type() === "error") consoleErrors.push(message.text());
     });
-    page.on("response", (response) => recordApiStatus(response, sessionMintStatuses, debugStatuses));
+    page.on("response", (response) => {
+      recordApiStatus(response, sessionMintStatuses, debugStatuses);
+      if (response.status() >= 400) {
+        const url = new URL(response.url());
+        failedResponses.push({
+          host: url.host,
+          path: url.pathname,
+          status: response.status(),
+          retryAfter: response.headers()["retry-after"],
+        });
+        if (url.host === "api.openai.com" && url.pathname === "/v1/realtime/calls") {
+          rejectUpstreamFailure?.(new Error(`OpenAI Realtime call failed with HTTP ${response.status()}`));
+        }
+      }
+    });
 
     const healthBefore = await context.request.get(`${targetOrigin}/api/health`);
     if (!healthBefore.ok()) throw new Error(`Staging health failed before smoke: ${healthBefore.status()}`);
     const health = (await healthBefore.json()) as { ok?: boolean; version?: string; convex?: boolean };
     if (!health.ok || !health.version || !health.convex) throw new Error("Staging health payload is incomplete");
 
-    await page.goto(targetOrigin, { waitUntil: "networkidle" });
+    await page.goto(targetOrigin, { waitUntil: "load" });
+    await page.locator('header button[aria-label="Talk to Mereka"]').waitFor({ state: "visible" });
     await page.locator('header button[aria-label="Talk to Mereka"]').click();
     const orb = page.locator(".voice-orb");
     await orb.waitFor({ state: "visible" });
 
     const connectStartedAt = performance.now();
     await page.getByRole("button", { name: "Start voice with Reka" }).click();
-    await waitForTurn(page, "listening", undefined, 45_000);
+    await Promise.race([waitForTurn(page, "listening", undefined, 45_000), upstreamFailure]);
     const connectedMs = performance.now() - connectStartedAt;
 
     const openerStartedAt = performance.now();
@@ -107,6 +128,23 @@ async function run() {
       consoleErrors: consoleErrors.length,
     };
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  } catch (error) {
+    const orbState = await page
+      ?.locator(".voice-orb")
+      .evaluate((orb) => ({ status: (orb as HTMLElement).dataset.status, turn: (orb as HTMLElement).dataset.turn }))
+      .catch(() => null);
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `${message}; diagnostics=${JSON.stringify({
+        orbState,
+        sessionMintStatuses,
+        debugStatuses,
+        pageErrors: pageErrors.length,
+        consoleErrors: consoleErrors.length,
+        consoleErrorMessages: consoleErrors.map(sanitizeDiagnostic),
+        failedResponses,
+      })}`,
+    );
   } finally {
     await browser.close();
   }
@@ -152,6 +190,10 @@ async function remoteAudioState(page: Page) {
       trackLive: Boolean(stream?.getAudioTracks().some((track) => track.readyState === "live")),
     };
   });
+}
+
+function sanitizeDiagnostic(message: string) {
+  return message.replace(/[A-Za-z0-9_-]{32,}/g, "[redacted]").slice(0, 240);
 }
 
 run().catch((error: unknown) => {
