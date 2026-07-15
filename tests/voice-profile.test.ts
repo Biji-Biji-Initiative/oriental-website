@@ -11,6 +11,7 @@ describe("voice profile", () => {
     expect(prompt).toContain("You are Reka");
     expect(prompt).toContain("never call yourself Mereka");
     expect(prompt).toContain("capture_fields");
+    expect(prompt).not.toMatch(/\bcapture_field\b/);
     expect(prompt).toContain("lookup_oriental");
     expect(prompt).toContain("call route_to_team immediately");
     expect(prompt).toContain("or I can send it now");

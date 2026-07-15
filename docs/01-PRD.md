@@ -123,8 +123,8 @@ is unblocked.
   preloaded; below-fold images lazy.
 - **Accessibility** — WCAG 2.2 AA. Keyboard nav, focus rings,
   `prefers-reduced-motion`, alt text on photo content.
-- **Cost** — OpenAI Realtime is metered. Cap budget via session length
-  limit (150s current client cap), 20s idle timeout, and the per-IP voice
+- **Cost** — OpenAI Realtime is metered. Cap budget via the typed session length
+  policy (10-minute default, bounded server override), 20s idle timeout, and the per-IP voice
   limiter (`VOICE_SESSION_DAILY_LIMIT`, default 80) backed by Redis in production.
   Page load may import the voice bundle, but Realtime session pre-minting happens
   only for returning visitors with granted microphone permission or after a

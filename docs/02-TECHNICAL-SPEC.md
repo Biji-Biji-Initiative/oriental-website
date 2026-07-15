@@ -188,12 +188,12 @@ committed.
 
 Session minting:
 
-1. Client obtains a Turnstile token.
-2. Client requests microphone permission.
-3. Client calls `POST /api/voice/session`.
-4. Server calls `POST /v1/realtime/client_secrets`.
-5. Client posts SDP offer to `POST /v1/realtime/calls`.
-6. Realtime data-channel events are reduced by `lib/voice/realtime-events.ts`.
+1. Client requests microphone permission; a known denial spends no quota.
+2. Client calls `POST /api/voice/session` after consent (or uses a
+   permission-aware pre-mint for a returning visitor).
+3. Server calls `POST /v1/realtime/client_secrets`.
+4. Client posts SDP offer to `POST /v1/realtime/calls`.
+5. Realtime data-channel events are reduced by `lib/voice/realtime-events.ts`.
 
 Defaults:
 
@@ -203,9 +203,10 @@ Defaults:
 - source fallback speed: `OPENAI_REALTIME_SPEED ?? 1.18`
 - production speed: `1.28` via Infisical/Coolify
 - idle timeout: `20s` client timer
-- max session: `150s` client timer
-- tools: `set_partner_type`, `capture_field`, `clear_field`,
-  `summarise_lead`, `route_to_team`, `wait_for_user`, `end_call`
+- max session: `600s` typed server-resolved policy by default
+- tools: `set_partner_type`, atomic `capture_fields`, read-only
+  `lookup_oriental`, `clear_field`, `summarise_lead`, `route_to_team`,
+  `wait_for_user`, `end_call`
 - review snapshots: `/api/voice/session` returns signed review credentials;
   `/api/voice/debug` verifies and upserts Convex `voiceSessions`
 

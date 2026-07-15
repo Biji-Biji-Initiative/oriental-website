@@ -58,11 +58,11 @@ Use this on the day of soft-launch and again 24 hours before public-launch.
 
 - [ ] `/api/voice/session` mints a working ephemeral token in staging
 - [ ] WebRTC handshake completes in < 2s on stable broadband
-- [ ] Tool calls `set_partner_type` / `capture_field` / `summarise_lead` /
-      `route_to_team` / `wait_for_user` all fire correctly during a 90s mock conversation
-- [ ] `capture_field` only saves name/email/org when supported by recent user transcript evidence
-- [ ] Client idle/max timers stop microphone/WebRTC at 20s idle and 150s max
-- [ ] Rate limit enforced — 4th minted session/IP/day returns `429 voice_limit_reached`
+- [ ] Tool calls `set_partner_type` / `capture_fields` / `lookup_oriental` /
+      `summarise_lead` / `route_to_team` / `wait_for_user` fire correctly in a staged conversation
+- [ ] `capture_fields` atomically rejects the whole batch when one identity field lacks recent user evidence
+- [ ] Client uses the returned duration policy and stops microphone/WebRTC at 20s idle and 600s max by default
+- [ ] With `VOICE_SESSION_DAILY_LIMIT=3` in a controlled environment, the 4th minted session/IP/day returns `429 voice_limit_reached`
 - [ ] Reka introduces herself proactively, says Reka (not Mereka) as her name, and explains Oriental in one short Malaysian-English opener
 - [ ] Reka can use typed handoff-panel context and does not ask again for fields already typed
 - [ ] Saying "send" submits immediately when all required fields are present

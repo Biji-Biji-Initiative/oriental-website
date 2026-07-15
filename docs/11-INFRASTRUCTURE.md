@@ -38,13 +38,11 @@ mode as horizontally scalable.
 |---|---|---|
 | `oriental.mereka.io` | Coolify app host (`194.233.71.200`) | No |
 | `staging.oriental.mereka.io` | Coolify app host (`194.233.71.200`) | No |
-| `oriental.deploy.mereka.io` | Legacy production compatibility alias | No |
-| `oriental-staging.deploy.mereka.io` | Legacy redirect to `staging.oriental.mereka.io` | No |
 
 Cloudflare is the authoritative DNS provider. These direct-origin records are
 DNS-only, so TLS terminates at the Coolify Traefik proxy with Let's Encrypt
-certificates. Canonical public links must use the branded production or staging
-hostname, never a `deploy.mereka.io` compatibility alias.
+certificates. The only application source-of-truth hostnames are the branded
+production and `staging.<service>.mereka.io` records above.
 
 ## Cloudflare
 
@@ -128,9 +126,6 @@ on the same Coolify app host under
 for the commit under review. It is routed through the Coolify Traefik network
 with `coolify.managed=false`, so it is host-managed rather than a full Coolify
 UI application until a dedicated Coolify staging app/API token is provisioned.
-The former `oriental-staging.deploy.mereka.io` hostname is compatibility-only
-and permanently redirects to the canonical staging hostname.
-
 Current staging caveat: `/deploy/oriental-website` has no populated Infisical `staging` environment. The staging container therefore uses a host-local copy of the production runtime env with non-secret overrides such as `COOLIFY_FQDN`, `COOLIFY_URL`, `SOURCE_COMMIT`, `GIT_SHA`, `SENTRY_ENVIRONMENT=staging`, and `NEXT_PUBLIC_SENTRY_ENVIRONMENT=staging`. Do not treat staging submissions as an isolated data/notification sandbox until separate staging Convex, SES, Slack, Redis, and OpenAI secrets are created.
 
 Staging rollback/removal is host-local:
@@ -155,11 +150,8 @@ Convex function deployment is separate:
 CONVEX_DEPLOY_KEY='prod:...' pnpm exec convex deploy
 ```
 
-Current operational note: the app runtime secrets include `CONVEX_URL` and
-`CONVEX_INGEST_SECRET`, but no `CONVEX_DEPLOY_KEY` is currently stored in the
-Oriental Infisical folder. Schema/function changes require a deploy key from a
-Convex project admin before `/admin/session-review` can read new `voiceSessions`
-queries in production.
+Convex deploy credentials are read at deployment time from the Oriental
+Infisical scope and MUST never be copied into repo files or shell history.
 
 There is no `pnpm db:migrate` step and no launch `DATABASE_URL`.
 
