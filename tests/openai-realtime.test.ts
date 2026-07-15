@@ -81,14 +81,15 @@ describe("createRealtimeClientSecret", () => {
       parallel_tool_calls: false,
     });
     expect(body.session.instructions).toContain("# Role and Objective");
-    expect(body.session.instructions).toContain("# Website Knowledge Base");
-    expect(body.session.instructions).toContain("What office sizes are available on the 3rd floor?");
-    expect(body.session.instructions).toContain("Full floor: ~2,800–3,000 sq ft");
+    expect(body.session.instructions).toContain("# Tool Contract");
+    expect(body.session.instructions).not.toContain("What office sizes are available on the 3rd floor?");
     expect(body.session.instructions).toContain("Initial Context");
     expect(body.session.audio.input.transcription.prompt).toContain("Mereka");
     expect(body.session.audio.input.transcription.prompt).toContain("Bahasa Melayu");
     expect(body.session.audio.input.transcription.language).toBeUndefined();
     expect(body.session.tools.map((tool: { name: string }) => tool.name)).toContain("wait_for_user");
+    expect(body.session.tools.map((tool: { name: string }) => tool.name)).toContain("lookup_oriental");
+    expect(body.session.tools.map((tool: { name: string }) => tool.name)).toContain("capture_fields");
   });
 
   it("keeps the latency profile independent from the selected voice variant", async () => {

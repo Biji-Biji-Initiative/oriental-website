@@ -127,7 +127,14 @@ export function useVoiceRuntime({ initialSegment, prefillEmail, submitLead, onEn
       }
       for (const command of reduced.commands) {
         if (command.type === "function_result") {
-          if (command.output.error === "ungrounded_identity_capture") {
+          const detail =
+            command.output.detail && typeof command.output.detail === "object"
+              ? (command.output.detail as Record<string, unknown>)
+              : null;
+          if (
+            command.output.error === "ungrounded_identity_capture" ||
+            detail?.error === "ungrounded_identity_capture"
+          ) {
             ungroundedRejectionsRef.current += 1;
             if (ungroundedRejectionsRef.current >= 2) {
               toast.warning("Reka didn't catch one detail.", {

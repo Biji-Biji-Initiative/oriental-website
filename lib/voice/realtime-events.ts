@@ -1,4 +1,5 @@
 import { SEGMENT_IDS, type SegmentId } from "@/lib/segments";
+import { lookupOrientalKnowledge } from "@/lib/voice/knowledge";
 
 export type CapturedLead = {
   name: string;
@@ -230,42 +231,56 @@ function applyFunctionCall(
       break;
     }
     case "capture_field": {
-      const key = toCapturedKey(args.key);
-      const value = typeof args.value === "string" ? args.value.trim() : "";
-      const evidence = typeof args.evidence === "string" ? args.evidence.trim() : "";
-      const mode = args.mode === "append" ? "append" : "replace";
-      if (!key || !value) {
-        output = { ok: false, error: "invalid_field" };
+      const capture = applyCaptureField(args, next.captured, next.transcript, (next.pendingUserTranscripts ?? 0) > 0);
+      if (!capture.ok) {
+        output = capture.output;
         break;
       }
-
-      const normalizedValue = key === "org" ? normalizeOrganisation(value) : value;
-      const existing = next.captured[key];
-      const duplicateCapture =
-        key === "email"
-          ? existing.trim().toLowerCase() === normalizedValue.toLowerCase()
-          : existing.trim() && normalizeEvidence(existing) === normalizeEvidence(normalizedValue);
-      if (!FREE_TEXT_CAPTURE_KEYS.has(key) && duplicateCapture) {
-        output = { ok: true, key, mode: "replace", captured: next.captured };
+      next = { ...next, captured: capture.captured };
+      output = { ok: true, key: capture.key, mode: capture.mode, captured: capture.captured };
+      break;
+    }
+    case "capture_fields": {
+      const fields = Array.isArray(args.fields) ? args.fields : [];
+      if (fields.length < 1 || fields.length > 6) {
+        output = { ok: false, error: "invalid_field_batch" };
         break;
       }
-
-      const grounding = validateCaptureGrounding(
-        key,
-        normalizedValue,
-        evidence,
-        next.transcript,
-        (next.pendingUserTranscripts ?? 0) > 0,
-      );
-      if (!grounding.ok) {
-        output = { ok: false, error: grounding.error, key, value: normalizedValue };
+      const seen = new Set<keyof CapturedLead>();
+      let captured = next.captured;
+      const applied: Array<{ key: keyof CapturedLead; mode: "append" | "replace" }> = [];
+      let failure: { index: number; output: Record<string, unknown> } | null = null;
+      for (const [index, field] of fields.entries()) {
+        const fieldArgs = field && typeof field === "object" && !Array.isArray(field) ? field : {};
+        const key = toCapturedKey((fieldArgs as Record<string, unknown>).key);
+        if (key && seen.has(key)) {
+          failure = { index, output: { ok: false, error: "duplicate_field", key } };
+          break;
+        }
+        if (key) seen.add(key);
+        const capture = applyCaptureField(
+          fieldArgs as Record<string, unknown>,
+          captured,
+          next.transcript,
+          (next.pendingUserTranscripts ?? 0) > 0,
+        );
+        if (!capture.ok) {
+          failure = { index, output: capture.output };
+          break;
+        }
+        captured = capture.captured;
+        applied.push({ key: capture.key, mode: capture.mode });
+      }
+      if (failure) {
+        output = { ok: false, error: "atomic_capture_rejected", failedIndex: failure.index, detail: failure.output };
         break;
       }
-
-      const nextValue =
-        key === "message" && mode === "append" ? appendBrief(existing, normalizedValue) : normalizedValue;
-      next = { ...next, captured: { ...next.captured, [key]: nextValue } };
-      output = { ok: true, key, mode, captured: next.captured };
+      next = { ...next, captured };
+      output = { ok: true, fields: applied, captured };
+      break;
+    }
+    case "lookup_oriental": {
+      output = lookupOrientalKnowledge(args);
       break;
     }
     case "clear_field": {
@@ -433,6 +448,42 @@ function toCapturedKey(value: unknown): keyof CapturedLead | null {
     value === "message"
     ? value
     : null;
+}
+
+function applyCaptureField(
+  args: Record<string, unknown>,
+  captured: CapturedLead,
+  transcript: VoiceTranscriptEntry[],
+  transcriptionPending: boolean,
+):
+  | { ok: true; key: keyof CapturedLead; mode: "append" | "replace"; captured: CapturedLead }
+  | { ok: false; output: Record<string, unknown> } {
+  const key = toCapturedKey(args.key);
+  const value = typeof args.value === "string" ? args.value.trim() : "";
+  const evidence = typeof args.evidence === "string" ? args.evidence.trim() : "";
+  const mode = args.mode === "append" ? "append" : "replace";
+  if (!key || !value) return { ok: false, output: { ok: false, error: "invalid_field" } };
+
+  const normalizedValue = key === "org" ? normalizeOrganisation(value) : value;
+  const existing = captured[key];
+  const duplicateCapture =
+    key === "email"
+      ? existing.trim().toLowerCase() === normalizedValue.toLowerCase()
+      : Boolean(existing.trim()) && normalizeEvidence(existing) === normalizeEvidence(normalizedValue);
+  if (!FREE_TEXT_CAPTURE_KEYS.has(key) && duplicateCapture) {
+    return { ok: true, key, mode: "replace", captured };
+  }
+
+  const grounding = validateCaptureGrounding(key, normalizedValue, evidence, transcript, transcriptionPending);
+  if (!grounding.ok) {
+    return {
+      ok: false,
+      output: { ok: false, error: grounding.error, key, value: normalizedValue },
+    };
+  }
+
+  const nextValue = key === "message" && mode === "append" ? appendBrief(existing, normalizedValue) : normalizedValue;
+  return { ok: true, key, mode, captured: { ...captured, [key]: nextValue } };
 }
 
 /** Fields the model captures verbatim without identity grounding. */
