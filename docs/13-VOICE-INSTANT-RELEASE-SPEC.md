@@ -210,6 +210,9 @@ an unperformed listening result is never a pass.
 ## Release Evidence
 
 - APR round 1: `.apr/rounds/oriental-voice-instant/round_1.md`.
+- Final ship adjudication and focused correction review:
+  `.apr/rounds/oriental-voice-final-verdict/round_1.md` and
+  `.apr/rounds/oriental-voice-final-verdict/round_2.md`.
 - Command, CI, Convex, staging, live-call, and production non-change evidence:
   `.apr/evidence/round-1-verification.md`.
 - PR 13 merged as `7fb9fdc58b49f97f5dcd70ccd7da89ca26e5d1c7`.

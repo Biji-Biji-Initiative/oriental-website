@@ -101,11 +101,27 @@ OWNER_OTHER=
 
 ## Voice Tuning
 
-The primary voice profile lives in `lib/voice/profile.ts`. Edit `VOICE_PROFILE` when you want to change the agent identity, tone, conversation flow, required capture fields, guardrails, VAD defaults, truncation, or Realtime tool descriptions. The generated prompt follows the OpenAI Realtime 2 sections for role, tone, reasoning, channels, preambles, tools, unclear audio, entity capture, routing, long-context behavior, escalation, and guardrails.
+The permanent Realtime reflex prompt and tool contract live in
+`lib/voice/profile.ts`. Detailed Oriental facts stay behind the bounded,
+read-only `lookup_oriental` tool in `lib/voice/knowledge.ts`; reversible fields
+use atomic `capture_fields`, while routing and call termination remain separate
+irreversible tools. Keep prompt, endpointing, model, reasoning, and voice
+changes independently attributable.
+
+Endpointing experiments use `VOICE_RUNTIME_PROFILE=baseline|instant-v1`.
+Model and reasoning experiments use `VOICE_MODEL_CELL=control|candidate` and
+`VOICE_REASONING_CELL=low|minimal`. Safe deployment defaults are
+`baseline` / `control` / `low`; `instant-v1` and candidate cells must remain off
+until the evaluation gate has qualifying audible-latency, false-endpoint,
+barge-in, and contact-correction evidence.
 
 Voice rendering is controlled by environment as well as prompt. `OPENAI_REALTIME_VOICE` must be one of the supported Realtime built-in voices, and `OPENAI_REALTIME_SPEED` is clamped to OpenAI's supported `0.25` to `1.5` range. Source fallback is `marin` at `1.18`; production is currently configured to `coral` at `1.28` so Reka speaks faster and more brightly. Human listening QA still decides whether this is Malaysian enough. Input transcription defaults to `gpt-4o-transcribe` and can be switched (for example to `gpt-realtime-whisper`) with the optional `OPENAI_REALTIME_TRANSCRIPTION_MODEL` variable without a code change.
 
-Server route handlers emit structured JSON logs with `service`, `version`, `event`, `requestId`, hashed IP metadata, durations, rate-limit store, and notification results. Use Coolify logs plus `pnpm voice:debug` locally when reviewing failed voice conversations.
+Server route handlers emit structured JSON logs with `service`, `version`,
+`event`, `requestId`, hashed IP metadata, durations, rate-limit store, and
+notification results. `/api/voice/session` also emits `Server-Timing` for parse,
+rate-limit, OpenAI mint, and total duration. Use Coolify logs plus
+`pnpm voice:debug` locally when reviewing failed voice conversations.
 
 Segment-specific routing and opener copy live in `lib/segments.ts`. Realtime event handling is isolated in `lib/voice/realtime-events.ts`, outbound client event serialization is in `lib/voice/client-events.ts`, and browser microphone/WebRTC lifetime is in `components/voice-agent/useRealtimeVoiceSession.ts`. Behavior changes should get focused tests in `tests/realtime-events.test.ts`, `tests/realtime-client-events.test.ts`, or `tests/openai-realtime.test.ts` before deployment.
 
@@ -113,7 +129,12 @@ During local testing, run `pnpm voice:debug` after a call to inspect the latest 
 
 ## Admin Review & Observability
 
-The internal review surface lives at `/admin/session-review`. It is protected by `ADMIN_REVIEW_TOKEN`, sets a signed HTTP-only admin cookie, and reads recent Convex `leads` plus `voiceSessions` snapshots. Use it to review failed voice conversations, captured-field drift, notification status, Realtime usage, and error/rate-limit signals.
+The internal review surface lives at `/admin/session-review`. It is protected by
+`ADMIN_REVIEW_TOKEN`, sets a signed HTTP-only admin cookie, and reads recent
+Convex `leads` plus `voiceSessions` snapshots. Use it to review failed voice
+conversations, captured-field drift, notification status, Realtime usage,
+tap-to-live, endpoint/model/tool/playout latency, experiment cells, and
+error/rate-limit signals.
 
 Production Realtime sessions receive signed review credentials from `/api/voice/session`; the browser posts snapshots to `/api/voice/debug`, which persists verified snapshots to Convex. `GET /api/voice/debug` remains local-development only.
 

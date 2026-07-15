@@ -1,0 +1,46 @@
+name: oriental-voice-final-verdict
+description: Concise ship-blocker adjudication after the full Oriental voice audit
+
+documents:
+  readme: AGENTS.md
+  spec: .apr/specs/oriental-voice-instant-plan.md
+  implementation: .apr/evidence/pre-production-closure.md
+
+oracle:
+  model: "gpt-5.6-sol"
+
+rounds:
+  output_dir: .apr/rounds/oriental-voice-final-verdict
+  impl_every_n: 1
+
+template: |
+  Perform the final focused correction review after the prior ship adjudication.
+  Verify the newly named proof for local cue scheduling, reduced-motion audio
+  measurement, Server-Timing, latency decomposition, typed duration policy, and
+  conservative tentative extraction. Confirm the corrected PR4 classification:
+  implementation is merged and tested, while activation/attribution remains
+  evidence-deferred because PR3 is sparse.
+
+  Do not reopen the explicitly retained empirical gates: returning-visitor
+  distribution, multilingual/correction cell results, false-endpoint/contact
+  parity, and human voice quality remain unknown and candidate enablement stays
+  blocked. Report only an unsupported correction or a directly introduced ship
+  blocker. Decide whether the closure PR may merge and the exact resulting main
+  commit may deploy under baseline/control/low. End with exactly
+  `VERDICT: SHIP SAFE DEFAULTS` or `VERDICT: DO NOT SHIP`.
+
+template_with_impl: |
+  Perform the final focused correction review after the prior ship adjudication.
+  Verify the newly named proof for local cue scheduling, reduced-motion audio
+  measurement, Server-Timing, latency decomposition, typed duration policy, and
+  conservative tentative extraction. Confirm the corrected PR4 classification:
+  implementation is merged and tested, while activation/attribution remains
+  evidence-deferred because PR3 is sparse.
+
+  Do not reopen the explicitly retained empirical gates: returning-visitor
+  distribution, multilingual/correction cell results, false-endpoint/contact
+  parity, and human voice quality remain unknown and candidate enablement stays
+  blocked. Report only an unsupported correction or a directly introduced ship
+  blocker. Decide whether the closure PR may merge and the exact resulting main
+  commit may deploy under baseline/control/low. End with exactly
+  `VERDICT: SHIP SAFE DEFAULTS` or `VERDICT: DO NOT SHIP`.
