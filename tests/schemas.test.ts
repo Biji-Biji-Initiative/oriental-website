@@ -139,6 +139,10 @@ describe("voice review latency schema", () => {
     sequence: 1,
     inputPolicy: "baseline",
     stopToFirstOutputEventMs: 420,
+    localSpeechEndToSpeechStoppedMs: 180,
+    stopToRemoteAudioMs: 510,
+    firstOutputEventToRemoteAudioMs: 90,
+    bargeInToResponseDoneMs: 120,
     interrupted: false,
     rapidResume: false,
   };
@@ -147,7 +151,10 @@ describe("voice review latency schema", () => {
     expect(
       voiceReviewSnapshotSchema.safeParse({
         ...request,
-        snapshot: { ...request.snapshot, latency: { version: 1, turns: [turn] } },
+        snapshot: {
+          ...request.snapshot,
+          latency: { version: 1, activation: { tapToArmCueScheduledMs: 4 }, turns: [turn] },
+        },
       }).success,
     ).toBe(true);
   });
@@ -168,6 +175,15 @@ describe("voice review latency schema", () => {
         snapshot: {
           ...request.snapshot,
           latency: { version: 1, turns: [{ ...turn, stopToFirstOutputEventMs: 120_001 }] },
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      voiceReviewSnapshotSchema.safeParse({
+        ...request,
+        snapshot: {
+          ...request.snapshot,
+          latency: { version: 1, turns: [{ ...turn, stopToRemoteAudioMs: 120_001 }] },
         },
       }).success,
     ).toBe(false);

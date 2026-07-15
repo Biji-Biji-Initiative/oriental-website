@@ -88,6 +88,58 @@ describe("voice latency telemetry", () => {
     expect(state.telemetry.turns[0]).not.toHaveProperty("stopToFirstOutputEventMs");
   });
 
+  it("measures endpoint, remote-audio, playout, and arm-cue durations", () => {
+    const state = reduce(
+      [
+        { type: "speech_started", at: 100 },
+        { type: "local_speech_ended", at: 420 },
+        { type: "speech_stopped", at: 500 },
+        { type: "response_created", at: 620 },
+        { type: "first_output", at: 760 },
+        { type: "remote_audio_started", at: 820 },
+        { type: "response_done", at: 1_200 },
+      ],
+      createVoiceLatencyState("fast", { tapToArmCueScheduledMs: 4 }),
+    );
+
+    expect(state.telemetry.activation).toEqual({ tapToArmCueScheduledMs: 4 });
+    expect(state.telemetry.turns[0]).toMatchObject({
+      inputPolicy: "fast",
+      localSpeechEndToSpeechStoppedMs: 80,
+      stopToRemoteAudioMs: 320,
+      firstOutputEventToRemoteAudioMs: 60,
+    });
+  });
+
+  it("measures interruption clearing without losing the new user turn", () => {
+    let state = reduce([
+      { type: "speech_started", at: 100 },
+      { type: "speech_stopped", at: 300 },
+      { type: "response_created", at: 400 },
+      { type: "first_output", at: 500 },
+      { type: "speech_started", at: 650 },
+    ]);
+    expect(state.current?.sequence).toBe(2);
+    state = reduceVoiceLatency(state, { type: "interruption_cleared", at: 820 });
+    expect(state.telemetry.turns[0]).toMatchObject({ interrupted: true, bargeInToResponseDoneMs: 170 });
+    expect(state.current?.sequence).toBe(2);
+  });
+
+  it("applies input-policy changes only to subsequent turns", () => {
+    let state = createVoiceLatencyState("fast");
+    state = reduceVoiceLatency(state, { type: "input_policy_changed", inputPolicy: "patient" });
+    state = reduce(
+      [
+        { type: "speech_started", at: 100 },
+        { type: "speech_stopped", at: 200 },
+        { type: "response_created", at: 300 },
+        { type: "response_done", at: 400 },
+      ],
+      state,
+    );
+    expect(state.telemetry.turns[0]?.inputPolicy).toBe("patient");
+  });
+
   it("flushes a partial turn when the session closes", () => {
     const state = reduce([
       { type: "speech_started", at: 100 },

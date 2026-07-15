@@ -31,12 +31,17 @@ export type EvalTransport = {
 
 export type EvalLatency = {
   version: 1;
+  activation?: { tapToArmCueScheduledMs?: number };
   turns: Array<{
     sequence: number;
     inputPolicy: "baseline" | "fast" | "patient";
     speechDurationMs?: number;
     stopToResponseCreatedMs?: number;
     stopToFirstOutputEventMs?: number;
+    localSpeechEndToSpeechStoppedMs?: number;
+    stopToRemoteAudioMs?: number;
+    firstOutputEventToRemoteAudioMs?: number;
+    bargeInToResponseDoneMs?: number;
     responseDurationMs?: number;
     interrupted: boolean;
     rapidResume: boolean;
@@ -147,7 +152,8 @@ export function mergeConversationSessions(sessions: VoiceEvalSession[]): VoiceEv
 
 function foldEvalLatency(latencies: EvalLatency[]): EvalLatency {
   const turns = latencies.flatMap((latency) => latency?.turns ?? []);
-  return turns.length > 0 ? { version: 1, turns } : null;
+  const activation = latencies.find((latency) => latency?.activation)?.activation;
+  return turns.length > 0 || activation ? { version: 1, ...(activation ? { activation } : {}), turns } : null;
 }
 
 function foldEvalTransport(acc: EvalTransport, next: EvalTransport): EvalTransport {
@@ -209,6 +215,15 @@ export type LatencySignals = {
   responseCreatedSamples: number;
   responseCreatedP50Ms: number | null;
   responseCreatedP95Ms: number | null;
+  remoteAudioSamples: number;
+  remoteAudioP50Ms: number | null;
+  remoteAudioP95Ms: number | null;
+  endpointP50Ms: number | null;
+  endpointP95Ms: number | null;
+  playoutP50Ms: number | null;
+  playoutP95Ms: number | null;
+  bargeInP95Ms: number | null;
+  tapToArmCueMs: number | null;
   interruptedTurns: number;
   rapidResumeTurns: number;
 };
@@ -221,6 +236,18 @@ export function deriveLatencySignals(session: VoiceEvalSession): LatencySignals 
   const responseCreated = turns.flatMap((turn) =>
     typeof turn.stopToResponseCreatedMs === "number" ? [turn.stopToResponseCreatedMs] : [],
   );
+  const remoteAudio = turns.flatMap((turn) =>
+    typeof turn.stopToRemoteAudioMs === "number" ? [turn.stopToRemoteAudioMs] : [],
+  );
+  const endpoint = turns.flatMap((turn) =>
+    typeof turn.localSpeechEndToSpeechStoppedMs === "number" ? [turn.localSpeechEndToSpeechStoppedMs] : [],
+  );
+  const playout = turns.flatMap((turn) =>
+    typeof turn.firstOutputEventToRemoteAudioMs === "number" ? [turn.firstOutputEventToRemoteAudioMs] : [],
+  );
+  const bargeIn = turns.flatMap((turn) =>
+    typeof turn.bargeInToResponseDoneMs === "number" ? [turn.bargeInToResponseDoneMs] : [],
+  );
   return {
     sampledTurns: turns.length,
     firstOutputSamples: firstOutput.length,
@@ -229,6 +256,15 @@ export function deriveLatencySignals(session: VoiceEvalSession): LatencySignals 
     responseCreatedSamples: responseCreated.length,
     responseCreatedP50Ms: percentile(responseCreated, 0.5),
     responseCreatedP95Ms: percentile(responseCreated, 0.95),
+    remoteAudioSamples: remoteAudio.length,
+    remoteAudioP50Ms: percentile(remoteAudio, 0.5),
+    remoteAudioP95Ms: percentile(remoteAudio, 0.95),
+    endpointP50Ms: percentile(endpoint, 0.5),
+    endpointP95Ms: percentile(endpoint, 0.95),
+    playoutP50Ms: percentile(playout, 0.5),
+    playoutP95Ms: percentile(playout, 0.95),
+    bargeInP95Ms: percentile(bargeIn, 0.95),
+    tapToArmCueMs: session.latency?.activation?.tapToArmCueScheduledMs ?? null,
     interruptedTurns: turns.filter((turn) => turn.interrupted).length,
     rapidResumeTurns: turns.filter((turn) => turn.rapidResume).length,
   };

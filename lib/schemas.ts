@@ -144,6 +144,11 @@ export const voiceReviewSnapshotSchema = z.object({
     latency: z
       .object({
         version: z.literal(1),
+        activation: z
+          .object({
+            tapToArmCueScheduledMs: z.number().nonnegative().max(10_000).optional(),
+          })
+          .optional(),
         turns: z
           .array(
             z.object({
@@ -152,6 +157,10 @@ export const voiceReviewSnapshotSchema = z.object({
               speechDurationMs: z.number().nonnegative().max(600_000).optional(),
               stopToResponseCreatedMs: z.number().nonnegative().max(120_000).optional(),
               stopToFirstOutputEventMs: z.number().nonnegative().max(120_000).optional(),
+              localSpeechEndToSpeechStoppedMs: z.number().nonnegative().max(120_000).optional(),
+              stopToRemoteAudioMs: z.number().nonnegative().max(120_000).optional(),
+              firstOutputEventToRemoteAudioMs: z.number().nonnegative().max(120_000).optional(),
+              bargeInToResponseDoneMs: z.number().nonnegative().max(120_000).optional(),
               responseDurationMs: z.number().nonnegative().max(600_000).optional(),
               interrupted: z.boolean(),
               rapidResume: z.boolean(),

@@ -113,6 +113,11 @@ export default defineSchema({
     latency: v.optional(
       v.object({
         version: v.literal(1),
+        activation: v.optional(
+          v.object({
+            tapToArmCueScheduledMs: v.optional(v.number()),
+          }),
+        ),
         turns: v.array(
           v.object({
             sequence: v.number(),
@@ -120,6 +125,10 @@ export default defineSchema({
             speechDurationMs: v.optional(v.number()),
             stopToResponseCreatedMs: v.optional(v.number()),
             stopToFirstOutputEventMs: v.optional(v.number()),
+            localSpeechEndToSpeechStoppedMs: v.optional(v.number()),
+            stopToRemoteAudioMs: v.optional(v.number()),
+            firstOutputEventToRemoteAudioMs: v.optional(v.number()),
+            bargeInToResponseDoneMs: v.optional(v.number()),
             responseDurationMs: v.optional(v.number()),
             interrupted: v.boolean(),
             rapidResume: v.boolean(),

@@ -1,3 +1,4 @@
+import type { VoiceTurnPhase } from "@/lib/voice/latency";
 import type { CapturedLead } from "@/lib/voice/realtime-events";
 import type { VoiceCloseReason, VoiceConnectionStatus } from "./useRealtimeVoiceSession";
 
@@ -29,7 +30,11 @@ export function handoffCompletion(captured: CapturedLead) {
   };
 }
 
-export function voiceStatusCopy(status: VoiceConnectionStatus) {
+export function voiceStatusCopy(
+  status: VoiceConnectionStatus,
+  turnPhase: VoiceTurnPhase = "quiet",
+  showWaitingCopy = false,
+) {
   if (status === "requesting_mic") {
     return {
       label: "Mic permission",
@@ -45,6 +50,33 @@ export function voiceStatusCopy(status: VoiceConnectionStatus) {
     };
   }
   if (status === "listening") {
+    if (turnPhase === "user_speaking") {
+      return {
+        label: "Listening",
+        detail: "Keep going — Reka will wait for your turn to end.",
+        button: "End voice",
+      };
+    }
+    if (turnPhase === "waiting_for_response") {
+      return showWaitingCopy
+        ? {
+            label: "Reka is responding",
+            detail: "Your turn ended. Reka is preparing a reply.",
+            button: "End voice",
+          }
+        : {
+            label: "Turn ended",
+            detail: "Your pause was detected; no understanding is implied yet.",
+            button: "End voice",
+          };
+    }
+    if (turnPhase === "assistant_speaking") {
+      return {
+        label: "Reka speaking",
+        detail: "You can interrupt naturally whenever you need to.",
+        button: "End voice",
+      };
+    }
     return {
       label: "Live now",
       detail: "Speak naturally. Reka will keep the handoff sharp.",
@@ -111,7 +143,7 @@ export const reconnectVoiceInstruction =
   "The visitor reconnected to voice and the earlier conversation context was just provided. Do not repeat the opening pitch and do not greet from scratch. Acknowledge in one short sentence that you are back, then continue exactly where the conversation left off.";
 
 const openingVoiceInstructionBase =
-  "Start the intake now as Reka, pronounced REH-ka. You are a KL Malaysian host speaking natural, clear Malaysian English — warm and local, never forced or caricatured. Open with one short welcome (a simple 'Hi, welcome!' or 'Selamat datang!' both work), say we are moving into Oriental — new chapter for Mereka — and we are excited to build it with the right people. Then ask what the visitor wants to build or explore. Keep the tone conversational, not performative. Do not explain pronunciation, tools, limitations, privacy, or the form.";
+  "Start the intake now as Reka, pronounced REH-ka. Say exactly one opening sentence: “Hi, I'm Reka. What would you like to build at Oriental?” Then listen. Keep later responses naturally Malaysian, never forced or caricatured. Do not add a pitch, second welcome, pronunciation explanation, tool explanation, privacy note, or form explanation.";
 
 export function openingVoiceInstruction(knownVisitor: boolean) {
   if (!knownVisitor) return openingVoiceInstructionBase;

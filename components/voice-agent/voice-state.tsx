@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { preconnect } from "react-dom";
+import { playArmCue } from "@/components/voice-agent/live-chime";
 import type { SegmentId } from "@/lib/segments";
 import { DEFAULT_VOICE_VARIANT_ID, VOICE_VARIANT_IDS } from "@/lib/voice/variants";
 
@@ -15,7 +16,13 @@ const VoiceAgentDialog = dynamic(
 
 type VoiceMode = "voice" | "form";
 
-export type VoicePrefill = { email?: string; mode?: VoiceMode; autoStart?: boolean };
+export type VoicePrefill = {
+  email?: string;
+  mode?: VoiceMode;
+  autoStart?: boolean;
+  /** Internal monotonic duration only; no wall-clock tap timestamp is retained. */
+  activation?: ReturnType<typeof playArmCue>;
+};
 
 const VOICE_VARIANT_STORAGE_KEY = "oriental.voiceVariant";
 const VOICE_VARIANT_COOKIE = "oriental_voice_variant";
@@ -66,8 +73,9 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const openVoice = useCallback((nextIntent?: SegmentId, nextPrefill?: VoicePrefill) => {
+    const activation = nextPrefill?.autoStart ? playArmCue() : undefined;
     setIntent(nextIntent);
-    setPrefill(nextPrefill);
+    setPrefill(nextPrefill ? { ...nextPrefill, activation } : undefined);
     setMounted(true);
     setOpen(true);
   }, []);

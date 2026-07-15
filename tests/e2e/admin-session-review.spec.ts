@@ -68,7 +68,7 @@ test.describe("admin session review console", () => {
 
     await expect(session.getByText("Conversation latency")).toBeVisible();
     await expect(session.getByText("420ms").first()).toBeVisible();
-    await expect(session.getByText(/not yet measured speaker playback/i)).toBeVisible();
+    await expect(session.getByText(/does not prove physical speaker output/i)).toBeVisible();
   });
 
   test("submits a workflow update from a collapsed lead card", async ({ page }, testInfo) => {

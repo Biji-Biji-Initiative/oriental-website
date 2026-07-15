@@ -19,6 +19,14 @@ export type VoiceTurnLatencySample = {
   stopToResponseCreatedMs?: number;
   /** Final speech stop to the first output audio/transcript event. */
   stopToFirstOutputEventMs?: number;
+  /** Local microphone activity end to the server VAD speech-stopped event. */
+  localSpeechEndToSpeechStoppedMs?: number;
+  /** Final speech stop to independently detected remote-stream audio activity. */
+  stopToRemoteAudioMs?: number;
+  /** First output event to independently detected remote-stream audio activity. */
+  firstOutputEventToRemoteAudioMs?: number;
+  /** Visitor barge-in to response.done, used as the interruption-silence proxy. */
+  bargeInToResponseDoneMs?: number;
   /** response.created to response.done (or interruption/session close). */
   responseDurationMs?: number;
   /** The visitor began speaking while this turn's response was active. */
@@ -29,6 +37,10 @@ export type VoiceTurnLatencySample = {
 
 export type VoiceLatencyTelemetry = {
   version: 1;
+  activation?: {
+    /** Initiating tap to scheduling the local arm cue; this is not speaker output. */
+    tapToArmCueScheduledMs?: number;
+  };
   turns: VoiceTurnLatencySample[];
 };
 
@@ -37,6 +49,10 @@ export type VoiceLatencySignal =
   | { type: "speech_stopped"; at: number }
   | { type: "response_created"; at: number }
   | { type: "first_output"; at: number }
+  | { type: "local_speech_ended"; at: number }
+  | { type: "remote_audio_started"; at: number }
+  | { type: "interruption_cleared"; at: number }
+  | { type: "input_policy_changed"; inputPolicy: VoiceInputPolicy }
   | { type: "response_done"; at: number }
   | { type: "session_closed"; at: number };
 
@@ -45,9 +61,11 @@ type VoiceTurnDraft = {
   inputPolicy: VoiceInputPolicy;
   speechSegmentStartedAt?: number;
   speechDurationMs: number;
+  localSpeechEndedAt?: number;
   speechStoppedAt?: number;
   responseCreatedAt?: number;
   firstOutputAt?: number;
+  remoteAudioAt?: number;
   interrupted: boolean;
   rapidResume: boolean;
 };
@@ -58,16 +76,20 @@ export type VoiceLatencyState = {
   inputPolicy: VoiceInputPolicy;
   nextSequence: number;
   activeResponse: boolean;
+  pendingBargeInAt?: number;
   current?: VoiceTurnDraft;
 };
 
 export const MAX_VOICE_LATENCY_TURNS = 80;
 export const RAPID_RESUME_WINDOW_MS = 1_500;
 
-export function createVoiceLatencyState(inputPolicy: VoiceInputPolicy = "baseline"): VoiceLatencyState {
+export function createVoiceLatencyState(
+  inputPolicy: VoiceInputPolicy = "baseline",
+  activation?: VoiceLatencyTelemetry["activation"],
+): VoiceLatencyState {
   return {
     phase: "quiet",
-    telemetry: { version: 1, turns: [] },
+    telemetry: { version: 1, ...(activation ? { activation } : {}), turns: [] },
     inputPolicy,
     nextSequence: 1,
     activeResponse: false,
@@ -84,6 +106,14 @@ export function reduceVoiceLatency(state: VoiceLatencyState, signal: VoiceLatenc
       return recordResponseCreated(state, signal.at);
     case "first_output":
       return recordFirstOutput(state, signal.at);
+    case "local_speech_ended":
+      return recordLocalSpeechEnded(state, signal.at);
+    case "remote_audio_started":
+      return recordRemoteAudioStarted(state, signal.at);
+    case "interruption_cleared":
+      return recordInterruptionCleared(state, signal.at);
+    case "input_policy_changed":
+      return { ...state, inputPolicy: signal.inputPolicy };
     case "response_done":
       return recordResponseDone(state, signal.at);
     case "session_closed":
@@ -108,13 +138,16 @@ function recordSpeechStarted(state: VoiceLatencyState, at: number): VoiceLatency
           speechStoppedAt: undefined,
           responseCreatedAt: undefined,
           firstOutputAt: undefined,
+          localSpeechEndedAt: undefined,
+          remoteAudioAt: undefined,
           rapidResume: true,
         },
       };
     }
 
-    const completed = finishCurrentTurn(state, at, { interrupted: state.activeResponse });
-    return startTurn(completed, at);
+    const interrupted = state.activeResponse;
+    const completed = finishCurrentTurn(state, at, { interrupted });
+    return { ...startTurn(completed, at), ...(interrupted ? { pendingBargeInAt: at } : {}) };
   }
 
   return startTurn(state, at);
@@ -182,6 +215,36 @@ function recordFirstOutput(state: VoiceLatencyState, at: number): VoiceLatencySt
   };
 }
 
+function recordLocalSpeechEnded(state: VoiceLatencyState, at: number): VoiceLatencyState {
+  const current = state.current;
+  if (!current || current.speechSegmentStartedAt === undefined) return state;
+  return { ...state, current: { ...current, localSpeechEndedAt: at } };
+}
+
+function recordRemoteAudioStarted(state: VoiceLatencyState, at: number): VoiceLatencyState {
+  const current = state.current;
+  if (!current || current.speechSegmentStartedAt !== undefined || current.remoteAudioAt !== undefined) return state;
+  return {
+    ...state,
+    phase: "assistant_speaking",
+    current: { ...current, remoteAudioAt: at },
+  };
+}
+
+function recordInterruptionCleared(state: VoiceLatencyState, at: number): VoiceLatencyState {
+  if (state.pendingBargeInAt === undefined) return state;
+  const turns = [...state.telemetry.turns];
+  const last = turns.at(-1);
+  if (last?.interrupted && last.bargeInToResponseDoneMs === undefined) {
+    turns[turns.length - 1] = { ...last, bargeInToResponseDoneMs: elapsed(state.pendingBargeInAt, at) };
+  }
+  return {
+    ...state,
+    pendingBargeInAt: undefined,
+    telemetry: { ...state.telemetry, turns },
+  };
+}
+
 function recordResponseDone(state: VoiceLatencyState, at: number): VoiceLatencyState {
   if (state.current?.responseCreatedAt !== undefined) {
     return finishCurrentTurn(state, at);
@@ -214,6 +277,9 @@ function finishCurrentTurn(
     ...(speechDurationMs > 0 ? { speechDurationMs } : {}),
     ...durationField("stopToResponseCreatedMs", current.speechStoppedAt, current.responseCreatedAt),
     ...durationField("stopToFirstOutputEventMs", current.speechStoppedAt, current.firstOutputAt),
+    ...durationField("localSpeechEndToSpeechStoppedMs", current.localSpeechEndedAt, current.speechStoppedAt),
+    ...durationField("stopToRemoteAudioMs", current.speechStoppedAt, current.remoteAudioAt),
+    ...durationField("firstOutputEventToRemoteAudioMs", current.firstOutputAt, current.remoteAudioAt),
     ...durationField("responseDurationMs", current.responseCreatedAt, at),
     interrupted: overrides.interrupted ?? current.interrupted,
     rapidResume: current.rapidResume,
@@ -224,7 +290,7 @@ function finishCurrentTurn(
     activeResponse: false,
     current: undefined,
     telemetry: {
-      version: 1,
+      ...state.telemetry,
       turns: [...state.telemetry.turns, sample].slice(-MAX_VOICE_LATENCY_TURNS),
     },
   };

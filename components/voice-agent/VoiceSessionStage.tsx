@@ -15,6 +15,8 @@ import type { VoiceCloseReason, VoiceConnectionStatus } from "./useRealtimeVoice
 import { useMicAudioLevel, useVoiceAudioLevel } from "./useVoiceAudioLevel";
 import { handoffCompletion, voiceStatusCopy } from "./voice-dialog-copy";
 
+export const WAITING_COPY_DELAY_MS = 300;
+
 type VoiceSessionStageProps = {
   activeTopicId: string | null;
   assistantDraft: string;
@@ -28,6 +30,8 @@ type VoiceSessionStageProps = {
   onDisconnect: (reason: VoiceCloseReason) => void;
   onSendText: (text: string) => boolean;
   onTopicToggle: (topicId: string) => void;
+  onLocalSpeechEnded: (at: number) => void;
+  onRemoteAudioStarted: (at: number) => void;
   selectedSegment: ReturnType<typeof getSegment>;
   status: "idle" | "submitted";
   turnPhase: VoiceTurnPhase;
@@ -45,18 +49,33 @@ export function VoiceSessionStage({
   onDisconnect,
   onSendText,
   onTopicToggle,
+  onLocalSpeechEnded,
+  onRemoteAudioStarted,
   selectedSegment,
   status,
   turnPhase,
 }: VoiceSessionStageProps) {
   const activeTopic = tourTopics.find((topic) => topic.id === activeTopicId) ?? null;
-  const statusCopy = voiceStatusCopy(connectionStatus);
+  const [showWaitingCopy, setShowWaitingCopy] = useState(false);
+  useEffect(() => {
+    if (turnPhase !== "waiting_for_response") {
+      setShowWaitingCopy(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setShowWaitingCopy(true), WAITING_COPY_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [turnPhase]);
+  const statusCopy = voiceStatusCopy(connectionStatus, turnPhase, showWaitingCopy);
   const completion = handoffCompletion(captured);
   const orbRef = useRef<HTMLDivElement | null>(null);
   const [draft, setDraft] = useState("");
   const micPermission = useMicrophonePermissionState();
-  useVoiceAudioLevel(audioRef, orbRef, connectionStatus === "listening");
-  useMicAudioLevel(getLocalStream, orbRef, connectionStatus === "listening");
+  useVoiceAudioLevel(audioRef, orbRef, connectionStatus === "listening", {
+    onActivityStart: onRemoteAudioStarted,
+  });
+  useMicAudioLevel(getLocalStream, orbRef, connectionStatus === "listening", {
+    onActivityStop: onLocalSpeechEnded,
+  });
 
   const handleComposerSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

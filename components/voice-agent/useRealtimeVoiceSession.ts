@@ -136,6 +136,8 @@ export function useRealtimeVoiceSession({
   const captureCloseRef = useRef<(() => void) | null>(null);
   const transportRef = useRef<VoiceTransportTelemetry>(emptyTransportTelemetry());
   const latencyRef = useRef(createVoiceLatencyState());
+  const nextActivationRef = useRef<VoiceLatencyTelemetry["activation"]>(undefined);
+  const recordLatencySignalRef = useRef<((signal: VoiceLatencySignal) => void) | null>(null);
   // Session policy from the server, falling back to compiled defaults.
   const limitsRef = useRef({
     maxDurationMs: VOICE_SESSION_DEFAULTS.maxDurationMs,
@@ -182,6 +184,7 @@ export function useRealtimeVoiceSession({
       // so every close reason — not just WebRTC drops — carries diagnostics.
       captureCloseRef.current?.();
       captureCloseRef.current = null;
+      recordLatencySignalRef.current = null;
       clearTimers();
       idleClosingRef.current = false;
       const channel = dataChannelRef.current;
@@ -427,7 +430,8 @@ export function useRealtimeVoiceSession({
     const connectStartedAt = Date.now();
     firstEventAtRef.current = undefined;
     transportRef.current = emptyTransportTelemetry();
-    latencyRef.current = createVoiceLatencyState();
+    latencyRef.current = createVoiceLatencyState("baseline", nextActivationRef.current);
+    nextActivationRef.current = undefined;
     setTurnPhase("quiet");
     userSpeakingRef.current = false;
     try {
@@ -474,6 +478,7 @@ export function useRealtimeVoiceSession({
           emitLatency();
         }
       };
+      recordLatencySignalRef.current = recordLatencySignal;
       const captureCloseTelemetry = () => {
         transportRef.current = { ...transportRef.current, wasSpeakingAtClose: userSpeakingRef.current };
         recordLatencySignal({ type: "session_closed", at: performance.now() });
@@ -492,7 +497,10 @@ export function useRealtimeVoiceSession({
         if (action === "start_grace") {
           // Transient drop: hold the session open and try to self-heal instead
           // of tearing down mid-sentence.
-          transportRef.current = { ...transportRef.current, disconnectCount: transportRef.current.disconnectCount + 1 };
+          transportRef.current = {
+            ...transportRef.current,
+            disconnectCount: transportRef.current.disconnectCount + 1,
+          };
           try {
             peer.restartIce();
             transportRef.current = {
@@ -600,7 +608,11 @@ export function useRealtimeVoiceSession({
           recordLatencySignal({ type: "first_output", at: performance.now() });
         }
         if (parsed?.type === "response.done") {
-          recordLatencySignal({ type: "response_done", at: performance.now() });
+          recordLatencySignal(
+            latencyRef.current.pendingBargeInAt !== undefined
+              ? { type: "interruption_cleared", at: performance.now() }
+              : { type: "response_done", at: performance.now() },
+          );
         }
         if (!firstEventAtRef.current) {
           firstEventAtRef.current = Date.now();
@@ -662,13 +674,25 @@ export function useRealtimeVoiceSession({
   useEffect(() => teardownVoice, [teardownVoice]);
 
   const getLocalStream = useCallback(() => localStreamRef.current, []);
+  const setVoiceActivation = useCallback((activation: VoiceLatencyTelemetry["activation"]) => {
+    nextActivationRef.current = activation;
+  }, []);
+  const recordLocalSpeechEnded = useCallback((at: number) => {
+    recordLatencySignalRef.current?.({ type: "local_speech_ended", at });
+  }, []);
+  const recordRemoteAudioStarted = useCallback((at: number) => {
+    recordLatencySignalRef.current?.({ type: "remote_audio_started", at });
+  }, []);
 
   return {
     connectVoice,
     connectionStatus,
     getLocalStream,
     prewarmVoiceSession,
+    recordLocalSpeechEnded,
+    recordRemoteAudioStarted,
     sendClientEvents,
+    setVoiceActivation,
     teardownVoice,
     turnPhase,
   };

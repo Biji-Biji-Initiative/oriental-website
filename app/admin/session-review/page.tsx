@@ -2391,6 +2391,11 @@ function VoiceQaRollup({ sessions }: { sessions: VoiceSessionRow[] }) {
             {formatLatency(latency.responseCreated.p95Ms)}
           </div>
           <div>
+            Remote audio p50/p95: {formatLatency(latency.remoteAudio.p50Ms)} /{" "}
+            {formatLatency(latency.remoteAudio.p95Ms)}
+          </div>
+          <div>Arm cue scheduling p95: {formatLatency(latency.activation.p95Ms)}</div>
+          <div>
             {latency.rapidResumeTurns} rapid resumes · {latency.interruptedTurns} interrupted replies
           </div>
         </div>
@@ -2480,13 +2485,19 @@ function SessionLatency({ calls }: { calls: VoiceSessionRow[] }) {
     { label: "First output p95", value: formatLatency(latency.firstOutput.p95Ms) },
     { label: "Response created p50", value: formatLatency(latency.responseCreated.p50Ms) },
     { label: "Response created p95", value: formatLatency(latency.responseCreated.p95Ms) },
+    { label: "Remote audio p50", value: formatLatency(latency.remoteAudio.p50Ms) },
+    { label: "Remote audio p95", value: formatLatency(latency.remoteAudio.p95Ms) },
+    { label: "Endpoint p95", value: formatLatency(latency.endpoint.p95Ms) },
+    { label: "Playout p95", value: formatLatency(latency.playout.p95Ms) },
+    { label: "Barge-in clear p95", value: formatLatency(latency.bargeIn.p95Ms) },
+    { label: "Arm cue p95", value: formatLatency(latency.activation.p95Ms) },
     { label: "Rapid resumes", value: String(latency.rapidResumeTurns) },
     { label: "Interrupted replies", value: String(latency.interruptedTurns) },
   ];
   return (
     <div className="mt-3 rounded-lg border border-mk-blue/15 bg-mk-blue/5 p-3 text-xs text-mk-ash">
       <div className="font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">Conversation latency</div>
-      <div className="mt-2 grid gap-2 sm:grid-cols-3 xl:grid-cols-7">
+      <div className="mt-2 grid gap-2 sm:grid-cols-3 xl:grid-cols-6">
         {rows.map((row) => (
           <div key={row.label}>
             <div className="font-semibold text-mk-off-black/70">{row.label}</div>
@@ -2495,8 +2506,8 @@ function SessionLatency({ calls }: { calls: VoiceSessionRow[] }) {
         ))}
       </div>
       <p className="mt-2 text-[11px] leading-5">
-        First output is the first Realtime audio/transcript event after detected speech stops; it is not yet measured
-        speaker playback.
+        First output is a Realtime event. Remote audio is independently detected activity in the received media stream;
+        it still does not prove physical speaker output.
       </p>
     </div>
   );
@@ -2693,10 +2704,32 @@ function summarizeSessionLatency(sessions: VoiceSessionRow[]) {
   const responseCreated = turns.flatMap((turn) =>
     typeof turn.stopToResponseCreatedMs === "number" ? [turn.stopToResponseCreatedMs] : [],
   );
+  const remoteAudio = turns.flatMap((turn) =>
+    typeof turn.stopToRemoteAudioMs === "number" ? [turn.stopToRemoteAudioMs] : [],
+  );
+  const endpoint = turns.flatMap((turn) =>
+    typeof turn.localSpeechEndToSpeechStoppedMs === "number" ? [turn.localSpeechEndToSpeechStoppedMs] : [],
+  );
+  const playout = turns.flatMap((turn) =>
+    typeof turn.firstOutputEventToRemoteAudioMs === "number" ? [turn.firstOutputEventToRemoteAudioMs] : [],
+  );
+  const bargeIn = turns.flatMap((turn) =>
+    typeof turn.bargeInToResponseDoneMs === "number" ? [turn.bargeInToResponseDoneMs] : [],
+  );
+  const activation = sessions.flatMap((session) =>
+    typeof session.latency?.activation?.tapToArmCueScheduledMs === "number"
+      ? [session.latency.activation.tapToArmCueScheduledMs]
+      : [],
+  );
   return {
     sampledTurns: turns.length,
     firstOutput: latencyPercentiles(firstOutput),
     responseCreated: latencyPercentiles(responseCreated),
+    remoteAudio: latencyPercentiles(remoteAudio),
+    endpoint: latencyPercentiles(endpoint),
+    playout: latencyPercentiles(playout),
+    bargeIn: latencyPercentiles(bargeIn),
+    activation: latencyPercentiles(activation),
     interruptedTurns: turns.filter((turn) => turn.interrupted).length,
     rapidResumeTurns: turns.filter((turn) => turn.rapidResume).length,
   };

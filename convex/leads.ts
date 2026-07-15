@@ -87,6 +87,11 @@ const transportValidator = v.object({
 
 const latencyValidator = v.object({
   version: v.literal(1),
+  activation: v.optional(
+    v.object({
+      tapToArmCueScheduledMs: v.optional(v.number()),
+    }),
+  ),
   turns: v.array(
     v.object({
       sequence: v.number(),
@@ -94,6 +99,10 @@ const latencyValidator = v.object({
       speechDurationMs: v.optional(v.number()),
       stopToResponseCreatedMs: v.optional(v.number()),
       stopToFirstOutputEventMs: v.optional(v.number()),
+      localSpeechEndToSpeechStoppedMs: v.optional(v.number()),
+      stopToRemoteAudioMs: v.optional(v.number()),
+      firstOutputEventToRemoteAudioMs: v.optional(v.number()),
+      bargeInToResponseDoneMs: v.optional(v.number()),
       responseDurationMs: v.optional(v.number()),
       interrupted: v.boolean(),
       rapidResume: v.boolean(),
@@ -596,9 +605,14 @@ function percent(numerator: number, denominator: number) {
 
 type LatencySession = {
   latency?: {
+    activation?: { tapToArmCueScheduledMs?: number };
     turns: Array<{
       stopToResponseCreatedMs?: number;
       stopToFirstOutputEventMs?: number;
+      stopToRemoteAudioMs?: number;
+      localSpeechEndToSpeechStoppedMs?: number;
+      firstOutputEventToRemoteAudioMs?: number;
+      bargeInToResponseDoneMs?: number;
       interrupted: boolean;
       rapidResume: boolean;
     }>;
@@ -613,10 +627,32 @@ function summarizeVoiceLatency(sessions: LatencySession[]) {
   const responseCreated = turns.flatMap((turn) =>
     typeof turn.stopToResponseCreatedMs === "number" ? [turn.stopToResponseCreatedMs] : [],
   );
+  const remoteAudio = turns.flatMap((turn) =>
+    typeof turn.stopToRemoteAudioMs === "number" ? [turn.stopToRemoteAudioMs] : [],
+  );
+  const endpoint = turns.flatMap((turn) =>
+    typeof turn.localSpeechEndToSpeechStoppedMs === "number" ? [turn.localSpeechEndToSpeechStoppedMs] : [],
+  );
+  const playout = turns.flatMap((turn) =>
+    typeof turn.firstOutputEventToRemoteAudioMs === "number" ? [turn.firstOutputEventToRemoteAudioMs] : [],
+  );
+  const bargeIn = turns.flatMap((turn) =>
+    typeof turn.bargeInToResponseDoneMs === "number" ? [turn.bargeInToResponseDoneMs] : [],
+  );
+  const activation = sessions.flatMap((session) =>
+    typeof session.latency?.activation?.tapToArmCueScheduledMs === "number"
+      ? [session.latency.activation.tapToArmCueScheduledMs]
+      : [],
+  );
   return {
     sampledTurns: turns.length,
     firstOutput: percentileSummary(firstOutput),
     responseCreated: percentileSummary(responseCreated),
+    remoteAudio: percentileSummary(remoteAudio),
+    endpoint: percentileSummary(endpoint),
+    playout: percentileSummary(playout),
+    bargeIn: percentileSummary(bargeIn),
+    activation: percentileSummary(activation),
     interruptedTurns: turns.filter((turn) => turn.interrupted).length,
     rapidResumeTurns: turns.filter((turn) => turn.rapidResume).length,
   };
