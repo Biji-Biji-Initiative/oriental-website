@@ -42,6 +42,11 @@ work observed during the previous release.
 - Model guidance MUST describe `gpt-realtime-2.1` as the first controlled
   quality candidate against the current `gpt-realtime-2` control, while
   `gpt-realtime-2.1-mini` remains a later speed/cost experiment.
+- A fresh operator MUST be able to reconstruct local/main Git state, live
+  staging and production SHAs/cells, deployed-SHA ownership, open PRs/issues,
+  manual gates and owners, the latest APR verdict, and aggregate-only voice
+  evidence without chat history. Missing evidence MUST fail closed and no
+  credential may be sent to an application origin or included in output.
 
 ## Review request
 

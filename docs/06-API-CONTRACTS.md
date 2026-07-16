@@ -462,11 +462,20 @@ type HealthResponse = {
   version: string; // GIT_SHA, SOURCE_COMMIT, or "local"
   uptime_s: number;
   convex: boolean; // configuration presence, not a live upstream ping
+  voice: {
+    runtime_profile: "baseline" | "instant-v1";
+    model_cell: "control" | "candidate";
+    model: string;
+    reasoning_cell: "low" | "minimal";
+    variant_picker: boolean;
+  };
 };
 ```
 
 The route does not ping Convex or OpenAI. It proves the Next server can respond
-and exposes enough version/config signal for Coolify smoke checks.
+and exposes enough non-secret version/config signal for deterministic release
+and takeover checks. Never add credentials, visitor data, transcripts, or
+internal request metadata to this public response.
 
 ## `GET /api/client-config`
 
