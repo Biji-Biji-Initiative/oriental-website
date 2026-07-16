@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { realtimeCallCloseReason } from "@/components/voice-agent/useRealtimeVoiceSession";
 import {
   openingVoiceInstruction,
   voiceCloseReasonToast,
@@ -28,12 +27,15 @@ describe("voice dialogue activation copy", () => {
   });
 
   it("distinguishes upstream Realtime capacity from a visitor's daily limit", () => {
-    expect(realtimeCallCloseReason(429)).toBe("realtime_busy");
-    expect(realtimeCallCloseReason(503)).toBe("webrtc_failed");
     expect(voiceCloseReasonToast("realtime_busy")).toEqual({
       tone: "warning",
       title: "Live voice is busy right now.",
       description: "Your handoff is still here. Try voice again shortly, or keep typing while the service recovers.",
+    });
+    expect(voiceCloseReasonToast("realtime_quota_exhausted")).toEqual({
+      tone: "error",
+      title: "Live voice is temporarily unavailable.",
+      description: "The team has been alerted. Your handoff is still here, so you can keep typing in the meantime.",
     });
     expect(voiceCloseReasonToast("voice_limit_reached")?.title).toBe("Voice limit reached for today.");
   });

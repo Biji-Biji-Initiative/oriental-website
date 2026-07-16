@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  getAdminReviewDashboard,
   getAdminVoiceSession,
   persistLead,
   persistVoiceReviewSnapshot,
@@ -33,6 +34,7 @@ vi.mock("@/convex/_generated/api", () => ({
       voiceSessionByReviewId: "voiceSessionByReviewId",
       updateLeadWorkflow: "updateLeadWorkflow",
       recordVoiceSession: "recordVoiceSession",
+      reviewDashboard: "reviewDashboard",
     },
   },
 }));
@@ -161,6 +163,42 @@ describe("getAdminVoiceSession", () => {
     mocks.query.mockResolvedValue(null);
 
     await expect(getAdminVoiceSession("missing")).resolves.toEqual({ ok: false, reason: "not_found" });
+  });
+});
+
+describe("getAdminReviewDashboard", () => {
+  beforeEach(() => {
+    process.env = {
+      ...originalEnv,
+      CONVEX_URL: "https://convex.example",
+      CONVEX_INGEST_SECRET: "ingest-secret",
+    };
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+    vi.clearAllMocks();
+  });
+
+  it("counts availability close reasons as session errors even when the Realtime server sent no error event", async () => {
+    mocks.query.mockResolvedValue({
+      metrics: { sessionsWithErrors: 0 },
+      analytics: { voice: { withErrors: 0 } },
+      voiceSessions: [
+        { reviewId: "quota", closeReason: "realtime_quota_exhausted", errors: [] },
+        { reviewId: "protocol", closeReason: "manual", errors: [{ message: "bad event" }] },
+        { reviewId: "clean", closeReason: "manual", errors: [] },
+      ],
+    });
+
+    const result = await getAdminReviewDashboard(75);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.metrics.sessionsWithErrors).toBe(2);
+      expect(result.data.analytics.voice.withErrors).toBe(2);
+    }
+    expect(mocks.query).toHaveBeenCalledWith("reviewDashboard", { ingestSecret: "ingest-secret", limit: 75 });
   });
 });
 

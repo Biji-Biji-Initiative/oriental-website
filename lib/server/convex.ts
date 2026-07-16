@@ -3,6 +3,7 @@ import { api } from "@/convex/_generated/api";
 import { readEnv } from "@/lib/env";
 import type { AdminLeadWorkflowRequest, VoiceReviewSnapshotRequest } from "@/lib/schemas";
 import type { NotificationResult, StoredLead } from "@/lib/server/notifications";
+import { isVoiceAvailabilityFailure } from "@/lib/voice/realtime-call-failure";
 
 export async function persistLead(lead: StoredLead) {
   const convexUrl = readEnv("CONVEX_URL") ?? readEnv("NEXT_PUBLIC_CONVEX_URL");
@@ -110,7 +111,7 @@ export async function getAdminReviewDashboard(limit = 50) {
 
   const client = createConvexClient();
   if (!client) return { ok: false as const, reason: "convex_unconfigured" };
-  const data = await queryAdminReviewDashboard(client, limit);
+  const data = withAvailabilityFailures(await queryAdminReviewDashboard(client, limit));
   return { ok: true as const, data };
 }
 
@@ -158,6 +159,20 @@ function createConvexClient() {
 
 type ConvexClientConfig = NonNullable<ReturnType<typeof createConvexClient>>;
 type AdminReviewDashboardData = Awaited<ReturnType<typeof queryAdminReviewDashboard>>;
+
+function withAvailabilityFailures(data: AdminReviewDashboardData): AdminReviewDashboardData {
+  const sessionsWithErrors = data.voiceSessions.filter(
+    (session) => session.errors.length > 0 || isVoiceAvailabilityFailure(session.closeReason),
+  ).length;
+  return {
+    ...data,
+    metrics: { ...data.metrics, sessionsWithErrors },
+    analytics: {
+      ...data.analytics,
+      voice: { ...data.analytics.voice, withErrors: sessionsWithErrors },
+    },
+  };
+}
 
 async function queryAdminReviewDashboard(client: ConvexClientConfig, limit: number) {
   return client.client.query(api.leads.reviewDashboard, { ingestSecret: client.ingestSecret, limit });

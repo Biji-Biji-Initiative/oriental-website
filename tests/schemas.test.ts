@@ -152,6 +152,15 @@ describe("voice review latency schema", () => {
     rapidResume: false,
   };
 
+  it("accepts a distinct exhausted-quota close reason", () => {
+    expect(
+      voiceReviewSnapshotSchema.safeParse({
+        ...request,
+        snapshot: { ...request.snapshot, connectionStatus: "connecting", closeReason: "realtime_quota_exhausted" },
+      }).success,
+    ).toBe(true);
+  });
+
   it("accepts bounded first-output telemetry", () => {
     expect(
       voiceReviewSnapshotSchema.safeParse({
