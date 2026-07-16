@@ -14,6 +14,7 @@ import {
   type VoiceLatencyTelemetry,
   type VoiceTurnPhase,
 } from "@/lib/voice/latency";
+import { readRealtimeCallFailure } from "@/lib/voice/realtime-call-failure";
 import { type RealtimeServerEvent, responseHasFunctionCall } from "@/lib/voice/realtime-events";
 import { realtimeBusyRetryDelayMs, shouldRetryRealtimeCall } from "@/lib/voice/realtime-retry";
 import {
@@ -42,12 +43,9 @@ export type VoiceCloseReason =
   | "mic_denied"
   | "session_failed"
   | "realtime_busy"
+  | "realtime_quota_exhausted"
   | "webrtc_failed"
   | "disconnected";
-
-export function realtimeCallCloseReason(status: number): VoiceCloseReason {
-  return status === 429 ? "realtime_busy" : "webrtc_failed";
-}
 
 export type VoiceReviewMetadata = {
   id: string;
@@ -765,7 +763,10 @@ export function useRealtimeVoiceSession({
         }
       }
       if (connectionRef.current !== peer || statusRef.current === "idle") throw new VoiceConnectionFailure("manual");
-      if (!sdpResponse.ok) throw new VoiceConnectionFailure(realtimeCallCloseReason(sdpResponse.status));
+      if (!sdpResponse.ok) {
+        const failure = await readRealtimeCallFailure(sdpResponse);
+        throw new VoiceConnectionFailure(failure.closeReason);
+      }
       const answerSdp = await sdpResponse.text();
       if (connectionRef.current !== peer || statusRef.current === "idle") throw new VoiceConnectionFailure("manual");
       await peer.setRemoteDescription({ type: "answer", sdp: answerSdp }).catch(() => {

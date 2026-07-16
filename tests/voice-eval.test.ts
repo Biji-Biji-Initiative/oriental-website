@@ -634,6 +634,10 @@ describe("aggregateEvals + meetsThreshold", () => {
       webrtcFailedSessions: 1,
       retrySessions: 1,
       remoteTrackWithoutAudioSessions: 1,
+      quotaFailures: 0,
+      capacityFailures: 1,
+      transportFailures: 1,
+      totalFailures: 2,
     });
   });
 
@@ -643,6 +647,43 @@ describe("aggregateEvals + meetsThreshold", () => {
     expect(gate.ok).toBe(false);
     expect(gate.failures.some((message) => message.includes("conversationQuality"))).toBe(true);
     expect(gate.failures.some((message) => message.includes("droppedMidTurn"))).toBe(true);
+  });
+
+  it("retains quota failures across stitched calls and fails the availability gate", () => {
+    const conversationId = "11111111-1111-4111-8111-111111111111";
+    const stitched = mergeConversationSessions([
+      session({
+        reviewId: "quota-call",
+        sessionId: "quota-session",
+        conversationId,
+        closeReason: "realtime_quota_exhausted",
+        connectStartedAt: 1_000,
+        transcript: [],
+      }),
+      session({
+        reviewId: "recovered-call",
+        sessionId: "recovered-session",
+        conversationId,
+        closeReason: "manual",
+        connectStartedAt: 2_000,
+      }),
+    ]);
+    const aggregate = aggregateEvals(stitched.map((entry) => buildSessionEval(entry, null)));
+
+    expect(aggregate.availability).toEqual({
+      realtimeBusySessions: 0,
+      webrtcFailedSessions: 0,
+      retrySessions: 0,
+      remoteTrackWithoutAudioSessions: 0,
+      quotaFailures: 1,
+      capacityFailures: 0,
+      transportFailures: 0,
+      totalFailures: 1,
+    });
+    expect(meetsThreshold(aggregate, { maxQuotaFailures: 0 })).toEqual({
+      ok: false,
+      failures: ["quotaFailures 1 > 0"],
+    });
   });
 
   it("passes the gate when thresholds are met", () => {
