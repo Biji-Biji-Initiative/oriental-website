@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   createVoiceLatencyState,
-  MAX_VOICE_TOOL_SAMPLES,
   MAX_VOICE_LATENCY_TURNS,
+  MAX_VOICE_TOOL_SAMPLES,
   RAPID_RESUME_WINDOW_MS,
   reduceVoiceLatency,
   shouldEmitVoiceLatencyMetadata,
