@@ -62,7 +62,7 @@ export async function persistVoiceReviewSnapshot(input: VoiceReviewSnapshotReque
   if (!client) return { ok: false as const, reason: "convex_unconfigured" };
   // Verification provenance is useful in PII-free route logs, while the shared
   // Convex schema remains unchanged until production is ready for promotion.
-  const { emailVerification: _emailVerification, ...convexInput } = input;
+  const { emailVerification: _emailVerification, emailCaptureMode: _emailCaptureMode, ...convexInput } = input;
   try {
     const result = await client.client.mutation(api.leads.recordVoiceSession, {
       ingestSecret: client.ingestSecret,

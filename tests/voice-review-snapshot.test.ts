@@ -133,4 +133,30 @@ describe("voice review snapshots", () => {
       matchesCaptured: true,
     });
   });
+
+  it("records adaptive confidence without persisting the address in provenance", () => {
+    const snapshot = buildVoiceReviewSnapshot(
+      review,
+      state({
+        captured: { ...emptyCapturedLead, email: "asha@example.com" },
+        emailCaptureMode: "adaptive",
+        emailVerification: {
+          value: "asha@example.com",
+          source: "speech",
+          status: "confirmed",
+          confidence: "medium",
+        },
+      }),
+      "listening",
+    );
+
+    expect(snapshot.emailCaptureMode).toBe("adaptive");
+    expect(snapshot.emailVerification).toEqual({
+      source: "speech",
+      status: "confirmed",
+      confidence: "medium",
+      matchesCaptured: true,
+    });
+    expect(JSON.stringify(snapshot.emailVerification)).not.toContain("asha@example.com");
+  });
 });

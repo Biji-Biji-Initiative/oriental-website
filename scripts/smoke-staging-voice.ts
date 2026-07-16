@@ -21,6 +21,7 @@ type SmokeResult = {
   remoteAudioAdvanced: boolean;
   realtimeModel: string;
   realtimeModelCell: string;
+  emailCaptureMode: string;
   transcriptionModel: string;
   sessionMintStatuses: number[];
   debugStatuses: number[];
@@ -40,7 +41,12 @@ async function run() {
   const pageErrors: string[] = [];
   const consoleErrors: string[] = [];
   const sessionMintStatuses: number[] = [];
-  const sessionProfiles: Array<{ model: string; modelCell: string; transcriptionModel: string }> = [];
+  const sessionProfiles: Array<{
+    model: string;
+    modelCell: string;
+    emailCaptureMode: string;
+    transcriptionModel: string;
+  }> = [];
   const sessionProfileCaptures: Array<Promise<void>> = [];
   const debugStatuses: number[] = [];
   const failedResponses: Array<{
@@ -173,9 +179,15 @@ async function run() {
     if (!sessionProfile) throw new Error("Voice session profile was not captured");
     const expectedModel = process.env.EXPECTED_REALTIME_MODEL ?? "gpt-realtime-2.1";
     const expectedModelCell = process.env.EXPECTED_REALTIME_MODEL_CELL ?? "candidate";
+    const expectedEmailCaptureMode = process.env.EXPECTED_EMAIL_CAPTURE_MODE ?? "adaptive";
     if (sessionProfile.model !== expectedModel || sessionProfile.modelCell !== expectedModelCell) {
       throw new Error(
         `Unexpected staging Realtime cell: ${sessionProfile.model}/${sessionProfile.modelCell}; expected ${expectedModel}/${expectedModelCell}`,
+      );
+    }
+    if (sessionProfile.emailCaptureMode !== expectedEmailCaptureMode) {
+      throw new Error(
+        `Unexpected staging email capture mode: ${sessionProfile.emailCaptureMode}; expected ${expectedEmailCaptureMode}`,
       );
     }
     if (!debugStatuses.some((status) => status === 200)) throw new Error("Voice review snapshot was not persisted");
@@ -197,6 +209,7 @@ async function run() {
       remoteAudioAdvanced: audioAfterInterrupt.currentTime > audioBeforeInterrupt.currentTime,
       realtimeModel: sessionProfile.model,
       realtimeModelCell: sessionProfile.modelCell,
+      emailCaptureMode: sessionProfile.emailCaptureMode,
       transcriptionModel: sessionProfile.transcriptionModel,
       sessionMintStatuses,
       debugStatuses,
@@ -233,6 +246,7 @@ function readSessionProfile(value: unknown) {
   if (
     typeof body.model !== "string" ||
     typeof body.model_cell !== "string" ||
+    typeof body.email_capture_mode !== "string" ||
     typeof body.transcription_model !== "string"
   ) {
     return null;
@@ -240,6 +254,7 @@ function readSessionProfile(value: unknown) {
   return {
     model: body.model,
     modelCell: body.model_cell,
+    emailCaptureMode: body.email_capture_mode,
     transcriptionModel: body.transcription_model,
   };
 }

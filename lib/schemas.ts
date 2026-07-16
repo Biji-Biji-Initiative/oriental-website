@@ -134,8 +134,10 @@ export const voiceReviewSnapshotSchema = z.object({
         source: z.enum(["prefill", "speech", "typed"]),
         status: z.enum(["confirmed", "pending"]),
         matchesCaptured: z.boolean(),
+        confidence: z.enum(["high", "medium"]).optional(),
       })
       .optional(),
+    emailCaptureMode: z.enum(["strict", "adaptive"]).optional(),
     transcript: z.array(transcriptEntrySchema).max(120).default([]),
     usage: z
       .object({

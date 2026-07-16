@@ -3,7 +3,7 @@ import { chromium } from "playwright";
 const stagingOrigin = "https://staging.oriental.mereka.io";
 const expectedEmail = "qa.nebula@example.test";
 const pendingCopy = "Reka heard this address. Say yes after the exact read-back, or edit it here to confirm it.";
-const confirmedCopy = "Confirmed from your voice.";
+const capturedCopy = "Captured from your voice · edit anytime.";
 
 async function run() {
   const browser = await chromium.launch({
@@ -40,6 +40,7 @@ async function run() {
     await page.getByRole("button", { name: "Start voice with Reka" }).click();
     await waitForListening(page, 45_000);
 
+    const assistantTurnsBefore = await assistantTurnCount(page);
     await sendTyped(page, "My email is q a dot nebula at example dot test. Please capture it, but do not send.");
     await page.getByLabel("Email").waitFor({ state: "visible" });
     await page.waitForFunction(
@@ -47,30 +48,24 @@ async function run() {
       expectedEmail,
       { timeout: 45_000 },
     );
-    const pendingHint = page.getByText(pendingCopy, { exact: true });
-    await pendingHint.waitFor({ state: "visible", timeout: 10_000 });
-    const confirmationField = await pendingHint.evaluate(
+    const capturedHint = page.getByText(capturedCopy, { exact: true });
+    await capturedHint.waitFor({ state: "visible", timeout: 10_000 });
+    const captureField = await capturedHint.evaluate(
       (hint) => hint.closest('[data-slot="form-item"]')?.querySelector("label")?.textContent?.trim() ?? "",
     );
-    if (confirmationField !== "Email")
-      throw new Error(`Confirmation hint appeared under ${confirmationField || "no field"}`);
+    if (captureField !== "Email") throw new Error(`Capture hint appeared under ${captureField || "no field"}`);
+    await page.getByText(pendingCopy, { exact: true }).waitFor({ state: "hidden", timeout: 10_000 });
 
     await page.waitForFunction(
-      () =>
-        [...document.querySelectorAll<HTMLElement>('[aria-label="Conversation transcript"] p')].some((entry) => {
-          const line = entry.textContent?.toLowerCase() ?? "";
-          return (
-            line.startsWith("reka:") && line.includes("nebula") && line.includes("example") && line.includes("test")
-          );
-        }),
-      undefined,
+      (before) =>
+        [...document.querySelectorAll<HTMLElement>('[aria-label="Conversation transcript"] p')].filter((entry) =>
+          (entry.textContent?.toLowerCase() ?? "").startsWith("reka:"),
+        ).length > before,
+      assistantTurnsBefore,
       { timeout: 60_000 },
     );
 
-    await sendTyped(page, "Yes, that's exactly correct. Do not send it yet.");
-    await page.getByText(confirmedCopy, { exact: true }).waitFor({ state: "visible", timeout: 45_000 });
-    await page.getByText(pendingCopy, { exact: true }).waitFor({ state: "hidden", timeout: 10_000 });
-    if ((await page.getByLabel("Email").inputValue()) !== expectedEmail) throw new Error("Confirmed email changed");
+    if ((await page.getByLabel("Email").inputValue()) !== expectedEmail) throw new Error("Captured email changed");
     if (leadPosts !== 0) throw new Error(`Probe unexpectedly submitted ${leadPosts} lead request(s)`);
 
     await page.getByRole("button", { name: "End voice" }).click();
@@ -90,9 +85,9 @@ async function run() {
           target: stagingOrigin,
           version: health.version,
           capturedEmail: expectedEmail,
-          exactReadbackObserved: true,
-          voiceConfirmationObserved: true,
-          confirmationField,
+          adaptiveCaptureObserved: true,
+          mandatoryConfirmationObserved: false,
+          captureField,
           leadPosts,
           pageErrors: pageErrors.length,
           consoleErrors: consoleErrors.length,
@@ -119,6 +114,14 @@ async function sendTyped(page: import("playwright").Page, message: string) {
   await composer.waitFor({ state: "visible", timeout: 20_000 });
   await composer.fill(message);
   await page.getByRole("button", { name: "Send typed message" }).click();
+}
+
+async function assistantTurnCount(page: import("playwright").Page) {
+  return page
+    .locator('[aria-label="Conversation transcript"] p')
+    .evaluateAll(
+      (entries) => entries.filter((entry) => (entry.textContent?.toLowerCase() ?? "").startsWith("reka:")).length,
+    );
 }
 
 run().catch((error) => {

@@ -105,7 +105,8 @@ export function serializeUserText(text: string, createEventId: EventIdFactory = 
 }
 
 export function serializeHandoffContext(
-  state: Pick<VoiceRuntimeState, "segment" | "captured"> & Partial<Pick<VoiceRuntimeState, "emailVerification">>,
+  state: Pick<VoiceRuntimeState, "segment" | "captured"> &
+    Partial<Pick<VoiceRuntimeState, "emailVerification" | "emailCaptureMode">>,
   createEventId: EventIdFactory = defaultEventId,
   options: { resumedTranscript?: VoiceTranscriptEntry[] } = {},
 ): RealtimeOutboundEvent {
@@ -118,6 +119,12 @@ export function serializeHandoffContext(
       : "awaiting exact spoken confirmation"
     : "missing";
   const resumed = options.resumedTranscript ?? [];
+  const emailPolicy =
+    state.emailCaptureMode === "adaptive"
+      ? "A grounded speech email marked confirmed is immediately usable. It is visible and editable; continue without asking for a separate yes. Clarify only a rejected or corrected address."
+      : state.emailCaptureMode === "strict"
+        ? "A speech-captured email marked awaiting confirmation is a draft. Read it back exactly, ask if it is correct, then call confirm_email only after a clear yes. Never route an unconfirmed email."
+        : null;
   return {
     type: "conversation.item.create",
     event_id: createEventId(),
@@ -132,8 +139,8 @@ export function serializeHandoffContext(
             "Treat non-empty fields as user-provided typed details. Do not ask again for non-empty fields.",
             "If the user asks who they are or why you cannot see a detail, answer from these non-empty fields as visible handoff-panel context, without inventing anything.",
             "Do not talk about privacy, security, tools, or limitations unless the user asks directly.",
-            "A speech-captured email marked awaiting confirmation is a draft. Read it back exactly, ask if it is correct, then call confirm_email only after a clear yes. Never route an unconfirmed email.",
-            "If the user says send, submit, okay send, looks good, or similar, call route_to_team only if the email is confirmed.",
+            ...(emailPolicy ? [emailPolicy] : []),
+            "If the user says send, submit, okay send, looks good, or similar, call route_to_team when the email status is confirmed.",
             `Segment: ${segment.label} (${segment.id})`,
             `Name: ${field(state.captured.name)}`,
             `Email: ${field(state.captured.email)}`,

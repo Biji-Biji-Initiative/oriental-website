@@ -5,6 +5,7 @@ import { measureTapToLive, type VoiceActivationCue } from "@/components/voice-ag
 import type { SegmentId } from "@/lib/segments";
 import { type RealtimeOutboundEvent, serializeInputPolicyUpdate } from "@/lib/voice/client-events";
 import { ownsVoiceConnectAttempt } from "@/lib/voice/connect-attempt";
+import type { VoiceEmailCaptureMode } from "@/lib/voice/email-capture-policy";
 import type { VoiceModelCell, VoiceReasoningCell } from "@/lib/voice/experiments";
 import {
   createVoiceLatencyState,
@@ -88,6 +89,7 @@ type VoiceSessionResponse = {
   variant?: string | null;
   runtime_profile?: VoiceRuntimeProfileId;
   input_policy?: VoiceInputPolicy;
+  email_capture_mode?: VoiceEmailCaptureMode;
   limits?: { max_duration_ms?: number; idle_timeout_ms?: number; idle_goodbye_grace_ms?: number };
 };
 
@@ -730,7 +732,7 @@ export function useRealtimeVoiceSession({
           });
         }
         resetIdleTimer();
-        if (parsed) onEvent(parsed, channel);
+        if (parsed) onEvent({ ...parsed, email_capture_mode: session.email_capture_mode ?? "strict" }, channel);
       };
 
       const offer = await peer.createOffer();

@@ -41,6 +41,7 @@ describe("createRealtimeClientSecret", () => {
       variant: null,
       runtime_profile: "baseline",
       input_policy: "baseline",
+      email_capture_mode: "strict",
       transcription_model: "gpt-4o-transcribe",
       noise_reduction: "far_field",
       limits: { max_duration_ms: 600_000, idle_timeout_ms: 20_000, idle_goodbye_grace_ms: 6_000 },
@@ -92,6 +93,27 @@ describe("createRealtimeClientSecret", () => {
     expect(body.session.tools.map((tool: { name: string }) => tool.name)).toContain("wait_for_user");
     expect(body.session.tools.map((tool: { name: string }) => tool.name)).toContain("lookup_oriental");
     expect(body.session.tools.map((tool: { name: string }) => tool.name)).toContain("capture_fields");
+  });
+
+  it("enables the low-friction email contract only when explicitly configured", async () => {
+    process.env.VOICE_EMAIL_CAPTURE_MODE = "adaptive";
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+      Response.json({
+        client_secret: { value: "client-secret", expires_at: 123 },
+        session: { id: "sess_adaptive_email" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await createRealtimeClientSecret("safe-user", "technology");
+
+    expect(result.email_capture_mode).toBe("adaptive");
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(body.session.instructions).toContain("without asking for a separate yes");
+    expect(body.session.instructions).toContain("Ask a targeted spelling question only when capture_fields rejects");
+    expect(body.session.instructions).not.toContain(
+      "After a speech email is captured, read it back and use confirm_email",
+    );
   });
 
   it("keeps the latency profile independent from the selected voice variant", async () => {

@@ -87,12 +87,32 @@ describe("serializeRealtimeCommand", () => {
     const event = serializeHandoffContext({
       segment: "technology",
       captured: { name: "", email: "g@b.com", org: "", phone: "", website: "", message: "" },
+      emailCaptureMode: "strict",
       emailVerification: { value: "g@b.com", source: "speech", status: "pending" },
     });
 
     const body = JSON.stringify(event);
     expect(body).toContain("Email verification: awaiting exact spoken confirmation");
     expect(body).toContain("Never route an unconfirmed email");
+  });
+
+  it("tells adaptive sessions to continue after a grounded speech capture", () => {
+    const event = serializeHandoffContext({
+      segment: "technology",
+      captured: { name: "", email: "g@b.com", org: "", phone: "", website: "", message: "" },
+      emailCaptureMode: "adaptive",
+      emailVerification: {
+        value: "g@b.com",
+        source: "speech",
+        status: "confirmed",
+        confidence: "medium",
+      },
+    });
+
+    const body = JSON.stringify(event);
+    expect(body).toContain("continue without asking for a separate yes");
+    expect(body).toContain("Email verification: confirmed (speech)");
+    expect(body).not.toContain("Never route an unconfirmed email");
   });
 
   it("serializes a typed visitor message as a user conversation item", () => {

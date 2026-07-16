@@ -87,6 +87,172 @@ describe("reduceRealtimeServerEvent", () => {
     });
   });
 
+  it("routes a grounded speech email without a confirmation turn in adaptive mode", () => {
+    const capture = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_adaptive_email",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "asha@example.com",
+                evidence: "asha at example dot com",
+              }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "My email is asha at example dot com." }] }),
+    );
+
+    expect(capture.state.emailCaptureMode).toBe("adaptive");
+    expect(capture.state.emailVerification).toEqual({
+      value: "asha@example.com",
+      source: "speech",
+      status: "confirmed",
+      confidence: "high",
+    });
+    expect(capture.commands[0]).toMatchObject({
+      output: {
+        ok: true,
+        emailConfirmationRequired: false,
+        emailCaptureMode: "adaptive",
+        emailConfidence: "high",
+        nextAction: expect.stringContaining("without asking for a separate confirmation"),
+      },
+    });
+
+    const routed = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "route_to_team",
+              call_id: "call_adaptive_route",
+              arguments: JSON.stringify({ segment: "technology" }),
+            },
+          ],
+        },
+      },
+      capture.state,
+    );
+    expect(routed.commands).toEqual([{ type: "submit_voice", callId: "call_adaptive_route", segment: "technology" }]);
+  });
+
+  it("keeps bounded ASR drift smooth but reports medium confidence", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_adaptive_drift",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "asha.lim@example.my",
+                evidence: "asha dot lim at example dot my",
+              }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "My email is asia.lim@example.my." }] }),
+    );
+
+    expect(result.state.emailVerification).toMatchObject({
+      status: "confirmed",
+      source: "speech",
+      confidence: "medium",
+    });
+    expect(result.commands[0]).toMatchObject({ output: { emailConfirmationRequired: false } });
+  });
+
+  it("re-evaluates a corrected adaptive email and still blocks an invented replacement", () => {
+    const initial = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_initial_adaptive_email",
+              arguments: JSON.stringify({ key: "email", value: "asha@example.com", evidence: "asha@example.com" }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "My email is asha@example.com." }] }),
+    );
+    const corrected = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_corrected_adaptive_email",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "asha.lim@example.com",
+                evidence: "actually asha dot lim at example dot com",
+              }),
+            },
+          ],
+        },
+      },
+      {
+        ...initial.state,
+        transcript: [
+          ...initial.state.transcript,
+          { role: "user", text: "Actually, it is asha dot lim at example dot com." },
+        ],
+      },
+    );
+    expect(corrected.state.captured.email).toBe("asha.lim@example.com");
+    expect(corrected.state.emailVerification).toMatchObject({ status: "confirmed", confidence: "high" });
+
+    const invented = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_invented_replacement",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "sales@example.com",
+                evidence: "sales at example dot com",
+              }),
+            },
+          ],
+        },
+      },
+      corrected.state,
+    );
+    expect(invented.state.captured.email).toBe("asha.lim@example.com");
+    expect(invented.commands[0]).toMatchObject({
+      output: { ok: false, error: "ungrounded_identity_capture", key: "email" },
+    });
+  });
+
   it("rejects a one-character email drift instead of changing the visitor's address", () => {
     const result = reduceRealtimeServerEvent(
       {

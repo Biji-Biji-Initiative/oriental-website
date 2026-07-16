@@ -268,6 +268,7 @@ describe("persistVoiceReviewSnapshot", () => {
       status: "pending" as const,
       matchesCaptured: true,
     },
+    emailCaptureMode: "adaptive" as const,
     transport: {
       realtimeBusyRetryCount: 0,
       disconnectCount: 1,
@@ -319,6 +320,7 @@ describe("persistVoiceReviewSnapshot", () => {
     );
     const mutationSnapshot = mocks.mutation.mock.calls[0]?.[1]?.snapshot;
     expect(mutationSnapshot).not.toHaveProperty("emailVerification");
+    expect(mutationSnapshot).not.toHaveProperty("emailCaptureMode");
   });
 
   it("retries without telemetry when a pre-migration Convex rejects an unknown field", async () => {

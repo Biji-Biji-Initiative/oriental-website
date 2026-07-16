@@ -79,6 +79,7 @@ export async function POST(request: NextRequest) {
       variant: secret.variant ?? "default",
       runtimeProfile: secret.runtime_profile,
       inputPolicy: secret.input_policy,
+      emailCaptureMode: secret.email_capture_mode,
       transcriptionModel: secret.transcription_model,
       noiseReduction: secret.noise_reduction,
       deviceProfile,
