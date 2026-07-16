@@ -10,6 +10,7 @@ import {
   deriveLatencySignals,
   deriveTransportSignals,
   isJudgeable,
+  isSyntheticVoiceSession,
   meetsThreshold,
   mergeConversationSessions,
   parseJudgeResponse,
@@ -64,6 +65,29 @@ function session(overrides: Partial<VoiceEvalSession> = {}): VoiceEvalSession {
     ...overrides,
   };
 }
+
+describe("isSyntheticVoiceSession", () => {
+  it("excludes reserved-address intake probes", () => {
+    expect(
+      isSyntheticVoiceSession(
+        session({
+          captured: { name: "", email: "qa.nebula@example.test", org: "", message: "" },
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("excludes the transport smoke prompt without hiding ordinary staging conversations", () => {
+    expect(
+      isSyntheticVoiceSession(
+        session({
+          transcript: [{ role: "user", text: "Please pause and tell me briefly about education partnerships." }],
+        }),
+      ),
+    ).toBe(true);
+    expect(isSyntheticVoiceSession(session({ deploymentEnvironment: "staging" }))).toBe(false);
+  });
+});
 
 describe("deriveTransportSignals", () => {
   it("flags a drop that happened while the visitor was speaking", () => {
@@ -408,10 +432,24 @@ describe("isJudgeable", () => {
 });
 
 describe("buildJudgeUserPrompt", () => {
-  it("includes transcript, segment, and outcome but not raw token usage", () => {
-    const prompt = buildJudgeUserPrompt(session({ segment: "cultural", submittedAt: 5 }));
+  it("includes transcript, final captured handoff, runtime issues, and outcome but not raw token usage", () => {
+    const prompt = buildJudgeUserPrompt(
+      session({
+        segment: "cultural",
+        submittedAt: 5,
+        captured: {
+          name: "Jay",
+          email: "g@g.com",
+          org: "Manufacturers",
+          message: "A partnership question.",
+        },
+        errors: [{ code: "voice_capture_rejected", message: "capture_fields:ungrounded_identity_capture:email" }],
+      }),
+    );
     expect(prompt).toContain("Intended segment: cultural");
     expect(prompt).toContain("lead submitted");
+    expect(prompt).toContain("Email: g@g.com");
+    expect(prompt).toContain("voice_capture_rejected");
     expect(prompt).toContain("USER: We build robots.");
   });
 });
@@ -634,6 +672,10 @@ describe("aggregateEvals + meetsThreshold", () => {
       webrtcFailedSessions: 1,
       retrySessions: 1,
       remoteTrackWithoutAudioSessions: 1,
+      quotaFailures: 0,
+      capacityFailures: 1,
+      transportFailures: 1,
+      totalFailures: 2,
     });
   });
 
@@ -643,6 +685,43 @@ describe("aggregateEvals + meetsThreshold", () => {
     expect(gate.ok).toBe(false);
     expect(gate.failures.some((message) => message.includes("conversationQuality"))).toBe(true);
     expect(gate.failures.some((message) => message.includes("droppedMidTurn"))).toBe(true);
+  });
+
+  it("retains quota failures across stitched calls and fails the availability gate", () => {
+    const conversationId = "11111111-1111-4111-8111-111111111111";
+    const stitched = mergeConversationSessions([
+      session({
+        reviewId: "quota-call",
+        sessionId: "quota-session",
+        conversationId,
+        closeReason: "realtime_quota_exhausted",
+        connectStartedAt: 1_000,
+        transcript: [],
+      }),
+      session({
+        reviewId: "recovered-call",
+        sessionId: "recovered-session",
+        conversationId,
+        closeReason: "manual",
+        connectStartedAt: 2_000,
+      }),
+    ]);
+    const aggregate = aggregateEvals(stitched.map((entry) => buildSessionEval(entry, null)));
+
+    expect(aggregate.availability).toEqual({
+      realtimeBusySessions: 0,
+      webrtcFailedSessions: 0,
+      retrySessions: 0,
+      remoteTrackWithoutAudioSessions: 0,
+      quotaFailures: 1,
+      capacityFailures: 0,
+      transportFailures: 0,
+      totalFailures: 1,
+    });
+    expect(meetsThreshold(aggregate, { maxQuotaFailures: 0 })).toEqual({
+      ok: false,
+      failures: ["quotaFailures 1 > 0"],
+    });
   });
 
   it("passes the gate when thresholds are met", () => {

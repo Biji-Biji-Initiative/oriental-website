@@ -19,6 +19,7 @@
 
 import { z } from "zod";
 import { activeVoiceExperimentDimensions } from "../voice/experiments";
+import { isVoiceAvailabilityFailure } from "../voice/realtime-call-failure";
 
 export type EvalTranscriptTurn = { role: string; text: string };
 
@@ -85,6 +86,14 @@ export type VoiceEvalSession = {
   modelCell?: "control" | "candidate" | null;
   reasoningCell?: "low" | "minimal" | null;
   transcript: EvalTranscriptTurn[];
+  captured?: {
+    name: string;
+    email: string;
+    org: string;
+    phone?: string;
+    website?: string;
+    message: string;
+  };
   errors: Array<{ code?: string; message: string }>;
   transport?: EvalTransport;
   latency?: EvalLatency;
@@ -96,12 +105,33 @@ export type VoiceEvalSession = {
   callCloseReasons?: string[];
 };
 
+const SYNTHETIC_VOICE_PROMPTS = [
+  "please pause and tell me briefly about education partnerships",
+  "my email is q a dot nebula at example dot test",
+];
+
+/** Keep staging browser probes out of customer-quality aggregates. */
+export function isSyntheticVoiceSession(session: VoiceEvalSession): boolean {
+  if (session.captured?.email.trim().toLowerCase().endsWith("@example.test")) return true;
+  return session.transcript.some((turn) => {
+    const text = turn.text.trim().toLowerCase();
+    return SYNTHETIC_VOICE_PROMPTS.some((prompt) => text.includes(prompt));
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Conversation stitching — collapse many call rows into one conversation
 // ---------------------------------------------------------------------------
 
 /** Abnormal closes that indicate the visitor did not end the call cleanly. */
-const ABNORMAL_CLOSE_REASONS = new Set(["disconnected", "realtime_busy", "webrtc_failed", "error", "page_hidden"]);
+const ABNORMAL_CLOSE_REASONS = new Set([
+  "disconnected",
+  "realtime_busy",
+  "realtime_quota_exhausted",
+  "webrtc_failed",
+  "error",
+  "page_hidden",
+]);
 
 function callStartAt(session: VoiceEvalSession): number {
   return session.connectStartedAt ?? session.connectedAt ?? session.firstEventAt ?? 0;
@@ -145,7 +175,11 @@ export function mergeConversationSessions(sessions: VoiceEvalSession[]): VoiceEv
   const merged: VoiceEvalSession[] = [];
   for (const group of groups.values()) {
     if (group.length === 1) {
-      merged.push(group[0] as VoiceEvalSession);
+      const only = group[0] as VoiceEvalSession;
+      merged.push({
+        ...only,
+        callCloseReasons: only.closeReason ? [only.closeReason] : [],
+      });
       continue;
     }
     const ordered = [...group].sort((a, b) => callStartAt(a) - callStartAt(b));
@@ -174,6 +208,7 @@ export function mergeConversationSessions(sessions: VoiceEvalSession[]): VoiceEv
       closedAt: max(ordered.map((s) => s.closedAt).filter(isNumber)),
       submittedAt: submitted?.submittedAt ?? head.submittedAt ?? null,
       leadId: submitted?.leadId ?? head.leadId ?? null,
+      captured: submitted?.captured ?? head.captured,
       transcript: mergeConversationTranscripts(ordered),
       errors: ordered.flatMap((s) => s.errors),
       transport,
@@ -619,7 +654,7 @@ export const JUDGE_SYSTEM_PROMPT = [
   "Score one transcript on a 0-5 integer scale per dimension. Be critical; reserve 5 for excellent.",
   "Dimensions:",
   "- routingCorrect: did Reka steer the visitor toward the correct partner segment and capture intent accurately?",
-  "- captureCompleteness: were the useful lead details (name, org, email, need) gathered without nagging?",
+  "- captureCompleteness: were useful lead details gathered without nagging, and does the final captured handoff exactly match the visitor's own words? A wrong submitted email is a critical failure.",
   "- conversationQuality: natural, concise, on-brand, no hallucinated facts or dead ends.",
   "- frustration: signals the VISITOR was frustrated/confused (0 = none, 5 = clearly frustrated).",
   'Respond with ONLY a JSON object: {"routingCorrect":int,"captureCompleteness":int,"conversationQuality":int,"frustration":int,"summary":"one sentence"}.',
@@ -628,10 +663,18 @@ export const JUDGE_SYSTEM_PROMPT = [
 export function buildJudgeUserPrompt(session: VoiceEvalSession): string {
   const transcript = session.transcript.map((turn) => `${turn.role.toUpperCase()}: ${turn.text}`).join("\n");
   const outcome = session.submittedAt || session.leadId ? "lead submitted" : "no lead submitted";
+  const captured = session.captured;
+  const issues = session.errors.map((error) => [error.code, error.message].filter(Boolean).join(": ")).join("\n");
   return [
     `Intended segment: ${session.segment}`,
     `Close reason: ${session.closeReason ?? "n/a"}`,
     `Outcome: ${outcome}`,
+    "Final captured handoff (compare this against the visitor's words; form edits may not appear in transcript):",
+    `Name: ${captured?.name || "[empty]"}`,
+    `Email: ${captured?.email || "[empty]"}`,
+    `Organisation: ${captured?.org || "[empty]"}`,
+    `Brief: ${captured?.message || "[empty]"}`,
+    `Recorded runtime issues: ${issues || "none"}`,
     "",
     "Transcript:",
     transcript.length > 0 ? transcript : "(empty)",
@@ -737,6 +780,10 @@ export type EvalAggregate = {
     webrtcFailedSessions: number;
     retrySessions: number;
     remoteTrackWithoutAudioSessions: number;
+    quotaFailures: number;
+    capacityFailures: number;
+    transportFailures: number;
+    totalFailures: number;
   };
   attribution: {
     environments: Record<"production" | "staging" | "local" | "unknown", number>;
@@ -775,7 +822,14 @@ export function aggregateEvals(evals: SessionEval[]): EvalAggregate {
   const usefulStartWithinTwoSeconds = activationAttempts.filter(
     (attempt) => typeof attempt.tapToAudibleMs === "number" && attempt.tapToAudibleMs <= 2_000,
   ).length;
+  const quotaFailures = evals.filter((entry) => entry.closeReasons.includes("realtime_quota_exhausted"));
+  const capacityFailures = evals.filter((entry) => entry.closeReasons.includes("realtime_busy"));
+  const transportFailures = evals.filter((entry) =>
+    entry.closeReasons.some((reason) => ["webrtc_failed", "session_failed", "disconnected", "error"].includes(reason)),
+  );
+  const availabilityFailures = evals.filter((entry) => entry.closeReasons.some(isVoiceAvailabilityFailure));
   const worstSessions = [
+    ...quotaFailures.map((entry) => ({ reviewId: entry.reviewId, reason: "OpenAI Realtime quota exhausted" })),
     ...droppedMidTurn.map((entry) => ({ reviewId: entry.reviewId, reason: "dropped mid-utterance" })),
     ...scored
       .filter((entry) => (entry.score as JudgeScore).frustration >= 4)
@@ -814,6 +868,10 @@ export function aggregateEvals(evals: SessionEval[]): EvalAggregate {
       remoteTrackWithoutAudioSessions: evals.filter(
         (entry) => entry.transport.remoteTrackReceived && entry.latency.tapToAudibleMs === null,
       ).length,
+      quotaFailures: quotaFailures.length,
+      capacityFailures: capacityFailures.length,
+      transportFailures: transportFailures.length,
+      totalFailures: availabilityFailures.length,
     },
     attribution: {
       environments: countBy(
@@ -882,6 +940,8 @@ export type EvalThresholds = {
   minRoutingCorrect?: number;
   maxFrustration?: number;
   maxDroppedMidTurn?: number;
+  maxQuotaFailures?: number;
+  maxAvailabilityFailures?: number;
 };
 
 /** Gate an aggregate against thresholds — used for a CI regression check. */
@@ -917,6 +977,20 @@ export function meetsThreshold(
     aggregate.droppedMidTurnCount > thresholds.maxDroppedMidTurn
   ) {
     failures.push(`droppedMidTurn ${aggregate.droppedMidTurnCount} > ${thresholds.maxDroppedMidTurn}`);
+  }
+  if (
+    typeof thresholds.maxQuotaFailures === "number" &&
+    aggregate.availability.quotaFailures > thresholds.maxQuotaFailures
+  ) {
+    failures.push(`quotaFailures ${aggregate.availability.quotaFailures} > ${thresholds.maxQuotaFailures}`);
+  }
+  if (
+    typeof thresholds.maxAvailabilityFailures === "number" &&
+    aggregate.availability.totalFailures > thresholds.maxAvailabilityFailures
+  ) {
+    failures.push(
+      `availabilityFailures ${aggregate.availability.totalFailures} > ${thresholds.maxAvailabilityFailures}`,
+    );
   }
   return { ok: failures.length === 0, failures };
 }

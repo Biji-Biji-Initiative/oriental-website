@@ -5,6 +5,7 @@ import {
   serializeRealtimeCommand,
   serializeResponseCreate,
   serializeTypedInterruption,
+  serializeTypedTurn,
   serializeUserText,
 } from "@/lib/voice/client-events";
 
@@ -61,6 +62,7 @@ describe("serializeRealtimeCommand", () => {
           website: "",
           message: "AI literacy demos for students.",
         },
+        emailVerification: { value: "mei@example.com", source: "typed", status: "confirmed" },
       },
       nextEventId(["evt_context"]),
     );
@@ -77,7 +79,20 @@ describe("serializeRealtimeCommand", () => {
     expect(body).toContain("Treat non-empty fields as user-provided typed details");
     expect(body).toContain("Name: Mei Ling");
     expect(body).toContain("Email: mei@example.com");
+    expect(body).toContain("Email verification: confirmed (typed)");
     expect(body).toContain("Brief: AI literacy demos for students.");
+  });
+
+  it("tells Reka when a speech email still needs an exact read-back", () => {
+    const event = serializeHandoffContext({
+      segment: "technology",
+      captured: { name: "", email: "g@b.com", org: "", phone: "", website: "", message: "" },
+      emailVerification: { value: "g@b.com", source: "speech", status: "pending" },
+    });
+
+    const body = JSON.stringify(event);
+    expect(body).toContain("Email verification: awaiting exact spoken confirmation");
+    expect(body).toContain("Never route an unconfirmed email");
   });
 
   it("serializes a typed visitor message as a user conversation item", () => {
@@ -127,6 +142,25 @@ describe("serializeRealtimeCommand", () => {
     expect(serializeTypedInterruption(nextEventId(["evt_cancel", "evt_clear"]))).toEqual([
       { type: "response.cancel", event_id: "evt_cancel" },
       { type: "output_audio_buffer.clear", event_id: "evt_clear" },
+    ]);
+  });
+
+  it("serializes a typed turn as cancel, clear, text, then response", () => {
+    expect(
+      serializeTypedTurn("My email is mei@example.com", nextEventId(["cancel", "clear", "text", "response"])),
+    ).toEqual([
+      { type: "response.cancel", event_id: "cancel" },
+      { type: "output_audio_buffer.clear", event_id: "clear" },
+      {
+        type: "conversation.item.create",
+        event_id: "text",
+        item: {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: "My email is mei@example.com" }],
+        },
+      },
+      { type: "response.create", event_id: "response" },
     ]);
   });
 

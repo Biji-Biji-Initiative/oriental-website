@@ -11,12 +11,13 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { getSegment } from "@/lib/segments";
 import { cn } from "@/lib/utils";
-import type { CapturedLead, VoiceTranscriptEntry } from "@/lib/voice/realtime-events";
+import type { CapturedLead, VoiceEmailVerification, VoiceTranscriptEntry } from "@/lib/voice/realtime-events";
 import { handoffCompletion, handoffFieldSpecs } from "./voice-dialog-copy";
 
 type HandoffPanelProps = {
   captured: CapturedLead;
   className?: string;
+  emailVerification?: VoiceEmailVerification;
   form: UseFormReturn<CapturedLead>;
   onChange: (key: keyof CapturedLead, value: string) => void;
   onSubmit: (values: CapturedLead) => Promise<Record<string, unknown>> | Record<string, unknown> | undefined;
@@ -30,6 +31,7 @@ type HandoffPanelProps = {
 export function HandoffPanel({
   captured,
   className,
+  emailVerification,
   form,
   onChange,
   onSubmit,
@@ -45,6 +47,11 @@ export function HandoffPanel({
   const sentTo = selectedSegment.routedTo.name;
   const transcriptRef = useRef<HTMLDivElement | null>(null);
   const transcriptTurnCount = transcript.length;
+  const emailIsConfirmed =
+    Boolean(captured.email.trim()) &&
+    emailVerification?.status === "confirmed" &&
+    emailVerification.value.trim().toLowerCase() === captured.email.trim().toLowerCase();
+  const emailNeedsConfirmation = Boolean(captured.email.trim()) && !emailIsConfirmed;
   const latestTranscriptKey = transcript.at(-1) ? `${transcript.at(-1)?.role}:${transcript.at(-1)?.text}` : "";
 
   useEffect(() => {
@@ -151,6 +158,15 @@ export function HandoffPanel({
                     variant="glass"
                   />
                 </FormControl>
+                {emailNeedsConfirmation ? (
+                  <FormDescription aria-live="polite" className="text-xs leading-5 text-[#f2d38a]">
+                    Reka heard this address. Say yes after the exact read-back, or edit it here to confirm it.
+                  </FormDescription>
+                ) : emailIsConfirmed && emailVerification?.source === "speech" ? (
+                  <FormDescription aria-live="polite" className="text-xs leading-5 text-mk-horizon">
+                    Confirmed from your voice.
+                  </FormDescription>
+                ) : null}
                 <FormMessage className={messageClassName} />
               </FormItem>
             )}

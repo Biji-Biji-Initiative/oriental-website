@@ -116,6 +116,9 @@ docs/                     # handover specs — reference, not auto-synced to cod
 | SEO / metadata | `app/layout.tsx`, `app/sitemap.ts`, `app/robots.ts` |
 
 After voice behavior changes, run `pnpm test` (profile + realtime reducers) before shipping.
+When voice capture or submission changes, run both staging smoke commands. The
+intake smoke uses `qa.nebula@example.test`, never submits a lead, and is
+excluded from customer-quality aggregates.
 
 ---
 
@@ -134,6 +137,7 @@ pnpm build && pnpm test:performance  # production mobile LCP/CLS/JS/a11y gate
 pnpm check-secrets          # validate expected env keys (local)
 pnpm local:ngrok -- --check  # prove ngrok secret lookup without opening a tunnel
 pnpm smoke:staging:voice    # real canonical-staging WebRTC/audio/persistence proof
+pnpm smoke:staging:intake   # exact email readback/confirmation/no-submit proof
 pnpm --silent ops:status --json  # machine-readable live/repo/review/work-queue truth
 pnpm release:preflight -- --sha <full-main-sha>  # requires managed release env
 pnpm release:deploy:production -- --sha <full-sha> --expected-current-sha <full-sha>

@@ -1,0 +1,29 @@
+name: oriental-voice-intake-release
+description: Ship-blocker review for Oriental voice availability and contact integrity
+
+documents:
+  readme: .apr/evidence/oriental-voice-intake-release.md
+  spec: .apr/specs/oriental-voice-intake-release.md
+  implementation: lib/voice/realtime-events.ts
+
+oracle:
+  model: "gemini-3.1-pro"
+
+rounds:
+  output_dir: .apr/rounds/oriental-voice-intake-release
+  impl_every_n: 1
+
+template: |
+  Review the release contract adversarially. Treat quota retry, incorrect or
+  ungrounded email confirmation, premature/duplicate submission, lost lead
+  linkage, hidden availability failures, customer/synthetic evidence mixing,
+  PII leakage, and candidate-cell promotion as blockers. End with exactly
+  `VERDICT: SHIP SAFE DEFAULTS` or `VERDICT: DO NOT SHIP`.
+
+template_with_impl: |
+  Review the attached implementation evidence against the voice intake release
+  contract. Trace failure classification, retry selection, typed interruption,
+  email capture/readback/confirmation/correction, API submission, review
+  persistence, and evaluation attribution. Treat any unproven claim or unsafe
+  model/runtime promotion as a blocker. End with exactly
+  `VERDICT: SHIP SAFE DEFAULTS` or `VERDICT: DO NOT SHIP`.

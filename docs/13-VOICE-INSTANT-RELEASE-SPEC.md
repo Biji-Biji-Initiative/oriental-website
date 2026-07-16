@@ -75,10 +75,14 @@ dimension, and prove the exact staged commit before promotion.
 - Per-turn telemetry MUST retain at most 80 samples and MUST include available
   speech, endpoint, response-created, first-output, remote-audio, playout,
   browser-tool, response, interruption, and rapid-resume durations/signals.
-- An OpenAI Realtime SDP `429` MUST receive at most one retry after 300–700 ms
-  jitter. The retry MUST reuse the existing mint, offer, microphone, and typed
-  context; other status codes, mic denial, local quota, and malformed sessions
-  MUST NOT use this retry path.
+- An OpenAI Realtime SDP capacity `429` MUST receive at most one retry after
+  300–700 ms jitter. The retry MUST reuse the existing mint, offer, microphone,
+  and typed context; other status codes, mic denial, and malformed sessions
+  MUST NOT use this retry path. A 429 body with `insufficient_quota` MUST be
+  classified before retry selection and close immediately as
+  `realtime_quota_exhausted`.
+- A typed turn MUST cancel and clear queued output before sending text even if
+  `response.created` has not arrived, preventing opener/typed-turn races.
 
 ### Endpointing and controlled cells
 
@@ -118,6 +122,10 @@ dimension, and prove the exact staged commit before promotion.
 - Tentative email extraction MAY fill an empty draft only for a literal address
   alone or with explicit visitor ownership; it MUST NOT infer spoken punctuation
   and MUST NOT overwrite an existing/corrected value.
+- A speech-captured email MUST remain pending until Reka reads the exact address
+  back and the visitor explicitly confirms it. Voice submission MUST fail at
+  both client and API boundaries when that confirmation is absent. A direct
+  form edit or verified prefill MAY confirm the resulting exact value.
 
 ### Quality and promotion
 
@@ -230,8 +238,11 @@ an unperformed listening result is never a pass.
 - `/api/health` exposes the active runtime/model/reasoning cells and selected
   model without credentials or visitor data so release status can be rebuilt
   without chat history or container-shell access.
-- `pnpm ops:status -- --json` reports only aggregate voice evidence. Missing
+- `pnpm --silent ops:status --json` reports only aggregate voice evidence. Missing
   local reports MUST resolve to `insufficient_data`, never a pass.
+- Reserved `@example.test` intake probes and named synthetic transport prompts
+  MUST be excluded from customer-quality aggregates and reported as an excluded
+  count.
 
 ## Rollout and Rollback
 

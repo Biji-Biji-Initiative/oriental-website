@@ -14,6 +14,7 @@ import {
   type VoiceLatencyTelemetry,
   type VoiceTurnPhase,
 } from "@/lib/voice/latency";
+import { readRealtimeCallFailure } from "@/lib/voice/realtime-call-failure";
 import { type RealtimeServerEvent, responseHasFunctionCall } from "@/lib/voice/realtime-events";
 import { realtimeBusyRetryDelayMs, shouldRetryRealtimeCall } from "@/lib/voice/realtime-retry";
 import {
@@ -42,12 +43,9 @@ export type VoiceCloseReason =
   | "mic_denied"
   | "session_failed"
   | "realtime_busy"
+  | "realtime_quota_exhausted"
   | "webrtc_failed"
   | "disconnected";
-
-export function realtimeCallCloseReason(status: number): VoiceCloseReason {
-  return status === 429 ? "realtime_busy" : "webrtc_failed";
-}
 
 export type VoiceReviewMetadata = {
   id: string;
@@ -739,6 +737,7 @@ export function useRealtimeVoiceSession({
       await peer.setLocalDescription(offer);
       let retriesUsed = 0;
       let sdpResponse: Response;
+      let sdpFailure: Awaited<ReturnType<typeof readRealtimeCallFailure>> | null = null;
       for (;;) {
         sdpResponse = await fetchWithTimeout(
           "https://api.openai.com/v1/realtime/calls",
@@ -754,7 +753,9 @@ export function useRealtimeVoiceSession({
         ).catch(() => {
           throw new VoiceConnectionFailure("webrtc_failed");
         });
-        if (!shouldRetryRealtimeCall(sdpResponse.status, retriesUsed)) break;
+        if (sdpResponse.ok) break;
+        sdpFailure = await readRealtimeCallFailure(sdpResponse);
+        if (!shouldRetryRealtimeCall(sdpFailure.closeReason, retriesUsed)) break;
         retriesUsed += 1;
         transportRef.current = { ...transportRef.current, realtimeBusyRetryCount: retriesUsed };
         emitTransport();
@@ -765,7 +766,9 @@ export function useRealtimeVoiceSession({
         }
       }
       if (connectionRef.current !== peer || statusRef.current === "idle") throw new VoiceConnectionFailure("manual");
-      if (!sdpResponse.ok) throw new VoiceConnectionFailure(realtimeCallCloseReason(sdpResponse.status));
+      if (!sdpResponse.ok) {
+        throw new VoiceConnectionFailure(sdpFailure?.closeReason ?? "webrtc_failed");
+      }
       const answerSdp = await sdpResponse.text();
       if (connectionRef.current !== peer || statusRef.current === "idle") throw new VoiceConnectionFailure("manual");
       await peer.setRemoteDescription({ type: "answer", sdp: answerSdp }).catch(() => {

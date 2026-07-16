@@ -67,6 +67,10 @@ type LeadRequest = {
   voiceModel?: string;
   voiceName?: string;
   voiceSpeed?: number;
+  voiceRuntimeProfile?: "baseline" | "instant-v1";
+  voiceInputPolicy?: "baseline" | "fast" | "patient";
+  voiceEmailVerified?: boolean; // MUST be true for source="voice"
+  voiceEmailVerificationSource?: "prefill" | "speech" | "typed";
   utm?: Record<string, string>;
 };
 ```
@@ -122,6 +126,7 @@ degraded-success case.
 |---|---|---|
 | 400 | `invalid_payload` | Zod validation failed. |
 | 403 | `turnstile_failed` | Cloudflare verify rejected the token. |
+| 409 | `voice_email_unconfirmed` | Voice source did not provide a verified email readback/edit marker. |
 | 429 | `rate_limited` | More than 12 lead attempts per IP per hour. |
 | 500 | `routing_unconfigured` | Production owner email missing for the resolved segment. |
 | 502 | `persistence_failed` | Production Convex persistence failed and no notification channel delivered the lead. |
@@ -148,6 +153,10 @@ degraded-success case.
    response and persisted notification summary. Production lead success still
    depends on owner email, Slack, or ClickUp delivery, not on submitter
    confirmation alone.
+
+The email verification marker and signed review token are request-boundary
+evidence; both are stripped before lead persistence. Speech confirmation state
+remains in the signed voice-session review snapshot for QA.
 
 In local and test environments, notification failures are represented in the
 `notifications` object and do not turn a successfully accepted lead into an

@@ -1,9 +1,11 @@
+import type { RealtimeCallCloseReason } from "@/lib/voice/realtime-call-failure";
+
 export const REALTIME_BUSY_MAX_RETRIES = 1;
 export const REALTIME_BUSY_RETRY_MIN_MS = 300;
 export const REALTIME_BUSY_RETRY_MAX_MS = 700;
 
-export function shouldRetryRealtimeCall(status: number, retriesUsed: number) {
-  return status === 429 && retriesUsed < REALTIME_BUSY_MAX_RETRIES;
+export function shouldRetryRealtimeCall(reason: RealtimeCallCloseReason, retriesUsed: number) {
+  return reason === "realtime_busy" && retriesUsed < REALTIME_BUSY_MAX_RETRIES;
 }
 
 export function realtimeBusyRetryDelayMs(randomValue = Math.random()) {

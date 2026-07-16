@@ -9,15 +9,17 @@ sessions, network timeouts, or any non-capacity failure.
 ## Required behaviour
 
 1. The browser may retry the Realtime SDP exchange exactly once, and only when
-   `POST https://api.openai.com/v1/realtime/calls` returns HTTP 429.
+   `POST https://api.openai.com/v1/realtime/calls` returns an HTTP 429 body
+   classified as transient `realtime_busy`.
 2. Retry delay is randomized and bounded to 300–700 ms.
 3. The retry reuses the minted ephemeral session, local media stream, peer,
    data channel, SDP offer, visitor context, and current editable handoff.
 4. The UI enters an explicit `reconnecting` state. It must not appear idle and
    must prevent a second connect action during the bounded retry.
-5. After the one retry, another 429 closes as `realtime_busy`. Other SDP HTTP
-   failures, fetch timeouts, microphone denial, app quota, and invalid session
-   mint responses keep their existing reason and are never retried here.
+5. After the one retry, another capacity 429 closes as `realtime_busy`.
+   `insufficient_quota` closes immediately as `realtime_quota_exhausted`.
+   Other SDP HTTP failures, fetch timeouts, microphone denial, and invalid
+   session mint responses keep their existing reason and are never retried here.
 6. Manual teardown during jitter prevents the second exchange from reviving a
    closed call.
 7. Telemetry records the retry count and first remote-track receipt without

@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   persistVoiceReviewSnapshot: vi.fn(),
   logInfo: vi.fn(),
   logWarn: vi.fn(),
+  sendOpsAlert: vi.fn(),
 }));
 
 vi.mock("@/lib/server/convex", () => ({
@@ -17,9 +18,16 @@ vi.mock("@/lib/server/logger", () => ({
   logWarn: mocks.logWarn,
 }));
 
+vi.mock("@/lib/server/ops-alerts", () => ({
+  sendOpsAlert: mocks.sendOpsAlert,
+}));
+
 const originalEnv = process.env;
 
-function snapshotRequest(review: { id: string; token: string } = createVoiceReviewCredentials()) {
+function snapshotRequest(
+  review: { id: string; token: string } = createVoiceReviewCredentials(),
+  overrides: Record<string, unknown> = {},
+) {
   return new Request("http://127.0.0.1/api/voice/debug", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -79,6 +87,7 @@ function snapshotRequest(review: { id: string; token: string } = createVoiceRevi
             },
           ],
         },
+        ...overrides,
       },
     }),
   });
@@ -92,6 +101,7 @@ describe("POST /api/voice/debug", () => {
       IP_HASH_SECRET: "voice-review-secret",
     };
     mocks.persistVoiceReviewSnapshot.mockResolvedValue({ ok: true, id: "review_123" });
+    mocks.sendOpsAlert.mockResolvedValue({ ok: true, transport: "slack" });
   });
 
   afterEach(() => {
@@ -143,6 +153,7 @@ describe("POST /api/voice/debug", () => {
         capturedFieldCount: 4,
         routeRequested: false,
         errorCount: 0,
+        benignErrorCount: 0,
         rateLimitCount: 0,
         usage: expect.objectContaining({ responseCount: 1, transcriptionCount: 1 }),
         latency: {
@@ -183,6 +194,29 @@ describe("POST /api/voice/debug", () => {
     expect(mocks.persistVoiceReviewSnapshot).not.toHaveBeenCalled();
   });
 
+  it("keeps expected cancellation races out of actionable error warnings", async () => {
+    const request = await snapshotRequest();
+    const body = (await request.json()) as { snapshot: { errors: Array<{ code: string; message: string }> } };
+    body.snapshot.errors = [
+      { code: "response_cancel_not_active", message: "Cancellation failed: no active response found" },
+    ];
+
+    const response = await POST(
+      new Request(request.url, {
+        method: "POST",
+        headers: request.headers,
+        body: JSON.stringify(body),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.logInfo).toHaveBeenCalledWith(
+      "voice_review.session_snapshot",
+      expect.objectContaining({ errorCount: 0, benignErrorCount: 1 }),
+    );
+    expect(mocks.logWarn).not.toHaveBeenCalledWith("voice_review.session_errors", expect.anything());
+  });
+
   it("logs only PII-free issue paths for invalid snapshots", async () => {
     const base = (await snapshotRequest().json()) as {
       snapshot: { connectionStatus: string; captured: { email: string } };
@@ -202,5 +236,28 @@ describe("POST /api/voice/debug", () => {
       issues: expect.arrayContaining([{ path: "snapshot.connectionStatus", code: "invalid_value" }]),
     });
     expect(JSON.stringify(mocks.logWarn.mock.calls)).not.toContain("private@example.com");
+  });
+
+  it("logs and alerts on exhausted Realtime quota without captured PII", async () => {
+    const response = await POST(
+      snapshotRequest(createVoiceReviewCredentials(), {
+        connectionStatus: "connecting",
+        closeReason: "realtime_quota_exhausted",
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.logWarn).toHaveBeenCalledWith(
+      "voice_review.availability_failed",
+      expect.objectContaining({ closeReason: "realtime_quota_exhausted", connected: true }),
+    );
+    expect(mocks.sendOpsAlert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "voice_review.realtime_quota_exhausted",
+        severity: "critical",
+        fingerprint: "realtime_quota_exhausted",
+      }),
+    );
+    expect(JSON.stringify(mocks.sendOpsAlert.mock.calls)).not.toContain("asha@example.com");
   });
 });

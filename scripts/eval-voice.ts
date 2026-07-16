@@ -8,6 +8,9 @@
  *   pnpm eval:voice -- --dry              # transport/latency/engagement signals only, no LLM
  *   pnpm eval:voice -- --min-quality 3.5 --max-dropped 0   # CI gate
  *
+ * Quota failures are hard-gated at zero by default. Override only when
+ * reviewing a known historical incident; exhausted billing is never capacity.
+ *
  * Guardrail: the JSON report (which contains transcripts) is written only to the
  * gitignored `eval-reports/` dir and is never committed. Console output is
  * aggregate-only — no transcript text.
@@ -26,6 +29,7 @@ import {
   buildJudgeUserPrompt,
   buildSessionEval,
   isJudgeable,
+  isSyntheticVoiceSession,
   JUDGE_SYSTEM_PROMPT,
   type JudgeScore,
   meetsThreshold,
@@ -45,12 +49,14 @@ type Args = {
   minRouting?: number;
   maxFrustration?: number;
   maxDropped?: number;
+  maxQuota: number;
+  maxAvailability?: number;
 };
 
 const JUDGE_CONCURRENCY = 4;
 
 function parseArgs(argv: string[]): Args {
-  const args: Args = { limit: 50, dry: false, persist: false, out: "eval-reports" };
+  const args: Args = { limit: 50, dry: false, persist: false, out: "eval-reports", maxQuota: 0 };
   for (let i = 0; i < argv.length; i += 1) {
     const flag = argv[i];
     const value = argv[i + 1];
@@ -75,6 +81,12 @@ function parseArgs(argv: string[]): Args {
       i += 1;
     } else if (flag === "--max-dropped") {
       args.maxDropped = Number(value);
+      i += 1;
+    } else if (flag === "--max-quota") {
+      args.maxQuota = Number(value);
+      i += 1;
+    } else if (flag === "--max-availability") {
+      args.maxAvailability = Number(value);
       i += 1;
     }
   }
@@ -143,13 +155,16 @@ async function main() {
   }
 
   const convex = new ConvexHttpClient(convexUrl);
-  const rawSessions = (await convex.query(api.leads.voiceSessionsForEval, {
+  const fetchedSessions = (await convex.query(api.leads.voiceSessionsForEval, {
     ingestSecret,
     limit: args.limit,
   })) as VoiceEvalSession[];
+  const rawSessions = fetchedSessions.filter((session) => !isSyntheticVoiceSession(session));
+  const syntheticRowsExcluded = fetchedSessions.length - rawSessions.length;
+  if (syntheticRowsExcluded > 0) console.log(`Excluded ${syntheticRowsExcluded} synthetic smoke row(s).`);
 
   if (rawSessions.length === 0) {
-    console.log("No voice sessions to evaluate yet.");
+    console.log("No customer voice sessions to evaluate in this window.");
     process.exit(0);
   }
 
@@ -212,6 +227,8 @@ async function main() {
     minRoutingCorrect: args.minRouting,
     maxFrustration: args.maxFrustration,
     maxDroppedMidTurn: args.maxDropped,
+    maxQuotaFailures: args.maxQuota,
+    maxAvailabilityFailures: args.maxAvailability,
   };
   const thresholdGate = meetsThreshold(aggregate, thresholds);
   const gate = {
@@ -228,6 +245,7 @@ async function main() {
     JSON.stringify(
       {
         generatedAt: stamp,
+        syntheticRowsExcluded,
         aggregate,
         profileAggregates,
         experimentAggregates,
@@ -262,6 +280,10 @@ function printSummary(
   console.log(`sessions:            ${aggregate.sessionCount}  (scored ${aggregate.scoredCount})`);
   console.log(`dropped mid-turn:    ${aggregate.droppedMidTurnCount}`);
   console.log(`disconnect sessions: ${aggregate.disconnectSessions}  (clean recoveries ${aggregate.cleanRecoveries})`);
+  console.log(
+    `availability failures: ${aggregate.availability.totalFailures}  ` +
+      `(quota ${aggregate.availability.quotaFailures}, capacity ${aggregate.availability.capacityFailures}, transport ${aggregate.availability.transportFailures})`,
+  );
   console.log(`submit rate:         ${(aggregate.submitRate * 100).toFixed(0)}%`);
   console.log(
     `tap to live p50/p95: ${fmtMs(aggregate.activation.tapToLiveP50Ms)} / ${fmtMs(aggregate.activation.tapToLiveP95Ms)} (${aggregate.activation.tapToLiveSamples} samples)`,

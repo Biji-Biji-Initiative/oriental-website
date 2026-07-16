@@ -33,6 +33,8 @@ describe("lead request schema", () => {
       voiceSpeed: 1.22,
       voiceRuntimeProfile: "instant-v1",
       voiceInputPolicy: "fast",
+      voiceEmailVerified: true,
+      voiceEmailVerificationSource: "speech",
       form: {
         name: "Asha",
         email: "asha@example.com",
@@ -151,6 +153,15 @@ describe("voice review latency schema", () => {
     interrupted: false,
     rapidResume: false,
   };
+
+  it("accepts a distinct exhausted-quota close reason", () => {
+    expect(
+      voiceReviewSnapshotSchema.safeParse({
+        ...request,
+        snapshot: { ...request.snapshot, connectionStatus: "connecting", closeReason: "realtime_quota_exhausted" },
+      }).success,
+    ).toBe(true);
+  });
 
   it("accepts bounded first-output telemetry", () => {
     expect(

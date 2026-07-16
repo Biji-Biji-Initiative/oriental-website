@@ -8,10 +8,10 @@ import {
 
 describe("Realtime busy retry policy", () => {
   it("retries one capacity 429 and never retries other failures", () => {
-    expect(shouldRetryRealtimeCall(429, 0)).toBe(true);
-    expect(shouldRetryRealtimeCall(429, 1)).toBe(false);
-    expect(shouldRetryRealtimeCall(400, 0)).toBe(false);
-    expect(shouldRetryRealtimeCall(500, 0)).toBe(false);
+    expect(shouldRetryRealtimeCall("realtime_busy", 0)).toBe(true);
+    expect(shouldRetryRealtimeCall("realtime_busy", 1)).toBe(false);
+    expect(shouldRetryRealtimeCall("realtime_quota_exhausted", 0)).toBe(false);
+    expect(shouldRetryRealtimeCall("webrtc_failed", 0)).toBe(false);
   });
 
   it("bounds jitter between 300 and 700 milliseconds", () => {
