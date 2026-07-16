@@ -24,15 +24,23 @@ type ConvexLead = {
   transcript: StoredLead["transcript"];
   utm: Record<string, string>;
   notificationClickUpOk?: boolean;
+  notificationClickUpTaskId?: string;
+  notificationClickUpTaskUrl?: string;
 };
 
 type ClickUpTask = {
   id?: string;
+  url?: string;
   name?: string;
   text_content?: string;
   description?: string;
   markdown_description?: string;
   markdown_content?: string;
+};
+
+type ClickUpReference = {
+  id: string;
+  url: string;
 };
 
 async function main() {
@@ -50,11 +58,18 @@ async function main() {
     ingestSecret,
     limit: args.limit,
   })) as ConvexLead[];
-  const existingLeadIds = await existingClickUpLeadIds(clickUpToken, clickUpListId);
-  const missing = leads.filter((lead) => !existingLeadIds.has(lead.leadId));
-  const reconcileCandidates = leads.filter(
-    (lead) => existingLeadIds.has(lead.leadId) && lead.notificationClickUpOk !== true,
-  );
+  const clickUpAudit = await existingClickUpTasks(clickUpToken, clickUpListId);
+  const existingTasks = clickUpAudit.tasksByLeadId;
+  const missing = leads.filter((lead) => !existingTasks.has(lead.leadId));
+  const reconcileCandidates = leads.filter((lead) => {
+    const task = existingTasks.get(lead.leadId);
+    return (
+      Boolean(task) &&
+      (lead.notificationClickUpOk !== true ||
+        lead.notificationClickUpTaskId !== task?.id ||
+        lead.notificationClickUpTaskUrl !== task?.url)
+    );
+  });
 
   console.log(
     JSON.stringify(
@@ -62,18 +77,27 @@ async function main() {
         dry: args.dry,
         reconcileExisting: args.reconcileExisting,
         convexLeads: leads.length,
-        clickupLeadIdsFound: existingLeadIds.size,
+        clickupTasksScanned: clickUpAudit.scannedTaskCount,
+        clickupLeadIdsFound: existingTasks.size,
+        duplicateLeadMappings: clickUpAudit.duplicateLeadIds.length,
         missing: missing.length,
         reconcileCandidates: reconcileCandidates.length,
+        directLinksStored: leads.filter((lead) => Boolean(lead.notificationClickUpTaskUrl)).length,
       },
       null,
       2,
     ),
   );
 
+  if (clickUpAudit.duplicateLeadIds.length > 0) {
+    throw new Error(
+      `${clickUpAudit.duplicateLeadIds.length} lead IDs map to more than one ClickUp task; refusing to mutate`,
+    );
+  }
+
   if (args.dry) {
     for (const lead of missing.slice(0, 20)) {
-      console.log(`missing ${lead.leadId} ${lead.segment} ${lead.email}`);
+      console.log(`missing ${lead.leadId} ${lead.segment}`);
     }
     return;
   }
@@ -82,8 +106,11 @@ async function main() {
   let failed = 0;
   for (const lead of missing) {
     const result = await notifyClickUp(toStoredLead(lead));
-    if (result.ok) {
-      const confirmed = await confirmClickUpMirror(convex, ingestSecret, lead.leadId);
+    if (result.ok && result.transport === "clickup" && result.externalId) {
+      const confirmed = await confirmClickUpMirror(convex, ingestSecret, lead.leadId, {
+        id: result.externalId,
+        url: result.externalUrl ?? clickUpTaskUrl(result.externalId),
+      });
       if (confirmed) {
         created += 1;
         console.log(`created ${lead.leadId}`);
@@ -93,14 +120,16 @@ async function main() {
       }
     } else {
       failed += 1;
-      console.error(`failed ${lead.leadId}: ${result.error ?? result.reason ?? "unknown"}`);
+      const reason = result.ok ? "clickup_task_reference_missing" : (result.error ?? result.reason ?? "unknown");
+      console.error(`failed ${lead.leadId}: ${reason}`);
     }
   }
 
   let reconciled = 0;
   if (args.reconcileExisting) {
     for (const lead of reconcileCandidates) {
-      if (await confirmClickUpMirror(convex, ingestSecret, lead.leadId)) {
+      const task = existingTasks.get(lead.leadId);
+      if (task && (await confirmClickUpMirror(convex, ingestSecret, lead.leadId, task))) {
         reconciled += 1;
         console.log(`reconciled ${lead.leadId}`);
       } else {
@@ -114,8 +143,18 @@ async function main() {
   if (failed > 0) process.exit(1);
 }
 
-async function confirmClickUpMirror(convex: ConvexHttpClient, ingestSecret: string, leadId: string) {
-  const result = await convex.mutation(api.leads.confirmLeadClickUpMirror, { ingestSecret, leadId });
+async function confirmClickUpMirror(
+  convex: ConvexHttpClient,
+  ingestSecret: string,
+  leadId: string,
+  task: ClickUpReference,
+) {
+  const result = await convex.mutation(api.leads.confirmLeadClickUpMirror, {
+    ingestSecret,
+    leadId,
+    clickupTaskId: task.id,
+    clickupTaskUrl: task.url,
+  });
   return result.ok;
 }
 
@@ -145,8 +184,10 @@ function toStoredLead(lead: ConvexLead): StoredLead {
   };
 }
 
-async function existingClickUpLeadIds(token: string, listId: string) {
-  const leadIds = new Set<string>();
+async function existingClickUpTasks(token: string, listId: string) {
+  const tasksByLeadId = new Map<string, ClickUpReference>();
+  const duplicateLeadIds = new Set<string>();
+  let scannedTaskCount = 0;
   for (let page = 0; page < 100; page += 1) {
     const url = new URL(`https://api.clickup.com/api/v2/list/${encodeURIComponent(listId)}/task`);
     url.searchParams.set("include_closed", "true");
@@ -156,12 +197,21 @@ async function existingClickUpLeadIds(token: string, listId: string) {
     if (!response.ok) throw new Error(`ClickUp task list failed: ${response.status}`);
     const body = (await response.json()) as { tasks?: ClickUpTask[] };
     const tasks = body.tasks ?? [];
+    scannedTaskCount += tasks.length;
     for (const task of tasks) {
-      for (const id of extractLeadIds(task)) leadIds.add(id);
+      if (!task.id) continue;
+      for (const id of extractLeadIds(task)) {
+        const existing = tasksByLeadId.get(id);
+        if (existing && existing.id !== task.id) {
+          duplicateLeadIds.add(id);
+        } else if (!existing) {
+          tasksByLeadId.set(id, { id: task.id, url: task.url ?? clickUpTaskUrl(task.id) });
+        }
+      }
     }
     if (tasks.length === 0) break;
   }
-  return leadIds;
+  return { duplicateLeadIds: [...duplicateLeadIds].sort(), scannedTaskCount, tasksByLeadId };
 }
 
 function extractLeadIds(task: ClickUpTask) {
@@ -171,6 +221,10 @@ function extractLeadIds(task: ClickUpTask) {
   return [...text.matchAll(/Lead ID:\*\*\s*([A-Za-z0-9_-]+)/g), ...text.matchAll(/\b([0-9a-f]{8}-[0-9a-f-]{27,})\b/gi)]
     .map((match) => match[1])
     .filter((id): id is string => Boolean(id));
+}
+
+function clickUpTaskUrl(taskId: string) {
+  return `https://app.clickup.com/t/${encodeURIComponent(taskId)}`;
 }
 
 function getClickUpListId() {
@@ -186,13 +240,19 @@ function getClickUpListId() {
 }
 
 function parseArgs(argv: string[]): Args {
-  const parsed: Args = { dry: false, limit: 500, reconcileExisting: false };
+  // Fail closed: listing the reconciliation plan is safe by default. Creating
+  // tasks or enriching existing records always requires an explicit mutation
+  // flag so an operator cannot change production by omitting `--dry`.
+  const parsed: Args = { dry: true, limit: 500, reconcileExisting: false };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     const next = argv[index + 1];
     if (arg === "--dry") parsed.dry = true;
-    else if (arg === "--reconcile-existing") parsed.reconcileExisting = true;
-    else if (arg === "--limit") {
+    else if (arg === "--apply") parsed.dry = false;
+    else if (arg === "--reconcile-existing") {
+      parsed.dry = false;
+      parsed.reconcileExisting = true;
+    } else if (arg === "--limit") {
       parsed.limit = Number(next) || parsed.limit;
       index += 1;
     }

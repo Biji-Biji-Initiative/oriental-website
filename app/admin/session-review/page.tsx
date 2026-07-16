@@ -12,6 +12,7 @@ import { EnquiryCrmWorkspace } from "@/components/admin/EnquiryCrmWorkspace";
 import { RekaQualityWorkspace } from "@/components/admin/RekaQualityWorkspace";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { type CrmSort, crmSortLabels, normalizeCrmSort } from "@/lib/admin-crm";
 import {
   adminLeadPriorityLabels,
   adminLeadStatusLabels,
@@ -41,6 +42,7 @@ type AdminFilters = {
   status: string;
   priority: string;
   source: string;
+  sort: CrmSort;
 };
 type AdminView = "all" | "today" | "leads" | "reka" | "voice" | "audit";
 type AdminTone = "neutral" | "blue" | "green" | "red" | "amber";
@@ -94,6 +96,7 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
             voiceRecoverableCount={recoverableVoiceSessions(filteredVoiceSessions).length}
           />
           <EnquiryCrmWorkspace
+            allLeads={dashboard.data.leads}
             events={dashboard.data.leadEvents}
             filters={filters}
             generatedAt={dashboard.data.generatedAt}
@@ -1025,8 +1028,9 @@ function OperatorFilters({
         <CardContent>
           <form
             action={adminModeHref(targetView, targetHash)}
-            className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_repeat(3,160px)_auto_auto]"
+            className="grid gap-3 xl:grid-cols-[minmax(220px,1fr)_repeat(4,150px)_auto_auto]"
           >
+            <input name="view" type="hidden" value={targetView} />
             <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
               Search
               <input
@@ -1052,6 +1056,7 @@ function OperatorFilters({
                 <option value="hero-email">Email interest</option>
               </select>
             </label>
+            <FilterSelect label="Sort" name="sort" options={crmSortLabels} value={filters.sort} />
             <div className="flex items-end">
               <Button className="h-10 w-full" type="submit">
                 Apply
@@ -3180,6 +3185,7 @@ function parseAdminFilters(searchParams: Awaited<AdminSearchParams> | undefined)
     status: normalizeFilterValue(readParam("status"), Object.keys(adminLeadStatusLabels)),
     priority: normalizeFilterValue(readParam("priority"), Object.keys(adminLeadPriorityLabels)),
     source: normalizeFilterValue(readParam("source"), ["form", "voice", "hero-email"]),
+    sort: normalizeCrmSort(readParam("sort")),
   };
 }
 

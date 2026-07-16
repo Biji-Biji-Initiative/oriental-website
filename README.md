@@ -171,10 +171,24 @@ During local testing, run `pnpm voice:debug` after a call to inspect the latest 
 
 The internal review surface lives at `/admin/session-review`. It is protected by
 `ADMIN_REVIEW_TOKEN`, sets a signed HTTP-only admin cookie, and reads recent
-Convex `leads` plus `voiceSessions` snapshots. Use it to review failed voice
-conversations, captured-field drift, notification status, Realtime usage,
-tap-to-live, endpoint/model/tool/playout latency, experiment cells, and
-error/rate-limit signals.
+Convex `leads` plus `voiceSessions` snapshots. Use it as the enquiry CRM:
+scan the latest pipeline in a Tailwind table, sort by recency or operator
+attention, review organization accounts and returning contacts, balance owner
+workload, open the exact ClickUp task, update workflow state, and inspect Reka
+scores or transcripts when needed.
+
+ClickUp task references can be recovered without recreating tasks or changing
+lead payloads:
+
+```bash
+pnpm backfill:clickup -- --dry
+pnpm backfill:clickup -- --apply
+pnpm backfill:clickup -- --reconcile-existing
+```
+
+The reconciliation is idempotent: it adds the confirmed ClickUp task ID/URL and
+an append-only audit event. It does not rewrite contact data, briefs,
+transcripts, workflow state, or original timestamps.
 
 Production Realtime sessions receive signed review credentials from `/api/voice/session`; the browser posts snapshots to `/api/voice/debug`, which persists verified snapshots to Convex. `GET /api/voice/debug` remains local-development only.
 

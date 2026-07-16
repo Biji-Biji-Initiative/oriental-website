@@ -148,6 +148,33 @@ describe("POST /api/leads", () => {
     expect(mocks.persistLead.mock.calls[0]?.[0]).not.toHaveProperty("voiceEmailVerificationSource");
   });
 
+  it("persists ClickUp task references without exposing them to the public submitter response", async () => {
+    mocks.notifyClickUp.mockResolvedValue({
+      ok: true,
+      transport: "clickup",
+      externalId: "task_internal_123",
+      externalUrl: "https://app.clickup.com/t/task_internal_123",
+    });
+
+    const response = await POST(request());
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.notifications.clickup).toEqual({ ok: true, transport: "clickup" });
+    expect(body.notifications.clickup).not.toHaveProperty("externalId");
+    expect(body.notifications.clickup).not.toHaveProperty("externalUrl");
+    expect(mocks.recordLeadNotificationStatus).toHaveBeenCalledWith(
+      "lead_123",
+      expect.objectContaining({
+        clickup: expect.objectContaining({
+          externalId: "task_internal_123",
+          externalUrl: "https://app.clickup.com/t/task_internal_123",
+        }),
+      }),
+      true,
+    );
+  });
+
   it("accepts signed voice leads without a Cloudflare token when Turnstile enforcement is required", async () => {
     process.env.TURNSTILE_ENFORCEMENT = "required";
     process.env.TURNSTILE_SECRET_KEY = "turnstile-secret";

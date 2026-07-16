@@ -1,0 +1,32 @@
+name: oriental-admin-crm-intelligence
+description: Ship-blocker review for lossless Oriental CRM intelligence
+
+documents:
+  readme: docs/12-CHAT-RELEASE-RUNBOOK.md
+  spec: .apr/specs/oriental-admin-crm-intelligence.md
+  implementation: .apr/evidence/oriental-admin-crm-intelligence.md
+
+oracle:
+  model: "gpt-5.6-sol"
+
+rounds:
+  output_dir: .apr/rounds/oriental-admin-crm-intelligence
+  impl_every_n: 1
+
+template: |
+  Perform the requested adversarial CRM pre-merge review. Treat data loss,
+  duplicate task creation, public leakage of operator metadata, incorrect
+  full-dataset metrics, unsafe identity grouping, unusable operator workflow,
+  and an unsafe release plan as blockers. This is a code merge gate; do not
+  demand correctly sequenced live evidence that can only exist after merge.
+  Do not propose unrelated product work. End with exactly
+  `VERDICT: MERGE CRM` or `VERDICT: DO NOT MERGE`.
+
+template_with_impl: |
+  Perform the requested adversarial CRM pre-merge review against the attached
+  implementation evidence. Treat data loss, duplicate task creation, public
+  leakage of operator metadata, incorrect full-dataset metrics, unsafe identity
+  grouping, unusable operator workflow, and an unsafe release plan as blockers.
+  This is a code merge gate; do not demand live proof that can only be produced
+  from the final merged SHA. Do not propose unrelated product work. End with
+  exactly `VERDICT: MERGE CRM` or `VERDICT: DO NOT MERGE`.

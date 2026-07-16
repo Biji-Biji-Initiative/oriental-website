@@ -358,7 +358,12 @@ describe("notifyClickUp", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(notifyClickUp(lead())).resolves.toEqual({ ok: true, transport: "clickup" });
+    await expect(notifyClickUp(lead())).resolves.toEqual({
+      ok: true,
+      transport: "clickup",
+      externalId: "task_123",
+      externalUrl: "https://app.clickup.com/t/task_123",
+    });
     expect(fetchMock).toHaveBeenCalledWith(
       "https://api.clickup.com/api/v2/list/901615726504/task",
       expect.objectContaining({

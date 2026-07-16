@@ -54,6 +54,46 @@ test.describe("admin session review console", () => {
     await expect(record.getByText("Frustration", { exact: true })).toBeVisible();
     await expect(record.getByText(/lower is better for frustration/i)).toBeVisible();
     await expect(record.getByText("ClickUp failed", { exact: true }).first()).toBeVisible();
+    const accountHistory = record.locator("#related-enquiries");
+    await expect(accountHistory.getByText("2 account enquiries")).toBeVisible();
+    await expect(accountHistory.getByText("Daniel Lim")).toBeVisible();
+  });
+
+  test("shows account portfolio and owner workload as CRM tables", async ({ page }, testInfo) => {
+    await expect(page.getByRole("heading", { name: "Account portfolio & ownership" })).toBeVisible();
+    await expect(page.getByText("1 account", { exact: true })).toBeVisible();
+    const multiEnquiry = page.getByText("Multi-enquiry", { exact: true }).locator("..");
+    await expect(multiEnquiry.getByText("1", { exact: true })).toBeVisible();
+
+    if (testInfo.project.name !== "mobile") {
+      const accounts = page.locator("[data-account-table]");
+      await expect(accounts.getByRole("columnheader", { name: "Organization" })).toBeVisible();
+      await expect(accounts.getByRole("row").filter({ hasText: "Impact Robotics Lab" })).toContainText("2");
+      const owners = page.locator("[data-owner-table]");
+      await expect(owners.getByRole("columnheader", { name: "Owner" })).toBeVisible();
+      await expect(owners.getByRole("row").filter({ hasText: "Unassigned" })).toBeVisible();
+    }
+  });
+
+  test("sorts the queue by operator attention when requested", async ({ page }, testInfo) => {
+    await page.goto("/admin/session-review?view=leads&sort=attention#crm-workspace");
+    await expect(page.getByLabel("Sort")).toHaveValue("attention");
+    if (testInfo.project.name === "mobile") {
+      await expect(page.locator('article[data-lead-id="lead-critical-1"]')).toBeVisible();
+    } else {
+      await expect(page.locator("[data-crm-table] tbody tr").first()).toHaveAttribute(
+        "data-lead-id",
+        "lead-critical-1",
+      );
+    }
+  });
+
+  test("opens the exact ClickUp task from a synced CRM record", async ({ page }, testInfo) => {
+    await page.goto("/admin/session-review?view=leads&lead=lead-priority-2#crm-record");
+    const record = page.locator("#crm-record");
+    const links = record.getByRole("link", { name: "Open ClickUp task" });
+    await expect(links.first()).toHaveAttribute("href", "https://app.clickup.com/t/task_impact_2");
+    if (testInfo.project.name !== "mobile") await expect(links.first()).toBeVisible();
   });
 
   test("renders the operator queues without horizontal overflow", async ({ page }) => {
@@ -79,7 +119,10 @@ test.describe("admin session review console", () => {
     );
     await expect(filteredRow.getByText("Aisha Rahman")).toBeVisible();
     await expect(page.locator("[data-crm-table] tbody tr")).toHaveCount(1);
-    await expect(page.getByText("Daniel Lim").first()).toBeHidden();
+    const excludedQueueRow = page.locator(
+      `${testInfo.project.name === "mobile" ? "article" : "tr"}[data-lead-id="lead-priority-2"]`,
+    );
+    await expect(excludedQueueRow).toBeHidden();
   });
 
   test("explains Reka evaluation scores in an operator-facing register", async ({ page }, testInfo) => {

@@ -22,7 +22,12 @@ export type StoredLead = RoutableLead & {
 };
 
 export type NotificationResult =
-  | { ok: true; transport: "smtp" | "sesv2" | "slack" | "clickup" }
+  | {
+      ok: true;
+      transport: "smtp" | "sesv2" | "slack" | "clickup";
+      externalId?: string;
+      externalUrl?: string;
+    }
   | { ok: false; skipped?: true; reason?: string; error?: string; status?: number };
 
 const TRANSIENT_RETRY_DELAY_MS = 400;
@@ -269,11 +274,21 @@ async function sendClickUpTask(lead: StoredLead): Promise<NotificationResult> {
     }),
     signal: AbortSignal.timeout(8_000),
   });
-  const body = (await response.json().catch(() => null)) as { id?: string; err?: string; ECODE?: string } | null;
+  const body = (await response.json().catch(() => null)) as {
+    id?: string;
+    url?: string;
+    err?: string;
+    ECODE?: string;
+  } | null;
   if (!response.ok || !body?.id) {
     return { ok: false, error: body?.err ?? body?.ECODE ?? "clickup_api_error", status: response.status };
   }
-  return { ok: true, transport: "clickup" };
+  return {
+    ok: true,
+    transport: "clickup",
+    externalId: body.id,
+    ...(body.url ? { externalUrl: body.url } : {}),
+  };
 }
 
 function clickUpListId() {
