@@ -10,6 +10,7 @@ import {
   deriveLatencySignals,
   deriveTransportSignals,
   isJudgeable,
+  isSyntheticVoiceSession,
   meetsThreshold,
   mergeConversationSessions,
   parseJudgeResponse,
@@ -64,6 +65,29 @@ function session(overrides: Partial<VoiceEvalSession> = {}): VoiceEvalSession {
     ...overrides,
   };
 }
+
+describe("isSyntheticVoiceSession", () => {
+  it("excludes reserved-address intake probes", () => {
+    expect(
+      isSyntheticVoiceSession(
+        session({
+          captured: { name: "", email: "qa.nebula@example.test", org: "", message: "" },
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("excludes the transport smoke prompt without hiding ordinary staging conversations", () => {
+    expect(
+      isSyntheticVoiceSession(
+        session({
+          transcript: [{ role: "user", text: "Please pause and tell me briefly about education partnerships." }],
+        }),
+      ),
+    ).toBe(true);
+    expect(isSyntheticVoiceSession(session({ deploymentEnvironment: "staging" }))).toBe(false);
+  });
+});
 
 describe("deriveTransportSignals", () => {
   it("flags a drop that happened while the visitor was speaking", () => {

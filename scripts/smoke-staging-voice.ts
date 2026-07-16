@@ -14,6 +14,8 @@ type SmokeResult = {
   connectedMs: number;
   openerAudioMs: number;
   interruptionRecoveryMs: number;
+  loaderObserved: boolean;
+  nebulaRenderer: "webgl" | "svg-fallback";
   remoteAudioTrackLive: boolean;
   remoteAudioAdvanced: boolean;
   sessionMintStatuses: number[];
@@ -93,10 +95,25 @@ async function run() {
     if (!health.ok || !health.version || !health.convex) throw new Error("Staging health payload is incomplete");
 
     await page.goto(targetOrigin, { waitUntil: "load" });
+    const loader = page.locator(".brand-site-loader");
+    await loader.waitFor({ state: "visible", timeout: 3_000 });
+    await loader.waitFor({ state: "hidden", timeout: 5_000 });
     await page.locator('header button[aria-label="Talk to Mereka"]').waitFor({ state: "visible" });
     await page.locator('header button[aria-label="Talk to Mereka"]').click();
     const orb = page.locator(".voice-orb");
     await orb.waitFor({ state: "visible" });
+    const nebula = page.locator(".mereka-nebula");
+    await nebula.waitFor({ state: "visible" });
+    await page.waitForFunction(
+      () => {
+        const mark = document.querySelector<HTMLElement>(".mereka-nebula");
+        return mark?.dataset.ready === "true" || mark?.dataset.fallback === "true";
+      },
+      undefined,
+      { timeout: 10_000 },
+    );
+    const nebulaRenderer = (await nebula.getAttribute("data-ready")) === "true" ? "webgl" : "svg-fallback";
+    await nebula.click({ force: true });
 
     const connectStartedAt = performance.now();
     await page.getByRole("button", { name: "Start voice with Reka" }).click();
@@ -143,6 +160,8 @@ async function run() {
       connectedMs: Math.round(connectedMs),
       openerAudioMs: Math.round(openerAudioMs),
       interruptionRecoveryMs: Math.round(interruptionRecoveryMs),
+      loaderObserved: true,
+      nebulaRenderer,
       remoteAudioTrackLive: audioAfterInterrupt.trackLive,
       remoteAudioAdvanced: audioAfterInterrupt.currentTime > audioBeforeInterrupt.currentTime,
       sessionMintStatuses,
