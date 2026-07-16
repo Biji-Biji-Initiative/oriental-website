@@ -74,6 +74,8 @@ describe("reduceRealtimeServerEvent", () => {
           key: "email",
           mode: "replace",
           emailConfirmationRequired: true,
+          emailReadback: "asha at example dot com",
+          nextAction: expect.stringContaining("Read emailReadback verbatim"),
           captured: { ...emptyCapturedLead, email: "asha@example.com" },
         },
       },
@@ -159,9 +161,32 @@ describe("reduceRealtimeServerEvent", () => {
       prematureRoute.state,
     ).state;
     confirmedState = reduceRealtimeServerEvent(
-      { type: "conversation.item.input_audio_transcription.completed", transcript: "Yes, that's correct." },
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        transcript: "Yes, that's correct. Do not send it yet.",
+      },
       confirmedState,
     ).state;
+    const contradictedConfirmation = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "confirm_email",
+              call_id: "call_contradicted_email",
+              arguments: JSON.stringify({ evidence: "Yes, that's not correct" }),
+            },
+          ],
+        },
+      },
+      confirmedState,
+    );
+    expect(contradictedConfirmation.commands[0]).toMatchObject({
+      output: { ok: false, error: "email_confirmation_not_explicit", key: "email" },
+    });
+
     const confirmation = reduceRealtimeServerEvent(
       {
         type: "response.done",
@@ -171,7 +196,7 @@ describe("reduceRealtimeServerEvent", () => {
               type: "function_call",
               name: "confirm_email",
               call_id: "call_confirm_email",
-              arguments: JSON.stringify({ evidence: "Yes, that's correct" }),
+              arguments: JSON.stringify({ evidence: "Yes, that's correct. Do not send it yet" }),
             },
           ],
         },
