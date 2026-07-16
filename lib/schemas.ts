@@ -129,6 +129,13 @@ export const voiceReviewSnapshotSchema = z.object({
       website: z.string().max(300).default(""),
       message: z.string().max(2500).default(""),
     }),
+    emailVerification: z
+      .object({
+        source: z.enum(["prefill", "speech", "typed"]),
+        status: z.enum(["confirmed", "pending"]),
+        matchesCaptured: z.boolean(),
+      })
+      .optional(),
     transcript: z.array(transcriptEntrySchema).max(120).default([]),
     usage: z
       .object({

@@ -289,12 +289,13 @@ function applyFunctionCall(
       const seen = new Set<keyof CapturedLead>();
       let captured = next.captured;
       const applied: Array<{ key: keyof CapturedLead; mode: "append" | "replace" }> = [];
-      let failure: { index: number; output: Record<string, unknown> } | null = null;
+      const rejected: Array<{ index: number; output: Record<string, unknown> }> = [];
+      let duplicateFailure: { index: number; output: Record<string, unknown> } | null = null;
       for (const [index, field] of fields.entries()) {
         const fieldArgs = field && typeof field === "object" && !Array.isArray(field) ? field : {};
         const key = toCapturedKey((fieldArgs as Record<string, unknown>).key);
         if (key && seen.has(key)) {
-          failure = { index, output: { ok: false, error: "duplicate_field", key } };
+          duplicateFailure = { index, output: { ok: false, error: "duplicate_field", key } };
           break;
         }
         if (key) seen.add(key);
@@ -305,14 +306,19 @@ function applyFunctionCall(
           (next.pendingUserTranscripts ?? 0) > 0,
         );
         if (!capture.ok) {
-          failure = { index, output: capture.output };
-          break;
+          rejected.push({ index, output: capture.output });
+          continue;
         }
         captured = capture.captured;
         applied.push({ key: capture.key, mode: capture.mode });
       }
-      if (failure) {
-        output = { ok: false, error: "atomic_capture_rejected", failedIndex: failure.index, detail: failure.output };
+      if (duplicateFailure) {
+        output = {
+          ok: false,
+          error: "invalid_field_batch",
+          failedIndex: duplicateFailure.index,
+          detail: duplicateFailure.output,
+        };
         break;
       }
       const emailApplied = applied.some((field) => field.key === "email");
@@ -323,12 +329,24 @@ function applyFunctionCall(
           ? { emailVerification: pendingSpokenEmailVerification(captured.email, next.emailVerification) }
           : {}),
       };
-      output = {
-        ok: true,
-        fields: applied,
-        captured,
-        ...(emailApplied ? emailConfirmationInstructions(next) : {}),
-      };
+      output =
+        rejected.length > 0
+          ? {
+              ok: false,
+              error: "partial_capture",
+              fields: applied,
+              rejectedFields: rejected,
+              detail: rejected[0]?.output,
+              captured,
+              retry: "Keep the accepted fields. Retry or clarify only the rejected fields.",
+              ...(emailApplied ? emailConfirmationInstructions(next) : {}),
+            }
+          : {
+              ok: true,
+              fields: applied,
+              captured,
+              ...(emailApplied ? emailConfirmationInstructions(next) : {}),
+            };
       break;
     }
     case "confirm_email": {
@@ -687,38 +705,42 @@ function validateCaptureGrounding(
     return { ok: false, error: "ungrounded_identity_capture" };
   }
 
-  // Whisper transcription can land after the model's function call; while a user
-  // turn is still transcribing, trust evidence that is consistent with the value.
+  const valueForms = normalizedValueForms(key, value);
+  // The Realtime model hears native audio while the independent transcript can
+  // land later or spell proper nouns differently. A self-consistent model value
+  // may be drafted during that window; the visible form remains editable.
   const evidenceGrounded = approxIncludes(normalizedUserText, normalizedEvidence, tolerance);
-  if (!evidenceGrounded && !transcriptionPending) {
-    return { ok: false, error: "ungrounded_identity_capture" };
-  }
 
   if (key === "org" && normalizeEvidence(value) === "individual") {
     // "Individual" is our label for "no organisation"; the user never says the word itself.
-    return { ok: true };
-  }
-
-  const valueForms = normalizedValueForms(key, value);
-  if (!evidenceGrounded) {
-    return valueForms.some((form) => approxIncludes(normalizedEvidence, form, tolerance))
+    const evidenceDeclinesOrganisation = /(?:noorganisation|noorganization|justme|individual)/.test(normalizedEvidence);
+    return evidenceDeclinesOrganisation && (evidenceGrounded || transcriptionPending)
       ? { ok: true }
       : { ok: false, error: "ungrounded_identity_capture" };
-  }
-
-  if (
-    valueForms.some(
-      (form) =>
-        approxIncludes(normalizedEvidence, form, tolerance) || approxIncludes(normalizedUserText, form, tolerance),
-    )
-  ) {
-    return { ok: true };
   }
 
   if (
     key === "org" &&
     userAskedAssistantToWriteIt(transcript) &&
     valueForms.some((form) => hasRecentOrganisationEvidence(form, transcript))
+  ) {
+    return { ok: true };
+  }
+
+  const evidenceSupportsValue = valueForms.some((form) => approxIncludes(normalizedEvidence, form, tolerance));
+  if (!evidenceSupportsValue) return { ok: false, error: "ungrounded_identity_capture" };
+  if (transcriptionPending) return { ok: true };
+
+  if (evidenceGrounded || valueForms.some((form) => approxIncludes(normalizedUserText, form, tolerance)))
+    return { ok: true };
+
+  // Names are especially vulnerable to ASR phonetic spelling. Only widen the
+  // tolerance when the transcript explicitly says a name and still resembles
+  // what the native-audio model heard; an unrelated invented name stays blocked.
+  if (
+    key === "name" &&
+    hasExplicitNameCue(recentUserText) &&
+    valueForms.some((form) => resemblesExplicitName(recentUserText, form))
   ) {
     return { ok: true };
   }
@@ -742,9 +764,33 @@ function validateEmailCaptureGrounding(
     .slice(-6)
     .map((entry) => entry.text)
     .join(" ");
-  return canonicalizeEmailSpeech(recentUserText).includes(email)
+  const canonicalUserText = canonicalizeEmailSpeech(recentUserText);
+  if (canonicalUserText.includes(email)) return { ok: true };
+
+  // A speech email is only a pending draft until the visitor affirms an exact
+  // read-back. Allow a small ASR spelling disagreement here when the transcript
+  // clearly contains email structure; the confirmation gate remains exact and
+  // route_to_team still refuses unconfirmed addresses.
+  const hasEmailCue = /@|\b(?:e-?mail|email address)\b|\b(?:at|dot|point|underscore|dash|hyphen|plus)\b/i.test(
+    recentUserText,
+  );
+  const maxAsrEdits = Math.min(3, Math.max(1, Math.floor(email.length * 0.18)));
+  return hasEmailCue && approxSubstringDistance(canonicalUserText, email) <= maxAsrEdits
     ? { ok: true }
     : { ok: false, error: "ungrounded_identity_capture" };
+}
+
+function hasExplicitNameCue(value: string) {
+  return /\b(?:my name is|i am|i'm|this is|call me)\b/i.test(value);
+}
+
+function resemblesExplicitName(value: string, expected: string) {
+  const match = /\b(?:my name is|i am|i'm|this is|call me)\s+([^,.!?;]+)/i.exec(value);
+  if (!match?.[1]) return false;
+  const heard = normalizeEvidence(match[1].split(/\b(?:and|from|with|email|e-?mail)\b/i)[0] ?? "");
+  if (!heard || heard[0] !== expected[0]) return false;
+  const lengthRatio = heard.length / expected.length;
+  return lengthRatio >= 0.55 && lengthRatio <= 1.8;
 }
 
 function canonicalizeEmailSpeech(value: string): string {
@@ -925,7 +971,6 @@ function normalizeEvidence(value: string) {
 }
 
 const OBSERVABLE_TOOL_FAILURES = new Set([
-  "atomic_capture_rejected",
   "email_confirmation_not_explicit",
   "email_confirmation_not_pending",
   "email_readback_missing",

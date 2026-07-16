@@ -263,6 +263,11 @@ describe("persistVoiceReviewSnapshot", () => {
     deviceProfile: "desktop" as const,
     deploymentEnvironment: "staging" as const,
     activationAttempted: true,
+    emailVerification: {
+      source: "speech" as const,
+      status: "pending" as const,
+      matchesCaptured: true,
+    },
     transport: {
       realtimeBusyRetryCount: 0,
       disconnectCount: 1,
@@ -312,6 +317,8 @@ describe("persistVoiceReviewSnapshot", () => {
         }),
       }),
     );
+    const mutationSnapshot = mocks.mutation.mock.calls[0]?.[1]?.snapshot;
+    expect(mutationSnapshot).not.toHaveProperty("emailVerification");
   });
 
   it("retries without telemetry when a pre-migration Convex rejects an unknown field", async () => {

@@ -114,6 +114,67 @@ describe("reduceRealtimeServerEvent", () => {
     );
   });
 
+  it("keeps a native-audio email as a pending draft when ASR spelling drifts", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_email_asr_drift",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "asha.lim@example.my",
+                evidence: "asha dot lim at example dot my",
+              }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "My email is asia.lim@example.my." }] }),
+    );
+
+    expect(result.state.captured.email).toBe("asha.lim@example.my");
+    expect(result.state.emailVerification).toEqual({
+      value: "asha.lim@example.my",
+      source: "speech",
+      status: "pending",
+    });
+    expect(result.commands[0]).toMatchObject({
+      output: { ok: true, emailConfirmationRequired: true, emailReadback: "asha dot lim at example dot my" },
+    });
+  });
+
+  it("still rejects a self-consistent email invention when the user gave no contact detail", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_email_invented",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "invented@example.com",
+                evidence: "invented at example dot com",
+              }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "We want to run a robotics workshop." }] }),
+    );
+
+    expect(result.state.captured.email).toBe("");
+    expect(result.commands[0]).toMatchObject({
+      output: { ok: false, error: "ungrounded_identity_capture", key: "email" },
+    });
+  });
+
   it("requires an exact read-back confirmation before routing a speech email", () => {
     const capture = reduceRealtimeServerEvent(
       {
@@ -272,7 +333,7 @@ describe("reduceRealtimeServerEvent", () => {
     });
   });
 
-  it("rejects the whole capture batch when one identity field is ungrounded", () => {
+  it("retains valid fields when one identity field in a batch is ungrounded", () => {
     const result = reduceRealtimeServerEvent(
       {
         type: "response.done",
@@ -295,14 +356,16 @@ describe("reduceRealtimeServerEvent", () => {
       state({ transcript: [{ role: "user", text: "We want to run a robotics workshop." }] }),
     );
 
-    expect(result.state.captured).toEqual(emptyCapturedLead);
+    expect(result.state.captured).toEqual({ ...emptyCapturedLead, message: "A robotics workshop." });
     expect(result.commands[0]).toMatchObject({
       type: "function_result",
       output: {
         ok: false,
-        error: "atomic_capture_rejected",
-        failedIndex: 1,
+        error: "partial_capture",
+        fields: [{ key: "message", mode: "replace" }],
+        rejectedFields: [{ index: 1 }],
         detail: { error: "ungrounded_identity_capture", key: "email" },
+        retry: expect.stringContaining("only the rejected fields"),
       },
     });
   });
@@ -332,7 +395,7 @@ describe("reduceRealtimeServerEvent", () => {
 
     expect(result.state.captured.message).toBe("");
     expect(result.commands[0]).toMatchObject({
-      output: { ok: false, error: "atomic_capture_rejected", detail: { error: "duplicate_field" } },
+      output: { ok: false, error: "invalid_field_batch", detail: { error: "duplicate_field" } },
     });
   });
 
@@ -905,6 +968,27 @@ describe("reduceRealtimeServerEvent", () => {
     );
 
     expect(result.state.captured.name).toBe("Gurpreet Singh");
+  });
+
+  it("accepts a phonetically rough name draft only behind an explicit name cue", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_name_rough_asr",
+              arguments: JSON.stringify({ key: "name", value: "Gurpreet", evidence: "Gurpreet" }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "My name is Goodbreed." }] }),
+    );
+
+    expect(result.state.captured.name).toBe("Gurpreet");
   });
 
   it("appends brief updates when the model marks the message capture as additive", () => {

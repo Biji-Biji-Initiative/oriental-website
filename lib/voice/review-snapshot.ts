@@ -70,6 +70,14 @@ export function buildVoiceReviewSnapshot(
     runtimeProfile: review.runtimeProfile,
     inputPolicy: review.inputPolicy,
     captured: state.captured,
+    emailVerification: state.emailVerification
+      ? {
+          source: state.emailVerification.source,
+          status: state.emailVerification.status,
+          matchesCaptured:
+            state.emailVerification.value.trim().toLowerCase() === state.captured.email.trim().toLowerCase(),
+        }
+      : undefined,
     transcript: state.transcript,
     usage: state.usage,
     errors: state.errors ?? [],

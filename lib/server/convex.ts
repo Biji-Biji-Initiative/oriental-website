@@ -60,10 +60,13 @@ export async function recordLeadNotificationStatus(
 export async function persistVoiceReviewSnapshot(input: VoiceReviewSnapshotRequest["snapshot"] & { reviewId: string }) {
   const client = createConvexClient();
   if (!client) return { ok: false as const, reason: "convex_unconfigured" };
+  // Verification provenance is useful in PII-free route logs, while the shared
+  // Convex schema remains unchanged until production is ready for promotion.
+  const { emailVerification: _emailVerification, ...convexInput } = input;
   try {
     const result = await client.client.mutation(api.leads.recordVoiceSession, {
       ingestSecret: client.ingestSecret,
-      snapshot: input,
+      snapshot: convexInput,
     });
     return { ok: result.ok, id: result.id };
   } catch (error) {
@@ -71,15 +74,15 @@ export async function persistVoiceReviewSnapshot(input: VoiceReviewSnapshotReque
     // telemetry fields rejects them as unknown arguments. Retry once without
     // telemetry so review persistence never regresses on deploy ordering.
     if (
-      input.transport ||
-      input.latency ||
-      input.runtimeProfile ||
-      input.inputPolicy ||
-      input.modelCell ||
-      input.reasoningCell ||
-      input.deviceProfile ||
-      input.deploymentEnvironment ||
-      typeof input.activationAttempted === "boolean"
+      convexInput.transport ||
+      convexInput.latency ||
+      convexInput.runtimeProfile ||
+      convexInput.inputPolicy ||
+      convexInput.modelCell ||
+      convexInput.reasoningCell ||
+      convexInput.deviceProfile ||
+      convexInput.deploymentEnvironment ||
+      typeof convexInput.activationAttempted === "boolean"
     ) {
       const {
         transport: _transport,
@@ -92,7 +95,7 @@ export async function persistVoiceReviewSnapshot(input: VoiceReviewSnapshotReque
         deploymentEnvironment: _deploymentEnvironment,
         activationAttempted: _activationAttempted,
         ...rest
-      } = input;
+      } = convexInput;
       const result = await client.client.mutation(api.leads.recordVoiceSession, {
         ingestSecret: client.ingestSecret,
         snapshot: rest,
