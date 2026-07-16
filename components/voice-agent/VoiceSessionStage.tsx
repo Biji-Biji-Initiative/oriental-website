@@ -68,8 +68,11 @@ export function VoiceSessionStage({
   const activeTopic = tourTopics.find((topic) => topic.id === activeTopicId) ?? null;
   const [showWaitingCopy, setShowWaitingCopy] = useState(false);
   useEffect(() => {
-    const waiting = turnPhase === "waiting_for_response";
-    const timer = window.setTimeout(() => setShowWaitingCopy(waiting), waiting ? WAITING_COPY_DELAY_MS : 0);
+    if (turnPhase !== "waiting_for_response") {
+      setShowWaitingCopy(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setShowWaitingCopy(true), WAITING_COPY_DELAY_MS);
     return () => window.clearTimeout(timer);
   }, [turnPhase]);
   const statusCopy = voiceStatusCopy(connectionStatus, turnPhase, showWaitingCopy);
