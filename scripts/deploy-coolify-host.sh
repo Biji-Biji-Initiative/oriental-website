@@ -59,7 +59,6 @@ remote_cache_dir="$5"
 prod_dir="$6"
 staging_dir="$7"
 short="${sha:0:7}"
-image="${app_uuid}:${sha}"
 mirror="${remote_cache_dir}/repo.git"
 worktrees="${remote_cache_dir}/worktrees"
 workdir="${worktrees}/${short}-$(date -u +%Y%m%dT%H%M%SZ)"
@@ -80,8 +79,12 @@ cleanup() {
 trap cleanup EXIT
 
 brand_motion_preview="false"
+image="${app_uuid}:${sha}"
 if [[ "$target" == "staging" ]]; then
   brand_motion_preview="true"
+  # Staging bakes a different NEXT_PUBLIC flag. A distinct tag prevents a
+  # later compose recreation from ever resolving to the production build cell.
+  image="${app_uuid}:staging-${sha}"
 fi
 
 echo "building_image=${image} brand_motion_preview=${brand_motion_preview}"
