@@ -59,9 +59,11 @@
   oldest sample after the 120-sample buffer fills. Lead persistence and
   notification fan-out start concurrently, preserving all prior durability and
   failure semantics.
-- The live voice smoke derives its expected model/cell from `/api/health` unless
-  an operator explicitly pins an expected value, so safe-control release proof
-  cannot accidentally require or claim candidate promotion.
+- The live voice smoke defaults independently to the governed staging candidate
+  (`gpt-realtime-2.1` / `candidate` / `adaptive`) and first asserts public
+  `/api/health`, then the minted session, against that contract. Explicit
+  expected-value overrides remain available for a deliberate control-cell
+  diagnostic, but public health is never used as its own oracle.
 
 ## Verification surface
 
@@ -128,28 +130,67 @@ candidate.
 
 ## Current clean candidate verification
 
-Runtime candidate `017c1cf` was verified from a clean,
+Runtime candidate `d24d5d80db93be270be79b4f864c0291fc63b7dc` was verified from a clean,
 detached worktree so unrelated shared-checkout admin edits could not enter the
 release evidence.
 
-- `pnpm lint`: 197 files, no findings.
+- `pnpm lint`: 198 files, no findings.
 - `pnpm typecheck`: passed.
-- `pnpm test`: 51 files and 325 tests passed.
+- `pnpm test`: 52 files and 331 tests passed.
 - `pnpm check-secrets`: contract passed; local credentials intentionally absent.
 - `pnpm build`: production standalone build passed.
-- `pnpm test:performance`: LCP 576 ms, CLS 0, initial JavaScript 397,230
-  transferred / 1,367,784 decoded bytes, zero serious/critical axe findings.
-- Full Playwright run: 32 public-site tests passed across Chromium desktop and
+- `pnpm test:performance`: LCP 480 ms, CLS 0, initial JavaScript 397,505
+  transferred / 1,368,448 decoded bytes, zero serious/critical axe findings.
+- Full Playwright run: 34 public-site tests passed across Chromium desktop and
   Pixel 7 projects; 12 admin tests were explicitly skipped because the local
   admin credential was absent. The responsive, long-caption, Mereka-mark, and
   permission-focused checks passed across both projects. The live-caption
   component contract also passed independently.
 - `git diff --check`: passed.
 
+The exact candidate includes the independent staging smoke oracle and the
+explicit `MerekaMiniMark` rename. No `MiniOrb` component or import remains.
+Loading fallback, submitted success, compact controls, navigation, and CTAs all
+render the canonical path-and-dot geometry; the main live state renders the
+same geometry as the particle M. The entire gate above, including performance
+and full Playwright, ran on this exact SHA.
+
 During integration review, quota classification was found to occur only after
 the retry loop. The hook now parses every failed response before calling
 `shouldRetryRealtimeCall`; that policy accepts `realtime_busy` only. A focused
 test explicitly rejects retry for `realtime_quota_exhausted`.
+
+## APR round 5 correction closure
+
+Round 5 correctly blocked the release because the staging smoke derived its
+expected model and model cell from the public health response it was meant to
+verify. `ed372779148affa3db9a682a4a5533a177f16571` removes that tautology: the
+default oracle is the governed `gpt-realtime-2.1` / `candidate` / `adaptive`
+staging contract, health is checked against it first, and the minted session is
+checked independently afterward. A source-contract regression rejects any
+future `?? health.voice.model` or `?? health.voice.model_cell` fallback.
+
+## APR round 6 correction closure
+
+The second round-6 run correctly challenged the ambiguous legacy `MiniOrb`
+name in the main-stage loading and success branches. The implementation already
+contained canonical Mereka path-and-dot geometry, but the attached source did
+not prove that fact. `d24d5d80db93be270be79b4f864c0291fc63b7dc`
+removes the ambiguity end to end: the file, export, imports, tests, `AGENTS.md`,
+and component documentation now call it `MerekaMiniMark`. The attached main
+stage visibly renders `MerekaMiniMark` in both branches, and the brand-motion
+test asserts the canonical viewbox, path, and dot while rejecting the former
+sphere geometry.
+
+## APR round 7 final verdict
+
+Round 7 re-traced every blocker area against the exact candidate, including
+the independent public-health oracle and explicit Mereka mark branches, and
+ended `VERDICT: SHIP SAFE DEFAULTS`. APR saved the complete 5,343-byte review
+to `.apr/rounds/oriental-voice-intake-release/round_7.md`. Its generic
+truncation heuristic then warned because the mandated verdict ends in a letter
+rather than punctuation; the saved review itself is complete and ends on the
+exact workflow-required verdict.
 
 ## APR round 1 correction closure
 
