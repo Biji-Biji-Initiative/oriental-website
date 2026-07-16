@@ -225,13 +225,19 @@ function getClickUpListId() {
 }
 
 function parseArgs(argv: string[]): Args {
-  const parsed: Args = { dry: false, limit: 500, reconcileExisting: false };
+  // Fail closed: listing the reconciliation plan is safe by default. Creating
+  // tasks or enriching existing records always requires an explicit mutation
+  // flag so an operator cannot change production by omitting `--dry`.
+  const parsed: Args = { dry: true, limit: 500, reconcileExisting: false };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     const next = argv[index + 1];
     if (arg === "--dry") parsed.dry = true;
-    else if (arg === "--reconcile-existing") parsed.reconcileExisting = true;
-    else if (arg === "--limit") {
+    else if (arg === "--apply") parsed.dry = false;
+    else if (arg === "--reconcile-existing") {
+      parsed.dry = false;
+      parsed.reconcileExisting = true;
+    } else if (arg === "--limit") {
       parsed.limit = Number(next) || parsed.limit;
       index += 1;
     }

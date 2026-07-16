@@ -1,0 +1,29 @@
+name: oriental-admin-crm-intelligence
+description: Ship-blocker review for lossless Oriental CRM intelligence
+
+documents:
+  readme: docs/12-CHAT-RELEASE-RUNBOOK.md
+  spec: .apr/specs/oriental-admin-crm-intelligence.md
+  implementation: .apr/evidence/oriental-admin-crm-intelligence.md
+
+oracle:
+  model: "gpt-5.6-sol"
+
+rounds:
+  output_dir: .apr/rounds/oriental-admin-crm-intelligence
+  impl_every_n: 1
+
+template: |
+  Perform the requested adversarial CRM ship review. Treat data loss, duplicate
+  task creation, public leakage of operator metadata, incorrect full-dataset
+  metrics, unsafe identity grouping, unusable operator workflow, and unproven
+  release claims as blockers. Do not propose unrelated product work. End with
+  exactly `VERDICT: SHIP CRM` or `VERDICT: DO NOT SHIP`.
+
+template_with_impl: |
+  Perform the requested adversarial CRM ship review against the attached
+  implementation evidence. Treat data loss, duplicate task creation, public
+  leakage of operator metadata, incorrect full-dataset metrics, unsafe identity
+  grouping, unusable operator workflow, and unproven release claims as
+  blockers. Do not propose unrelated product work. End with exactly
+  `VERDICT: SHIP CRM` or `VERDICT: DO NOT SHIP`.

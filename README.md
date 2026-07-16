@@ -182,6 +182,7 @@ lead payloads:
 
 ```bash
 pnpm backfill:clickup -- --dry
+pnpm backfill:clickup -- --apply
 pnpm backfill:clickup -- --reconcile-existing
 ```
 
