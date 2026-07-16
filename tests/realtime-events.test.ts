@@ -31,6 +31,7 @@ describe("reduceRealtimeServerEvent", () => {
   it("tentatively captures only an explicit literal visitor email", () => {
     const typed = appendTypedUserMessage(state(), "My email is asha@example.com");
     expect(typed.captured.email).toBe("asha@example.com");
+    expect(typed.emailVerification).toEqual({ value: "asha@example.com", source: "typed", status: "confirmed" });
 
     const example = appendTypedUserMessage(state(), "The website uses team@example.com as an example.");
     expect(example.captured.email).toBe("");
@@ -72,10 +73,134 @@ describe("reduceRealtimeServerEvent", () => {
           ok: true,
           key: "email",
           mode: "replace",
+          emailConfirmationRequired: true,
           captured: { ...emptyCapturedLead, email: "asha@example.com" },
         },
       },
     ]);
+    expect(result.state.emailVerification).toEqual({
+      value: "asha@example.com",
+      source: "speech",
+      status: "pending",
+    });
+  });
+
+  it("rejects a one-character email drift instead of changing the visitor's address", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_email_near_miss",
+              arguments: JSON.stringify({ key: "email", value: "g@g.com", evidence: "g at b dot com" }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "My email is g at b dot com." }] }),
+    );
+
+    expect(result.state.captured.email).toBe("");
+    expect(result.commands[0]).toMatchObject({
+      output: { ok: false, error: "ungrounded_identity_capture", key: "email" },
+    });
+    expect(result.state.errors).toContainEqual(
+      expect.objectContaining({ code: "voice_capture_rejected", message: expect.stringContaining("email") }),
+    );
+  });
+
+  it("requires an exact read-back confirmation before routing a speech email", () => {
+    const capture = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_email_exact",
+              arguments: JSON.stringify({ key: "email", value: "g@b.com", evidence: "g at b dot com" }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "My email is g at b dot com." }] }),
+    );
+    const prematureRoute = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "route_to_team",
+              call_id: "call_route_too_soon",
+              arguments: JSON.stringify({ segment: "technology" }),
+            },
+          ],
+        },
+      },
+      capture.state,
+    );
+
+    expect(prematureRoute.commands[0]).toMatchObject({
+      output: {
+        ok: false,
+        error: "unconfirmed_required_fields",
+        unconfirmedFields: ["email"],
+      },
+    });
+
+    let confirmedState = reduceRealtimeServerEvent(
+      { type: "response.output_audio_transcript.done", transcript: "I heard g at b dot com. Is that right?" },
+      prematureRoute.state,
+    ).state;
+    confirmedState = reduceRealtimeServerEvent(
+      { type: "conversation.item.input_audio_transcription.completed", transcript: "Yes, that's correct." },
+      confirmedState,
+    ).state;
+    const confirmation = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "confirm_email",
+              call_id: "call_confirm_email",
+              arguments: JSON.stringify({ evidence: "Yes, that's correct" }),
+            },
+          ],
+        },
+      },
+      confirmedState,
+    );
+    expect(confirmation.state.emailVerification).toEqual({
+      value: "g@b.com",
+      source: "speech",
+      status: "confirmed",
+    });
+
+    const route = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "route_to_team",
+              call_id: "call_route_confirmed",
+              arguments: JSON.stringify({ segment: "technology" }),
+            },
+          ],
+        },
+      },
+      confirmation.state,
+    );
+    expect(route.commands).toEqual([{ type: "submit_voice", callId: "call_route_confirmed", segment: "technology" }]);
   });
 
   it("captures several grounded fields atomically", () => {
@@ -239,6 +364,7 @@ describe("reduceRealtimeServerEvent", () => {
         },
       },
       state({
+        emailVerification: { value: "asha@example.com", source: "typed", status: "confirmed" },
         captured: {
           name: "Asha",
           email: "asha@example.com",
@@ -345,6 +471,7 @@ describe("reduceRealtimeServerEvent", () => {
       },
       state({
         routeRequested: true,
+        emailVerification: { value: "asha@example.com", source: "typed", status: "confirmed" },
         captured: {
           name: "Asha",
           email: "asha@example.com",
@@ -503,6 +630,19 @@ describe("reduceRealtimeServerEvent", () => {
     ).state;
 
     expect(second.transcript).toEqual([{ role: "assistant", text: "Hello there." }]);
+  });
+
+  it("replaces a truncated assistant caption with its complete final line", () => {
+    const partial = reduceRealtimeServerEvent(
+      { type: "response.output_audio_transcript.done", transcript: "Hi, I'm R" },
+      state(),
+    ).state;
+    const complete = reduceRealtimeServerEvent(
+      { type: "response.output_audio_transcript.done", transcript: "Hi, I'm Reka. What would you like to build?" },
+      partial,
+    ).state;
+
+    expect(complete.transcript).toEqual([{ role: "assistant", text: "Hi, I'm Reka. What would you like to build?" }]);
   });
 
   it("stores user transcription and transcription token usage", () => {

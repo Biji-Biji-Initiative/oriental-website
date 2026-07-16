@@ -30,6 +30,12 @@ export type VoiceRuntimeUsage = {
 
 export type VoiceRuntimeError = { eventId?: string; message: string; code?: string };
 
+export type VoiceEmailVerification = {
+  value: string;
+  source: "prefill" | "speech" | "typed";
+  status: "confirmed" | "pending";
+};
+
 export type VoiceRuntimeState = {
   segment: SegmentId;
   captured: CapturedLead;
@@ -39,6 +45,7 @@ export type VoiceRuntimeState = {
   usage?: VoiceRuntimeUsage;
   rateLimits?: Array<Record<string, unknown>>;
   errors?: VoiceRuntimeError[];
+  emailVerification?: VoiceEmailVerification;
   pendingUserTranscripts?: number;
   activeResponse?: boolean;
   /** Streaming caption of what the assistant is saying right now. */
@@ -131,9 +138,32 @@ export function isBenignVoiceError(error: VoiceRuntimeError) {
   return message.includes("cancellation failed") || message.includes("no active response");
 }
 
+export function isVoiceCaptureIntegrityIssue(error: VoiceRuntimeError): boolean {
+  return error.code === "voice_capture_rejected" || error.code === "voice_email_unconfirmed";
+}
+
 /** Record a message the visitor typed into the live chat as a user transcript turn. */
 export function appendTypedUserMessage(state: VoiceRuntimeState, text: string): VoiceRuntimeState {
-  return applyTentativeEmail(appendTranscript(state, "user", text), text);
+  return applyTentativeEmail(appendTranscript(state, "user", text), text, "typed");
+}
+
+export function confirmedEmailVerification(
+  value: string,
+  source: Extract<VoiceEmailVerification["source"], "prefill" | "typed">,
+): VoiceEmailVerification | undefined {
+  const email = value.trim();
+  return email ? { value: email, source, status: "confirmed" } : undefined;
+}
+
+export function isVoiceEmailConfirmed(state: Pick<VoiceRuntimeState, "captured" | "emailVerification">): boolean {
+  const email = state.captured.email.trim().toLowerCase();
+  const verification = state.emailVerification;
+  return Boolean(
+    email &&
+      verification?.status === "confirmed" &&
+      verification.value.trim().toLowerCase() === email &&
+      isLikelyEmail(email),
+  );
 }
 
 export function reduceRealtimeServerEvent(
@@ -168,7 +198,7 @@ export function reduceRealtimeServerEvent(
 
   if (event.type === "conversation.item.input_audio_transcription.completed" && eventTranscript) {
     state = appendTranscript(state, "user", eventTranscript);
-    state = applyTentativeEmail(state, eventTranscript);
+    state = applyTentativeEmail(state, eventTranscript, "speech");
     state = accumulateUsage(state, "transcription", event.usage);
   }
 
@@ -196,7 +226,7 @@ export function reduceRealtimeServerEvent(
           message: asString(event.error?.message) ?? asString(event.error?.code) ?? "unknown",
           code: asString(event.error?.code),
         },
-      ],
+      ].slice(-20),
     };
   }
 
@@ -228,7 +258,7 @@ function applyFunctionCall(
   }
 
   const args = parseArguments(item.arguments);
-  let next = { ...state, handledCallIds: [...(state.handledCallIds ?? []), item.call_id] };
+  let next: VoiceRuntimeState = { ...state, handledCallIds: [...(state.handledCallIds ?? []), item.call_id] };
   let output: Record<string, unknown> = { ok: true };
   let createResponse = true;
   const commands: RealtimeClientCommand[] = [];
@@ -246,8 +276,8 @@ function applyFunctionCall(
         output = capture.output;
         break;
       }
-      next = { ...next, captured: capture.captured };
-      output = { ok: true, key: capture.key, mode: capture.mode, captured: capture.captured };
+      next = applyCaptureResult(next, capture);
+      output = captureOutput(capture, next);
       break;
     }
     case "capture_fields": {
@@ -285,8 +315,36 @@ function applyFunctionCall(
         output = { ok: false, error: "atomic_capture_rejected", failedIndex: failure.index, detail: failure.output };
         break;
       }
-      next = { ...next, captured };
-      output = { ok: true, fields: applied, captured };
+      const emailApplied = applied.some((field) => field.key === "email");
+      next = {
+        ...next,
+        captured,
+        ...(emailApplied
+          ? { emailVerification: pendingSpokenEmailVerification(captured.email, next.emailVerification) }
+          : {}),
+      };
+      output = {
+        ok: true,
+        fields: applied,
+        captured,
+        ...(emailApplied ? { emailConfirmationRequired: !isVoiceEmailConfirmed(next) } : {}),
+      };
+      break;
+    }
+    case "confirm_email": {
+      const confirmation = confirmCapturedEmail(args, next, (next.pendingUserTranscripts ?? 0) > 0);
+      if (!confirmation.ok) {
+        output = confirmation.output;
+        break;
+      }
+      next = { ...next, emailVerification: confirmation.verification };
+      output = {
+        ok: true,
+        key: "email",
+        confirmed: true,
+        captured: next.captured,
+        emailVerification: confirmation.verification,
+      };
       break;
     }
     case "lookup_oriental": {
@@ -296,7 +354,11 @@ function applyFunctionCall(
     case "clear_field": {
       const key = toCapturedKey(args.key);
       if (key) {
-        next = { ...next, captured: { ...next.captured, [key]: "" } };
+        next = {
+          ...next,
+          captured: { ...next.captured, [key]: "" },
+          ...(key === "email" ? { emailVerification: undefined } : {}),
+        };
         output = { ok: true, key, captured: next.captured };
       } else {
         output = { ok: false, error: "invalid_field" };
@@ -306,15 +368,18 @@ function applyFunctionCall(
     case "summarise_lead": {
       const missingFields = getMissingFields(next.captured);
       const invalidFields = getInvalidFields(next.captured);
+      const unconfirmedFields = getUnconfirmedFields(next);
       output = {
         ok: true,
         segment: next.segment,
         captured: next.captured,
-        ready: missingFields.length === 0 && invalidFields.length === 0,
+        ready: missingFields.length === 0 && invalidFields.length === 0 && unconfirmedFields.length === 0,
         missingFields,
         missingFieldLabels: getMissingFieldLabels(missingFields),
         invalidFields,
         invalidFieldLabels: getMissingFieldLabels(invalidFields),
+        unconfirmedFields,
+        unconfirmedFieldLabels: getMissingFieldLabels(unconfirmedFields),
         routeRequested: next.routeRequested ?? false,
       };
       break;
@@ -329,16 +394,28 @@ function applyFunctionCall(
       next = { ...next, segment };
       const missingFields = getMissingFields(next.captured);
       const invalidFields = getInvalidFields(next.captured);
-      if (missingFields.length > 0 || invalidFields.length > 0) {
+      const unconfirmedFields = getUnconfirmedFields(next);
+      if (missingFields.length > 0 || invalidFields.length > 0 || unconfirmedFields.length > 0) {
         output = {
           ok: false,
           ready: false,
           segment: next.segment,
-          error: invalidFields.length > 0 ? "invalid_required_fields" : "missing_required_fields",
+          error:
+            invalidFields.length > 0
+              ? "invalid_required_fields"
+              : missingFields.length > 0
+                ? "missing_required_fields"
+                : "unconfirmed_required_fields",
           missingFields,
           missingFieldLabels: getMissingFieldLabels(missingFields),
           invalidFields,
           invalidFieldLabels: getMissingFieldLabels(invalidFields),
+          ...(unconfirmedFields.length > 0
+            ? {
+                unconfirmedFields,
+                unconfirmedFieldLabels: getMissingFieldLabels(unconfirmedFields),
+              }
+            : {}),
           captured: next.captured,
         };
       } else if (next.routeRequested) {
@@ -368,6 +445,8 @@ function applyFunctionCall(
     }
   }
 
+  next = recordObservableToolFailure(next, item, output);
+
   return {
     state: next,
     commands: [{ type: "function_result", callId: item.call_id, createResponse, output }, ...commands],
@@ -383,13 +462,25 @@ function appendTranscript(
   if (!trimmed) return state;
   const previous = state.transcript.at(-1);
   if (previous?.role === role && previous.text === trimmed) return state;
+  if (role === "assistant" && previous?.role === "assistant") {
+    if (trimmed.startsWith(previous.text)) {
+      return { ...state, transcript: [...state.transcript.slice(0, -1), { role, text: trimmed }] };
+    }
+    if (previous.text.startsWith(trimmed)) return state;
+  }
   return { ...state, transcript: [...state.transcript, { role, text: trimmed }] };
 }
 
-function applyTentativeEmail(state: VoiceRuntimeState, text: string): VoiceRuntimeState {
+function applyTentativeEmail(state: VoiceRuntimeState, text: string, source: "speech" | "typed"): VoiceRuntimeState {
   if (state.captured.email.trim()) return state;
   const email = extractExplicitVisitorEmail(text);
-  return email ? { ...state, captured: { ...state.captured, email } } : state;
+  if (!email) return state;
+  return {
+    ...state,
+    captured: { ...state.captured, email },
+    emailVerification:
+      source === "typed" ? { value: email, source, status: "confirmed" } : { value: email, source, status: "pending" },
+  };
 }
 
 function accumulateUsage(
@@ -466,14 +557,52 @@ function toCapturedKey(value: unknown): keyof CapturedLead | null {
     : null;
 }
 
+type AppliedCapture = {
+  ok: true;
+  key: keyof CapturedLead;
+  mode: "append" | "replace";
+  captured: CapturedLead;
+};
+
+function applyCaptureResult(state: VoiceRuntimeState, capture: AppliedCapture): VoiceRuntimeState {
+  if (capture.key !== "email") return { ...state, captured: capture.captured };
+  return {
+    ...state,
+    captured: capture.captured,
+    emailVerification: pendingSpokenEmailVerification(capture.captured.email, state.emailVerification),
+  };
+}
+
+function captureOutput(capture: AppliedCapture, state: VoiceRuntimeState): Record<string, unknown> {
+  return {
+    ok: true,
+    key: capture.key,
+    mode: capture.mode,
+    captured: capture.captured,
+    ...(capture.key === "email" ? { emailConfirmationRequired: !isVoiceEmailConfirmed(state) } : {}),
+  };
+}
+
+function pendingSpokenEmailVerification(
+  email: string,
+  existing: VoiceEmailVerification | undefined,
+): VoiceEmailVerification {
+  if (
+    existing?.status === "confirmed" &&
+    existing.source !== "speech" &&
+    existing.value.trim().toLowerCase() === email.trim().toLowerCase()
+  ) {
+    return existing;
+  }
+  return { value: email.trim(), source: "speech", status: "pending" };
+}
+
 function applyCaptureField(
   args: Record<string, unknown>,
   captured: CapturedLead,
   transcript: VoiceTranscriptEntry[],
   transcriptionPending: boolean,
-):
-  | { ok: true; key: keyof CapturedLead; mode: "append" | "replace"; captured: CapturedLead }
-  | { ok: false; output: Record<string, unknown> } {
+): AppliedCapture | { ok: false; output: Record<string, unknown> } {
   const key = toCapturedKey(args.key);
   const value = typeof args.value === "string" ? args.value.trim() : "";
   const evidence = typeof args.evidence === "string" ? args.evidence.trim() : "";
@@ -481,6 +610,9 @@ function applyCaptureField(
   if (!key || !value) return { ok: false, output: { ok: false, error: "invalid_field" } };
 
   const normalizedValue = key === "org" ? normalizeOrganisation(value) : value;
+  if (key === "email" && !isLikelyEmail(normalizedValue)) {
+    return { ok: false, output: { ok: false, error: "invalid_email", key } };
+  }
   const existing = captured[key];
   const duplicateCapture =
     key === "email"
@@ -516,8 +648,7 @@ const REQUIRED_CAPTURED_FIELDS: Array<keyof CapturedLead> = ["email"];
  * email breaks the follow-up; organisation is most forgiving because the
  * handoff panel shows it and the visitor can edit it.
  */
-const GROUNDING_TOLERANCE: Record<"email" | "name" | "org", number> = {
-  email: 0.13,
+const GROUNDING_TOLERANCE: Record<"name" | "org", number> = {
   name: 0.25,
   org: 0.34,
 };
@@ -531,6 +662,7 @@ function validateCaptureGrounding(
 ): { ok: true } | { ok: false; error: string } {
   if (key === "message" || key === "phone" || key === "website") return { ok: true };
   if (!evidence) return { ok: false, error: "ungrounded_identity_capture" };
+  if (key === "email") return validateEmailCaptureGrounding(value, evidence, transcript, transcriptionPending);
   const tolerance = GROUNDING_TOLERANCE[key];
 
   const recentUserText = transcript
@@ -581,6 +713,94 @@ function validateCaptureGrounding(
   }
 
   return { ok: false, error: "ungrounded_identity_capture" };
+}
+
+function validateEmailCaptureGrounding(
+  value: string,
+  evidence: string,
+  transcript: VoiceTranscriptEntry[],
+  transcriptionPending: boolean,
+): { ok: true } | { ok: false; error: string } {
+  const email = value.trim().toLowerCase();
+  const canonicalEvidence = canonicalizeEmailSpeech(evidence);
+  if (!canonicalEvidence.includes(email)) return { ok: false, error: "ungrounded_identity_capture" };
+  if (transcriptionPending) return { ok: true };
+
+  const recentUserText = transcript
+    .filter((entry) => entry.role === "user")
+    .slice(-6)
+    .map((entry) => entry.text)
+    .join(" ");
+  return canonicalizeEmailSpeech(recentUserText).includes(email)
+    ? { ok: true }
+    : { ok: false, error: "ungrounded_identity_capture" };
+}
+
+function canonicalizeEmailSpeech(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/\p{Mark}/gu, "")
+    .replace(/\bat\s+sign\b/gu, " @ ")
+    .replace(/\b(at)\b/gu, " @ ")
+    .replace(/\b(dot|point)\b/gu, " . ")
+    .replace(/\b(underscore)\b/gu, " _ ")
+    .replace(/\b(dash|hyphen)\b/gu, " - ")
+    .replace(/\b(plus)\b/gu, " + ")
+    .replace(/[^\p{Letter}\p{Number}@._+-]+/gu, "");
+}
+
+function confirmCapturedEmail(
+  args: Record<string, unknown>,
+  state: VoiceRuntimeState,
+  transcriptionPending: boolean,
+): { ok: true; verification: VoiceEmailVerification } | { ok: false; output: Record<string, unknown> } {
+  const email = state.captured.email.trim();
+  const pending = state.emailVerification;
+  if (!email || !pending || pending.status !== "pending" || pending.value.toLowerCase() !== email.toLowerCase()) {
+    return { ok: false, output: { ok: false, error: "email_confirmation_not_pending", key: "email" } };
+  }
+
+  const evidence = typeof args.evidence === "string" ? args.evidence.trim() : "";
+  if (!isExplicitEmailConfirmation(evidence)) {
+    return { ok: false, output: { ok: false, error: "email_confirmation_not_explicit", key: "email" } };
+  }
+  const latestAssistant = state.transcript.filter((entry) => entry.role === "assistant").at(-1)?.text ?? "";
+  if (!canonicalizeEmailSpeech(latestAssistant).includes(email.toLowerCase())) {
+    return { ok: false, output: { ok: false, error: "email_readback_missing", key: "email" } };
+  }
+  const latestUser = state.transcript.filter((entry) => entry.role === "user").at(-1)?.text ?? "";
+  if (!transcriptionPending && !normalizeEvidence(latestUser).includes(normalizeEvidence(evidence))) {
+    return { ok: false, output: { ok: false, error: "ungrounded_email_confirmation", key: "email" } };
+  }
+  return { ok: true, verification: { value: email, source: "speech", status: "confirmed" } };
+}
+
+const EXPLICIT_EMAIL_CONFIRMATIONS = new Set([
+  "yes",
+  "yescorrect",
+  "yesitscorrect",
+  "yesthatscorrect",
+  "yesthatsright",
+  "yeah",
+  "yeahcorrect",
+  "yeahsendit",
+  "yep",
+  "correct",
+  "thatscorrect",
+  "thatsright",
+  "right",
+  "betul",
+  "yabetul",
+  "benar",
+  "tepat",
+  "okaysendit",
+  "yesendit",
+  "yessendit",
+]);
+
+function isExplicitEmailConfirmation(value: string): boolean {
+  return EXPLICIT_EMAIL_CONFIRMATIONS.has(normalizeEvidence(value));
 }
 
 /** Exact containment, falling back to tolerance-bounded approximate containment. */
@@ -677,8 +897,43 @@ function normalizeEvidence(value: string) {
     .replace(/[^\p{Letter}\p{Number}]+/gu, "");
 }
 
+const OBSERVABLE_TOOL_FAILURES = new Set([
+  "atomic_capture_rejected",
+  "email_confirmation_not_explicit",
+  "email_confirmation_not_pending",
+  "email_readback_missing",
+  "invalid_email",
+  "ungrounded_email_confirmation",
+  "ungrounded_identity_capture",
+  "unconfirmed_required_fields",
+]);
+
+function recordObservableToolFailure(
+  state: VoiceRuntimeState,
+  item: RealtimeOutputItem,
+  output: Record<string, unknown>,
+): VoiceRuntimeState {
+  if (output.ok !== false) return state;
+  const detail = output.detail && typeof output.detail === "object" ? (output.detail as Record<string, unknown>) : null;
+  const error = typeof detail?.error === "string" ? detail.error : typeof output.error === "string" ? output.error : "";
+  if (!OBSERVABLE_TOOL_FAILURES.has(error)) return state;
+  const key = typeof detail?.key === "string" ? detail.key : typeof output.key === "string" ? output.key : undefined;
+  const issue: VoiceRuntimeError = {
+    eventId: item.call_id,
+    code: error === "unconfirmed_required_fields" ? "voice_email_unconfirmed" : "voice_capture_rejected",
+    message: [item.name ?? "unknown_tool", error, key].filter(Boolean).join(":"),
+  };
+  return { ...state, errors: [...(state.errors ?? []), issue].slice(-20) };
+}
+
 function getMissingFields(captured: CapturedLead) {
   return REQUIRED_CAPTURED_FIELDS.filter((key) => !captured[key].trim());
+}
+
+function getUnconfirmedFields(state: Pick<VoiceRuntimeState, "captured" | "emailVerification">) {
+  return isLikelyEmail(state.captured.email) && !isVoiceEmailConfirmed(state)
+    ? (["email"] as Array<keyof CapturedLead>)
+    : [];
 }
 
 function getInvalidFields(captured: CapturedLead): Array<keyof CapturedLead> {

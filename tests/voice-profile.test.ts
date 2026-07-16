@@ -45,6 +45,7 @@ describe("voice profile", () => {
       "set_partner_type",
       "capture_fields",
       "lookup_oriental",
+      "confirm_email",
       "clear_field",
       "summarise_lead",
       "route_to_team",

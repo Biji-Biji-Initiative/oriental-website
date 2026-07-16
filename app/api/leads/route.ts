@@ -58,6 +58,17 @@ export async function POST(request: NextRequest) {
     return noStoreJson({ ok: false, error: "turnstile_failed" }, { status: 403 });
   }
 
+  if (parsed.data.source === "voice" && parsed.data.voiceEmailVerified !== true) {
+    logWarn("lead.voice_email_unconfirmed", {
+      requestId,
+      ipHash,
+      segment: parsed.data.segment,
+      reviewId: parsed.data.voiceReviewId ?? null,
+      durationMs: durationSince(startedAt),
+    });
+    return noStoreJson({ ok: false, error: "voice_email_unconfirmed" }, { status: 409 });
+  }
+
   const lead = routeLead(stripLeadVerification(parsed.data));
   if (!lead.routedToEmail && isProductionEnv()) {
     logError("lead.routing_unconfigured", {
@@ -171,6 +182,8 @@ export async function POST(request: NextRequest) {
     routedTo: lead.routedTo,
     persisted: persistence.persisted,
     notificationDelivered: delivered,
+    voiceEmailVerificationSource:
+      parsed.data.source === "voice" ? (parsed.data.voiceEmailVerificationSource ?? "unknown") : null,
     notifications,
     rateLimitStore: limit.store,
     remaining: limit.remaining,
@@ -194,6 +207,11 @@ function voiceLeadHasSignedReview(data: LeadRequest) {
 }
 
 function stripLeadVerification(data: LeadRequest) {
-  const { voiceReviewToken: _verificationOnly, ...lead } = data;
+  const {
+    voiceReviewToken: _verificationOnly,
+    voiceEmailVerified: _emailVerificationOnly,
+    voiceEmailVerificationSource: _emailVerificationSourceOnly,
+    ...lead
+  } = data;
   return lead;
 }

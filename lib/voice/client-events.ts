@@ -90,12 +90,18 @@ export function serializeUserText(text: string, createEventId: EventIdFactory = 
 }
 
 export function serializeHandoffContext(
-  state: Pick<VoiceRuntimeState, "segment" | "captured">,
+  state: Pick<VoiceRuntimeState, "segment" | "captured"> & Partial<Pick<VoiceRuntimeState, "emailVerification">>,
   createEventId: EventIdFactory = defaultEventId,
   options: { resumedTranscript?: VoiceTranscriptEntry[] } = {},
 ): RealtimeOutboundEvent {
   const segment = getSegment(state.segment);
   const field = (value: string) => (value.trim() ? value.trim() : "[empty]");
+  const emailStatus = state.captured.email.trim()
+    ? state.emailVerification?.status === "confirmed" &&
+      state.emailVerification.value.trim().toLowerCase() === state.captured.email.trim().toLowerCase()
+      ? `confirmed (${state.emailVerification.source})`
+      : "awaiting exact spoken confirmation"
+    : "missing";
   const resumed = options.resumedTranscript ?? [];
   return {
     type: "conversation.item.create",
@@ -111,10 +117,12 @@ export function serializeHandoffContext(
             "Treat non-empty fields as user-provided typed details. Do not ask again for non-empty fields.",
             "If the user asks who they are or why you cannot see a detail, answer from these non-empty fields as visible handoff-panel context, without inventing anything.",
             "Do not talk about privacy, security, tools, or limitations unless the user asks directly.",
-            "If the user says send, submit, okay send, looks good, or similar, call route_to_team if all required fields are present.",
+            "A speech-captured email marked awaiting confirmation is a draft. Read it back exactly, ask if it is correct, then call confirm_email only after a clear yes. Never route an unconfirmed email.",
+            "If the user says send, submit, okay send, looks good, or similar, call route_to_team only if the email is confirmed.",
             `Segment: ${segment.label} (${segment.id})`,
             `Name: ${field(state.captured.name)}`,
             `Email: ${field(state.captured.email)}`,
+            `Email verification: ${emailStatus}`,
             `Organisation: ${field(state.captured.org)}`,
             `Brief: ${field(state.captured.message)}`,
             ...(resumed.length > 0

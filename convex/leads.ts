@@ -316,7 +316,9 @@ export const recordVoiceSession = mutationGeneric({
     const patch = {
       sessionId: snapshot.sessionId,
       ...(snapshot.conversationId ? { conversationId: snapshot.conversationId } : {}),
-      leadId: snapshot.leadId ?? null,
+      // Heartbeats do not know about a lead until submission. Once linked, an
+      // omitted leadId must not erase that durable relationship.
+      ...(typeof snapshot.leadId !== "undefined" ? { leadId: snapshot.leadId } : {}),
       segment: snapshot.segment,
       status: snapshot.status,
       connectionStatus: snapshot.connectionStatus,

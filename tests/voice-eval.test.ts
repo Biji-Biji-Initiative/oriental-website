@@ -408,10 +408,24 @@ describe("isJudgeable", () => {
 });
 
 describe("buildJudgeUserPrompt", () => {
-  it("includes transcript, segment, and outcome but not raw token usage", () => {
-    const prompt = buildJudgeUserPrompt(session({ segment: "cultural", submittedAt: 5 }));
+  it("includes transcript, final captured handoff, runtime issues, and outcome but not raw token usage", () => {
+    const prompt = buildJudgeUserPrompt(
+      session({
+        segment: "cultural",
+        submittedAt: 5,
+        captured: {
+          name: "Jay",
+          email: "g@g.com",
+          org: "Manufacturers",
+          message: "A partnership question.",
+        },
+        errors: [{ code: "voice_capture_rejected", message: "capture_fields:ungrounded_identity_capture:email" }],
+      }),
+    );
     expect(prompt).toContain("Intended segment: cultural");
     expect(prompt).toContain("lead submitted");
+    expect(prompt).toContain("Email: g@g.com");
+    expect(prompt).toContain("voice_capture_rejected");
     expect(prompt).toContain("USER: We build robots.");
   });
 });
