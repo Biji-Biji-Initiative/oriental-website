@@ -15,6 +15,7 @@ import {
 const sha = "bb8e2673e5f129f342fba78f3eb653a54de8763b";
 const releasePreflight = readFileSync("scripts/release-preflight.ts", "utf8");
 const releaseVerifier = readFileSync("scripts/release-verify.ts", "utf8");
+const stagingVoiceSmoke = readFileSync("scripts/smoke-staging-voice.ts", "utf8");
 
 describe("release governance", () => {
   it("pins canonical and compatibility-only hostnames", () => {
@@ -126,6 +127,15 @@ describe("release governance", () => {
   it("expands the both alias before target lookup", () => {
     expect(releaseVerifier).toContain('args.target === "both" ? ["staging", "production"] : [args.target]');
     expect(releaseVerifier).toContain('name === "staging" ? governedVoiceCell(stagingModelCell) : CONTROL_VOICE_CELL');
+  });
+
+  it("pins the staging voice smoke to the governed candidate instead of public health", () => {
+    expect(stagingVoiceSmoke).toContain("process.env.EXPECTED_REALTIME_MODEL ?? STAGING_CANDIDATE_VOICE_CELL.model");
+    expect(stagingVoiceSmoke).toContain(
+      "process.env.EXPECTED_REALTIME_MODEL_CELL ?? STAGING_CANDIDATE_VOICE_CELL.modelCell",
+    );
+    expect(stagingVoiceSmoke).not.toContain("?? health.voice.model");
+    expect(stagingVoiceSmoke).not.toContain("?? health.voice.model_cell");
   });
 
   it("requires exact-SHA healthy Convex responses", () => {

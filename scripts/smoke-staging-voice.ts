@@ -1,8 +1,13 @@
 import { chromium, type Page, type Response } from "playwright";
 import { voiceReviewSnapshotSchema } from "../lib/schemas";
+import { STAGING_CANDIDATE_VOICE_CELL } from "./lib/release-governance";
 
 const canonicalStagingOrigin = "https://staging.oriental.mereka.io";
 const targetOrigin = new URL(process.env.VOICE_SMOKE_URL ?? canonicalStagingOrigin).origin;
+const expectedModel = process.env.EXPECTED_REALTIME_MODEL ?? STAGING_CANDIDATE_VOICE_CELL.model;
+const expectedModelCell = process.env.EXPECTED_REALTIME_MODEL_CELL ?? STAGING_CANDIDATE_VOICE_CELL.modelCell;
+const expectedEmailCaptureMode =
+  process.env.EXPECTED_EMAIL_CAPTURE_MODE ?? STAGING_CANDIDATE_VOICE_CELL.emailCaptureMode;
 
 if (targetOrigin !== canonicalStagingOrigin) {
   throw new Error(`Refusing voice smoke target outside canonical staging: ${targetOrigin}`);
@@ -128,9 +133,19 @@ async function run() {
       !health.convex ||
       !health.voice?.model ||
       !health.voice.model_cell ||
-      health.voice.email_capture_mode !== "adaptive"
+      !health.voice.email_capture_mode
     ) {
       throw new Error("Staging health payload is incomplete");
+    }
+    if (health.voice.model !== expectedModel || health.voice.model_cell !== expectedModelCell) {
+      throw new Error(
+        `Unexpected staging health Realtime cell: ${health.voice.model}/${health.voice.model_cell}; expected ${expectedModel}/${expectedModelCell}`,
+      );
+    }
+    if (health.voice.email_capture_mode !== expectedEmailCaptureMode) {
+      throw new Error(
+        `Unexpected staging health email capture mode: ${health.voice.email_capture_mode}; expected ${expectedEmailCaptureMode}`,
+      );
     }
 
     await page.setViewportSize({ width: 390, height: 844 });
@@ -196,9 +211,6 @@ async function run() {
     await Promise.allSettled(sessionProfileCaptures);
     const sessionProfile = sessionProfiles.at(-1);
     if (!sessionProfile) throw new Error("Voice session profile was not captured");
-    const expectedModel = process.env.EXPECTED_REALTIME_MODEL ?? health.voice.model;
-    const expectedModelCell = process.env.EXPECTED_REALTIME_MODEL_CELL ?? health.voice.model_cell;
-    const expectedEmailCaptureMode = process.env.EXPECTED_EMAIL_CAPTURE_MODE ?? "adaptive";
     if (sessionProfile.model !== expectedModel || sessionProfile.modelCell !== expectedModelCell) {
       throw new Error(
         `Unexpected staging Realtime cell: ${sessionProfile.model}/${sessionProfile.modelCell}; expected ${expectedModel}/${expectedModelCell}`,
