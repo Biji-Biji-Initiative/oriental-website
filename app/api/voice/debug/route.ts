@@ -5,6 +5,7 @@ import { logInfo, logWarn } from "@/lib/server/logger";
 import { sendOpsAlert } from "@/lib/server/ops-alerts";
 import { noStoreJson } from "@/lib/server/security";
 import { verifyVoiceReviewCredentials } from "@/lib/server/voice-review-token";
+import { isVoiceAvailabilityFailure } from "@/lib/voice/realtime-call-failure";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,6 +40,7 @@ export async function POST(request: Request) {
   if (!verified && isProductionEnv()) return noStoreJson({ ok: false, error: "unauthorized" }, { status: 401 });
   const snapshot = { ...parsed.data.snapshot, reviewId: parsed.data.review.id };
   logVoiceSessionHealth(parsed.data.review.id, parsed.data.snapshot);
+  await reportVoiceAvailabilityFailure(parsed.data.review.id, parsed.data.snapshot);
   const persistence = verified ? await persistVoiceReviewSnapshot(snapshot).catch(() => null) : null;
   if (verified && persistence?.ok !== true) {
     const reason = persistence?.reason ?? "unknown";
@@ -69,6 +71,39 @@ const loggedErrorCounts = new Map<string, number>();
 const loggedSnapshotSignatures = new Map<string, string>();
 const loggedSubmissions = new Set<string>();
 const loggedDisconnectCounts = new Map<string, number>();
+const loggedAvailabilityFailures = new Set<string>();
+
+async function reportVoiceAvailabilityFailure(reviewId: string, snapshot: VoiceReviewSnapshotRequest["snapshot"]) {
+  const reason = snapshot.closeReason;
+  if (!isVoiceAvailabilityFailure(reason)) return;
+  const signature = `${reviewId}:${reason}`;
+  if (loggedAvailabilityFailures.has(signature)) return;
+  loggedAvailabilityFailures.add(signature);
+  trimToRecent(loggedAvailabilityFailures);
+
+  logWarn("voice_review.availability_failed", {
+    reviewId,
+    sessionId: snapshot.sessionId,
+    closeReason: reason,
+    connectionStatus: snapshot.connectionStatus,
+    connected: typeof snapshot.connectedAt === "number",
+    firstEventReceived: typeof snapshot.firstEventAt === "number",
+  });
+
+  if (reason === "realtime_quota_exhausted" && isProductionEnv()) {
+    await sendOpsAlert({
+      event: "voice_review.realtime_quota_exhausted",
+      severity: "critical",
+      summary: "OpenAI Realtime rejected a funded voice connection because project quota is unavailable.",
+      meta: {
+        reviewId,
+        sessionId: snapshot.sessionId,
+        connectionStatus: snapshot.connectionStatus,
+      },
+      fingerprint: reason,
+    });
+  }
+}
 
 // Surface voice session health in structured server logs without captured PII or transcript text.
 // Snapshots repost on every state change, so dedupe per review id.

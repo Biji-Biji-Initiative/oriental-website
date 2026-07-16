@@ -126,6 +126,13 @@ export function voiceCloseReasonToast(reason: VoiceCloseReason) {
       description: "Your handoff is still here. Try voice again shortly, or keep typing while the service recovers.",
     };
   }
+  if (reason === "realtime_quota_exhausted") {
+    return {
+      tone: "error" as const,
+      title: "Live voice is temporarily unavailable.",
+      description: "The team has been alerted. Your handoff is still here, so you can keep typing in the meantime.",
+    };
+  }
   if (reason === "disconnected") {
     return {
       tone: "warning" as const,
