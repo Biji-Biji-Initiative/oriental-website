@@ -168,6 +168,23 @@ export function reduceVoiceLatency(state: VoiceLatencyState, signal: VoiceLatenc
   }
 }
 
+/**
+ * Review metadata should update only when bounded durable samples change. Tool
+ * results emit immediately because wait_for_user may have no later response,
+ * and an abrupt tab close can precede the periodic snapshot heartbeat.
+ */
+export function shouldEmitVoiceLatencyMetadata(
+  previous: VoiceLatencyState,
+  next: VoiceLatencyState,
+  signal: VoiceLatencySignal,
+) {
+  return (
+    next.telemetry.turns !== previous.telemetry.turns ||
+    next.telemetry.toolCalls !== previous.telemetry.toolCalls ||
+    signal.type === "session_closed"
+  );
+}
+
 function recordSpeechStarted(state: VoiceLatencyState, at: number): VoiceLatencyState {
   const current = state.current;
   if (current?.speechSegmentStartedAt !== undefined) return state;

@@ -10,6 +10,7 @@ import type { VoiceModelCell, VoiceReasoningCell } from "@/lib/voice/experiments
 import {
   createVoiceLatencyState,
   reduceVoiceLatency,
+  shouldEmitVoiceLatencyMetadata,
   type VoiceInputPolicy,
   type VoiceLatencySignal,
   type VoiceLatencyTelemetry,
@@ -547,9 +548,7 @@ export function useRealtimeVoiceSession({
         if (next.phase !== previous.phase) setTurnPhase(next.phase);
         // Metadata only changes when a sample completes or the session closes;
         // output deltas never trigger review rerenders or snapshot churn.
-        if (next.telemetry.turns.length !== previous.telemetry.turns.length || signal.type === "session_closed") {
-          emitLatency();
-        }
+        if (shouldEmitVoiceLatencyMetadata(previous, next, signal)) emitLatency();
       };
       recordLatencySignalRef.current = recordLatencySignal;
       const captureCloseTelemetry = () => {
