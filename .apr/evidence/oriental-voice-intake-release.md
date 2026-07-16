@@ -78,17 +78,23 @@ The governed production contract is `baseline/control/low/adaptive`. The
 runtime/model/reasoning evidence gate remains
 `insufficient_data`; this release does not alter that decision.
 
-## Previous integration baseline (must be rerun for the final SHA)
+## Current clean candidate verification
+
+Candidate `c9aece4330a0022e21f53a22ba52fed54411fd56` was verified from a clean,
+detached worktree so unrelated shared-checkout admin edits could not enter the
+release evidence.
 
 - `pnpm lint`: 195 files, no findings.
 - `pnpm typecheck`: passed.
-- `pnpm test`: 49 files and 304 tests passed.
+- `pnpm test`: 50 files and 319 tests passed.
 - `pnpm check-secrets`: contract passed; local credentials intentionally absent.
 - `pnpm build`: production standalone build passed.
-- `pnpm test:performance`: LCP 512 ms, CLS 0, initial JavaScript 396,303
-  transferred / 1,364,541 decoded bytes, zero serious/critical axe findings.
-- Focused Playwright home/FAQ suite: 30 tests passed across Chromium desktop
-  and Pixel 7 projects, including 320x568 and landscape containment.
+- `pnpm test:performance`: LCP 456 ms, CLS 0, initial JavaScript 397,042
+  transferred / 1,367,268 decoded bytes, zero serious/critical axe findings.
+- Full Playwright run: 30 public-site tests passed across Chromium desktop and
+  Pixel 7 projects; 12 admin tests were explicitly skipped because the local
+  admin credential was absent. The focused Mereka mark, permission-copy, and
+  seven-viewport matrix passed 8/8 across both projects.
 - `git diff --check`: passed.
 
 During integration review, quota classification was found to occur only after
