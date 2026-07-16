@@ -354,7 +354,14 @@ test("voice intake stays contained and resets scroll across short responsive vie
     { width: 390, height: 844 },
     { width: 844, height: 390 },
     { width: 1024, height: 600 },
+    { width: 1024, height: 651 },
+    { width: 1024, height: 675 },
+    { width: 1024, height: 700 },
+    { width: 1280, height: 651 },
+    { width: 1280, height: 675 },
     { width: 1280, height: 720 },
+    { width: 1440, height: 651 },
+    { width: 1440, height: 690 },
     { width: 1440, height: 900 },
   ];
   for (const viewport of viewports) {
@@ -365,6 +372,10 @@ test("voice intake stays contained and resets scroll across short responsive vie
           const rect = dialog.getBoundingClientRect();
           const close = dialog.querySelector<HTMLElement>('[data-slot="dialog-close"]')?.getBoundingClientRect();
           const layout = dialog.querySelector<HTMLElement>("[data-voice-dialog-layout]");
+          const primaryAction = dialog.querySelector<HTMLElement>("[data-voice-primary-action]");
+          const primaryRect = primaryAction?.getBoundingClientRect();
+          const primaryScrollHost = window.innerWidth >= 1024 ? primaryAction?.closest<HTMLElement>("main") : layout;
+          const primaryRegion = primaryScrollHost?.getBoundingClientRect();
           const compactThreePane =
             window.innerWidth < 1024 ||
             Boolean(
@@ -398,6 +409,14 @@ test("voice intake stays contained and resets scroll across short responsive vie
                     (region) => Math.abs(region.getBoundingClientRect().top - layout.getBoundingClientRect().top) <= 1,
                   ),
               ),
+            primaryActionInitiallyVisible: Boolean(
+              primaryRect &&
+                primaryRegion &&
+                primaryScrollHost &&
+                primaryScrollHost.scrollTop <= 1 &&
+                primaryRect.top >= Math.max(rect.top, primaryRegion.top) - 1 &&
+                primaryRect.bottom <= Math.min(rect.bottom, primaryRegion.bottom) + 1,
+            ),
             noPageOverflow: document.documentElement.scrollWidth <= window.innerWidth,
           };
         }),
@@ -407,10 +426,10 @@ test("voice intake stays contained and resets scroll across short responsive vie
         closeFits: true,
         compactThreePane: true,
         paneTopsAlign: true,
+        primaryActionInitiallyVisible: true,
         noPageOverflow: true,
       });
-    await page.getByRole("button", { name: "Start voice with Reka" }).scrollIntoViewIfNeeded();
-    await expect(page.getByRole("button", { name: "Start voice with Reka" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Start voice with Reka" })).toBeInViewport({ ratio: 1 });
   }
 
   await page.setViewportSize({ width: 390, height: 844 });
@@ -419,4 +438,61 @@ test("voice intake stays contained and resets scroll across short responsive vie
   });
   await page.setViewportSize({ width: 1440, height: 900 });
   await expect.poll(() => page.locator("[data-voice-dialog-layout]").evaluate((layout) => layout.scrollTop)).toBe(0);
+});
+
+test("a maximum-length live caption keeps the voice action in the initial short viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.goto("/");
+  await page.locator('header button[aria-label="Talk to Mereka"]').click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+
+  // Stage the exact live-caption/composer DOM shape without opening a real
+  // microphone or WebRTC session; this test owns only the responsive contract.
+  await page.locator("[data-voice-session-stage]").evaluate((stage) => {
+    const headline = stage.querySelector<HTMLElement>("[data-voice-stage-headline]");
+    const guidance = stage.querySelector<HTMLElement>("[data-voice-mic-guidance]");
+    const topics = stage.querySelector<HTMLElement>("[data-voice-stage-topics]");
+    if (!headline || !guidance || !topics) throw new Error("Voice stage fixture is incomplete");
+
+    headline.removeAttribute("data-voice-stage-headline");
+    headline.setAttribute("data-voice-stage-caption", "");
+    headline.textContent =
+      "Here is a deliberately long live answer that exercises the full caption budget while Reka is speaking, so the visitor can still end the call immediately without scrolling through a transcript-sized block of text. This final sentence fills the remaining space.";
+
+    const composer = document.createElement("form");
+    composer.setAttribute("data-voice-stage-composer", "");
+    composer.className = "mt-6 flex h-11 w-full max-w-xl gap-2";
+    topics.before(composer);
+  });
+
+  for (const viewport of [
+    { width: 320, height: 568 },
+    { width: 844, height: 390 },
+    { width: 1024, height: 600 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expect
+      .poll(() =>
+        page.locator('[data-slot="dialog-content"]').evaluate((dialog) => {
+          const layout = dialog.querySelector<HTMLElement>("[data-voice-dialog-layout]");
+          const action = dialog.querySelector<HTMLElement>("[data-voice-primary-action]");
+          const caption = dialog.querySelector<HTMLElement>("[data-voice-stage-caption]");
+          const scrollHost = window.innerWidth >= 1024 ? action?.closest<HTMLElement>("main") : layout;
+          if (!action || !caption || !scrollHost) return null;
+          const dialogRect = dialog.getBoundingClientRect();
+          const hostRect = scrollHost.getBoundingClientRect();
+          const actionRect = action.getBoundingClientRect();
+          const captionStyle = getComputedStyle(caption);
+          return {
+            actionFits:
+              actionRect.top >= Math.max(dialogRect.top, hostRect.top) - 1 &&
+              actionRect.bottom <= Math.min(dialogRect.bottom, hostRect.bottom) + 1,
+            captionClamp: captionStyle.getPropertyValue("-webkit-line-clamp"),
+            initialScroll: scrollHost.scrollTop,
+          };
+        }),
+      )
+      .toEqual({ actionFits: true, captionClamp: "2", initialScroll: 0 });
+    await expect(page.locator("[data-voice-primary-action]")).toBeInViewport({ ratio: 1 });
+  }
 });

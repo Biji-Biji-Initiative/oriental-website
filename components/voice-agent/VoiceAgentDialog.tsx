@@ -553,6 +553,12 @@ export function VoiceAgentDialog({
             : "h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] sm:h-[94dvh] sm:w-[min(1500px,96vw)]",
         )}
         data-voice-agent-dialog
+        initialFocus={() =>
+          window.matchMedia("(max-width: 79.999rem)").matches
+            ? dialogContentRef.current
+            : (dialogContentRef.current?.querySelector<HTMLInputElement>('input[name="name"]') ??
+              dialogContentRef.current)
+        }
       >
         <DialogTitle className="sr-only">Talk to Reka</DialogTitle>
         {submitted ? (
@@ -591,7 +597,7 @@ export function VoiceAgentDialog({
 
             <main className="order-1 min-w-0 p-5 sm:p-8 lg:order-none lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
               {tunerEnabled ? (
-                <div className="mb-4 flex flex-wrap items-center gap-1.5">
+                <div className="mb-4 flex flex-wrap items-center gap-1.5" data-voice-tuner>
                   <span className="mr-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/40">
                     Voice
                   </span>

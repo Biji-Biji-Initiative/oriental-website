@@ -117,8 +117,8 @@ export function VoiceSessionStage({
 
   return (
     <div>
-      <div className="mx-auto grid max-w-[min(740px,100%)] place-items-center text-center">
-        <div className="flex flex-wrap justify-center gap-2">
+      <div className="mx-auto grid max-w-[min(740px,100%)] place-items-center text-center" data-voice-session-stage>
+        <div className="flex flex-wrap justify-center gap-2" data-voice-stage-status>
           <Chip active={connectionStatus === "listening"} aria-live="polite" className="h-9">
             <RadioIcon className={cn("size-3.5", connectionStatus === "listening" && "motion-safe:animate-pulse")} />
             {statusCopy.label}
@@ -133,6 +133,7 @@ export function VoiceSessionStage({
           className="voice-orb voice-orb--nebula mt-8 grid size-44 place-items-center sm:size-56"
           data-status={connectionStatus}
           data-turn={turnPhase}
+          data-voice-stage-orb
           ref={orbRef}
         >
           <NebulaM connectionStatus={connectionStatus} levelsRef={brandMotionLevelsRef} turnPhase={turnPhase} />
@@ -145,19 +146,51 @@ export function VoiceSessionStage({
           <p
             aria-hidden
             className="mt-6 min-h-14 w-full max-w-2xl whitespace-normal break-words text-pretty text-base leading-7 text-white/85"
+            data-voice-stage-caption
           >
             {captionTail(assistantDraft || lastAssistantLine)}
           </p>
         ) : (
-          <p className="mt-8 max-w-2xl text-[clamp(1.8rem,3vw,2.9rem)] font-medium leading-tight text-balance">
+          <p
+            className="mt-8 max-w-2xl text-[clamp(1.8rem,3vw,2.9rem)] font-medium leading-tight text-balance"
+            data-voice-stage-headline
+          >
             What would you like to build at Oriental?
           </p>
         )}
-        <p className="mt-3 max-w-xl text-sm leading-6 text-white/58">{statusCopy.detail}</p>
-        <p className="mt-2 text-sm text-white/55">{selectedSegment.voiceOpener}</p>
+        <p className="mt-3 max-w-xl text-sm leading-6 text-white/58" data-voice-stage-detail>
+          {statusCopy.detail}
+        </p>
+        <p className="mt-2 text-sm text-white/55" data-voice-stage-opener>
+          {selectedSegment.voiceOpener}
+        </p>
+
+        <Button
+          className="mt-6 h-12 rounded-full bg-white px-7 text-sm font-semibold text-mk-off-black transition hover:bg-mk-horizon disabled:cursor-not-allowed disabled:opacity-55"
+          data-voice-primary-action
+          disabled={
+            connectionStatus === "connecting" ||
+            connectionStatus === "reconnecting" ||
+            connectionStatus === "requesting_mic"
+          }
+          onClick={connectionStatus === "listening" ? () => onDisconnect("manual") : onConnect}
+          type="button"
+        >
+          {connectionStatus === "listening" ? (
+            <PhoneOffIcon data-icon="inline-start" />
+          ) : (
+            <Mic2Icon data-icon="inline-start" />
+          )}
+          {statusCopy.button}
+        </Button>
+        <p className="mt-3 text-xs text-white/55" data-voice-mic-guidance>
+          {micPermission === "prompt" && connectionStatus === "idle"
+            ? "Choose your browser’s every-visit option to remember the mic. One-time access will ask again later."
+            : "Speak or type anytime. Reka says a quick goodbye if you go quiet, and your typed details stay here."}
+        </p>
 
         {connectionStatus === "listening" ? (
-          <form className="mt-6 flex w-full max-w-xl gap-2" onSubmit={handleComposerSubmit}>
+          <form className="mt-6 flex w-full max-w-xl gap-2" data-voice-stage-composer onSubmit={handleComposerSubmit}>
             <Input
               aria-label="Type a message to Reka"
               className="rounded-full px-5"
@@ -178,7 +211,7 @@ export function VoiceSessionStage({
           </form>
         ) : null}
 
-        <div className="mt-8 flex max-w-2xl flex-wrap justify-center gap-2">
+        <div className="mt-6 flex max-w-2xl flex-wrap justify-center gap-2" data-voice-stage-topics>
           {tourTopics.map((topic) => (
             <button
               aria-pressed={topic.id === activeTopicId}
@@ -204,29 +237,6 @@ export function VoiceSessionStage({
             <p className="mt-2 text-sm leading-6 text-white/60">{activeTopic.script}</p>
           </div>
         ) : null}
-
-        <Button
-          className="mt-8 h-12 rounded-full bg-white px-7 text-sm font-semibold text-mk-off-black transition hover:bg-mk-horizon disabled:cursor-not-allowed disabled:opacity-55"
-          disabled={
-            connectionStatus === "connecting" ||
-            connectionStatus === "reconnecting" ||
-            connectionStatus === "requesting_mic"
-          }
-          onClick={connectionStatus === "listening" ? () => onDisconnect("manual") : onConnect}
-          type="button"
-        >
-          {connectionStatus === "listening" ? (
-            <PhoneOffIcon data-icon="inline-start" />
-          ) : (
-            <Mic2Icon data-icon="inline-start" />
-          )}
-          {statusCopy.button}
-        </Button>
-        <p className="mt-3 text-xs text-white/55">
-          {micPermission === "prompt" && connectionStatus === "idle"
-            ? "Choose your browser’s every-visit option to remember the mic. One-time access will ask again later."
-            : "Speak or type anytime. Reka says a quick goodbye if you go quiet, and your typed details stay here."}
-        </p>
         {/* biome-ignore lint/a11y/useMediaCaption: Live WebRTC audio streams live captions above; the transcript log is the accessible record. */}
         <audio autoPlay ref={audioRef} />
       </div>
