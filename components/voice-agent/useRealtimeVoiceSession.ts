@@ -420,9 +420,10 @@ export function useRealtimeVoiceSession({
   }, []);
 
   /**
-   * Mint the ephemeral session in the background so returning visitors do not
-   * wait on OpenAI client-secret creation. First-time visitors still spend no
-   * voice quota until they grant microphone access in the explicit start flow.
+   * Mint the ephemeral session in the background when the browser reports an
+   * active microphone grant, so a still-valid temporary grant and a persistent
+   * grant both get the fast path. A `prompt` result is not evidence that this is
+   * a first visit: browsers also return it after one-time access expires.
    */
   const prewarmVoiceSession = useCallback(() => {
     if (statusRef.current !== "idle") return;
@@ -490,7 +491,8 @@ export function useRealtimeVoiceSession({
       let stream: MediaStream;
       let session: MintedSession;
       if (permission === "granted") {
-        // Returning visitor: the mic opens silently, so mint in parallel.
+        // The browser has an active grant (temporary or persistent), so the mic
+        // opens without another decision and session minting can run in parallel.
         setStatus("connecting");
         const streamPromise = acquireMicStream(attemptId);
         // Pre-attach a handler so a late mic rejection after a mint failure
@@ -498,9 +500,9 @@ export function useRealtimeVoiceSession({
         streamPromise.catch(() => null);
         [stream, session] = await Promise.all([streamPromise, obtainVoiceSession()]);
       } else {
-        // First visit: surface the browser prompt immediately, and only spend
-        // the daily voice quota once the microphone is actually granted —
-        // unless a prewarmed session already spent it.
+        // Permission is promptable or the Permissions API cannot report it.
+        // Ask only after this explicit user action, and spend daily voice quota
+        // only once getUserMedia succeeds (unless a prewarm already spent it).
         setStatus("requesting_mic");
         stream = await acquireMicStream(attemptId);
         setStatus("connecting");
@@ -857,13 +859,15 @@ function wait(durationMs: number) {
   return new Promise<void>((resolve) => window.setTimeout(resolve, durationMs));
 }
 
-async function queryMicrophonePermission(): Promise<PermissionState> {
+async function queryMicrophonePermission(): Promise<PermissionState | "unavailable"> {
   try {
     const status = await navigator.permissions.query({ name: "microphone" as PermissionName });
     return status.state;
   } catch {
-    // Permissions API unavailable (e.g. Firefox for microphone): fall back to
-    // the prompt-first path, which is safe everywhere.
-    return "prompt";
+    // Permissions API unavailable (for example, for Firefox microphone access):
+    // keep this distinct from a real `prompt` result. Both safely call
+    // getUserMedia only after the visitor explicitly starts voice, but an
+    // unavailable query must never be described as a known first-time prompt.
+    return "unavailable";
   }
 }

@@ -38,8 +38,9 @@ export function voiceStatusCopy(
   if (status === "requesting_mic") {
     return {
       label: "Mic permission",
-      detail: "Allow the microphone when your browser asks. Reka listens only while voice is on.",
-      button: "Waiting for the mic...",
+      detail:
+        "If your browser asks, choose its every-visit option to remember the mic. One-time access will ask again later.",
+      button: "Opening microphone...",
     };
   }
   if (status === "connecting") {
@@ -109,7 +110,8 @@ export function voiceCloseReasonToast(reason: VoiceCloseReason) {
     return {
       tone: "error" as const,
       title: "Microphone access is blocked.",
-      description: "Allow microphone access in the browser, or type the handoff instead.",
+      description:
+        "Use the microphone control in your browser's address bar to allow access, then try again — or type the handoff instead.",
     };
   }
   if (reason === "voice_limit_reached") {
