@@ -176,6 +176,14 @@ and diagnose the blocking boundary.
 Staging is shared. `scripts/deploy-coolify-host.sh --target staging` requires
 `--expected-current-sha`; a mismatch means another workflow moved the
 environment. Stop and coordinate—never overwrite an unknown staging proof.
+Model previews also require explicit `--voice-model-cell candidate`; the
+default is control and every production host path rejects candidate. Verify a
+candidate staging deployment with `--staging-model-cell candidate` while
+production remains control.
+`VOICE_VARIANT_PICKER=false` governs both `/api/client-config` and the actual
+browser controls. Client tuner code must fetch that runtime route and fail
+closed; query strings or local storage may hide an allowed picker but must
+never bypass a disabled environment.
 
 Realtime model changes are experiments, not string upgrades. Hold runtime,
 reasoning, voice, device, and scripted corpus constant while comparing

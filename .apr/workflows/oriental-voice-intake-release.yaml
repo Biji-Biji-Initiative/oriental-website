@@ -1,10 +1,10 @@
 name: oriental-voice-intake-release
-description: Ship-blocker review for Oriental voice availability and contact integrity
+description: Ship-blocker review for the Oriental staging voice availability and contact-integrity candidate
 
 documents:
   readme: .apr/evidence/oriental-voice-intake-release.md
   spec: .apr/specs/oriental-voice-intake-release.md
-  implementation: lib/voice/realtime-events.ts
+  implementation: components/voice-agent/VoiceSessionStage.tsx
 
 oracle:
   model: "gemini-3.1-pro"
@@ -18,7 +18,8 @@ template: |
   ungrounded adaptive email acceptance, stale correction evidence,
   premature/duplicate submission, lost lead
   linkage, hidden availability failures, customer/synthetic evidence mixing,
-  PII leakage, and candidate-cell promotion as blockers. End with exactly
+  PII leakage, any production candidate-cell promotion, and any
+  production-deployment claim as blockers. End with exactly
   `VERDICT: SHIP SAFE DEFAULTS` or `VERDICT: DO NOT SHIP`.
 
 template_with_impl: |
@@ -26,8 +27,12 @@ template_with_impl: |
   contract. Trace failure classification, retry selection, typed interruption,
   adaptive/strict email grounding/correction, API submission, review
   persistence, partial-batch semantics, bounded ASR identity grounding,
-  responsive containment, microphone lifecycle, per-tool telemetry, concurrent
-  routing, deployed-cell verification, and evaluation attribution. Treat any
-  unproven claim, PII leakage, or unsafe model/runtime
-  promotion as a blocker. End with exactly
+  initial primary-action visibility before scrolling, streaming/final caption
+  retention above that action, microphone lifecycle, per-tool telemetry
+  including replacement at the 120-sample cap, concurrent routing, exact
+  five-field staging-cell materialization, Infisical parity, public-health
+  verification, production isolation, and evaluation attribution. Treat any
+  unproven claim, PII leakage, runtime/reasoning promotion, candidate promotion
+  beyond the explicit staging model-only preview, or production mutation as a
+  blocker. End with exactly
   `VERDICT: SHIP SAFE DEFAULTS` or `VERDICT: DO NOT SHIP`.

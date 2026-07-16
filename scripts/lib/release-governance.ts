@@ -1,9 +1,22 @@
 export const CONTROL_VOICE_CELL = {
   runtimeProfile: "baseline",
   modelCell: "control",
+  model: "gpt-realtime-2",
   reasoningCell: "low",
   emailCaptureMode: "adaptive",
 } as const;
+
+export const STAGING_CANDIDATE_VOICE_CELL = {
+  ...CONTROL_VOICE_CELL,
+  modelCell: "candidate",
+  model: "gpt-realtime-2.1",
+} as const;
+
+export type GovernedVoiceCell = typeof CONTROL_VOICE_CELL | typeof STAGING_CANDIDATE_VOICE_CELL;
+
+export function governedVoiceCell(modelCell: GovernedVoiceCell["modelCell"]): GovernedVoiceCell {
+  return modelCell === "candidate" ? STAGING_CANDIDATE_VOICE_CELL : CONTROL_VOICE_CELL;
+}
 
 export const RELEASE_TARGETS = {
   staging: {
@@ -51,19 +64,26 @@ export function validateReleaseStaticContracts(readText: (path: string) => strin
   );
 }
 
-export function validateManagedVoiceCell(env: Record<string, string | undefined>): string[] {
+export function validateManagedVoiceCell(
+  env: Record<string, string | undefined>,
+  expected: GovernedVoiceCell = CONTROL_VOICE_CELL,
+): string[] {
   const failures: string[] = [];
-  if (env.VOICE_RUNTIME_PROFILE !== CONTROL_VOICE_CELL.runtimeProfile) {
-    failures.push(`VOICE_RUNTIME_PROFILE must be ${CONTROL_VOICE_CELL.runtimeProfile}`);
+  if (env.VOICE_RUNTIME_PROFILE !== expected.runtimeProfile) {
+    failures.push(`VOICE_RUNTIME_PROFILE must be ${expected.runtimeProfile}`);
   }
-  if (env.VOICE_MODEL_CELL !== CONTROL_VOICE_CELL.modelCell) {
-    failures.push(`VOICE_MODEL_CELL must be ${CONTROL_VOICE_CELL.modelCell}`);
+  if (env.VOICE_MODEL_CELL !== expected.modelCell) {
+    failures.push(`VOICE_MODEL_CELL must be ${expected.modelCell}`);
   }
-  if (env.VOICE_REASONING_CELL !== CONTROL_VOICE_CELL.reasoningCell) {
-    failures.push(`VOICE_REASONING_CELL must be ${CONTROL_VOICE_CELL.reasoningCell}`);
+  const modelKey = expected.modelCell === "candidate" ? "OPENAI_REALTIME_MODEL_CANDIDATE" : "OPENAI_REALTIME_MODEL";
+  if (env[modelKey] !== expected.model) {
+    failures.push(`${modelKey} must be ${expected.model}`);
   }
-  if (env.VOICE_EMAIL_CAPTURE_MODE !== CONTROL_VOICE_CELL.emailCaptureMode) {
-    failures.push(`VOICE_EMAIL_CAPTURE_MODE must be ${CONTROL_VOICE_CELL.emailCaptureMode}`);
+  if (env.VOICE_REASONING_CELL !== expected.reasoningCell) {
+    failures.push(`VOICE_REASONING_CELL must be ${expected.reasoningCell}`);
+  }
+  if (env.VOICE_EMAIL_CAPTURE_MODE !== expected.emailCaptureMode) {
+    failures.push(`VOICE_EMAIL_CAPTURE_MODE must be ${expected.emailCaptureMode}`);
   }
   if (env.VOICE_VARIANT_PICKER !== "false") {
     failures.push("VOICE_VARIANT_PICKER must be explicitly false for a governed release");
@@ -71,7 +91,11 @@ export function validateManagedVoiceCell(env: Record<string, string | undefined>
   return failures;
 }
 
-export function validateHealthPayload(payload: unknown, expectedSha: string): string[] {
+export function validateHealthPayload(
+  payload: unknown,
+  expectedSha: string,
+  expected: GovernedVoiceCell = CONTROL_VOICE_CELL,
+): string[] {
   if (!payload || typeof payload !== "object") return ["health response must be an object"];
   const health = payload as Record<string, unknown>;
   const failures: string[] = [];
@@ -82,17 +106,18 @@ export function validateHealthPayload(payload: unknown, expectedSha: string): st
   if (!voice) {
     failures.push("health response voice must be an object");
   } else {
-    if (voice.runtime_profile !== CONTROL_VOICE_CELL.runtimeProfile) {
-      failures.push(`health voice runtime_profile must be ${CONTROL_VOICE_CELL.runtimeProfile}`);
+    if (voice.runtime_profile !== expected.runtimeProfile) {
+      failures.push(`health voice runtime_profile must be ${expected.runtimeProfile}`);
     }
-    if (voice.model_cell !== CONTROL_VOICE_CELL.modelCell) {
-      failures.push(`health voice model_cell must be ${CONTROL_VOICE_CELL.modelCell}`);
+    if (voice.model_cell !== expected.modelCell) {
+      failures.push(`health voice model_cell must be ${expected.modelCell}`);
     }
-    if (voice.reasoning_cell !== CONTROL_VOICE_CELL.reasoningCell) {
-      failures.push(`health voice reasoning_cell must be ${CONTROL_VOICE_CELL.reasoningCell}`);
+    if (voice.model !== expected.model) failures.push(`health voice model must be ${expected.model}`);
+    if (voice.reasoning_cell !== expected.reasoningCell) {
+      failures.push(`health voice reasoning_cell must be ${expected.reasoningCell}`);
     }
-    if (voice.email_capture_mode !== CONTROL_VOICE_CELL.emailCaptureMode) {
-      failures.push(`health voice email_capture_mode must be ${CONTROL_VOICE_CELL.emailCaptureMode}`);
+    if (voice.email_capture_mode !== expected.emailCaptureMode) {
+      failures.push(`health voice email_capture_mode must be ${expected.emailCaptureMode}`);
     }
     if (voice.variant_picker !== false) failures.push("health voice variant_picker must be false");
   }

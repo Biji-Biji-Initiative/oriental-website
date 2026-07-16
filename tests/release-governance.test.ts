@@ -5,6 +5,7 @@ import {
   CONTROL_VOICE_CELL,
   hasCloudflareEdgeHeaders,
   RELEASE_TARGETS,
+  STAGING_CANDIDATE_VOICE_CELL,
   validateHealthPayload,
   validateManagedVoiceCell,
   validateReleaseSha,
@@ -42,6 +43,7 @@ describe("release governance", () => {
       validateManagedVoiceCell({
         VOICE_RUNTIME_PROFILE: CONTROL_VOICE_CELL.runtimeProfile,
         VOICE_MODEL_CELL: CONTROL_VOICE_CELL.modelCell,
+        OPENAI_REALTIME_MODEL: CONTROL_VOICE_CELL.model,
         VOICE_REASONING_CELL: CONTROL_VOICE_CELL.reasoningCell,
         VOICE_EMAIL_CAPTURE_MODE: CONTROL_VOICE_CELL.emailCaptureMode,
         VOICE_VARIANT_PICKER: "false",
@@ -51,15 +53,17 @@ describe("release governance", () => {
       validateManagedVoiceCell({
         VOICE_RUNTIME_PROFILE: "instant-v1",
         VOICE_MODEL_CELL: "candidate",
+        OPENAI_REALTIME_MODEL: "wrong-model",
         VOICE_REASONING_CELL: "minimal",
         VOICE_EMAIL_CAPTURE_MODE: "strict",
         VOICE_VARIANT_PICKER: "true",
       }),
-    ).toHaveLength(5);
+    ).toHaveLength(6);
     expect(
       validateManagedVoiceCell({
         VOICE_RUNTIME_PROFILE: CONTROL_VOICE_CELL.runtimeProfile,
         VOICE_MODEL_CELL: CONTROL_VOICE_CELL.modelCell,
+        OPENAI_REALTIME_MODEL: CONTROL_VOICE_CELL.model,
         VOICE_REASONING_CELL: CONTROL_VOICE_CELL.reasoningCell,
         VOICE_EMAIL_CAPTURE_MODE: CONTROL_VOICE_CELL.emailCaptureMode,
       }),
@@ -67,7 +71,9 @@ describe("release governance", () => {
   });
 
   it("makes managed cell checks the preflight default", () => {
-    expect(releasePreflight).toContain("const args: Args = { managedEnv: true, voiceCellOnly: false }");
+    expect(releasePreflight).toContain(
+      'const args: Args = { managedEnv: true, modelCell: "control", voiceCellOnly: false }',
+    );
     expect(releasePreflight).toContain('--allow-unmanaged"');
   });
 
@@ -79,6 +85,7 @@ describe("release governance", () => {
         ...process.env,
         VOICE_RUNTIME_PROFILE: "baseline",
         VOICE_MODEL_CELL: "control",
+        OPENAI_REALTIME_MODEL: "gpt-realtime-2",
         VOICE_REASONING_CELL: "low",
         VOICE_EMAIL_CAPTURE_MODE: "adaptive",
         VOICE_VARIANT_PICKER: "false",
@@ -92,6 +99,7 @@ describe("release governance", () => {
         ...process.env,
         VOICE_RUNTIME_PROFILE: "baseline",
         VOICE_MODEL_CELL: "control",
+        OPENAI_REALTIME_MODEL: "gpt-realtime-2",
         VOICE_REASONING_CELL: "low",
         VOICE_EMAIL_CAPTURE_MODE: "adaptive",
         VOICE_VARIANT_PICKER: "",
@@ -99,10 +107,25 @@ describe("release governance", () => {
     });
     expect(missingPicker.status).toBe(1);
     expect(missingPicker.stderr).toContain("VOICE_VARIANT_PICKER must be explicitly false");
+
+    const candidate = spawnSync("pnpm", [...command, "--model-cell", "candidate"], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        VOICE_RUNTIME_PROFILE: "baseline",
+        VOICE_MODEL_CELL: "candidate",
+        OPENAI_REALTIME_MODEL_CANDIDATE: "gpt-realtime-2.1",
+        VOICE_REASONING_CELL: "low",
+        VOICE_EMAIL_CAPTURE_MODE: "adaptive",
+        VOICE_VARIANT_PICKER: "false",
+      },
+    });
+    expect(candidate.status, candidate.stderr).toBe(0);
   });
 
   it("expands the both alias before target lookup", () => {
     expect(releaseVerifier).toContain('args.target === "both" ? ["staging", "production"] : [args.target]');
+    expect(releaseVerifier).toContain('name === "staging" ? governedVoiceCell(stagingModelCell) : CONTROL_VOICE_CELL');
   });
 
   it("requires exact-SHA healthy Convex responses", () => {
@@ -115,12 +138,32 @@ describe("release governance", () => {
           voice: {
             runtime_profile: "baseline",
             model_cell: "control",
+            model: "gpt-realtime-2",
             reasoning_cell: "low",
             email_capture_mode: "adaptive",
             variant_picker: false,
           },
         },
         sha,
+      ),
+    ).toEqual([]);
+    expect(
+      validateHealthPayload(
+        {
+          ok: true,
+          version: sha,
+          convex: true,
+          voice: {
+            runtime_profile: "baseline",
+            model_cell: "candidate",
+            model: "gpt-realtime-2.1",
+            reasoning_cell: "low",
+            email_capture_mode: "adaptive",
+            variant_picker: false,
+          },
+        },
+        sha,
+        STAGING_CANDIDATE_VOICE_CELL,
       ),
     ).toEqual([]);
     expect(validateHealthPayload({ ok: true, version: "wrong", convex: false }, sha)).toHaveLength(3);

@@ -286,7 +286,13 @@ export function VoiceAgentDialog({
   const [tunerEnabled, setTunerEnabled] = useState(false);
   const pendingVariantRestartRef = useRef(false);
   useEffect(() => {
-    setTunerEnabled(readTunerFlag());
+    let active = true;
+    void readTunerFlag().then((next) => {
+      if (active) setTunerEnabled(next);
+    });
+    return () => {
+      active = false;
+    };
   }, []);
   const switchVoiceVariant = useCallback(
     (variantId: string) => {

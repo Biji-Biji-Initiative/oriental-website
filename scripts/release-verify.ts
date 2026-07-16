@@ -1,4 +1,6 @@
 import {
+  CONTROL_VOICE_CELL,
+  governedVoiceCell,
   hasCloudflareEdgeHeaders,
   RELEASE_TARGETS,
   type ReleaseTargetName,
@@ -10,12 +12,14 @@ type Args = {
   sha: string;
   target: ReleaseTargetName | "both";
   checks: number;
+  stagingModelCell: "control" | "candidate";
 };
 
 function parseArgs(argv: string[]): Args {
   let sha = "";
   let target: Args["target"] = "both";
   let checks = 5;
+  let stagingModelCell: Args["stagingModelCell"] = "control";
   const normalizedArgv = argv.filter((argument) => argument !== "--");
   for (let index = 0; index < normalizedArgv.length; index += 1) {
     const flag = normalizedArgv[index];
@@ -32,9 +36,15 @@ function parseArgs(argv: string[]): Args {
     } else if (flag === "--checks") {
       checks = Number(value);
       index += 1;
+    } else if (flag === "--staging-model-cell") {
+      if (value !== "control" && value !== "candidate") {
+        throw new Error("--staging-model-cell must be control or candidate");
+      }
+      stagingModelCell = value;
+      index += 1;
     } else if (flag === "--help") {
       process.stdout.write(
-        "Usage: pnpm release:verify -- --sha <40-char-sha> [--target staging|production|both] [--checks 5]\n",
+        "Usage: pnpm release:verify -- --sha <40-char-sha> [--target staging|production|both] [--checks 5] [--staging-model-cell control|candidate]\n",
       );
       process.exit(0);
     } else {
@@ -45,7 +55,10 @@ function parseArgs(argv: string[]): Args {
   if (shaFailures.length > 0) throw new Error(shaFailures.join("; "));
   if (!Number.isInteger(checks) || checks < 1 || checks > 10)
     throw new Error("--checks must be an integer from 1 to 10");
-  return { sha, target, checks };
+  if (target === "production" && stagingModelCell !== "control") {
+    throw new Error("--staging-model-cell candidate is invalid when verifying production only");
+  }
+  return { sha, target, checks, stagingModelCell };
 }
 
 async function get(url: string, redirect: RequestRedirect = "follow") {
@@ -58,14 +71,20 @@ async function get(url: string, redirect: RequestRedirect = "follow") {
   }
 }
 
-async function verifyTarget(name: ReleaseTargetName, expectedSha: string, checks: number) {
+async function verifyTarget(
+  name: ReleaseTargetName,
+  expectedSha: string,
+  checks: number,
+  stagingModelCell: Args["stagingModelCell"],
+) {
   const target = RELEASE_TARGETS[name];
+  const expectedVoiceCell = name === "staging" ? governedVoiceCell(stagingModelCell) : CONTROL_VOICE_CELL;
   const healthChecks: unknown[] = [];
   for (let index = 0; index < checks; index += 1) {
     const response = await get(`${target.origin}/api/health`);
     if (!response.ok) throw new Error(`${name} health returned HTTP ${response.status}`);
     const payload: unknown = await response.json();
-    const failures = validateHealthPayload(payload, expectedSha);
+    const failures = validateHealthPayload(payload, expectedSha, expectedVoiceCell);
     if (failures.length > 0) throw new Error(`${name} health: ${failures.join("; ")}`);
     healthChecks.push(payload);
   }
@@ -96,6 +115,8 @@ async function verifyTarget(name: ReleaseTargetName, expectedSha: string, checks
     consecutiveHealthChecks: healthChecks.length,
     convex: true,
     voiceVariantPicker: false,
+    voiceModel: expectedVoiceCell.model,
+    voiceModelCell: expectedVoiceCell.modelCell,
     cloudflareEdgeHeaders: false,
     legacyRedirect: expectedLocation,
   };
@@ -105,7 +126,9 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const names: ReleaseTargetName[] = args.target === "both" ? ["staging", "production"] : [args.target];
   const results = [];
-  for (const name of names) results.push(await verifyTarget(name, args.sha, args.checks));
+  for (const name of names) {
+    results.push(await verifyTarget(name, args.sha, args.checks, args.stagingModelCell));
+  }
   process.stdout.write(`${JSON.stringify({ ok: true, results }, null, 2)}\n`);
 }
 

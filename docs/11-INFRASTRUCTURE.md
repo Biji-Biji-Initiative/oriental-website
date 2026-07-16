@@ -111,9 +111,10 @@ Infisical SDK runtime dependency. Source checks alone are insufficient; inspect
 the running container after every configuration release.
 
 `pnpm release:verify:voice-cell` is the fast, non-secret parity check. Run it
-under `infisical run` for both native `staging` and `prod` environments before
-the full release preflight; it requires exact
-`baseline/control/low/adaptive` values and an explicitly false picker.
+under `infisical run` with `--model-cell candidate` for native staging and
+`--model-cell control` for native production before the full release preflight.
+Both require baseline runtime, low reasoning, adaptive capture, the exact model
+for the selected cell, and an explicitly false picker.
 
 Secret contract is enforced by `scripts/check-secrets.ts`.
 
@@ -144,9 +145,10 @@ or replace a production image tag. Staging is routed through the Coolify
 Traefik network with `coolify.managed=false`, so it is host-managed rather than
 a full Coolify UI application until a dedicated Coolify staging app/API token
 is provisioned.
-The Infisical `staging` environment now contains the complete application
-contract plus explicit baseline/control/low/adaptive, staging-Sentry, and QA-picker-off
-overrides. The host-managed staging container still materializes those values
+The Infisical `staging` environment contains the complete application contract
+plus the explicit baseline/candidate/low/adaptive model-only preview,
+staging-Sentry, and QA-picker-off overrides. The host-managed staging container
+still materializes those values
 through its host-local env file; Infisical is the canonical comparison source,
 not a runtime SDK dependency. Staging and production still share upstream
 Convex, SES/SMTP, Slack, Redis, and OpenAI accounts. Redis keys are separated by
@@ -155,11 +157,11 @@ treat staging submissions as a fully isolated data/notification sandbox until
 dedicated staging services are provisioned.
 
 The governed host deployer renders and atomically replaces staging's `.env`,
-rewriting the five non-secret voice-cell values to
-`baseline/control/low/adaptive` with the picker explicitly off, alongside the
-exact SHA. It does not copy secrets or replace the full Infisical
-reconciliation; it prevents a stale experiment cell from surviving an ordinary
-release recreation.
+rewriting the five non-secret voice-cell values to the explicitly selected
+control or candidate model cell with the picker off, alongside the exact SHA.
+Candidate is rejected for every production host path. The deployer does not
+copy secrets or replace the full Infisical reconciliation; it prevents a stale
+or implicit experiment cell from surviving a release recreation.
 
 Staging rollback/removal is host-local:
 

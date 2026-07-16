@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const deployScript = readFileSync(resolve(process.cwd(), "scripts/deploy-coolify-host.sh"), "utf8");
+const deployPath = resolve(process.cwd(), "scripts/deploy-coolify-host.sh");
+const deployScript = readFileSync(deployPath, "utf8");
 
 describe("Coolify host deploy image cells", () => {
   it("accepts only full immutable source SHAs", () => {
@@ -23,10 +24,10 @@ describe("Coolify host deploy image cells", () => {
     expect(deployScript).toContain('if [[ "$current_sha" != "$expected_current_sha" ]]');
   });
 
-  it("atomically materializes the governed non-secret voice cell for staging", () => {
+  it("atomically materializes the selected governed non-secret voice cell for staging", () => {
     expect(deployScript).toContain('if target == "staging":');
     expect(deployScript).toContain('"VOICE_RUNTIME_PROFILE": "baseline"');
-    expect(deployScript).toContain('"VOICE_MODEL_CELL": "control"');
+    expect(deployScript).toContain('"VOICE_MODEL_CELL": voice_model_cell');
     expect(deployScript).toContain('"VOICE_REASONING_CELL": "low"');
     expect(deployScript).toContain('"VOICE_EMAIL_CAPTURE_MODE": "adaptive"');
     expect(deployScript).toContain('"VOICE_VARIANT_PICKER": "false"');
@@ -49,7 +50,7 @@ describe("Coolify host deploy image cells", () => {
       );
       chmodSync(resolve(directory, "docker-compose.yaml"), 0o640);
       chmodSync(resolve(directory, ".env"), 0o600);
-      const result = spawnSync("python3", ["-", directory, "app:staging-new", sha, "staging"], {
+      const result = spawnSync("python3", ["-", directory, "app:staging-new", sha, "staging", "candidate"], {
         input: python,
         encoding: "utf8",
       });
@@ -57,7 +58,7 @@ describe("Coolify host deploy image cells", () => {
       expect(readFileSync(resolve(directory, "docker-compose.yaml"), "utf8")).toContain("image: 'app:staging-new'");
       const env = readFileSync(resolve(directory, ".env"), "utf8");
       expect(env).toContain(`SOURCE_COMMIT=${sha}`);
-      expect(env).toContain("VOICE_MODEL_CELL=control");
+      expect(env).toContain("VOICE_MODEL_CELL=candidate");
       expect(env).toContain("VOICE_EMAIL_CAPTURE_MODE=adaptive");
       expect(env).toContain("VOICE_VARIANT_PICKER=false");
       expect(env).toContain("UNRELATED=preserved");
@@ -73,5 +74,25 @@ describe("Coolify host deploy image cells", () => {
     expect(deployScript).toContain("--allow-emergency-production");
     expect(deployScript).toContain("Production deploys must use the Coolify API");
     expect(deployScript).toContain('if [[ "$target" == "production" && "$allow_emergency_production" != "true" ]]');
+  });
+
+  it("rejects the candidate model cell for every production host path", () => {
+    const result = spawnSync(
+      "bash",
+      [
+        deployPath,
+        "--target",
+        "production",
+        "--expected-current-sha",
+        "a".repeat(40),
+        "--voice-model-cell",
+        "candidate",
+        "--allow-emergency-production",
+        "b".repeat(40),
+      ],
+      { encoding: "utf8" },
+    );
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain("Production host deployment forbids the candidate model cell");
   });
 });

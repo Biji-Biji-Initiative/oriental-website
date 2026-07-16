@@ -42,8 +42,9 @@ cannot affect the runtime image.
 - Infisical is canonical configuration. Coolify's environment-variable store
   and staging's host-local `.env` are separate materialized copies and MUST be
   compared with Infisical before release.
-- Production voice MUST remain `baseline/control/low/adaptive` unless the experiment
-  gate and human review explicitly authorize a single-dimension trial.
+- Production voice MUST remain `baseline/control/low/adaptive`. A staging-only
+  model trial MUST be explicit, hold runtime/reasoning/capture constant, and
+  never imply production promotion.
 - A failed health check MUST stop the rollout. Never disable or weaken the gate
   to finish a release.
 
@@ -101,14 +102,18 @@ After the runtime PR merges:
 git switch main
 git pull --ff-only
 sha="$(git rev-parse HEAD)"
-for managed_env in staging prod; do
-  infisical run \
-    --domain https://secrets.mereka.io \
-    --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
-    --env "$managed_env" \
-    --path /deploy/oriental-website \
-    -- pnpm release:verify:voice-cell
-done
+infisical run \
+  --domain https://secrets.mereka.io \
+  --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
+  --env staging \
+  --path /deploy/oriental-website \
+  -- pnpm release:verify:voice-cell -- --model-cell candidate
+infisical run \
+  --domain https://secrets.mereka.io \
+  --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
+  --env prod \
+  --path /deploy/oriental-website \
+  -- pnpm release:verify:voice-cell -- --model-cell control
 infisical run \
   --domain https://secrets.mereka.io \
   --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
@@ -117,8 +122,10 @@ infisical run \
   -- pnpm release:preflight -- --sha "$sha"
 ```
 
-Managed-environment validation is the default and requires explicit
-`baseline/control/low/adaptive` plus the QA picker off. `--allow-unmanaged` exists only
+Managed-environment validation is the default. This staging preview requires
+`baseline/candidate/low/adaptive` with `gpt-realtime-2.1`; production requires
+`baseline/control/low/adaptive` with `gpt-realtime-2`. Both require the QA
+picker off. `--allow-unmanaged` exists only
 for testing the Git/static contract and MUST NOT be used as production release
 evidence. The fast parity command runs against both native Infisical
 environments before the full production-env preflight, preventing staging
@@ -137,20 +144,23 @@ include release docs before the first deployment.
    ```bash
    current_staging_sha="$(curl -fsS https://staging.oriental.mereka.io/api/health | jq -r .version)"
    scripts/deploy-coolify-host.sh --target staging \
-     --expected-current-sha "$current_staging_sha" "$sha"
+     --expected-current-sha "$current_staging_sha" \
+     --voice-model-cell candidate "$sha"
    ```
 
    The script rechecks that SHA while holding the host deployment lock. If
    staging moved, stop and coordinate with its current owner; never overwrite an
    unknown experiment. As part of the same atomic `.env` update, it materializes
-   the governed non-secret `baseline/control/low/adaptive` voice cell with the
-   picker explicitly off; the full secret set must already be reconciled from
-   Infisical.
+   the selected governed non-secret voice cell. Candidate is legal only for
+   staging and resolves to `baseline/candidate/low/adaptive`; every production
+   host path rejects it. The picker is explicitly off and the full secret set
+   must already be reconciled from Infisical.
 
 3. Run the deterministic public verifier:
 
    ```bash
-   pnpm release:verify -- --sha "$sha" --target staging
+   pnpm release:verify -- --sha "$sha" --target staging \
+     --staging-model-cell candidate
    ```
 
 4. Run `pnpm smoke:staging:voice` when voice, OpenAI configuration, WebRTC,
