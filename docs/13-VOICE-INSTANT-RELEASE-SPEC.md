@@ -227,6 +227,11 @@ an unperformed listening result is never a pass.
   promotion status and aggregate-only console output, including tap-to-live
   p50/p95 by runtime profile and full runtime/model/reasoning cell.
 - Raw transcripts and captured PII MUST NOT appear in structured route logs.
+- `/api/health` exposes the active runtime/model/reasoning cells and selected
+  model without credentials or visitor data so release status can be rebuilt
+  without chat history or container-shell access.
+- `pnpm ops:status -- --json` reports only aggregate voice evidence. Missing
+  local reports MUST resolve to `insufficient_data`, never a pass.
 
 ## Rollout and Rollback
 

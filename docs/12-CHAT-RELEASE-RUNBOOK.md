@@ -47,6 +47,26 @@ cannot affect the runtime image.
 - A failed health check MUST stop the rollout. Never disable or weaken the gate
   to finish a release.
 
+## Context-independent takeover
+
+Start every new operator or agent session with:
+
+```bash
+pnpm --silent ops:status --json
+```
+
+The command fetches and computes local/main Git state, both public health SHAs,
+the non-secret live voice cells, branches and PRs containing deployed SHAs,
+open PRs/issues, manual gates with owners, the latest checked-in APR verdict,
+and the latest local aggregate-only voice evidence. It never emits transcripts
+or captured contact data. GitHub issues and PRs are the canonical work queue;
+shared ChatGPT/ACFS conversations are intake only and MUST be converted into a
+spec, issue, or PR before implementation continues.
+
+If GitHub, a health endpoint, or a local eval report is unavailable, the command
+returns partial state with warnings. Missing voice evidence fails closed as
+`insufficient_data`; it is never inferred as a pass.
+
 ## Release classification
 
 Classify the PR before merging:
@@ -213,6 +233,10 @@ early convergence and fail-closed checks, not repeated manual verification.
 - [x] Canonical hosts, exact health SHA, Convex presence, QA picker, DNS-only
   request path, and compatibility redirects: `scripts/release-verify.ts`.
 - [x] Pure governance contracts: `tests/release-governance.test.ts`.
+- [x] Context-independent takeover state and privacy-safe evidence summary:
+  `scripts/ops-status.ts`, `tests/ops-status.test.ts`.
+- [x] Public exact-SHA health includes non-secret live voice cells:
+  `app/api/health/route.ts`, `tests/health-route.test.ts`.
 - [x] Docker binding and staging image isolation:
   `tests/dockerfile.test.ts`, `tests/deploy-coolify-host.test.ts`.
 - [ ] Human Malaysian voice judgment remains manual and evidence-gated.

@@ -169,6 +169,28 @@ The verifier passed three consecutive checks against production SHA
 `bb8e2673e5f129f342fba78f3eb653a54de8763b` and, separately, against shared
 staging SHA `17992e88405c29b5f800da30922a39d87d9495f9`.
 
+## Context-independent takeover
+
+`pnpm --silent ops:status --json` rebuilds current operational state from Git,
+the public canonical health endpoints, GitHub's API, checked-in APR rounds, and
+the newest local aggregate-only voice-eval report. Its output includes local
+and `origin/main` SHAs, worktree divergence, live staging/production SHAs and
+voice cells, containing branches and associated PRs, open PRs/issues, labeled
+manual gates with assignees, latest APR verdict, and the fail-closed voice gate.
+
+The GitHub bearer token is only attached when the URL host is exactly
+`api.github.com`; tests prove it is omitted for `oriental.mereka.io`. The voice
+summary selects only explicit aggregate/gate fields and never copies sessions,
+transcripts, or visitor data. Missing/unreadable reports resolve to
+`insufficient_data`. Partial network failures become warnings rather than false
+passes. The current command correctly flags that shared staging SHA `17992e8`
+is not on `origin/main` and has no associated PR.
+
+`GET /api/health` now reports only non-secret runtime/model/reasoning cell,
+selected model, and picker state alongside the existing SHA/Convex signal.
+This is a runtime change and therefore requires exact-SHA staging and
+production deployment after merge.
+
 ## Verification performed
 
 - `bash -n scripts/deploy-coolify-host.sh`
@@ -176,7 +198,7 @@ staging SHA `17992e88405c29b5f800da30922a39d87d9495f9`.
   `Staging moved` and reported the untouched live SHA before any build
 - `pnpm lint`: 185 files, no findings
 - `pnpm typecheck`: passed
-- `pnpm test`: 46 files and 271 tests passed
+- `pnpm exec vitest run --maxWorkers=4`: 48 files and 279 tests passed
 - `pnpm build`: production build passed
 - focused tests cover release targets, full-SHA validation, managed voice
   cells, health payloads, Cloudflare headers, Coolify URL/deployment states,
@@ -192,7 +214,6 @@ map key—was disproven against the implementation: `main()` expands the alias
 before lookup, and a focused source-contract test now prevents that evidence
 from being omitted or regressing.
 
-This PR is operations/docs-only: these scripts, tests, templates, and prose are
-not imported into the application runtime. After merge, the application should
-not be rebuilt. Public verification must prove production and the separately
-owned staging experiment remained unchanged.
+The earlier release-governance PR was operations/docs-only. The takeover
+extension changes the public health response and is classified as runtime: it
+must be deployed through staging and production after merge.

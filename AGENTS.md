@@ -133,6 +133,7 @@ pnpm test:e2e               # needs app; README uses PORT=3011 for standalone pr
 pnpm check-secrets          # validate expected env keys (local)
 pnpm local:ngrok -- --check  # prove ngrok secret lookup without opening a tunnel
 pnpm smoke:staging:voice    # real canonical-staging WebRTC/audio/persistence proof
+pnpm --silent ops:status --json  # machine-readable live/repo/review/work-queue truth
 pnpm release:preflight -- --sha <full-main-sha>  # requires managed release env
 pnpm release:deploy:production -- --sha <full-sha> --expected-current-sha <full-sha>
 pnpm release:verify -- --sha <full-sha> --target staging|production|both
@@ -148,6 +149,9 @@ Copy `.env.local.example` → `.env.local` for local work. Never commit secrets.
 
 Read [`docs/12-CHAT-RELEASE-RUNBOOK.md`](docs/12-CHAT-RELEASE-RUNBOOK.md)
 before any deployment. For runtime work:
+
+0. Run `pnpm --silent ops:status --json`; do not reconstruct current state from chat
+   history. GitHub issues/PRs are the durable work queue.
 
 1. Put runtime code, tests, specs/docs, configuration contract, and relevant
    agent guidance in one PR.
@@ -246,6 +250,8 @@ Read in order on first pass, then cherry-pick:
 - **Do** run `pnpm lint`, `pnpm typecheck`, and `pnpm test` when touching voice, API, or schemas.
 - **Do** update specs, runbooks, and this file in the same PR when runtime architecture, deployment, configuration, or agent workflow changes.
 - **Do not** use `agent-browser` for release proof; use the checked-in Playwright e2e/smoke scripts and deterministic HTTP verifier.
+- **Do** write chat/ACFS findings into a spec, issue, or PR immediately. Shared
+  chats are intake, never the system of record.
 - For local voice debugging, inspect `GET /api/voice/debug` while `NODE_ENV !== "production"`. Production review snapshots use signed per-session review tokens and persist to Convex `voiceSessions`.
 - Do not paste or commit real tester transcripts. Summarise issues and clear/restart the dev server when a local debug buffer has sensitive data.
 - Brand assets are local under `public/assets/brand/`; provenance is documented in `docs/ASSET-SOURCES.md`. Root `/favicon.ico` and `/apple-touch-icon.png` should keep serving the Mereka favicon.
