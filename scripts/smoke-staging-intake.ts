@@ -8,6 +8,7 @@ const confirmedCopy = "Confirmed from your voice.";
 async function run() {
   const browser = await chromium.launch({
     headless: true,
+    ...(process.env.PLAYWRIGHT_CHROMIUM_PATH ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } : {}),
     args: [
       "--autoplay-policy=no-user-gesture-required",
       "--use-fake-device-for-media-stream",
@@ -79,7 +80,10 @@ async function run() {
       undefined,
       { timeout: 20_000 },
     );
-    await page.waitForTimeout(1_000);
+    await page.evaluate(async () => {
+      await new Promise(requestAnimationFrame);
+      await new Promise(requestAnimationFrame);
+    });
     if (pageErrors.length || consoleErrors.length) {
       throw new Error(`Browser errors observed: page=${pageErrors.length} console=${consoleErrors.length}`);
     }

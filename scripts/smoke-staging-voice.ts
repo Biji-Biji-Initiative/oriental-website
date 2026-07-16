@@ -27,6 +27,7 @@ type SmokeResult = {
 async function run() {
   const browser = await chromium.launch({
     headless: true,
+    ...(process.env.PLAYWRIGHT_CHROMIUM_PATH ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } : {}),
     args: [
       "--autoplay-policy=no-user-gesture-required",
       "--use-fake-device-for-media-stream",

@@ -737,6 +737,7 @@ export function useRealtimeVoiceSession({
       await peer.setLocalDescription(offer);
       let retriesUsed = 0;
       let sdpResponse: Response;
+      let sdpFailure: Awaited<ReturnType<typeof readRealtimeCallFailure>> | null = null;
       for (;;) {
         sdpResponse = await fetchWithTimeout(
           "https://api.openai.com/v1/realtime/calls",
@@ -752,7 +753,9 @@ export function useRealtimeVoiceSession({
         ).catch(() => {
           throw new VoiceConnectionFailure("webrtc_failed");
         });
-        if (!shouldRetryRealtimeCall(sdpResponse.status, retriesUsed)) break;
+        if (sdpResponse.ok) break;
+        sdpFailure = await readRealtimeCallFailure(sdpResponse);
+        if (!shouldRetryRealtimeCall(sdpFailure.closeReason, retriesUsed)) break;
         retriesUsed += 1;
         transportRef.current = { ...transportRef.current, realtimeBusyRetryCount: retriesUsed };
         emitTransport();
@@ -764,8 +767,7 @@ export function useRealtimeVoiceSession({
       }
       if (connectionRef.current !== peer || statusRef.current === "idle") throw new VoiceConnectionFailure("manual");
       if (!sdpResponse.ok) {
-        const failure = await readRealtimeCallFailure(sdpResponse);
-        throw new VoiceConnectionFailure(failure.closeReason);
+        throw new VoiceConnectionFailure(sdpFailure?.closeReason ?? "webrtc_failed");
       }
       const answerSdp = await sdpResponse.text();
       if (connectionRef.current !== peer || statusRef.current === "idle") throw new VoiceConnectionFailure("manual");

@@ -56,13 +56,27 @@ constant matching the prototype's `voice-agent.jsx`.
 2. Segment pick    → tool_call: set_partner_type(segment)
 3. Opener          → voiceOpener for the picked segment
 4. Discovery       → free dialogue, agent batches grounded reversible fields with capture_fields()
-5. Send or recap   → route immediately when the user says "send"; recap only when helpful
-6. Routing         → tool_call: route_to_team(segment)
-7. Close           → tool_call: end_call() when the user says bye/stop/end voice
+5. Verify email    → read a speech-captured address back exactly; wait for explicit confirmation
+6. Send or recap   → route immediately when the user says "send"; recap only when helpful
+7. Routing         → tool_call: route_to_team(segment)
+8. Close           → tool_call: end_call() when the user says bye/stop/end voice
 ```
 
 The agent can revisit any step. If the user changes partner type mid-call, the
 agent re-routes.
+
+Speech-captured email is a pending draft, not a sendable contact. Reka MUST
+read its exact spoken form back and receive an explicit confirmation in the
+following visitor turn. A correction invalidates the earlier confirmation.
+Email supplied through the hero prefill or edited directly in the handoff form
+is confirmed by that typed action. Both the client runtime and `/api/leads`
+reject a voice handoff while email remains unconfirmed.
+
+Typed messages always send `response.cancel` and
+`output_audio_buffer.clear` before the text turn, even when the browser has not
+yet observed `response.created`. This makes a typed interruption deterministic
+across the opener race; the expected no-active-response cancellation is benign
+telemetry rather than an operator error.
 
 ## 4. Tool surface (OpenAI Realtime function calls)
 
@@ -159,6 +173,12 @@ See [`06-API-CONTRACTS.md`](./06-API-CONTRACTS.md) §`/api/voice/session`.
 | Conversation reaches max duration | Voice waits for a natural speech stop, gives the configured goodbye grace, and tears down at the server-resolved cap (10 minutes by default). The form remains visible and reconnecting resumes with recent context. |
 | Benign realtime protocol errors (e.g. cancel races) | Recorded in the session error log with codes, never surfaced as user toasts. Non-benign errors show one deduplicated toast. |
 
+The OpenAI SDP response body distinguishes transient capacity 429s from
+`insufficient_quota`. Only `realtime_busy` receives the bounded retry. Quota
+exhaustion, microphone denial, session mint failures, timeouts, and other
+transport failures are never retried by this path. Quota, capacity, and
+transport failures remain separate in review/evaluation metrics.
+
 ## 8.1 Conversation QA Contract
 
 The current product bar is not only that tools fire; Reka must feel like a
@@ -213,6 +233,8 @@ On `route_to_team` (voice) or "Send to Mereka" (form), the client POSTs
   "segment": "education",
   "form": { "name": "...", "email": "...", "org": "...", "message": "..." },
   "transcript": [ { "role": "user", "text": "..." }, ... ],
+  "voiceEmailVerified": true,
+  "voiceEmailVerificationSource": "speech" | "typed" | "prefill",
   "turnstileToken": "...",
   "utm": { ... }
 }
@@ -221,7 +243,7 @@ On `route_to_team` (voice) or "Send to Mereka" (form), the client POSTs
 Server then:
 
 1. Verifies Turnstile.
-2. Validates payload (zod).
+2. Validates payload (zod) and rejects voice email without a verified readback/edit marker.
 3. Inserts a row into `leads` through the Convex `leads.createLead` mutation.
 4. Inserts a row into `leadEvents` (`kind: "created"`).
 5. Attempts owner email via SMTP or SES, depending on configured secrets.
