@@ -16,8 +16,12 @@ type SmokeResult = {
   interruptionRecoveryMs: number;
   loaderObserved: boolean;
   nebulaRenderer: "webgl" | "svg-fallback";
+  responsiveViewportsChecked: number;
   remoteAudioTrackLive: boolean;
   remoteAudioAdvanced: boolean;
+  realtimeModel: string;
+  realtimeModelCell: string;
+  transcriptionModel: string;
   sessionMintStatuses: number[];
   debugStatuses: number[];
   pageErrors: number;
@@ -37,6 +41,8 @@ async function run() {
   const pageErrors: string[] = [];
   const consoleErrors: string[] = [];
   const sessionMintStatuses: number[] = [];
+  const sessionProfiles: Array<{ model: string; modelCell: string; transcriptionModel: string }> = [];
+  const sessionProfileCaptures: Array<Promise<void>> = [];
   const debugStatuses: number[] = [];
   const failedResponses: Array<{
     host: string;
@@ -65,8 +71,20 @@ async function run() {
     });
     page.on("response", (response) => {
       recordApiStatus(response, sessionMintStatuses, debugStatuses);
+      const responseUrl = new URL(response.url());
+      if (responseUrl.pathname === "/api/voice/session" && response.status() === 200) {
+        sessionProfileCaptures.push(
+          response
+            .json()
+            .then((body: unknown) => {
+              const profile = readSessionProfile(body);
+              if (profile) sessionProfiles.push(profile);
+            })
+            .catch(() => undefined),
+        );
+      }
       if (response.status() >= 400) {
-        const url = new URL(response.url());
+        const url = responseUrl;
         const failedResponse: (typeof failedResponses)[number] = {
           host: url.host,
           path: url.pathname,
@@ -92,9 +110,17 @@ async function run() {
 
     const healthBefore = await context.request.get(`${targetOrigin}/api/health`);
     if (!healthBefore.ok()) throw new Error(`Staging health failed before smoke: ${healthBefore.status()}`);
-    const health = (await healthBefore.json()) as { ok?: boolean; version?: string; convex?: boolean };
-    if (!health.ok || !health.version || !health.convex) throw new Error("Staging health payload is incomplete");
+    const health = (await healthBefore.json()) as {
+      ok?: boolean;
+      version?: string;
+      convex?: boolean;
+      voice?: { model?: string; model_cell?: string };
+    };
+    if (!health.ok || !health.version || !health.convex || !health.voice?.model || !health.voice.model_cell) {
+      throw new Error("Staging health payload is incomplete");
+    }
 
+    await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(targetOrigin, { waitUntil: "load" });
     const loader = page.locator(".brand-site-loader");
     await loader.waitFor({ state: "visible", timeout: 3_000 });
@@ -115,6 +141,7 @@ async function run() {
     );
     const nebulaRenderer = (await nebula.getAttribute("data-ready")) === "true" ? "webgl" : "svg-fallback";
     await nebula.click({ force: true });
+    const responsiveViewportsChecked = await assertResponsiveDialog(page);
 
     const connectStartedAt = performance.now();
     await page.getByRole("button", { name: "Start voice with Reka" }).click();
@@ -130,7 +157,7 @@ async function run() {
     const interruptionStartedAt = performance.now();
     await page
       .getByLabel("Type a message to Reka")
-      .fill("Please pause and tell me briefly about education partnerships.");
+      .fill("My email is qa.nebula@example.test. Please pause and tell me briefly about education partnerships.");
     await page.getByRole("button", { name: "Send typed message" }).click();
     await page.waitForFunction(
       () => document.querySelector<HTMLElement>(".voice-orb")?.dataset.turn !== "assistant_speaking",
@@ -142,13 +169,27 @@ async function run() {
     const interruptionRecoveryMs = performance.now() - interruptionStartedAt;
     const audioAfterInterrupt = await remoteAudioState(page);
 
+    const finalReviewPersisted = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === "/api/voice/debug" && response.status() === 200,
+      { timeout: 10_000 },
+    );
     await page.getByRole("button", { name: "End voice" }).click();
     await waitForTurn(page, "idle", undefined, 20_000);
-    await page.waitForTimeout(1_000);
+    await finalReviewPersisted;
 
     const healthAfter = await context.request.get(`${targetOrigin}/api/health`);
     if (!healthAfter.ok()) throw new Error(`Staging health failed after smoke: ${healthAfter.status()}`);
     if (!sessionMintStatuses.some((status) => status === 200)) throw new Error("Voice session mint was not observed");
+    await Promise.allSettled(sessionProfileCaptures);
+    const sessionProfile = sessionProfiles.at(-1);
+    if (!sessionProfile) throw new Error("Voice session profile was not captured");
+    const expectedModel = process.env.EXPECTED_REALTIME_MODEL ?? health.voice.model;
+    const expectedModelCell = process.env.EXPECTED_REALTIME_MODEL_CELL ?? health.voice.model_cell;
+    if (sessionProfile.model !== expectedModel || sessionProfile.modelCell !== expectedModelCell) {
+      throw new Error(
+        `Unexpected staging Realtime cell: ${sessionProfile.model}/${sessionProfile.modelCell}; expected ${expectedModel}/${expectedModelCell}`,
+      );
+    }
     if (!debugStatuses.some((status) => status === 200)) throw new Error("Voice review snapshot was not persisted");
     await Promise.allSettled(responseDiagnostics);
     if (pageErrors.length > 0 || consoleErrors.length > 0) {
@@ -163,8 +204,12 @@ async function run() {
       interruptionRecoveryMs: Math.round(interruptionRecoveryMs),
       loaderObserved: true,
       nebulaRenderer,
+      responsiveViewportsChecked,
       remoteAudioTrackLive: audioAfterInterrupt.trackLive,
       remoteAudioAdvanced: audioAfterInterrupt.currentTime > audioBeforeInterrupt.currentTime,
+      realtimeModel: sessionProfile.model,
+      realtimeModelCell: sessionProfile.modelCell,
+      transcriptionModel: sessionProfile.transcriptionModel,
       sessionMintStatuses,
       debugStatuses,
       pageErrors: pageErrors.length,
@@ -192,6 +237,73 @@ async function run() {
   } finally {
     await browser.close();
   }
+}
+
+function readSessionProfile(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const body = value as Record<string, unknown>;
+  if (
+    typeof body.model !== "string" ||
+    typeof body.model_cell !== "string" ||
+    typeof body.transcription_model !== "string"
+  ) {
+    return null;
+  }
+  return {
+    model: body.model,
+    modelCell: body.model_cell,
+    transcriptionModel: body.transcription_model,
+  };
+}
+
+async function assertResponsiveDialog(page: Page) {
+  const initialScrollTop = await page.locator("[data-voice-dialog-layout]").evaluate((layout) => layout.scrollTop);
+  if (initialScrollTop !== 0)
+    throw new Error(`Voice dialog opened with an unexpected scroll offset: ${initialScrollTop}`);
+
+  const viewports = [
+    { width: 320, height: 568 },
+    { width: 390, height: 844 },
+    { width: 844, height: 390 },
+    { width: 1024, height: 600 },
+  ];
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport);
+    const fit = await page.locator('[data-slot="dialog-content"]').evaluate((dialog) => {
+      const rect = dialog.getBoundingClientRect();
+      const close = dialog.querySelector<HTMLElement>('[data-slot="dialog-close"]')?.getBoundingClientRect();
+      return {
+        dialogFits:
+          rect.left >= -1 &&
+          rect.top >= -1 &&
+          rect.right <= window.innerWidth + 1 &&
+          rect.bottom <= window.innerHeight + 1,
+        closeFits: Boolean(
+          close &&
+            close.left >= rect.left &&
+            close.top >= rect.top &&
+            close.right <= rect.right &&
+            close.bottom <= rect.bottom,
+        ),
+        noPageOverflow: document.documentElement.scrollWidth <= window.innerWidth,
+      };
+    });
+    if (!fit.dialogFits || !fit.closeFits || !fit.noPageOverflow) {
+      throw new Error(`Voice dialog does not fit ${viewport.width}x${viewport.height}: ${JSON.stringify(fit)}`);
+    }
+  }
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator("[data-voice-dialog-layout]").evaluate((layout) => {
+    layout.scrollTop = layout.scrollHeight;
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.waitForFunction(
+    () => document.querySelector<HTMLElement>("[data-voice-dialog-layout]")?.scrollTop === 0,
+    undefined,
+    { timeout: 2_000 },
+  );
+  return viewports.length + 1;
 }
 
 function recordApiStatus(response: Response, sessionStatuses: number[], debugStatuses: number[]) {

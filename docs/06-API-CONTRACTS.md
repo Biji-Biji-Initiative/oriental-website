@@ -307,8 +307,8 @@ Server request:
 - `session.audio.output.speed = OPENAI_REALTIME_SPEED ?? 1.18`
 - production Infisical/Coolify currently sets `OPENAI_REALTIME_VOICE=coral` and
   `OPENAI_REALTIME_SPEED=1.28`
-- compact prompt under 7 KB and tools from `VOICE_TOOLS`, including atomic
-  `capture_fields`, read-only `lookup_oriental`, and `wait_for_user`
+- compact prompt under 7 KB and tools from `VOICE_TOOLS`, including partial-safe
+  batched `capture_fields`, read-only `lookup_oriental`, and `wait_for_user`
 
 Successful and error responses include `Server-Timing` entries for the stages
 that ran: `parse`, `rate_limit`, `openai_mint`, and `total`. These are server

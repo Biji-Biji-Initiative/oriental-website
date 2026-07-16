@@ -211,7 +211,7 @@ Defaults:
 - production speed: `1.28` via Infisical/Coolify
 - idle timeout: `20s` client timer
 - max session: `600s` typed server-resolved policy by default
-- tools: `set_partner_type`, atomic `capture_fields`, read-only
+- tools: `set_partner_type`, partial-safe batched `capture_fields`, read-only
   `lookup_oriental`, `clear_field`, `summarise_lead`, `route_to_team`,
   `wait_for_user`, `end_call`
 - review snapshots: `/api/voice/session` returns signed review credentials;

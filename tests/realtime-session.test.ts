@@ -105,4 +105,61 @@ describe("golden voice session", () => {
     expect(allCommands.filter((type) => type === "submit_voice")).toHaveLength(1);
     expect(state.transcript.map((entry) => entry.role)).toEqual(["assistant", "user", "user", "user"]);
   });
+
+  it("recovers an ASR-drifted contact turn and routes only after exact email confirmation", () => {
+    let runtime: VoiceRuntimeState = { segment: "technology", captured: emptyCapturedLead, transcript: [] };
+    const step = (event: RealtimeServerEvent) => {
+      const result = reduceRealtimeServerEvent(event, runtime);
+      runtime = result.state;
+      return result;
+    };
+
+    step({
+      type: "conversation.item.input_audio_transcription.completed",
+      transcript: "My name is Goodbreed and my email is asia.lim@example.my. We want to run digital-skills workshops.",
+    });
+    const captured = step(
+      functionCall("call_contact_drift", "capture_fields", {
+        fields: [
+          { key: "name", value: "Gurpreet", evidence: "Gurpreet" },
+          {
+            key: "email",
+            value: "asha.lim@example.my",
+            evidence: "asha dot lim at example dot my",
+          },
+          { key: "message", value: "Run digital-skills workshops." },
+        ],
+      }),
+    );
+
+    expect(captured.commands[0]).toMatchObject({
+      output: {
+        ok: true,
+        emailConfirmationRequired: true,
+        emailReadback: "asha dot lim at example dot my",
+      },
+    });
+    expect(runtime.captured).toMatchObject({
+      name: "Gurpreet",
+      email: "asha.lim@example.my",
+      message: "Run digital-skills workshops.",
+    });
+
+    step({
+      type: "response.output_audio_transcript.done",
+      transcript: "I have asha dot lim at example dot my. Is that exactly right?",
+    });
+    step({ type: "conversation.item.input_audio_transcription.completed", transcript: "Yes, that's exactly right." });
+    step(
+      functionCall("call_confirm_drifted_email", "confirm_email", {
+        evidence: "Yes, that's exactly right.",
+      }),
+    );
+    expect(runtime.emailVerification?.status).toBe("confirmed");
+
+    const routed = step(functionCall("call_route_drifted_contact", "route_to_team", { segment: "education" }));
+    expect(routed.commands).toEqual([
+      { type: "submit_voice", callId: "call_route_drifted_contact", segment: "education" },
+    ]);
+  });
 });

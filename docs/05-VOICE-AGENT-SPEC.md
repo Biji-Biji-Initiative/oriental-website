@@ -86,7 +86,7 @@ JSON-schema source of truth.
 | Tool | Contract |
 |---|---|
 | `set_partner_type` | Reversible segment selection. |
-| `capture_fields` | Atomically applies 1–6 reversible fields. One invalid, duplicate, or ungrounded item rejects the whole batch. |
+| `capture_fields` | Applies 1–6 reversible fields in one reducer transaction. Valid fields are retained; invalid or ungrounded items are returned in `rejectedFields` for focused retry. Duplicate keys invalidate the batch. |
 | `lookup_oriental` | Read-only, bounded lookup over published Oriental facts and FAQs. It has no network or write side effects. |
 | `clear_field` | Reverses one captured field after a visitor correction. |
 | `summarise_lead` | Reads the current draft and validation state. |

@@ -20,6 +20,23 @@
   durable submission relationship.
 - Evaluation separates quota/capacity/transport totals and excludes only
   reserved `@example.test`/named smoke sessions.
+- `capture_fields` now applies one reducer transaction per turn while retaining
+  independently valid fields and returning rejected entries for focused retry;
+  duplicate keys abort before commit.
+- Native-audio name drift is constrained by an explicit name cue plus a
+  one-edit phonetic skeleton, with a negative regression proving that Gareth
+  cannot ground Gurpreet. Email drift remains a pending draft behind exact
+  readback and explicit confirmation.
+- Review snapshots persist only PII-free email-verification source/status/match
+  provenance through the deployed Convex validator and schema. The compatibility
+  retry strips the new field only when talking to an older Convex deployment.
+- The dialog has an automated short-viewport containment and responsive-scroll
+  reset regression across desktop and mobile projects. Mobile opens on the
+  dialog rather than focusing an input and summoning the keyboard; desktop
+  retains first-field focus.
+- The live voice smoke derives its expected model/cell from `/api/health` unless
+  an operator explicitly pins an expected value, so safe-control release proof
+  cannot accidentally require or claim candidate promotion.
 
 ## Verification surface
 
@@ -54,11 +71,13 @@ Production remains `baseline/control/low`. The evidence gate remains
 
 - `pnpm lint`: 195 files, no findings.
 - `pnpm typecheck`: passed.
-- `pnpm test`: 49 files and 296 tests passed.
+- `pnpm test`: 49 files and 304 tests passed.
 - `pnpm check-secrets`: contract passed; local credentials intentionally absent.
 - `pnpm build`: production standalone build passed.
-- `pnpm test:performance`: LCP 516 ms, CLS 0, initial JavaScript 395,392
-  transferred / 1,361,894 decoded bytes, zero serious/critical axe findings.
+- `pnpm test:performance`: LCP 512 ms, CLS 0, initial JavaScript 396,303
+  transferred / 1,364,541 decoded bytes, zero serious/critical axe findings.
+- Focused Playwright home/FAQ suite: 30 tests passed across Chromium desktop
+  and Pixel 7 projects, including 320x568 and landscape containment.
 - `git diff --check`: passed.
 
 During integration review, quota classification was found to occur only after

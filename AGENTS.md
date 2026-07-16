@@ -182,6 +182,28 @@ reasoning, voice, device, and scripted corpus constant while comparing
 `gpt-realtime-2` with `gpt-realtime-2.1`. `gpt-realtime-2.1-mini` is a separate
 speed/cost candidate and MUST NOT be combined with that first comparison.
 
+### APR review (required for release-sensitive changes)
+
+Use the checked-out Automated Plan Reviser Pro binary, not browser automation,
+for adversarial review of voice, security, data-integrity, and release-governance
+changes. Keep the contract, evidence, workflow, and saved rounds under `.apr/`
+so another agent can resume without chat history.
+
+```bash
+apr robot validate <round> -w <workflow>
+apr robot run <round> -w <workflow> -i
+```
+
+If `apr` is not on `PATH`, use `$HOME/automated_plan_reviser_pro/apr` or install
+the upstream tool; do not substitute a browser agent.
+
+Read `.apr/rounds/<workflow>/round_<round>.md` completely, address every ship
+blocker, update executable evidence, and rerun the next round until the workflow's
+exact ship verdict is present. A wrapper truncation warning is not a verdict;
+the saved round file is authoritative. APR complements tests and staged proof—it
+does not replace either—and candidate evidence can never be inferred from a
+review verdict.
+
 ---
 
 ## Conventions

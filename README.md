@@ -115,8 +115,9 @@ OWNER_OTHER=
 The permanent Realtime reflex prompt and tool contract live in
 `lib/voice/profile.ts`. Detailed Oriental facts stay behind the bounded,
 read-only `lookup_oriental` tool in `lib/voice/knowledge.ts`; reversible fields
-use atomic `capture_fields`, while routing and call termination remain separate
-irreversible tools. Keep prompt, endpointing, model, reasoning, and voice
+use one `capture_fields` batch per turn, retaining independently valid fields
+and returning rejected fields for focused retry. Routing and call termination
+remain separate irreversible tools. Keep prompt, endpointing, model, reasoning, and voice
 changes independently attributable.
 
 Endpointing experiments use `VOICE_RUNTIME_PROFILE=baseline|instant-v1`.

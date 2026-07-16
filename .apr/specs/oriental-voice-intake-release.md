@@ -38,12 +38,29 @@ corrections into the governed production release while retaining
    sent, and no browser/application error occurs.
 9. Public health, performance budgets, and production voice cells MUST remain
    within the governed release contract.
+10. A multi-field capture MUST retain independently valid fields, return every
+    rejected item in `rejectedFields`, and retry only those items. Duplicate
+    keys MUST invalidate the batch before any field is committed.
+11. Native-audio identity drafts MAY tolerate bounded ASR spelling drift only
+    with an explicit field cue and close phonetic resemblance. An unrelated
+    same-initial name MUST remain rejected. Speech email drafts MUST still pass
+    exact readback and explicit confirmation before submission.
+12. PII-free email-verification provenance MUST be persisted with the review
+    snapshot and survive the current Convex schema. Customer contact values
+    MUST remain absent from structured route logs.
+13. The intake dialog MUST remain fully contained at 320x568, 390x844,
+    844x390, and 1024x600, reset nested scroll at responsive-layout changes,
+    and avoid opening the mobile keyboard automatically.
+14. The staging voice smoke MUST verify the session model and cell against the
+    deployed public health contract (or an explicit expected override), not a
+    hard-coded candidate. It MUST not imply model promotion.
 
 ## Acceptance and rollout
 
 - Unit tests MUST cover quota/capacity classification, retry selection,
-  readback/confirmation/correction, client/API rejection, lead linkage,
-  aggregate failure counts, and synthetic exclusion.
+  readback/confirmation/correction, client/API rejection, partial-safe capture,
+  bounded name grounding, lead linkage, verification provenance, aggregate
+  failure counts, and synthetic exclusion.
 - Lint, typecheck, all unit tests, secret contract, build, and mobile
   performance gate MUST pass.
 - APR MUST return `VERDICT: SHIP SAFE DEFAULTS`.

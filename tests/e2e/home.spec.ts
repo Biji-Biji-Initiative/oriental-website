@@ -90,7 +90,7 @@ test("faq page nav links point home and the talk CTA opens the form workspace", 
     await page.getByRole("button", { name: "Talk to Mereka" }).last().click();
   }
   await expect(page.getByRole("dialog")).toBeVisible();
-  await expect(page.getByLabel("Name")).toBeFocused();
+  await expect(isMobile ? page.getByRole("dialog") : page.getByLabel("Name")).toBeFocused();
 });
 
 test("facilities use the current supplied space images and aligned labels", async ({ page }) => {
@@ -292,7 +292,7 @@ test("voice prewarms on page load for returning microphone permission without Tu
   expect(JSON.stringify(voiceSessionBodies[0])).not.toContain("turnstile");
 });
 
-test("talk CTA opens the partner dialog without requesting the microphone", async ({ page }) => {
+test("talk CTA opens the partner dialog without requesting the microphone", async ({ page, isMobile }) => {
   await page.addInitScript(() => {
     const state = window as typeof window & { __voiceGetUserMediaCalled?: boolean };
     state.__voiceGetUserMediaCalled = false;
@@ -318,7 +318,7 @@ test("talk CTA opens the partner dialog without requesting the microphone", asyn
   await page.locator('header button[aria-label="Talk to Mereka"]').click();
 
   await expect(page.getByRole("dialog")).toBeVisible();
-  await expect(page.getByLabel("Name")).toBeFocused();
+  await expect(isMobile ? page.getByRole("dialog") : page.getByLabel("Name")).toBeFocused();
   await expect
     .poll(() =>
       page.evaluate(
@@ -336,4 +336,51 @@ test("talk CTA opens the partner dialog without requesting the microphone", asyn
     )
     .toBe(true);
   await expect(page.getByText(/Microphone access is blocked/i)).toBeVisible();
+});
+
+test("voice intake stays contained and resets scroll across short responsive viewports", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.goto("/");
+  await page.locator('header button[aria-label="Talk to Mereka"]').click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+
+  const viewports = [
+    { width: 320, height: 568 },
+    { width: 390, height: 844 },
+    { width: 844, height: 390 },
+    { width: 1024, height: 600 },
+  ];
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport);
+    await expect
+      .poll(() =>
+        page.locator('[data-slot="dialog-content"]').evaluate((dialog) => {
+          const rect = dialog.getBoundingClientRect();
+          const close = dialog.querySelector<HTMLElement>('[data-slot="dialog-close"]')?.getBoundingClientRect();
+          return {
+            dialogFits:
+              rect.left >= -1 &&
+              rect.top >= -1 &&
+              rect.right <= window.innerWidth + 1 &&
+              rect.bottom <= window.innerHeight + 1,
+            closeFits: Boolean(
+              close &&
+                close.left >= rect.left &&
+                close.top >= rect.top &&
+                close.right <= rect.right &&
+                close.bottom <= rect.bottom,
+            ),
+            noPageOverflow: document.documentElement.scrollWidth <= window.innerWidth,
+          };
+        }),
+      )
+      .toEqual({ dialogFits: true, closeFits: true, noPageOverflow: true });
+  }
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator("[data-voice-dialog-layout]").evaluate((layout) => {
+    layout.scrollTop = layout.scrollHeight;
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect.poll(() => page.locator("[data-voice-dialog-layout]").evaluate((layout) => layout.scrollTop)).toBe(0);
 });

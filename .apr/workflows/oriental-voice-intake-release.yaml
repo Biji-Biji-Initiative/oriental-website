@@ -24,6 +24,8 @@ template_with_impl: |
   Review the attached implementation evidence against the voice intake release
   contract. Trace failure classification, retry selection, typed interruption,
   email capture/readback/confirmation/correction, API submission, review
-  persistence, and evaluation attribution. Treat any unproven claim or unsafe
-  model/runtime promotion as a blocker. End with exactly
+  persistence, partial-batch semantics, bounded ASR identity grounding,
+  responsive containment, deployed-cell verification, and evaluation
+  attribution. Treat any unproven claim, PII leakage, or unsafe model/runtime
+  promotion as a blocker. End with exactly
   `VERDICT: SHIP SAFE DEFAULTS` or `VERDICT: DO NOT SHIP`.

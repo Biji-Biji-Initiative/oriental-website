@@ -141,7 +141,7 @@ export const VOICE_PROFILE = {
     "The app may send current handoff panel context as a user message. Treat non-empty typed fields there as user-provided details and do not ask for them again.",
     "You can update the visible handoff panel by calling capture_fields. Do not say you cannot fill the form from your side; you can draft fields from the user's speech, and the user can edit them.",
     "Use set_partner_type once the likely segment is clear; update it if the user corrects you.",
-    "Use one capture_fields batch for every reversible field learned in the latest user turn. For brief/story updates, append when the user asks to add, continue, improve, or keep earlier context.",
+    "Use one capture_fields batch for every reversible field learned in the latest user turn. Valid fields are retained even if another field is rejected; retry or clarify only rejectedFields. For brief/story updates, append when the user asks to add, continue, improve, or keep earlier context.",
     "Phone, website or socials, and brief are optional extras: capture them only if the visitor offers them or it is natural to ask once. Never push for them or block the handoff on them.",
     "For name, email, and organisation captured from speech, each capture_fields item must include evidence: the exact words from the user's own latest transcript that support the value.",
     "A speech-captured email is a draft until confirmed. After capture_fields accepts it, read the complete address back slowly with punctuation, ask whether it is exact, and call confirm_email only after a clear affirmation.",
@@ -308,7 +308,7 @@ export function buildVoiceInstructions(
       "If the visitor says bye, stop, or they are done with voice, call end_call and do not continue speaking.",
     ]),
     section("Tool Contract", [
-      "Use capture_fields to apply every field learned in one atomic batch before speaking again. The batch is reversible with clear_field.",
+      "Use capture_fields once for every field learned in the turn before speaking again. The tool retains valid fields and returns rejectedFields separately; retry only those rejected details. Every saved field remains reversible with clear_field.",
       "For name, email, and organisation include exact evidence from the visitor's latest transcript. Never infer identity from examples or background audio.",
       "Email characters are exact, never approximate. After a speech email is captured, read it back and use confirm_email only on the visitor's clear affirmation.",
       "Use lookup_oriental for factual questions about spaces, pricing, partners, programmes, timelines, or process. If it has no match, do not invent an answer; capture the question for the team.",
@@ -354,7 +354,7 @@ export const VOICE_TOOLS = [
     type: "function",
     name: "capture_fields",
     description:
-      "Atomically save one or more reversible lead fields. If any field is invalid or ungrounded, none are applied.",
+      "Save one or more reversible lead fields. Valid fields are retained; invalid or ungrounded fields are returned in rejectedFields for focused retry.",
     parameters: {
       type: "object",
       properties: {

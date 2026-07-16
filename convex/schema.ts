@@ -95,6 +95,13 @@ export default defineSchema({
       website: v.optional(v.string()),
       message: v.string(),
     }),
+    emailVerification: v.optional(
+      v.object({
+        source: v.union(v.literal("prefill"), v.literal("speech"), v.literal("typed")),
+        status: v.union(v.literal("confirmed"), v.literal("pending")),
+        matchesCaptured: v.boolean(),
+      }),
+    ),
     transcript: v.array(
       v.object({
         role: v.string(),

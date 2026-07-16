@@ -116,8 +116,10 @@ dimension, and prove the exact staged commit before promotion.
 
 - The permanent prompt MUST remain below 7 KB and detailed facts MUST remain
   behind bounded read-only `lookup_oriental`.
-- Reversible fields MUST be captured with one atomic `capture_fields` batch;
-  one invalid, duplicate, or ungrounded item MUST reject the whole batch.
+- Reversible fields MUST be captured with one `capture_fields` batch per turn.
+  Independently valid fields MUST be retained and invalid or ungrounded items
+  returned in `rejectedFields` for focused retry; duplicate keys MUST reject
+  the batch before any field is committed.
 - Routing and end-call actions MUST remain explicit and separate.
 - Tentative email extraction MAY fill an empty draft only for a literal address
   alone or with explicit visitor ownership; it MUST NOT infer spoken punctuation
@@ -148,7 +150,7 @@ dimension, and prove the exact staged commit before promotion.
 - [x] AC-03 — Profile switching and session updates:
   `tests/voice-runtime-profile.test.ts` and
   `tests/realtime-client-events.test.ts`.
-- [x] AC-04 — Compact prompt, read-only lookup, and atomic capture:
+- [x] AC-04 — Compact prompt, read-only lookup, and partial-safe batched capture:
   `tests/voice-profile.test.ts`, `tests/voice-knowledge.test.ts`, and
   `tests/realtime-events.test.ts`.
 - [x] AC-05 — Controlled model/reasoning cells:
@@ -206,7 +208,7 @@ utterance order constant. Change only one dimension at a time:
 | Endpointing | `baseline` | `instant-v1` |
 | Model | `control` | `candidate` |
 | Reasoning | `low` | `minimal` |
-| Prompt/tools | exact `b4a11f1` source boundary | compact prompt + lookup + atomic capture |
+| Prompt/tools | exact `b4a11f1` source boundary | compact prompt + lookup + batched reversible capture |
 
 The same corpus is required for each comparison: a normal uninterrupted brief;
 a thought with a 700–1,200 ms pause; a slowly dictated email with a mid-address
