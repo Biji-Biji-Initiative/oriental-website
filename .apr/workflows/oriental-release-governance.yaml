@@ -1,0 +1,29 @@
+name: oriental-release-governance
+description: Ship-blocker review for Oriental exact-SHA and shared-staging governance
+
+documents:
+  readme: docs/12-CHAT-RELEASE-RUNBOOK.md
+  spec: .apr/specs/oriental-release-governance.md
+  implementation: .apr/evidence/oriental-release-governance.md
+
+oracle:
+  model: "gemini-3.1-pro"
+
+rounds:
+  output_dir: .apr/rounds/oriental-release-governance
+  impl_every_n: 1
+
+template: |
+  Perform the requested adversarial release-governance review. Treat race
+  conditions, unverifiable release identity, commands that cannot work,
+  accidental staging overwrite, false live-state claims, and prose-only safety
+  as blockers. Do not propose unrelated product work. End with exactly
+  `VERDICT: SHIP GOVERNANCE` or `VERDICT: DO NOT SHIP`.
+
+template_with_impl: |
+  Perform the requested adversarial release-governance review against the
+  attached implementation evidence. Treat race conditions, unverifiable
+  release identity, commands that cannot work, accidental staging overwrite,
+  false live-state claims, and prose-only safety as blockers. Do not propose
+  unrelated product work. End with exactly `VERDICT: SHIP GOVERNANCE` or
+  `VERDICT: DO NOT SHIP`.

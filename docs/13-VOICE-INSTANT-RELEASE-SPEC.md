@@ -94,6 +94,12 @@ dimension, and prove the exact staged commit before promotion.
 - New snapshots MUST persist server-resolved deployment environment and device
   class so staging smokes cannot be mistaken for production evidence.
 - Control MUST remain `gpt-realtime-2`/`low` unless an explicit cell is selected.
+- The first model-only candidate MUST be `gpt-realtime-2.1`, holding runtime,
+  reasoning, voice, device, network class, and corpus constant. Its documented
+  alphanumeric, silence/noise, and interruption improvements match Oriental's
+  capture and barge-in risks.
+- `gpt-realtime-2.1-mini` MAY be evaluated later as a separate speed/cost cell;
+  it MUST NOT be combined with the first `gpt-realtime-2.1` quality comparison.
 - At most one of runtime profile, model cell, and reasoning cell MAY differ
   from control in one deployment. The QA voice-variant picker MUST remain off
   while any experimental dimension is active.
@@ -162,8 +168,10 @@ dimension, and prove the exact staged commit before promotion.
     new spoken response.
   - [x] Voice mint and review persistence returned HTTP 200 without browser
     errors.
-  - [x] `/api/health` proved product version `d085cac` at
-    `https://staging.oriental.mereka.io` while production remained `606f46e`.
+  - [x] `/api/health` proved release
+    `bb8e2673e5f129f342fba78f3eb653a54de8763b` on both canonical hosts before
+    the next controlled shared-staging experiment; current staging truth must
+    always be read live rather than inferred from this historical proof.
   - [ ] A human listener approves Malaysian voice quality; automation cannot
     make this subjective release judgment.
 
@@ -266,11 +274,12 @@ prompt/tool slice independently by redeploying exact pre-slice commit
 
 - Human Malaysian voice-quality sign-off remains unknown and MUST NOT be
   represented as passed.
-- The 2026-07-16 production read stitched the newest 100 call rows into 80
-  baseline conversations. It found 24 legacy arm-cue telemetry samples but
-  zero explicitly attributable post-mint attempts under the new marker, zero
-  tap-to-live or audible-onset samples, 5 submissions, 6 `realtime_busy`
-  conversations, and 11 `webrtc_failed` conversations. That is useful failure
+- The latest 2026-07-16 evaluation stitched the newest 100 call rows into 72
+  baseline conversations: 61 legacy, 7 local, and 4 staging, with no production
+  candidate sample. Twelve tap-to-live samples measured p50 1,546 ms and p95
+  2,393 ms; eleven tap-to-audible samples measured p50 2,456 ms and p95 6,659
+  ms, with zero useful starts inside two seconds. It also found 6
+  `realtime_busy` and 11 `webrtc_failed` conversations. That is useful failure
   evidence, not proof that voice feels instant or excellent.
 - The measured gate blocks `instant-v1`, candidate model, and minimal reasoning
   promotion. It does not block the owner's explicitly authorized deployment of

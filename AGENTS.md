@@ -23,7 +23,7 @@ Production microsite for **Oriental Building** partner intake at `oriental.merek
 | UI | Next.js 16 App Router, React 19, Tailwind v4, shadcn/ui (`components/ui/`) |
 | Content | `lib/content.ts` + section components in `components/site/` |
 | Leads | Convex (`convex/schema.ts`, `convex/leads.ts`) via `lib/server/convex.ts` |
-| Voice | OpenAI Realtime (`gpt-realtime-2`), WebRTC client, ephemeral tokens from `POST /api/voice/session` |
+| Voice | OpenAI Realtime over WebRTC; production control is `gpt-realtime-2`, quality candidate is `gpt-realtime-2.1`, ephemeral tokens from `POST /api/voice/session` |
 | Abuse | Optional Turnstile enforcement for form/newsletter posts + Redis-backed rate limits with memory fallback (`lib/server/rate-limit.ts`, re-exported by `security.ts`) |
 | Notify | AWS SES/SMTP + Slack Web API bot token, webhook fallback (`lib/server/notifications.ts`, `lib/server/smtp.ts`) |
 | Observability | Sentry Next.js SDK, structured JSON logs, Slack ops alerts, admin review dashboard |
@@ -75,6 +75,7 @@ lib/
     logger.ts             # structured JSON logs for route handlers
     notifications.ts      # SES + Slack
 convex/                   # schema + mutations; deploy with convex deploy
+scripts/                  # operator/eval/deploy tooling; never imported by app runtime
 tests/                    # vitest unit tests (*.test.ts)
 tests/e2e/                # Playwright
 docs/                     # handover specs — reference, not auto-synced to code
@@ -131,11 +132,46 @@ pnpm build
 pnpm test:e2e               # needs app; README uses PORT=3011 for standalone proof
 pnpm check-secrets          # validate expected env keys (local)
 pnpm local:ngrok -- --check  # prove ngrok secret lookup without opening a tunnel
+pnpm smoke:staging:voice    # real canonical-staging WebRTC/audio/persistence proof
+pnpm release:preflight -- --sha <full-main-sha>  # requires managed release env
+pnpm release:deploy:production -- --sha <full-sha> --expected-current-sha <full-sha>
+pnpm release:verify -- --sha <full-sha> --target staging|production|both
 pnpm voice:debug             # inspect latest local voice debug snapshots
 pnpm exec convex deploy     # needs CONVEX_DEPLOY_KEY
 ```
 
 Copy `.env.local.example` → `.env.local` for local work. Never commit secrets. Production values come from Infisical/Coolify.
+
+---
+
+## Release governance (required)
+
+Read [`docs/12-CHAT-RELEASE-RUNBOOK.md`](docs/12-CHAT-RELEASE-RUNBOOK.md)
+before any deployment. For runtime work:
+
+1. Put runtime code, tests, specs/docs, configuration contract, and relevant
+   agent guidance in one PR.
+2. Merge once, update local `main`, and freeze the full merge SHA.
+3. Inject the production app contract from Infisical and run
+   `pnpm release:preflight -- --sha <sha>`; managed cell validation is mandatory.
+4. Deploy/prove staging, then deploy production through the Coolify API.
+5. Run `pnpm release:verify -- --sha <sha> --target both` and inspect the
+   running containers' revision and cells.
+
+Do not force an application rebuild for a docs/operator-only commit with no
+runtime impact. Do not create late cleanup PRs after the final-SHA freeze; if a
+runtime or release-contract correction is required, return to one PR and freeze
+a new SHA. The operational target is 30 minutes; at 45 minutes, stop retrying
+and diagnose the blocking boundary.
+
+Staging is shared. `scripts/deploy-coolify-host.sh --target staging` requires
+`--expected-current-sha`; a mismatch means another workflow moved the
+environment. Stop and coordinate—never overwrite an unknown staging proof.
+
+Realtime model changes are experiments, not string upgrades. Hold runtime,
+reasoning, voice, device, and scripted corpus constant while comparing
+`gpt-realtime-2` with `gpt-realtime-2.1`. `gpt-realtime-2.1-mini` is a separate
+speed/cost candidate and MUST NOT be combined with that first comparison.
 
 ---
 
@@ -208,7 +244,8 @@ Read in order on first pass, then cherry-pick:
 - Do **not** use generic Coolify UUID secrets for this app; use `COOLIFY_ORIENTAL_APPLICATION_UUID` when scripting against Coolify.
 - Do **not** expand scope: no new abstractions for one-off helpers; no unrelated README/doc sweeps unless asked.
 - **Do** run `pnpm lint`, `pnpm typecheck`, and `pnpm test` when touching voice, API, or schemas.
-- **Do** update `docs/` only when the user wants spec alignment; otherwise fix code and mention doc drift in the PR/summary.
+- **Do** update specs, runbooks, and this file in the same PR when runtime architecture, deployment, configuration, or agent workflow changes.
+- **Do not** use `agent-browser` for release proof; use the checked-in Playwright e2e/smoke scripts and deterministic HTTP verifier.
 - For local voice debugging, inspect `GET /api/voice/debug` while `NODE_ENV !== "production"`. Production review snapshots use signed per-session review tokens and persist to Convex `voiceSessions`.
 - Do not paste or commit real tester transcripts. Summarise issues and clear/restart the dev server when a local debug buffer has sensitive data.
 - Brand assets are local under `public/assets/brand/`; provenance is documented in `docs/ASSET-SOURCES.md`. Root `/favicon.ico` and `/apple-touch-icon.png` should keep serving the Mereka favicon.

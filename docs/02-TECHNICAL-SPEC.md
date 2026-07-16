@@ -13,7 +13,7 @@ Runtime truth for the production build:
 | UI primitives | shadcn/ui | Dialog, Tabs, Input, Textarea, Label, Button, Sonner. |
 | Fonts | `next/font/local` | Self-hosted Poppins and Fraunces files in `public/assets/fonts/`. |
 | Brand assets | Local public assets | Source notes in `docs/ASSET-SOURCES.md`. |
-| Voice | OpenAI Realtime 2 | `gpt-realtime-2`, WebRTC, ephemeral client secrets. |
+| Voice | OpenAI Realtime | `gpt-realtime-2` control, `gpt-realtime-2.1` quality candidate, WebRTC, ephemeral client secrets. |
 | Data | Convex | `convex/schema.ts`, `convex/leads.ts`, `lib/server/convex.ts`. |
 | Email | SMTP or AWS SESv2 | SMTP preferred when configured; otherwise SESv2 by region. SMTP sends one message to all recipients in a single transaction. |
 | Slack | Bot token + channel id, webhook fallback | Lead mirror to `#tech-team-test` via `SLACK_CHANNEL_ID`; `SLACK_WEBHOOK_URL` is fallback-only. |

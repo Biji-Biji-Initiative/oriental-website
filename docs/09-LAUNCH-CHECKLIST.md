@@ -5,12 +5,15 @@ those go to [`10-ROADMAP.md`](./10-ROADMAP.md).
 
 Use this on the day of soft-launch and again 24 hours before public-launch.
 
-Evidence status on 2026-07-16: the engineering release is live on staging and
-production at exact commit `669eeb965bfa2f86e68bed0e6297df4152bf1b23`, but
-the instant-voice product outcome remains evidence-gated. The current corpus is
-baseline/control/low only and the promotion evaluator reports
-`insufficient_data`. Unchecked human, legal, listening, data-retention, and
-availability gates are real handoff work; they MUST NOT be reported as complete.
+Evidence status on 2026-07-16: engineering release
+`bb8e2673e5f129f342fba78f3eb653a54de8763b` was proven on both canonical hosts
+and remains the production release. Shared staging can move independently for a
+controlled experiment, so its current SHA MUST be read from `/api/health`
+rather than inferred from this historical record. The instant-voice product
+outcome remains evidence-gated: the corpus is baseline/control/low only and the
+promotion evaluator reports `insufficient_data`. Unchecked human, legal,
+listening, data-retention, and availability gates are real handoff work; they
+MUST NOT be reported as complete.
 
 ---
 
@@ -24,7 +27,8 @@ availability gates are real handoff work; they MUST NOT be reported as complete.
 - [x] Cloudflare DNS for both canonical hosts resolves directly to Coolify origin `194.233.71.200`
 - [x] Coolify Traefik serves valid Let's Encrypt certificates for both canonical hosts
 - [x] Cloudflare proxy/cache/WAF are intentionally not on the request path; records are DNS-only
-- [x] Coolify auto-deploy from `main` has produced exact-SHA releases
+- [x] Coolify API deployment from a frozen `main` SHA has produced exact-SHA releases
+- [x] Coolify health probes `127.0.0.1:3000` and the runtime image binds `HOSTNAME=0.0.0.0`
 
 ## Secrets
 

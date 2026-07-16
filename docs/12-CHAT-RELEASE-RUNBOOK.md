@@ -1,94 +1,218 @@
-# 12 — Chat Integration Release Runbook
+---
+title: "Oriental Governed Release Runbook"
+type: "release_spec_and_runbook"
+status: "implemented"
+owner: "Mereka Engineering"
+last_updated: "2026-07-16"
+---
 
-Ship and verify the `claude/chat-integration-improvements` branch: hybrid
-type-or-talk voice, semantic VAD + `gpt-4o-transcribe`, live captions,
-permission-aware connect, reconnect continuity, notification durability, and
-the admin recoverable-leads workflow. Everything below is the human half —
-the machine-verifiable half (96 unit tests, lint, typecheck, build, fuzz +
-golden-session suites, two adversarial review passes) is green on every
-commit.
+# 12 — Governed Release Runbook
 
-## 1. Deploy order
+This is the evergreen path for shipping Oriental. It replaces branch-specific
+release notes. The goal is one reviewed change set, one final runtime SHA, one
+staging proof, and one health-gated production promotion.
 
-1. **Convex functions first** — the branch adds `voiceSessions.followedUpAt`,
-   the `setVoiceSessionFollowUp` mutation, and the error `code` field:
-   ```bash
-   CONVEX_DEPLOY_KEY='prod:...' pnpm exec convex deploy
-   ```
-   Until this runs, review snapshots with error codes fail to persist
-   (logged as `voice_review.persistence_failed`) and the admin
-   "Mark followed up" buttons return a clean error toast.
-2. **App deploy** via Coolify as usual.
-3. **Smoke the logs**: the first `voice_session.created` line should show
-   `transcriptionModel: "gpt-4o-transcribe"`, `noiseReduction`,
-   `deviceProfile`, and `rateLimitStore: "redis"`.
+## Scope and non-goals
 
-## 2. Ten-minute voice QA script
+This contract covers application, Convex, runtime configuration, staging,
+production, public routing, and release evidence. It does not turn subjective
+voice quality or insufficient experiment data into an automated pass. It does
+not require an application redeploy for documentation or operator tooling that
+cannot affect the runtime image.
 
-Run once on desktop Chrome and once on a phone. Say the lines literally.
+## Release invariants
 
-| # | Do / say | Expect |
+- Runtime code, its spec, operator docs, tests, and relevant `AGENTS.md` guidance
+  MUST land in the same PR.
+- A runtime release MUST use a full immutable Git SHA. Moving tags and bare
+  branch names are not release evidence.
+- Production MUST deploy through the Coolify application API. Direct host
+  Compose is reserved for the host-managed staging application and emergency
+  rollback explicitly authorized by an operator. The host helper rejects a
+  production target unless the operator supplies both the live full SHA and
+  `--allow-emergency-production`.
+- At a production promotion boundary, the proven staging candidate and
+  production MUST use the same source SHA. Shared staging may move afterward
+  for another controlled experiment; its live SHA must never be inferred from
+  production or a historical document. Image tags remain distinct because
+  staging may bake preview-only public flags.
+- `staging.oriental.mereka.io` and `oriental.mereka.io` are canonical. The
+  `*.deploy.mereka.io` names MUST remain redirects only.
+- Cloudflare MUST remain authoritative DNS only; Coolify Traefik terminates TLS.
+- Infisical is canonical configuration. Coolify's environment-variable store
+  and staging's host-local `.env` are separate materialized copies and MUST be
+  compared with Infisical before release.
+- Production voice MUST remain `baseline/control/low` unless the experiment
+  gate and human review explicitly authorize a single-dimension trial.
+- A failed health check MUST stop the rollout. Never disable or weaken the gate
+  to finish a release.
+
+## Release classification
+
+Classify the PR before merging:
+
+| Class | Examples | Application deploy |
 |---|---|---|
-| 1 | Fresh profile, click **Start talking with Reka** | Browser mic prompt appears immediately; stage shows "Mic permission" copy |
-| 2 | Deny the mic | Friendly denial toast; check logs — **no** `voice_session.created` (quota not spent) |
-| 3 | Re-allow and connect | Greeting starts; captions stream under the orb; orb breathes with her voice |
-| 4 | "We run AI literacy workshops and want a demo lab" | Brief and segment captured in the panel without Reka announcing it |
-| 5 | "My name is Asha, email asha dot lim at example dot com" — pause mid-email | Semantic VAD waits through the pauses; both fields land (transcription-race tolerant) |
-| 6 | Type `gurpreet@mereka.io` into the composer while Reka is mid-sentence | She stops talking and addresses the typed message; email updates |
-| 7 | "No organisation, it's just me" | Organisation captures as `Individual` |
-| 8 | Say a sentence in Bahasa Melayu | Reka mirrors in Malay, returns to English when you do |
-| 9 | Go silent ~14 s | Reka says a one-sentence goodbye; session ends at 20 s. Speak during the goodbye — the close cancels |
-| 10 | Reconnect after a session ends with history | One-sentence "I'm back" continuation, no repeated opening pitch |
-| 11 | "Okay, send it" | Submitted state; Slack message and owner email arrive with the redesigned formatting |
-| 12 | End one session with an email captured but **not** sent | It appears in admin **Recoverable voice leads**; "Follow up by email" drafts correctly; "Mark followed up" clears it (post-Convex-deploy) |
+| Runtime | `app/`, runtime `components/`, `lib/server`, Convex, Dockerfile, public build flags, dependencies | Required |
+| Runtime configuration | Coolify/Infisical values used by the app | Recreate/deploy required |
+| Operations only | release scripts, PR template, non-runtime tests | Not required unless imported by runtime |
+| Documentation only | prose or historical evidence with no build/runtime effect | Not required |
 
-Human-ear judgement calls while you're in there: is the accent Malaysian
-enough, is `coral` at `1.28` the right energy, do the captions feel synced?
+If classification is uncertain, treat it as runtime-impacting. Record the
+classification in the PR rather than rebuilding an application merely because
+`main` gained an operations-only commit.
 
-## 3. Admin console visual pass
+## Phase 1 — One-PR closure
 
-`/admin/session-review` renders with the `mk-ash`/`mk-blue` tokens applied
-for the first time (they were undefined before this branch — the 7-day chart
-bars were invisible). Check: muted text hierarchy reads well, chart and
-progress bars are visible, error badges distinguish real errors from
-"benign", and the recoverable queue card layout holds with 0, 1, and many
-entries.
+Before merge:
 
-## 4. Remaining automated step
+1. Read `AGENTS.md`, this runbook, `11-INFRASTRUCTURE.md`, and any feature spec.
+2. Put code, tests, docs, configuration contract, and rollback notes in one PR.
+3. Run adversarial APR review for cross-layer, security, privacy, voice, or
+   deployment changes. Trivial docs-only changes do not need APR.
+4. Require green GitHub CI. Do not deploy an intermediate branch or partially
+   reviewed SHA to production.
 
-The e2e suite can run inside the remote dev environment despite the browser
-CDN being blocked — `@sparticuz/chromium` (a devDependency) ships a chromium
-binary through npm:
+## Phase 2 — Final-SHA freeze
+
+After the runtime PR merges:
 
 ```bash
-pnpm build && cp -r .next/static .next/standalone/.next/static && cp -r public .next/standalone/public
-PORT=3011 node .next/standalone/server.js &
-# Extracts the npm-shipped chromium to /tmp/chromium and prints the path:
-node -e "const m = require('@sparticuz/chromium'); Promise.resolve((m.default ?? m).executablePath()).then((p) => console.log(p))"
-PLAYWRIGHT_CHROMIUM_PATH=/tmp/chromium PLAYWRIGHT_BASE_URL=http://127.0.0.1:3011 pnpm test:e2e
+git switch main
+git pull --ff-only
+sha="$(git rev-parse HEAD)"
+infisical run \
+  --domain https://secrets.mereka.io \
+  --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
+  --env prod \
+  --path /deploy/oriental-website \
+  -- pnpm release:preflight -- --sha "$sha"
 ```
 
-All 12 specs (chromium + Pixel 7 mobile) passed against the production
-standalone build during this branch's verification. CI/local runs work
-unchanged with Playwright's own browsers.
+Managed-environment validation is the default and requires explicit
+`baseline/control/low` plus the QA picker off. `--allow-unmanaged` exists only
+for testing the Git/static contract and MUST NOT be used as production release
+evidence.
 
-## 5. Watch list for the first days
+Once preflight passes, the SHA is frozen. Any runtime code, Docker, config, spec,
+or runbook correction invalidates the freeze and restarts at Phase 1. Do not
+create a late docs-only PR that changes the declared runtime release boundary;
+include release docs before the first deployment.
 
-- `voice_review.session_errors` — non-benign codes only; benign cancel races
-  are expected with typed interruptions and are filtered from admin badges.
-- `lead.accepted` with `persisted: false` — the new degraded mode (Convex
-  down, notifications carried the lead). It pages ops as critical.
-- `notification.smtp_failed` — configured SMTP failed; verify SES/SMTP env and
-  owner delivery from the admin notification queue.
-- OpenAI spend per session in the admin usage summaries (`gpt-4o-transcribe`
-  replaces whisper-1 line items).
+## Phase 3 — Deploy dependencies and staging
 
-## 6. Deferred by design (decision records live in chat/PR)
+1. Deploy Convex first only when the reviewed diff changes schema or functions.
+2. Build the distinct `staging-<sha>` image and recreate host-managed staging:
 
-- CSP header — needs staging verification against Turnstile, Sentry, and the
-  OpenAI WebRTC origins.
-- `USER node` in the Dockerfile — verify `.next/cache` write permissions on
-  a staging deploy first.
-- Idempotency keys for lead creation — wants a Convex-side dedupe design.
-- Native `idle_timeout_ms` — incompatible with semantic VAD; client goodbye
-  covers it.
+   ```bash
+   current_staging_sha="$(curl -fsS https://staging.oriental.mereka.io/api/health | jq -r .version)"
+   scripts/deploy-coolify-host.sh --target staging \
+     --expected-current-sha "$current_staging_sha" "$sha"
+   ```
+
+   The script rechecks that SHA while holding the host deployment lock. If
+   staging moved, stop and coordinate with its current owner; never overwrite an
+   unknown experiment.
+
+3. Run the deterministic public verifier:
+
+   ```bash
+   pnpm release:verify -- --sha "$sha" --target staging
+   ```
+
+4. Run `pnpm smoke:staging:voice` when voice, OpenAI configuration, WebRTC,
+   session persistence, or voice UI changed.
+5. Inspect the running container—not only Infisical—for the expected revision,
+   deployment environment, and voice cells.
+
+Do not submit a staging lead casually: staging still shares production Convex,
+OpenAI, Redis, and notification accounts.
+
+## Phase 4 — Production
+
+1. Confirm staging proof and capture the current production rollback SHA.
+2. Inject the operator-only Coolify credential and run the exact-SHA deployer:
+
+   ```bash
+   current_production_sha="$(curl -fsS https://oriental.mereka.io/api/health | jq -r .version)"
+   infisical run \
+     --domain https://secrets.mereka.io \
+     --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
+     --env prod \
+     --path /platform/coolify \
+     -- pnpm release:deploy:production -- \
+       --sha "$sha" \
+       --expected-current-sha "$current_production_sha"
+   ```
+
+   The deployer fails unless staging currently runs the candidate SHA,
+   production still runs the expected rollback SHA, and the candidate is an
+   ancestor of `origin/main`. It pins Coolify's `git_commit_sha`, reads it back,
+   starts the application, and refuses success unless the deployment record and
+   public production health both resolve to the full frozen SHA.
+3. Require terminal `finished`; do not infer success from a queued build.
+4. Verify both environments together:
+
+   ```bash
+   pnpm release:verify -- --sha "$sha" --target both
+   ```
+
+5. Confirm Coolify reports `running:healthy`, its health-check host is
+   `127.0.0.1`, and the production container exposes the intended runtime cells.
+6. For voice releases, rerun the dry evaluator and report `insufficient_data`
+   honestly when its minimum evidence gate is not met.
+
+## Failure handling
+
+| Symptom | Required response |
+|---|---|
+| CI fails | Fix in the same PR; do not deploy. |
+| Staging health fails | Diagnose the image/container contract; production remains unchanged. |
+| Coolify candidate health fails | Keep the old container serving; inspect binding, probe host, logs, and runtime env. |
+| Public SHA differs | Stop. Determine whether the wrong source or image was deployed. |
+| Staging moved before deploy | Stop. Another workflow owns the shared environment; coordinate instead of overwriting it. |
+| Coolify deployment record resolves another commit | Cancel the candidate; production remains on the prior healthy SHA. |
+| Infisical differs from container | Reconcile Coolify/staging materialization, recreate once, then re-verify. |
+| OpenAI returns capacity 429 | Preserve the handoff; one bounded app retry is allowed. Do not loop deployments. |
+| Product gate is sparse | Keep the control configuration. Collect evidence; do not call it a release failure. |
+
+Repeated deployment is not diagnosis. If the same step fails twice, inspect
+the relevant boundary before trying again.
+
+## Time budget
+
+For an already-reviewed runtime change, the operational target is:
+
+- Preflight and final-SHA freeze: 5 minutes.
+- Staging build and deterministic proof: 10 minutes.
+- Production build, health swap, and proof: 15 minutes.
+- Total deployment path: 30 minutes, excluding an external provider incident.
+
+At 45 minutes, stop adding fixes to the release train. Record the blocking
+boundary, return to one PR, and restart from a new final SHA. Quality comes from
+early convergence and fail-closed checks, not repeated manual verification.
+
+## Rollback
+
+- App: redeploy the previous exact production image/SHA through Coolify.
+- Endpointing: restore `VOICE_RUNTIME_PROFILE=baseline`.
+- Model: restore `VOICE_MODEL_CELL=control`.
+- Reasoning: restore `VOICE_REASONING_CELL=low`.
+- Staging: restore the timestamped Compose/`.env` backup or previous
+  `staging-<sha>` image.
+- Convex: use backward-compatible schema/function changes; never assume an app
+  image rollback also rolls back Convex.
+
+## Acceptance criteria mapping
+
+- [x] Exact SHA, clean `main`, image-tag, health-binding, runbook, and mandatory
+  managed-cell checks: `scripts/release-preflight.ts`.
+- [x] Exact staging/current-production preconditions, immutable Coolify commit
+  pin/readback, deployment-record commit, terminal status, and post-deploy
+  production health: `scripts/deploy-coolify-production.ts`.
+- [x] Canonical hosts, exact health SHA, Convex presence, QA picker, DNS-only
+  request path, and compatibility redirects: `scripts/release-verify.ts`.
+- [x] Pure governance contracts: `tests/release-governance.test.ts`.
+- [x] Docker binding and staging image isolation:
+  `tests/dockerfile.test.ts`, `tests/deploy-coolify-host.test.ts`.
+- [ ] Human Malaysian voice judgment remains manual and evidence-gated.

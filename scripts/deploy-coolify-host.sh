@@ -3,19 +3,29 @@ set -euo pipefail
 
 target=""
 sha=""
+expected_current_sha=""
+allow_emergency_production=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --target)
       target="${2:-}"
       shift 2
       ;;
+    --expected-current-sha)
+      expected_current_sha="${2:-}"
+      shift 2
+      ;;
+    --allow-emergency-production)
+      allow_emergency_production=true
+      shift
+      ;;
     -h|--help)
-      echo "Usage: $0 --target staging|production [git-sha]"
+      echo "Usage: $0 --target staging|production --expected-current-sha sha [--allow-emergency-production] [git-sha]"
       exit 0
       ;;
     *)
       if [[ -n "$sha" ]]; then
-        echo "Usage: $0 --target staging|production [git-sha]" >&2
+        echo "Usage: $0 --target staging|production --expected-current-sha sha [--allow-emergency-production] [git-sha]" >&2
         exit 2
       fi
       sha="$1"
@@ -25,7 +35,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ "$target" != "staging" && "$target" != "production" ]]; then
-  echo "Usage: $0 --target staging|production [git-sha]" >&2
+  echo "Usage: $0 --target staging|production --expected-current-sha sha [--allow-emergency-production] [git-sha]" >&2
   exit 2
 fi
 
@@ -34,8 +44,18 @@ if [[ -z "$sha" ]]; then
   sha="$(git rev-parse origin/main)"
 fi
 
-if ! [[ "$sha" =~ ^[0-9a-f]{7,40}$ ]]; then
-  echo "Usage: $0 --target staging|production [git-sha]" >&2
+if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "Usage: $0 --target staging|production --expected-current-sha sha [--allow-emergency-production] [git-sha]" >&2
+  exit 2
+fi
+
+if ! [[ "$expected_current_sha" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "Host deploys require --expected-current-sha with the full currently deployed SHA." >&2
+  exit 2
+fi
+
+if [[ "$target" == "production" && "$allow_emergency_production" != "true" ]]; then
+  echo "Production deploys must use the Coolify API. Host deployment is break-glass only; pass --allow-emergency-production." >&2
   exit 2
 fi
 
@@ -48,7 +68,7 @@ prod_dir="/data/coolify/applications/${app_uuid}"
 staging_dir="/data/coolify/applications/oriental-staging"
 
 # shellcheck disable=SC2086 # COOLIFY_SSH_COMMAND may intentionally include flags.
-$ssh_command "$remote_host" "bash -s -- '$target' '$sha' '$app_uuid' '$repo_url' '$remote_cache_dir' '$prod_dir' '$staging_dir'" <<'REMOTE'
+$ssh_command "$remote_host" "bash -s -- '$target' '$sha' '$app_uuid' '$repo_url' '$remote_cache_dir' '$prod_dir' '$staging_dir' '$expected_current_sha'" <<'REMOTE'
 set -euo pipefail
 
 target="$1"
@@ -58,11 +78,37 @@ repo_url="$4"
 remote_cache_dir="$5"
 prod_dir="$6"
 staging_dir="$7"
+expected_current_sha="$8"
 short="${sha:0:7}"
 mirror="${remote_cache_dir}/repo.git"
 worktrees="${remote_cache_dir}/worktrees"
 workdir="${worktrees}/${short}-$(date -u +%Y%m%dT%H%M%SZ)"
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+
+if [[ "$target" == "staging" ]]; then
+  target_dir="$staging_dir"
+else
+  target_dir="$prod_dir"
+fi
+
+mkdir -p "$target_dir"
+exec 9>"$target_dir/.deploy.lock"
+if ! flock -n 9; then
+  echo "Another host deployment holds $target_dir/.deploy.lock." >&2
+  exit 1
+fi
+
+current_sha="$(sed -n 's/^SOURCE_COMMIT=//p' "$target_dir/.env" | tail -1)"
+if [[ "$current_sha" != "$expected_current_sha" ]]; then
+  echo "${target^} moved: expected $expected_current_sha but host has ${current_sha:-unset}." >&2
+  exit 1
+fi
+
+if [[ "$target" == "staging" ]]; then
+  echo "Staging ownership confirmed at $current_sha."
+else
+  echo "BREAK-GLASS production ownership confirmed at $current_sha." >&2
+fi
 
 mkdir -p "$remote_cache_dir" "$worktrees"
 if [[ ! -d "$mirror" ]]; then
