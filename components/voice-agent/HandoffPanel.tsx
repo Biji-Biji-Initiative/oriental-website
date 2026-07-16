@@ -135,15 +135,6 @@ export function HandoffPanel({
                     variant="glass"
                   />
                 </FormControl>
-                {emailNeedsConfirmation ? (
-                  <FormDescription aria-live="polite" className="text-xs leading-5 text-[#f2d38a]">
-                    Reka heard this address. Say yes after the exact read-back, or edit it here to confirm it.
-                  </FormDescription>
-                ) : emailIsConfirmed && emailVerification?.source === "speech" ? (
-                  <FormDescription aria-live="polite" className="text-xs leading-5 text-mk-horizon">
-                    Confirmed from your voice.
-                  </FormDescription>
-                ) : null}
                 <FormMessage className={messageClassName} />
               </FormItem>
             )}
@@ -167,6 +158,15 @@ export function HandoffPanel({
                     variant="glass"
                   />
                 </FormControl>
+                {emailNeedsConfirmation ? (
+                  <FormDescription aria-live="polite" className="text-xs leading-5 text-[#f2d38a]">
+                    Reka heard this address. Say yes after the exact read-back, or edit it here to confirm it.
+                  </FormDescription>
+                ) : emailIsConfirmed && emailVerification?.source === "speech" ? (
+                  <FormDescription aria-live="polite" className="text-xs leading-5 text-mk-horizon">
+                    Confirmed from your voice.
+                  </FormDescription>
+                ) : null}
                 <FormMessage className={messageClassName} />
               </FormItem>
             )}
