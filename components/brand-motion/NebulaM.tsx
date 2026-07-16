@@ -116,7 +116,6 @@ export function NebulaM({ connectionStatus, levelsRef, turnPhase }: NebulaMProps
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const stateRef = useRef<VoiceVisualState>({ connectionStatus, turnPhase });
   const pointerRef = useRef({ x: 0, y: 0, targetX: 0, targetY: 0 });
-  const manualFlipRef = useRef({ target: 0, until: 0 });
   const currentResolveRef = useRef(0);
   const [webglReady, setWebglReady] = useState(false);
   const [fallback, setFallback] = useState(false);
@@ -233,9 +232,7 @@ export function NebulaM({ connectionStatus, levelsRef, turnPhase }: NebulaMProps
         nextAutoFlip = now + (autoTarget > 0.5 ? 4_100 : 3_300);
       }
 
-      const manualFlip = manualFlipRef.current;
-      const idleTarget = now < manualFlip.until ? manualFlip.target : autoTarget;
-      const targetResolve = resolveTargetForVoiceState(state, idleTarget);
+      const targetResolve = resolveTargetForVoiceState(state, autoTarget);
       const resolveEase = 1 - Math.exp(-deltaSeconds * 1.85);
       currentResolveRef.current += (targetResolve - currentResolveRef.current) * resolveEase;
 
@@ -290,20 +287,12 @@ export function NebulaM({ connectionStatus, levelsRef, turnPhase }: NebulaMProps
     pointerRef.current.targetY = 0;
   };
 
-  const handleFlip = () => {
-    manualFlipRef.current = {
-      target: currentResolveRef.current >= 0.5 ? 0 : 1,
-      until: performance.now() + 4_500,
-    };
-  };
-
   return (
     <div
       aria-hidden
       className="mereka-nebula"
       data-fallback={fallback ? "true" : undefined}
       data-ready={webglReady && !fallback ? "true" : undefined}
-      onClick={handleFlip}
       onPointerLeave={handlePointerLeave}
       onPointerMove={handlePointerMove}
     >
