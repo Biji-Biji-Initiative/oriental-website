@@ -17,6 +17,7 @@ import {
 } from "@/lib/voice/client-events";
 import { endConversation, resolveConversationId, touchConversation } from "@/lib/voice/conversation";
 import { recallHandoff, rememberHandoff } from "@/lib/voice/handoff-memory";
+import type { VoiceToolName, VoiceToolOutcome } from "@/lib/voice/latency";
 import {
   fetchWithTimeout,
   LEAD_SUBMIT_TIMEOUT_MS,
@@ -106,7 +107,9 @@ export function VoiceAgentDialog({
   );
   const connectionStatusRef = useRef<VoiceConnectionStatus>("idle");
   const postCloseSnapshotRef = useRef<((reason: VoiceCloseReason) => void) | null>(null);
-  const recordToolDurationRef = useRef<((durationMs: number) => void) | null>(null);
+  const recordToolDurationRef = useRef<
+    ((sample: { at: number; durationMs: number; name: VoiceToolName; outcome: VoiceToolOutcome }) => void) | null
+  >(null);
   const prewarmSnapshotIdsRef = useRef<Set<string>>(new Set());
   const [reviewMetadata, setReviewMetadata] = useState<VoiceReviewMetadata | null>(null);
 
@@ -228,7 +231,7 @@ export function VoiceAgentDialog({
     prefillEmail: prefill?.email,
     submitLead: (leadState) => submit("voice", leadState),
     onEndVoice: () => teardownVoiceRef.current?.("manual"),
-    onToolDuration: (durationMs) => recordToolDurationRef.current?.(durationMs),
+    onToolDuration: (sample) => recordToolDurationRef.current?.(sample),
     onCaptureNeedsAttention: (key) => formRef.current?.setFocus(key),
   });
   const { segment, captured, emailVerification, transcript, stateRef } = runtime;

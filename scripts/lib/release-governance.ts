@@ -2,6 +2,7 @@ export const CONTROL_VOICE_CELL = {
   runtimeProfile: "baseline",
   modelCell: "control",
   reasoningCell: "low",
+  emailCaptureMode: "adaptive",
 } as const;
 
 export const RELEASE_TARGETS = {
@@ -61,6 +62,9 @@ export function validateManagedVoiceCell(env: Record<string, string | undefined>
   if (env.VOICE_REASONING_CELL !== CONTROL_VOICE_CELL.reasoningCell) {
     failures.push(`VOICE_REASONING_CELL must be ${CONTROL_VOICE_CELL.reasoningCell}`);
   }
+  if (env.VOICE_EMAIL_CAPTURE_MODE !== CONTROL_VOICE_CELL.emailCaptureMode) {
+    failures.push(`VOICE_EMAIL_CAPTURE_MODE must be ${CONTROL_VOICE_CELL.emailCaptureMode}`);
+  }
   if (env.VOICE_VARIANT_PICKER === "true") {
     failures.push("VOICE_VARIANT_PICKER must be false for a governed release");
   }
@@ -74,6 +78,24 @@ export function validateHealthPayload(payload: unknown, expectedSha: string): st
   if (health.ok !== true) failures.push("health response ok must be true");
   if (health.version !== expectedSha) failures.push(`health response version must equal ${expectedSha}`);
   if (health.convex !== true) failures.push("health response convex must be true");
+  const voice = health.voice && typeof health.voice === "object" ? (health.voice as Record<string, unknown>) : null;
+  if (!voice) {
+    failures.push("health response voice must be an object");
+  } else {
+    if (voice.runtime_profile !== CONTROL_VOICE_CELL.runtimeProfile) {
+      failures.push(`health voice runtime_profile must be ${CONTROL_VOICE_CELL.runtimeProfile}`);
+    }
+    if (voice.model_cell !== CONTROL_VOICE_CELL.modelCell) {
+      failures.push(`health voice model_cell must be ${CONTROL_VOICE_CELL.modelCell}`);
+    }
+    if (voice.reasoning_cell !== CONTROL_VOICE_CELL.reasoningCell) {
+      failures.push(`health voice reasoning_cell must be ${CONTROL_VOICE_CELL.reasoningCell}`);
+    }
+    if (voice.email_capture_mode !== CONTROL_VOICE_CELL.emailCaptureMode) {
+      failures.push(`health voice email_capture_mode must be ${CONTROL_VOICE_CELL.emailCaptureMode}`);
+    }
+    if (voice.variant_picker !== false) failures.push("health voice variant_picker must be false");
+  }
   return failures;
 }
 

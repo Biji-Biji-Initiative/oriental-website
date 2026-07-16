@@ -6,9 +6,10 @@
   separates transient capacity, exhausted quota, and transport failures.
 - `useRealtimeVoiceSession.ts` classifies each failed response before retry
   selection; only `realtime_busy` enters the existing one-shot jittered loop.
-- `realtime-events.ts` carries explicit email verification state, exact spoken
-  readback instructions, grounded confirmation, correction invalidation, and
-  route rejection while pending.
+- `realtime-events.ts` carries explicit capture mode and verification state.
+  Adaptive mode accepts only syntax-valid, model-evidence-grounded, latest-turn
+  exact/bounded-ASR email values; strict retains exact readback and explicit
+  confirmation. Corrections invalidate and re-evaluate prior evidence.
 - `VoiceAgentDialog.tsx`, `useVoiceRuntime.ts`, and `HandoffPanel.tsx` keep the
   editable draft visible, focus failed fields, make typed edits authoritative,
   and stop unconfirmed voice submission.
@@ -25,15 +26,25 @@
   duplicate keys abort before commit.
 - Native-audio name drift is constrained by an explicit name cue plus a
   one-edit phonetic skeleton, with a negative regression proving that Gareth
-  cannot ground Gurpreet. Email drift remains a pending draft behind exact
-  readback and explicit confirmation.
-- Review snapshots persist only PII-free email-verification source/status/match
-  provenance through the deployed Convex validator and schema. The compatibility
+  cannot ground Gurpreet. Adaptive email drift is accepted only with an email
+  cue and edit distance `<= min(3, floor(18% length))`; strict keeps it pending.
+- Review snapshots persist only PII-free capture mode plus email-verification
+  source/status/confidence/match provenance through the Convex validator and schema. The compatibility
   retry strips the new field only when talking to an older Convex deployment.
-- The dialog has an automated short-viewport containment and responsive-scroll
-  reset regression across desktop and mobile projects. Mobile opens on the
+- The dialog has an automated 320x568, 360x800, 390x844, 844x390, 1024x600,
+  1280x720, and 1440x900 containment and responsive-scroll reset regression
+  across desktop and mobile projects. >=1024 uses three independent scrolling
+  panes. Mobile opens on the
   dialog rather than focusing an input and summoning the keyboard; desktop
-  retains first-field focus.
+  retains first-field focus. The approved Mereka M geometry replaces the
+  generic blue orb in compact UI and the particle M remains resolved at rest.
+- Permission copy no longer promises a one-time browser prompt: it explains
+  every-visit versus one-time access, and blocked-mic recovery points to the
+  browser address-bar control. Mic tracks are still released on close.
+- Latency telemetry now stores bounded PII-free per-tool name/outcome,
+  response-created-to-call, execution, and result-dispatch samples. Structured
+  logs aggregate p50/p95 by tool. Lead persistence and notification fan-out
+  start concurrently, preserving all prior durability and failure semantics.
 - The live voice smoke derives its expected model/cell from `/api/health` unless
   an operator explicitly pins an expected value, so safe-control release proof
   cannot accidentally require or claim candidate promotion.
@@ -41,16 +52,15 @@
 ## Verification surface
 
 Focused tests cover classifier bodies (including malformed 429), capacity-only
-retry selection, email capture/readback/confirmation/contradiction, API 409,
+retry selection, adaptive/strict email grounding/correction, API 409,
 typed event ordering, durable lead linkage, PII-free telemetry, aggregate
 availability, and synthetic exclusion. `smoke-staging-intake.ts` uses the
 reserved `qa.nebula@example.test` address. Its executable assertions:
 
 1. wait until the normalized address populates the Email input;
-2. require pending-confirmation copy and prove its closest form label is Email;
-3. require a Reka transcript turn containing the exact address components;
-4. send grounded explicit confirmation and require the pending copy to
-   disappear and the voice-confirmed copy to appear;
+2. require adaptive capture copy and prove its closest form label is Email;
+3. require mandatory-confirmation copy to remain absent;
+4. require a subsequent Reka transcript turn without sending a confirmation;
 5. require the captured address to remain exact and the `/api/leads` POST count
    to remain zero; and
 6. end voice cleanly and require zero page or console errors.
@@ -64,10 +74,11 @@ The source staging stack was already live at
 governed merge SHA will include later operations/performance changes and must be
 redeployed/re-proven; the historical staging SHA is not final release evidence.
 
-Production remains `baseline/control/low`. The evidence gate remains
+The governed production contract is `baseline/control/low/adaptive`. The
+runtime/model/reasoning evidence gate remains
 `insufficient_data`; this release does not alter that decision.
 
-## Current integration verification
+## Previous integration baseline (must be rerun for the final SHA)
 
 - `pnpm lint`: 195 files, no findings.
 - `pnpm typecheck`: passed.

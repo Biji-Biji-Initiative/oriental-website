@@ -42,7 +42,7 @@ cannot affect the runtime image.
 - Infisical is canonical configuration. Coolify's environment-variable store
   and staging's host-local `.env` are separate materialized copies and MUST be
   compared with Infisical before release.
-- Production voice MUST remain `baseline/control/low` unless the experiment
+- Production voice MUST remain `baseline/control/low/adaptive` unless the experiment
   gate and human review explicitly authorize a single-dimension trial.
 - A failed health check MUST stop the rollout. Never disable or weaken the gate
   to finish a release.
@@ -110,7 +110,7 @@ infisical run \
 ```
 
 Managed-environment validation is the default and requires explicit
-`baseline/control/low` plus the QA picker off. `--allow-unmanaged` exists only
+`baseline/control/low/adaptive` plus the QA picker off. `--allow-unmanaged` exists only
 for testing the Git/static contract and MUST NOT be used as production release
 evidence.
 
@@ -218,6 +218,8 @@ early convergence and fail-closed checks, not repeated manual verification.
 - Endpointing: restore `VOICE_RUNTIME_PROFILE=baseline`.
 - Model: restore `VOICE_MODEL_CELL=control`.
 - Reasoning: restore `VOICE_REASONING_CELL=low`.
+- Email capture: restore `VOICE_EMAIL_CAPTURE_MODE=strict` to require exact
+  readback and explicit confirmation without rolling back the web image.
 - Staging: restore the timestamped Compose/`.env` backup or previous
   `staging-<sha>` image.
 - Convex: use backward-compatible schema/function changes; never assume an app

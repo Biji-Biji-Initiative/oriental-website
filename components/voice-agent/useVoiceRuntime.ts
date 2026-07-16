@@ -4,6 +4,7 @@ import { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { SegmentId } from "@/lib/segments";
 import { serializeRealtimeCommand } from "@/lib/voice/client-events";
+import { VOICE_TOOL_NAMES, type VoiceToolName, type VoiceToolOutcome } from "@/lib/voice/latency";
 import {
   appendTypedUserMessage,
   type CapturedLead,
@@ -26,8 +27,8 @@ type UseVoiceRuntimeArgs = {
   /** Persist the lead; resolves with the tool output returned to the model. */
   submitLead: (state: VoiceRuntimeState) => Promise<Record<string, unknown>>;
   onEndVoice: () => void;
-  /** Reports browser-side tool execution through result dispatch. */
-  onToolDuration: (durationMs: number) => void;
+  /** Reports PII-free browser tool timing through result dispatch. */
+  onToolDuration: (sample: { at: number; durationMs: number; name: VoiceToolName; outcome: VoiceToolOutcome }) => void;
   /** Brings the editable fallback into view after repeated capture trouble. */
   onCaptureNeedsAttention?: (key: keyof CapturedLead) => void;
 };
@@ -128,7 +129,7 @@ export function useVoiceRuntime({
             createResponse: output.submitted !== true,
             output,
           });
-          if (sent) callbacksRef.current.onToolDuration(performance.now() - startedAt);
+          reportTool(callbacksRef.current.onToolDuration, "route_to_team", startedAt, output, sent);
         })
         .catch((error) => {
           stateRef.current = { ...stateRef.current, routeRequested: false };
@@ -142,7 +143,7 @@ export function useVoiceRuntime({
               message: error instanceof Error ? error.message : "The lead submission failed.",
             },
           });
-          if (sent) callbacksRef.current.onToolDuration(performance.now() - startedAt);
+          reportTool(callbacksRef.current.onToolDuration, "route_to_team", startedAt, { ok: false }, sent, "failed");
           toast.error("Could not finish voice routing. You can still send from the handoff panel.");
         });
     },
@@ -195,7 +196,13 @@ export function useVoiceRuntime({
             callbacksRef.current.onCaptureNeedsAttention?.("email");
           }
           const sent = sendRealtimeCommand(channel, command);
-          if (sent) callbacksRef.current.onToolDuration(performance.now() - toolStartedAt);
+          reportTool(
+            callbacksRef.current.onToolDuration,
+            toolNameForCall(serverEvent, command.callId),
+            toolStartedAt,
+            command.output,
+            sent,
+          );
         }
         if (command.type === "submit_voice") submitVoiceCommand(channel, command, reduced.state, toolStartedAt);
         if (command.type === "end_voice") callbacksRef.current.onEndVoice();
@@ -217,6 +224,35 @@ export function useVoiceRuntime({
     transcript,
     updateCaptured,
   };
+}
+
+function toolNameForCall(event: RealtimeServerEvent, callId: string): VoiceToolName {
+  const name = event.response?.output?.find((item) => item.call_id === callId)?.name;
+  return typeof name === "string" && (VOICE_TOOL_NAMES as readonly string[]).includes(name)
+    ? (name as VoiceToolName)
+    : "unknown";
+}
+
+function reportTool(
+  report: UseVoiceRuntimeArgs["onToolDuration"],
+  name: VoiceToolName,
+  startedAt: number,
+  output: Record<string, unknown>,
+  sent: boolean,
+  forcedOutcome?: VoiceToolOutcome,
+) {
+  const at = performance.now();
+  const error = typeof output.error === "string" ? output.error : null;
+  const outcome =
+    forcedOutcome ??
+    (!sent
+      ? "dispatch_failed"
+      : output.ok !== false
+        ? "success"
+        : error === "unknown_tool" || error?.includes("failed")
+          ? "failed"
+          : "rejected");
+  report({ at, durationMs: at - startedAt, name, outcome });
 }
 
 function toCapturedLeadKey(value: unknown): keyof CapturedLead | null {

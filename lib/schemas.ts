@@ -194,6 +194,31 @@ export const voiceReviewSnapshotSchema = z.object({
             }),
           )
           .max(80),
+        toolCalls: z
+          .array(
+            z.object({
+              sequence: z.number().int().nonnegative().optional(),
+              name: z.enum([
+                "set_partner_type",
+                "capture_field",
+                "capture_fields",
+                "confirm_email",
+                "lookup_oriental",
+                "clear_field",
+                "summarise_lead",
+                "route_to_team",
+                "wait_for_user",
+                "end_call",
+                "unknown",
+              ]),
+              outcome: z.enum(["success", "rejected", "failed", "dispatch_failed"]),
+              executionMs: z.number().nonnegative().max(120_000),
+              responseCreatedToCallMs: z.number().nonnegative().max(120_000).optional(),
+              responseCreatedToResultMs: z.number().nonnegative().max(120_000).optional(),
+            }),
+          )
+          .max(120)
+          .optional(),
       })
       .optional(),
     transport: z

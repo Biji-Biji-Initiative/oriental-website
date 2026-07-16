@@ -140,7 +140,7 @@ Traefik network with `coolify.managed=false`, so it is host-managed rather than
 a full Coolify UI application until a dedicated Coolify staging app/API token
 is provisioned.
 The Infisical `staging` environment now contains the complete application
-contract plus explicit baseline/control/low, staging-Sentry, and QA-picker-off
+contract plus explicit baseline/control/low/adaptive, staging-Sentry, and QA-picker-off
 overrides. The host-managed staging container still materializes those values
 through its host-local env file; Infisical is the canonical comparison source,
 not a runtime SDK dependency. Staging and production still share upstream

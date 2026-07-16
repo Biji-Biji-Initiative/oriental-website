@@ -42,6 +42,7 @@ describe("release governance", () => {
         VOICE_RUNTIME_PROFILE: CONTROL_VOICE_CELL.runtimeProfile,
         VOICE_MODEL_CELL: CONTROL_VOICE_CELL.modelCell,
         VOICE_REASONING_CELL: CONTROL_VOICE_CELL.reasoningCell,
+        VOICE_EMAIL_CAPTURE_MODE: CONTROL_VOICE_CELL.emailCaptureMode,
         VOICE_VARIANT_PICKER: "false",
       }),
     ).toEqual([]);
@@ -50,9 +51,10 @@ describe("release governance", () => {
         VOICE_RUNTIME_PROFILE: "instant-v1",
         VOICE_MODEL_CELL: "candidate",
         VOICE_REASONING_CELL: "minimal",
+        VOICE_EMAIL_CAPTURE_MODE: "strict",
         VOICE_VARIANT_PICKER: "true",
       }),
-    ).toHaveLength(4);
+    ).toHaveLength(5);
   });
 
   it("makes managed cell checks the preflight default", () => {
@@ -65,8 +67,24 @@ describe("release governance", () => {
   });
 
   it("requires exact-SHA healthy Convex responses", () => {
-    expect(validateHealthPayload({ ok: true, version: sha, convex: true }, sha)).toEqual([]);
-    expect(validateHealthPayload({ ok: true, version: "wrong", convex: false }, sha)).toHaveLength(2);
+    expect(
+      validateHealthPayload(
+        {
+          ok: true,
+          version: sha,
+          convex: true,
+          voice: {
+            runtime_profile: "baseline",
+            model_cell: "control",
+            reasoning_cell: "low",
+            email_capture_mode: "adaptive",
+            variant_picker: false,
+          },
+        },
+        sha,
+      ),
+    ).toEqual([]);
+    expect(validateHealthPayload({ ok: true, version: "wrong", convex: false }, sha)).toHaveLength(3);
   });
 
   it("rejects Cloudflare edge response markers", () => {

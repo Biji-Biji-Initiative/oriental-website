@@ -137,7 +137,7 @@ pnpm build && pnpm test:performance  # production mobile LCP/CLS/JS/a11y gate
 pnpm check-secrets          # validate expected env keys (local)
 pnpm local:ngrok -- --check  # prove ngrok secret lookup without opening a tunnel
 pnpm smoke:staging:voice    # real canonical-staging WebRTC/audio/persistence proof
-pnpm smoke:staging:intake   # exact email readback/confirmation/no-submit proof
+pnpm smoke:staging:intake   # grounded adaptive email capture/no-confirmation/no-submit proof
 pnpm --silent ops:status --json  # machine-readable live/repo/review/work-queue truth
 pnpm release:preflight -- --sha <full-main-sha>  # requires managed release env
 pnpm release:deploy:production -- --sha <full-sha> --expected-current-sha <full-sha>
@@ -240,7 +240,9 @@ sequenceDiagram
 ```
 
 - **Profile:** `VOICE_PROFILE` in `lib/voice/profile.ts` drives instructions, tools, turn detection, truncation.
-- **Events:** `lib/voice/realtime-events.ts` handles grounded state/tool events; `lib/voice/latency.ts` handles bounded turn timing. Add focused tests for either reducer.
+- **Capture:** governed staging/production use `VOICE_EMAIL_CAPTURE_MODE=adaptive`; accept only syntax-valid, independently grounded latest-turn evidence. `strict` is the exact-readback/confirmation rollback. Never loosen the reducer or API submission boundary to achieve lower friction.
+- **Events:** `lib/voice/realtime-events.ts` handles grounded state/tool events; `lib/voice/latency.ts` handles bounded turn and PII-free per-tool timings. Never persist arguments, call IDs, contact values, or raw browser timestamps. Add focused tests for either reducer.
+- **Responsive voice UI:** preserve explicit proof at 320x568, 360x800, 390x844, 844x390, 1024x600, 1280x720, and 1440x900 plus mobile-to-desktop resize. At >=1024 all three panes scroll independently.
 - **Specs:** `docs/05-VOICE-AGENT-SPEC.md` covers product flow and `docs/13-VOICE-INSTANT-RELEASE-SPEC.md` covers the staged latency/endpointing release contract; verify both against code before assuming parity.
 
 ---

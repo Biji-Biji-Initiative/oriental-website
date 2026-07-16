@@ -127,8 +127,8 @@ is unblocked.
   policy (10-minute default, bounded server override), 20s idle timeout, and the per-IP voice
   limiter (`VOICE_SESSION_DAILY_LIMIT`, default 80) backed by Redis in production.
   Page load may import the voice bundle, but Realtime session pre-minting happens
-  only for returning visitors with granted microphone permission or after a
-  first-time visitor grants access.
+  only while microphone permission is currently granted or after the visitor
+  grants a first-use/expired-one-time prompt.
 
 ## 10. Release plan
 

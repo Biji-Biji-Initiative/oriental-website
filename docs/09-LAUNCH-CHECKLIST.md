@@ -10,7 +10,8 @@ Evidence status on 2026-07-16: engineering release
 and remains the production release. Shared staging can move independently for a
 controlled experiment, so its current SHA MUST be read from `/api/health`
 rather than inferred from this historical record. The instant-voice product
-outcome remains evidence-gated: the corpus is baseline/control/low only and the
+outcome remains evidence-gated: the corpus is baseline/control/low only while
+grounded adaptive email capture is the approved policy, and the
 promotion evaluator reports `insufficient_data`. Unchecked human, legal,
 listening, data-retention, and availability gates are real handoff work; they
 MUST NOT be reported as complete.

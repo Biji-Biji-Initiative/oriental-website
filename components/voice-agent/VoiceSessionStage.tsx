@@ -224,7 +224,7 @@ export function VoiceSessionStage({
         </Button>
         <p className="mt-3 text-xs text-white/55">
           {micPermission === "prompt" && connectionStatus === "idle"
-            ? "Your browser will ask for the microphone once — choose “Allow while visiting” so it never asks again."
+            ? "Choose your browser’s every-visit option to remember the mic. One-time access will ask again later."
             : "Speak or type anytime. Reka says a quick goodbye if you go quiet, and your typed details stay here."}
         </p>
         {/* biome-ignore lint/a11y/useMediaCaption: Live WebRTC audio streams live captions above; the transcript log is the accessible record. */}
@@ -235,9 +235,9 @@ export function VoiceSessionStage({
 }
 
 /**
- * Live microphone permission state, so the stage can warn first-timers that a
- * browser prompt is coming (and coach the persistent grant). Returns null when
- * the Permissions API cannot answer (e.g. Firefox) — no hint is shown.
+ * Live microphone permission state. `prompt` can mean first use or an expired
+ * one-time grant, so the copy explains both without assuming lifecycle history.
+ * Returns null when the Permissions API cannot answer (e.g. Firefox).
  */
 function useMicrophonePermissionState() {
   const [state, setState] = useState<PermissionState | null>(null);

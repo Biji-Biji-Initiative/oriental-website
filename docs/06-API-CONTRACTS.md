@@ -115,7 +115,9 @@ type LeadResponse = {
 configured, and in production when Convex persistence fails but at least one
 notification channel delivered the lead. Notifications are an independent
 durability path: the owner email and Slack message carry the full lead, so
-they are attempted even when Convex is down, and the route only returns
+they are attempted even when Convex is down. Persistence and notification
+fan-out start concurrently so the voice routing acknowledgement is not their
+sum. The route only returns
 `502 persistence_failed` when persistence **and** every notification channel
 fail. Production persistence failures always page ops, including in the
 degraded-success case.
@@ -126,7 +128,7 @@ degraded-success case.
 |---|---|---|
 | 400 | `invalid_payload` | Zod validation failed. |
 | 403 | `turnstile_failed` | Cloudflare verify rejected the token. |
-| 409 | `voice_email_unconfirmed` | Voice source did not provide a verified email readback/edit marker. |
+| 409 | `voice_email_unconfirmed` | Voice source did not provide a currently verified email marker (grounded adaptive capture, strict confirmation, typed edit, or prefill). |
 | 429 | `rate_limited` | More than 12 lead attempts per IP per hour. |
 | 500 | `routing_unconfigured` | Production owner email missing for the resolved segment. |
 | 502 | `persistence_failed` | Production Convex persistence failed and no notification channel delivered the lead. |
@@ -155,8 +157,9 @@ degraded-success case.
    confirmation alone.
 
 The email verification marker and signed review token are request-boundary
-evidence; both are stripped before lead persistence. Speech confirmation state
-remains in the signed voice-session review snapshot for QA.
+evidence; both are stripped before lead persistence. PII-free capture mode,
+source, confidence, status, and current-value match remain in the signed
+voice-session review snapshot for QA.
 
 In local and test environments, notification failures are represented in the
 `notifications` object and do not turn a successfully accepted lead into an
@@ -256,6 +259,7 @@ type VoiceSessionResponse = {
   model: string; // default "gpt-realtime-2"
   model_cell: "control" | "candidate";
   reasoning_cell: "low" | "minimal";
+  email_capture_mode: "strict" | "adaptive";
   voice: string; // source fallback "marin"; production currently "coral"; a selected variant overrides this
   speed: number; // source fallback 1.18; production currently 1.28; clamped to OpenAI's 0.25..1.5 range
   variant: string | null; // resolved voice variant id, or null when none selected
@@ -278,7 +282,7 @@ type VoiceSessionResponse = {
 | HTTP | `error` | Cause |
 |---|---|---|
 | 400 | `invalid_payload` | Zod validation failed. |
-| 429 | `voice_limit_reached` | More than `VOICE_SESSION_DAILY_LIMIT` (default 80) minted sessions per IP per day. Page load imports the voice bundle and preconnects; Realtime session pre-minting only happens for returning visitors whose browser already has microphone permission, or after first-time visitors grant microphone access. |
+| 429 | `voice_limit_reached` | More than `VOICE_SESSION_DAILY_LIMIT` (default 80) minted sessions per IP per day. Page load imports the voice bundle and preconnects; Realtime pre-minting happens only while microphone permission is currently granted, or after the visitor grants a first-use/expired-one-time prompt. |
 | 503 | `openai_unconfigured` | `OPENAI_API_KEY` missing. |
 | 502 | `openai_<status>` | OpenAI client-secret request failed. |
 | 502 | `openai_invalid_secret` | OpenAI response did not contain a usable secret. |
@@ -295,6 +299,8 @@ Server request:
 - `session.model = OPENAI_REALTIME_MODEL ?? "gpt-realtime-2"`
 - candidate model and reasoning combinations are independent controlled cells;
   defaults remain `VOICE_MODEL_CELL=control` and `VOICE_REASONING_CELL=low`
+- governed staging and production use `VOICE_EMAIL_CAPTURE_MODE=adaptive`;
+  `strict` is the exact-readback/explicit-confirmation rollback
 - `session.output_modalities = ["audio"]`
 - `session.audio.input.turn_detection` from `VOICE_SESSION_DEFAULTS`
   (`semantic_vad`, `eagerness: "auto"`)
@@ -371,6 +377,13 @@ type VoiceReviewSnapshotRequest = {
     model?: string;
     voice?: string;
     speed?: number;
+    emailCaptureMode?: "strict" | "adaptive";
+    emailVerification?: {
+      source: "prefill" | "speech" | "typed";
+      status: "confirmed" | "pending";
+      confidence?: "high" | "medium";
+      matchesCaptured: boolean;
+    };
     captured: { name: string; email: string; org: string; phone: string; website: string; message: string };
     transcript: Array<{ role: "user" | "assistant" | "system"; text: string }>;
     usage?: RealtimeUsageSummary;
@@ -380,6 +393,14 @@ type VoiceReviewSnapshotRequest = {
       version: 1;
       activation?: { tapToArmCueScheduledMs?: number; tapToLiveMs?: number; tapToAudibleMs?: number };
       turns: VoiceTurnLatencySample[];
+      toolCalls?: Array<{
+        sequence?: number;
+        name: string; // bounded tool-name enum; never arguments or captured values
+        outcome: "success" | "rejected" | "failed" | "dispatch_failed";
+        executionMs: number;
+        responseCreatedToCallMs?: number;
+        responseCreatedToResultMs?: number;
+      }>;
     };
     transport?: {
       realtimeBusyRetryCount?: number;
@@ -476,6 +497,7 @@ type HealthResponse = {
     model_cell: "control" | "candidate";
     model: string;
     reasoning_cell: "low" | "minimal";
+    email_capture_mode: "strict" | "adaptive";
     variant_picker: boolean;
   };
 };

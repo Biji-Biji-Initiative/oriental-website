@@ -95,7 +95,7 @@ describe("voice latency telemetry", () => {
         { type: "local_speech_ended", at: 420 },
         { type: "speech_stopped", at: 500 },
         { type: "response_created", at: 620 },
-        { type: "tool_completed", durationMs: 37.4 },
+        { type: "tool_completed", at: 667.4, durationMs: 37.4, name: "lookup_oriental", outcome: "success" },
         { type: "first_output", at: 760 },
         { type: "remote_audio_started", at: 820 },
         { type: "response_done", at: 1_200 },
@@ -111,6 +111,16 @@ describe("voice latency telemetry", () => {
       firstOutputEventToRemoteAudioMs: 60,
       toolDurationMs: 37,
     });
+    expect(state.telemetry.toolCalls).toEqual([
+      {
+        sequence: 1,
+        name: "lookup_oriental",
+        outcome: "success",
+        executionMs: 37,
+        responseCreatedToCallMs: 10,
+        responseCreatedToResultMs: 47,
+      },
+    ]);
   });
 
   it("records opener audio as tap-to-audible before the visitor speaks", () => {
@@ -132,12 +142,18 @@ describe("voice latency telemetry", () => {
       { type: "speech_started", at: 100 },
       { type: "speech_stopped", at: 200 },
       { type: "response_created", at: 300 },
-      { type: "tool_completed", durationMs: 40.4 },
-      { type: "tool_completed", durationMs: 130_000 },
+      { type: "tool_completed", at: 350.4, durationMs: 40.4, name: "capture_fields", outcome: "success" },
+      { type: "tool_completed", at: 480, durationMs: 130_000, name: "route_to_team", outcome: "failed" },
       { type: "response_done", at: 500 },
     ]);
 
     expect(state.telemetry.turns[0]?.toolDurationMs).toBe(120_000);
+    expect(state.telemetry.toolCalls).toHaveLength(2);
+    expect(state.telemetry.toolCalls?.[1]).toMatchObject({
+      name: "route_to_team",
+      outcome: "failed",
+      executionMs: 120_000,
+    });
   });
 
   it("measures interruption clearing without losing the new user turn", () => {

@@ -93,6 +93,8 @@ test("faq page nav links point home and the talk CTA opens the form workspace", 
   }
   await expect(page.getByRole("dialog")).toBeVisible();
   await expect(isMobile ? page.getByRole("dialog") : page.getByLabel("Name")).toBeFocused();
+  await expect(page.getByText(/every-visit option to remember the mic/i)).toBeVisible();
+  await expect(page.getByText(/One-time access will ask again later/i)).toBeVisible();
 });
 
 test("facilities use the current supplied space images and aligned labels", async ({ page }) => {
@@ -348,9 +350,12 @@ test("voice intake stays contained and resets scroll across short responsive vie
 
   const viewports = [
     { width: 320, height: 568 },
+    { width: 360, height: 800 },
     { width: 390, height: 844 },
     { width: 844, height: 390 },
     { width: 1024, height: 600 },
+    { width: 1280, height: 720 },
+    { width: 1440, height: 900 },
   ];
   for (const viewport of viewports) {
     await page.setViewportSize(viewport);
@@ -385,11 +390,27 @@ test("voice intake stays contained and resets scroll across short responsive vie
                 close.bottom <= rect.bottom,
             ),
             compactThreePane,
+            paneTopsAlign:
+              window.innerWidth < 1024 ||
+              Boolean(
+                layout &&
+                  [...layout.children].every(
+                    (region) => Math.abs(region.getBoundingClientRect().top - layout.getBoundingClientRect().top) <= 1,
+                  ),
+              ),
             noPageOverflow: document.documentElement.scrollWidth <= window.innerWidth,
           };
         }),
       )
-      .toEqual({ dialogFits: true, closeFits: true, compactThreePane: true, noPageOverflow: true });
+      .toEqual({
+        dialogFits: true,
+        closeFits: true,
+        compactThreePane: true,
+        paneTopsAlign: true,
+        noPageOverflow: true,
+      });
+    await page.getByRole("button", { name: "Start voice with Reka" }).scrollIntoViewIfNeeded();
+    await expect(page.getByRole("button", { name: "Start voice with Reka" })).toBeVisible();
   }
 
   await page.setViewportSize({ width: 390, height: 844 });

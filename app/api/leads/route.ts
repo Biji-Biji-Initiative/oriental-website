@@ -88,18 +88,33 @@ export async function POST(request: NextRequest) {
     return noStoreJson({ ok: false, error: "routing_unconfigured" }, { status: 500 });
   }
 
-  const persistence = await persistLead(lead).catch((error) => ({
+  // Notifications double as an independent durability path: the owner email and
+  // Slack message carry the full lead, so they are attempted even when Convex is
+  // down. Start persistence and fan-out together: neither depends on the other,
+  // and serializing them unnecessarily delayed the route_to_team voice tool.
+  const operationTimings: Record<string, number> = {};
+  const timed = async <T>(name: string, operation: () => Promise<T>) => {
+    const operationStartedAt = performance.now();
+    try {
+      return await operation();
+    } finally {
+      operationTimings[name] = Math.max(0, Math.round(performance.now() - operationStartedAt));
+    }
+  };
+  const persistencePromise = timed("persistenceMs", () => persistLead(lead)).catch((error) => ({
     id: lead.id,
     persisted: false as const,
     reason: error instanceof Error ? error.message : "convex_failed",
   }));
-  // Notifications double as an independent durability path: the owner email and
-  // Slack message carry the full lead, so they are attempted even when Convex is down.
-  const [email, slack, clickup, confirmation] = await Promise.allSettled([
-    notifyOwner(lead),
-    notifySlack(lead),
-    notifyClickUp(lead),
-    notifySubmitter(lead),
+  const notificationsPromise = Promise.allSettled([
+    timed("ownerNotificationMs", () => notifyOwner(lead)),
+    timed("slackNotificationMs", () => notifySlack(lead)),
+    timed("clickupNotificationMs", () => notifyClickUp(lead)),
+    timed("submitterNotificationMs", () => notifySubmitter(lead)),
+  ]);
+  const [persistence, [email, slack, clickup, confirmation]] = await Promise.all([
+    persistencePromise,
+    notificationsPromise,
   ]);
   const notifications = {
     email: settledNotificationResult(email, "email_failed", "lead.notification_rejected"),
@@ -117,6 +132,7 @@ export async function POST(request: NextRequest) {
       segment: lead.segment,
       reason: persistence.reason,
       notificationDelivered: delivered,
+      operationTimings,
       durationMs: durationSince(startedAt),
     });
     await sendOpsAlert({
@@ -133,20 +149,23 @@ export async function POST(request: NextRequest) {
     }
   }
   if (persistence.persisted) {
-    await recordLeadNotificationStatus(
-      persistence.id,
-      {
-        email: notifications.email,
-        slack: notifications.slack,
-        clickup: notifications.clickup,
-        confirmation: notifications.confirmation,
-      },
-      delivered,
+    await timed("notificationStatusPersistenceMs", () =>
+      recordLeadNotificationStatus(
+        persistence.id,
+        {
+          email: notifications.email,
+          slack: notifications.slack,
+          clickup: notifications.clickup,
+          confirmation: notifications.confirmation,
+        },
+        delivered,
+      ),
     ).catch((error) => {
       logWarn("lead.notification_status_persist_failed", {
         requestId,
         leadId: persistence.id,
         error: errorMeta(error),
+        operationTimings,
         durationMs: durationSince(startedAt),
       });
     });
@@ -159,6 +178,7 @@ export async function POST(request: NextRequest) {
       segment: lead.segment,
       persisted: true,
       notifications,
+      operationTimings,
       durationMs: durationSince(startedAt),
     });
     await sendOpsAlert({
@@ -187,6 +207,7 @@ export async function POST(request: NextRequest) {
     notifications,
     rateLimitStore: limit.store,
     remaining: limit.remaining,
+    operationTimings,
     durationMs: durationSince(startedAt),
   });
   return noStoreJson({

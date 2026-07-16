@@ -10,6 +10,36 @@ export type VoiceTurnPhase = "quiet" | "user_speaking" | "waiting_for_response" 
 
 export type VoiceInputPolicy = "baseline" | "fast" | "patient";
 
+export const VOICE_TOOL_NAMES = [
+  "set_partner_type",
+  "capture_field",
+  "capture_fields",
+  "confirm_email",
+  "lookup_oriental",
+  "clear_field",
+  "summarise_lead",
+  "route_to_team",
+  "wait_for_user",
+  "end_call",
+  "unknown",
+] as const;
+
+export type VoiceToolName = (typeof VOICE_TOOL_NAMES)[number];
+export type VoiceToolOutcome = "success" | "rejected" | "failed" | "dispatch_failed";
+
+export type VoiceToolLatencySample = {
+  /** Turn sequence when available; omitted for lifecycle-only calls. */
+  sequence?: number;
+  name: VoiceToolName;
+  outcome: VoiceToolOutcome;
+  /** Browser execution plus function-result serialization and dispatch. */
+  executionMs: number;
+  /** Model/transport time from response.created until browser execution began. */
+  responseCreatedToCallMs?: number;
+  /** End-to-end response.created until the result was dispatched. */
+  responseCreatedToResultMs?: number;
+};
+
 export type VoiceTurnLatencySample = {
   sequence: number;
   inputPolicy: VoiceInputPolicy;
@@ -48,6 +78,8 @@ export type VoiceLatencyTelemetry = {
     tapToAudibleMs?: number;
   };
   turns: VoiceTurnLatencySample[];
+  /** PII-free per-tool timings, retained separately from turn aggregates. */
+  toolCalls?: VoiceToolLatencySample[];
 };
 
 export type VoiceLatencySignal =
@@ -57,7 +89,7 @@ export type VoiceLatencySignal =
   | { type: "first_output"; at: number }
   | { type: "local_speech_ended"; at: number }
   | { type: "remote_audio_started"; at: number }
-  | { type: "tool_completed"; durationMs: number }
+  | { type: "tool_completed"; at: number; durationMs: number; name: VoiceToolName; outcome: VoiceToolOutcome }
   | { type: "interruption_cleared"; at: number }
   | { type: "input_policy_changed"; inputPolicy: VoiceInputPolicy }
   | { type: "response_done"; at: number }
@@ -91,6 +123,7 @@ export type VoiceLatencyState = {
 };
 
 export const MAX_VOICE_LATENCY_TURNS = 80;
+export const MAX_VOICE_TOOL_SAMPLES = 120;
 export const RAPID_RESUME_WINDOW_MS = 1_500;
 
 export function createVoiceLatencyState(
@@ -123,7 +156,7 @@ export function reduceVoiceLatency(state: VoiceLatencyState, signal: VoiceLatenc
     case "remote_audio_started":
       return recordRemoteAudioStarted(state, signal.at);
     case "tool_completed":
-      return recordToolCompleted(state, signal.durationMs);
+      return recordToolCompleted(state, signal);
     case "interruption_cleared":
       return recordInterruptionCleared(state, signal.at);
     case "input_policy_changed":
@@ -259,17 +292,42 @@ function recordRemoteAudioStarted(state: VoiceLatencyState, at: number): VoiceLa
   };
 }
 
-function recordToolCompleted(state: VoiceLatencyState, durationMs: number): VoiceLatencyState {
+function recordToolCompleted(
+  state: VoiceLatencyState,
+  signal: Extract<VoiceLatencySignal, { type: "tool_completed" }>,
+): VoiceLatencyState {
+  const { at, durationMs, name, outcome } = signal;
+  if (!Number.isFinite(at) || !Number.isFinite(durationMs) || durationMs < 0) return state;
+  const executionMs = Math.min(120_000, Math.round(durationMs));
+  const startedAt = at - durationMs;
   const current = state.current;
-  if (!current || !Number.isFinite(durationMs) || durationMs < 0) return state;
+  const sample: VoiceToolLatencySample = {
+    ...(current ? { sequence: current.sequence } : {}),
+    name,
+    outcome,
+    executionMs,
+    ...(current?.responseCreatedAt !== undefined
+      ? {
+          responseCreatedToCallMs: elapsed(current.responseCreatedAt, startedAt),
+          responseCreatedToResultMs: elapsed(current.responseCreatedAt, at),
+        }
+      : {}),
+  };
   return {
     ...state,
-    current: {
-      ...current,
-      // The persisted schema accepts at most 120 seconds for one turn. Clamp
-      // here as a final defence against a suspended browser clock jump.
-      toolDurationMs: Math.min(120_000, current.toolDurationMs + Math.round(durationMs)),
+    telemetry: {
+      ...state.telemetry,
+      toolCalls: [...(state.telemetry.toolCalls ?? []), sample].slice(-MAX_VOICE_TOOL_SAMPLES),
     },
+    ...(current
+      ? {
+          current: {
+            ...current,
+            // The persisted schema accepts at most 120 seconds for one turn.
+            toolDurationMs: Math.min(120_000, current.toolDurationMs + executionMs),
+          },
+        }
+      : {}),
   };
 }
 

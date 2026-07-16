@@ -34,6 +34,8 @@ import {
   type VoiceTransportTelemetry,
 } from "@/lib/voice/transport-telemetry";
 
+type VoiceToolCompletedSignal = Extract<VoiceLatencySignal, { type: "tool_completed" }>;
+
 export type VoiceConnectionStatus = "idle" | "requesting_mic" | "connecting" | "reconnecting" | "listening";
 export type VoiceCloseReason =
   | "idle_timeout"
@@ -818,8 +820,8 @@ export function useRealtimeVoiceSession({
   const recordRemoteAudioStarted = useCallback((at: number) => {
     recordLatencySignalRef.current?.({ type: "remote_audio_started", at });
   }, []);
-  const recordToolDuration = useCallback((durationMs: number) => {
-    recordLatencySignalRef.current?.({ type: "tool_completed", durationMs });
+  const recordToolDuration = useCallback((sample: Omit<VoiceToolCompletedSignal, "type">) => {
+    recordLatencySignalRef.current?.({ type: "tool_completed", ...sample });
   }, []);
 
   return {

@@ -148,6 +148,26 @@ describe("POST /api/leads", () => {
     expect(mocks.persistLead.mock.calls[0]?.[0]).not.toHaveProperty("voiceEmailVerificationSource");
   });
 
+  it("starts durable persistence and notification fan-out concurrently", async () => {
+    let finishPersistence!: (value: { id: string; persisted: true }) => void;
+    mocks.persistLead.mockReturnValue(
+      new Promise((resolve) => {
+        finishPersistence = resolve;
+      }),
+    );
+
+    const responsePromise = POST(request());
+    await vi.waitFor(() => {
+      expect(mocks.notifyOwner).toHaveBeenCalledTimes(1);
+      expect(mocks.notifySlack).toHaveBeenCalledTimes(1);
+      expect(mocks.notifyClickUp).toHaveBeenCalledTimes(1);
+      expect(mocks.notifySubmitter).toHaveBeenCalledTimes(1);
+    });
+
+    finishPersistence({ id: "lead_123", persisted: true });
+    await expect(responsePromise).resolves.toHaveProperty("status", 200);
+  });
+
   it("accepts signed voice leads without a Cloudflare token when Turnstile enforcement is required", async () => {
     process.env.TURNSTILE_ENFORCEMENT = "required";
     process.env.TURNSTILE_SECRET_KEY = "turnstile-secret";

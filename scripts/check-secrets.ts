@@ -45,6 +45,7 @@ const managedEnvironment = [
   "VOICE_RUNTIME_PROFILE",
   "VOICE_MODEL_CELL",
   "VOICE_REASONING_CELL",
+  "VOICE_EMAIL_CAPTURE_MODE",
   "VOICE_VARIANT_PICKER",
   "VOICE_MAX_DURATION_MS",
   "VOICE_IDLE_TIMEOUT_MS",
@@ -159,6 +160,12 @@ if (runtimeProfile && runtimeProfile !== "baseline" && runtimeProfile !== "insta
 const modelCell = envValue("VOICE_MODEL_CELL");
 if (modelCell && modelCell !== "control" && modelCell !== "candidate") {
   console.error("VOICE_MODEL_CELL must be control or candidate.");
+  process.exit(1);
+}
+
+const emailCaptureMode = envValue("VOICE_EMAIL_CAPTURE_MODE");
+if (emailCaptureMode && emailCaptureMode !== "strict" && emailCaptureMode !== "adaptive") {
+  console.error("VOICE_EMAIL_CAPTURE_MODE must be strict or adaptive.");
   process.exit(1);
 }
 if (modelCell === "candidate" && !envValue("OPENAI_REALTIME_MODEL_CANDIDATE")) {

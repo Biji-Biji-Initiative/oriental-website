@@ -120,9 +120,16 @@ async function run() {
       ok?: boolean;
       version?: string;
       convex?: boolean;
-      voice?: { model?: string; model_cell?: string };
+      voice?: { model?: string; model_cell?: string; email_capture_mode?: string };
     };
-    if (!health.ok || !health.version || !health.convex || !health.voice?.model || !health.voice.model_cell) {
+    if (
+      !health.ok ||
+      !health.version ||
+      !health.convex ||
+      !health.voice?.model ||
+      !health.voice.model_cell ||
+      health.voice.email_capture_mode !== "adaptive"
+    ) {
       throw new Error("Staging health payload is incomplete");
     }
 
