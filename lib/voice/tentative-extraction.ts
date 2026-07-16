@@ -13,7 +13,7 @@ export function extractExplicitVisitorEmail(text: string): string | null {
   if (trimmed.toLowerCase() === email.toLowerCase()) return email;
 
   const prefix = text.slice(Math.max(0, match.index - 80), match.index);
-  if (/(?:my\s+e-?mail(?:\s+address)?\s+(?:is|is:|:)|reach\s+me\s+at|contact\s+me\s+at)\s*$/i.test(prefix)) {
+  if (/(?:(?:my\s+)?e-?mail(?:\s+address)?\s+(?:is|is:|:)|reach\s+me\s+at|contact\s+me\s+at)\s*$/i.test(prefix)) {
     return email;
   }
   return null;

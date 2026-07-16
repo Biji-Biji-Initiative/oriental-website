@@ -25,7 +25,12 @@ import {
   leadSubmitErrorCopy,
   notificationDelivered,
 } from "@/lib/voice/lead-submit";
-import { type CapturedLead, emptyCapturedLead, type VoiceRuntimeState } from "@/lib/voice/realtime-events";
+import {
+  type CapturedLead,
+  emptyCapturedLead,
+  isVoiceEmailConfirmed,
+  type VoiceRuntimeState,
+} from "@/lib/voice/realtime-events";
 import {
   buildVoiceReviewSnapshot,
   postVoiceReviewSnapshot,
@@ -89,6 +94,7 @@ export function VoiceAgentDialog({
   const [conversationId, setConversationId] = useState<string>("");
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const submittingRef = useRef(false);
+  const submittedLeadIdRef = useRef<string | null>(null);
   const lastSyncedHandoffRef = useRef("");
   const openedVoiceTurnRef = useRef(false);
   const reviewRef = useRef<VoiceReviewMetadata | null>(null);
@@ -133,6 +139,13 @@ export function VoiceAgentDialog({
       submittingRef.current = true;
       setSubmitting(true);
       try {
+        if (source === "voice" && !isVoiceEmailConfirmed(leadState)) {
+          formRef.current?.setFocus("email");
+          toast.error("Please confirm the email before I send this.", {
+            description: "Say yes after Reka reads it back, or edit the email field directly.",
+          });
+          return { ok: false, error: "voice_email_unconfirmed" };
+        }
         const parsed = leadFormSchema.safeParse(leadState.captured);
         if (!parsed.success) {
           if (source === "form") void formRef.current?.trigger();
@@ -151,7 +164,13 @@ export function VoiceAgentDialog({
               segment: leadState.segment,
               form: parsed.data,
               transcript: leadState.transcript,
-              ...(source === "voice" ? buildVoiceLeadMetadata(currentReviewCredentials()) : {}),
+              ...(source === "voice"
+                ? {
+                    ...buildVoiceLeadMetadata(currentReviewCredentials()),
+                    voiceEmailVerified: true,
+                    voiceEmailVerificationSource: leadState.emailVerification?.source,
+                  }
+                : {}),
               utm: {},
             }),
           },
@@ -175,6 +194,7 @@ export function VoiceAgentDialog({
         endConversation();
         if (source === "voice") {
           const review = currentReviewCredentials();
+          submittedLeadIdRef.current = responseBody?.id ?? null;
           if (review) {
             void postVoiceReviewSnapshot(
               review,
@@ -208,8 +228,9 @@ export function VoiceAgentDialog({
     submitLead: (leadState) => submit("voice", leadState),
     onEndVoice: () => teardownVoiceRef.current?.("manual"),
     onToolDuration: (durationMs) => recordToolDurationRef.current?.(durationMs),
+    onCaptureNeedsAttention: (key) => formRef.current?.setFocus(key),
   });
-  const { segment, captured, transcript, stateRef } = runtime;
+  const { segment, captured, emailVerification, transcript, stateRef } = runtime;
 
   const form = useForm<CapturedLead>({
     defaultValues: { ...emptyCapturedLead, email: prefill?.email ?? "" },
@@ -299,6 +320,7 @@ export function VoiceAgentDialog({
     setActiveTopicId(null);
     setSubmitting(false);
     submittingRef.current = false;
+    submittedLeadIdRef.current = null;
     lastSyncedHandoffRef.current = "";
     openedVoiceTurnRef.current = false;
     reviewRef.current = null;
@@ -358,9 +380,14 @@ export function VoiceAgentDialog({
       openedVoiceTurnRef.current = false;
       return;
     }
+    if (openedVoiceTurnRef.current) return;
     // The chime is the "she's live" cue — presence you hear, not another toast.
     playLiveCue();
-    const current = { segment: stateRef.current.segment, captured: stateRef.current.captured };
+    const current = {
+      segment: stateRef.current.segment,
+      captured: stateRef.current.captured,
+      emailVerification: stateRef.current.emailVerification,
+    };
     const resumedTranscript = stateRef.current.transcript.slice(-12);
     const knownVisitor = current.captured.name.trim().length > 0 || current.captured.org.trim().length > 0;
     lastSyncedHandoffRef.current = handoffSyncKey(current);
@@ -389,7 +416,7 @@ export function VoiceAgentDialog({
 
   useEffect(() => {
     if (connectionStatus !== "listening" || !openedVoiceTurnRef.current) return;
-    const current = { segment, captured };
+    const current = { segment, captured, emailVerification };
     const key = handoffSyncKey(current);
     if (key === lastSyncedHandoffRef.current) return;
     const timeout = window.setTimeout(() => {
@@ -397,7 +424,7 @@ export function VoiceAgentDialog({
       sendClientEvents(serializeHandoffContext(current));
     }, 450);
     return () => window.clearTimeout(timeout);
-  }, [captured, connectionStatus, segment, sendClientEvents]);
+  }, [captured, connectionStatus, emailVerification, segment, sendClientEvents]);
 
   const postReviewSnapshot = useCallback(
     (overrides: Parameters<typeof buildVoiceReviewSnapshot>[3] = {}, options: { allowLocalReview?: boolean } = {}) => {
@@ -405,9 +432,13 @@ export function VoiceAgentDialog({
         options.allowLocalReview === false ? (reviewRef.current ?? localReviewRef.current) : currentReviewCredentials();
       if (!review) return;
       const snapshotState = { ...stateRef.current, segment, captured, transcript };
+      const leadId = overrides.leadId === undefined ? submittedLeadIdRef.current : overrides.leadId;
       void postVoiceReviewSnapshot(
         review,
-        buildVoiceReviewSnapshot(review, snapshotState, connectionStatusRef.current, overrides),
+        buildVoiceReviewSnapshot(review, snapshotState, connectionStatusRef.current, {
+          ...overrides,
+          ...(leadId ? { leadId } : {}),
+        }),
         { keepalive: Boolean(overrides.closedAt) },
       ).catch(() => null);
     },
@@ -572,6 +603,7 @@ export function VoiceAgentDialog({
             <HandoffPanel
               captured={captured}
               className="order-3 lg:order-none lg:col-start-2 xl:col-start-auto"
+              emailVerification={emailVerification}
               form={form}
               onChange={runtime.updateCaptured}
               onSubmit={(values) =>
@@ -595,8 +627,12 @@ export function VoiceAgentDialog({
   );
 }
 
-function handoffSyncKey(state: Pick<VoiceRuntimeState, "segment" | "captured">) {
-  return JSON.stringify({ segment: state.segment, captured: state.captured });
+function handoffSyncKey(state: Pick<VoiceRuntimeState, "segment" | "captured" | "emailVerification">) {
+  return JSON.stringify({
+    segment: state.segment,
+    captured: state.captured,
+    emailVerification: state.emailVerification,
+  });
 }
 
 function buildVoiceLeadMetadata(review: VoiceReviewCredentials | null) {

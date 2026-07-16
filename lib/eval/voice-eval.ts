@@ -86,6 +86,14 @@ export type VoiceEvalSession = {
   modelCell?: "control" | "candidate" | null;
   reasoningCell?: "low" | "minimal" | null;
   transcript: EvalTranscriptTurn[];
+  captured?: {
+    name: string;
+    email: string;
+    org: string;
+    phone?: string;
+    website?: string;
+    message: string;
+  };
   errors: Array<{ code?: string; message: string }>;
   transport?: EvalTransport;
   latency?: EvalLatency;
@@ -186,6 +194,7 @@ export function mergeConversationSessions(sessions: VoiceEvalSession[]): VoiceEv
       closedAt: max(ordered.map((s) => s.closedAt).filter(isNumber)),
       submittedAt: submitted?.submittedAt ?? head.submittedAt ?? null,
       leadId: submitted?.leadId ?? head.leadId ?? null,
+      captured: submitted?.captured ?? head.captured,
       transcript: mergeConversationTranscripts(ordered),
       errors: ordered.flatMap((s) => s.errors),
       transport,
@@ -631,7 +640,7 @@ export const JUDGE_SYSTEM_PROMPT = [
   "Score one transcript on a 0-5 integer scale per dimension. Be critical; reserve 5 for excellent.",
   "Dimensions:",
   "- routingCorrect: did Reka steer the visitor toward the correct partner segment and capture intent accurately?",
-  "- captureCompleteness: were the useful lead details (name, org, email, need) gathered without nagging?",
+  "- captureCompleteness: were useful lead details gathered without nagging, and does the final captured handoff exactly match the visitor's own words? A wrong submitted email is a critical failure.",
   "- conversationQuality: natural, concise, on-brand, no hallucinated facts or dead ends.",
   "- frustration: signals the VISITOR was frustrated/confused (0 = none, 5 = clearly frustrated).",
   'Respond with ONLY a JSON object: {"routingCorrect":int,"captureCompleteness":int,"conversationQuality":int,"frustration":int,"summary":"one sentence"}.',
@@ -640,10 +649,18 @@ export const JUDGE_SYSTEM_PROMPT = [
 export function buildJudgeUserPrompt(session: VoiceEvalSession): string {
   const transcript = session.transcript.map((turn) => `${turn.role.toUpperCase()}: ${turn.text}`).join("\n");
   const outcome = session.submittedAt || session.leadId ? "lead submitted" : "no lead submitted";
+  const captured = session.captured;
+  const issues = session.errors.map((error) => [error.code, error.message].filter(Boolean).join(": ")).join("\n");
   return [
     `Intended segment: ${session.segment}`,
     `Close reason: ${session.closeReason ?? "n/a"}`,
     `Outcome: ${outcome}`,
+    "Final captured handoff (compare this against the visitor's words; form edits may not appear in transcript):",
+    `Name: ${captured?.name || "[empty]"}`,
+    `Email: ${captured?.email || "[empty]"}`,
+    `Organisation: ${captured?.org || "[empty]"}`,
+    `Brief: ${captured?.message || "[empty]"}`,
+    `Recorded runtime issues: ${issues || "none"}`,
     "",
     "Transcript:",
     transcript.length > 0 ? transcript : "(empty)",

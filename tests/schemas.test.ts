@@ -33,6 +33,8 @@ describe("lead request schema", () => {
       voiceSpeed: 1.22,
       voiceRuntimeProfile: "instant-v1",
       voiceInputPolicy: "fast",
+      voiceEmailVerified: true,
+      voiceEmailVerificationSource: "speech",
       form: {
         name: "Asha",
         email: "asha@example.com",

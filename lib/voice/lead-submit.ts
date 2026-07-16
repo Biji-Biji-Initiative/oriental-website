@@ -65,6 +65,12 @@ export function leadSubmitErrorCopy(status: number | undefined, response: LeadSu
       description: "Please check the highlighted fields and send again.",
     };
   }
+  if (response?.error === "voice_email_unconfirmed") {
+    return {
+      title: "Please confirm the email first.",
+      description: "Say yes after Reka reads it back, or edit the email field and send again.",
+    };
+  }
   return {
     title: "Could not send this yet.",
     description: "Your handoff is still here. Please try again or email team@mereka.io.",

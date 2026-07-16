@@ -52,6 +52,8 @@ function leadBody(overrides: Record<string, unknown> = {}) {
     voiceSpeed: 1.22,
     voiceRuntimeProfile: "instant-v1",
     voiceInputPolicy: "fast",
+    voiceEmailVerified: true,
+    voiceEmailVerificationSource: "speech",
     turnstileToken: "local-dev",
     utm: {},
     ...overrides,
@@ -142,6 +144,8 @@ describe("POST /api/leads", () => {
       }),
     );
     expect(mocks.persistLead.mock.calls[0]?.[0]).not.toHaveProperty("voiceReviewToken");
+    expect(mocks.persistLead.mock.calls[0]?.[0]).not.toHaveProperty("voiceEmailVerified");
+    expect(mocks.persistLead.mock.calls[0]?.[0]).not.toHaveProperty("voiceEmailVerificationSource");
   });
 
   it("accepts signed voice leads without a Cloudflare token when Turnstile enforcement is required", async () => {
@@ -167,6 +171,17 @@ describe("POST /api/leads", () => {
     expect(body).toMatchObject({ ok: true });
     expect(fetchMock).not.toHaveBeenCalled();
     expect(mocks.persistLead.mock.calls[0]?.[0]).not.toHaveProperty("voiceReviewToken");
+  });
+
+  it("rejects an unconfirmed voice email before persistence or notifications", async () => {
+    const response = await POST(request({ voiceEmailVerified: false }));
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body).toEqual({ ok: false, error: "voice_email_unconfirmed" });
+    expect(mocks.persistLead).not.toHaveBeenCalled();
+    expect(mocks.notifyOwner).not.toHaveBeenCalled();
+    expect(mocks.notifySubmitter).not.toHaveBeenCalled();
   });
 
   it("rejects unsigned voice leads when Turnstile enforcement is required and no token is present", async () => {
