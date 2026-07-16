@@ -105,6 +105,20 @@ export type VoiceEvalSession = {
   callCloseReasons?: string[];
 };
 
+const SYNTHETIC_VOICE_PROMPTS = [
+  "please pause and tell me briefly about education partnerships",
+  "my email is q a dot nebula at example dot test",
+];
+
+/** Keep staging browser probes out of customer-quality aggregates. */
+export function isSyntheticVoiceSession(session: VoiceEvalSession): boolean {
+  if (session.captured?.email.trim().toLowerCase().endsWith("@example.test")) return true;
+  return session.transcript.some((turn) => {
+    const text = turn.text.trim().toLowerCase();
+    return SYNTHETIC_VOICE_PROMPTS.some((prompt) => text.includes(prompt));
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Conversation stitching — collapse many call rows into one conversation
 // ---------------------------------------------------------------------------

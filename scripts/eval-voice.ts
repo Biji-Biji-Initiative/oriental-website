@@ -29,6 +29,7 @@ import {
   buildJudgeUserPrompt,
   buildSessionEval,
   isJudgeable,
+  isSyntheticVoiceSession,
   JUDGE_SYSTEM_PROMPT,
   type JudgeScore,
   meetsThreshold,
@@ -154,13 +155,16 @@ async function main() {
   }
 
   const convex = new ConvexHttpClient(convexUrl);
-  const rawSessions = (await convex.query(api.leads.voiceSessionsForEval, {
+  const fetchedSessions = (await convex.query(api.leads.voiceSessionsForEval, {
     ingestSecret,
     limit: args.limit,
   })) as VoiceEvalSession[];
+  const rawSessions = fetchedSessions.filter((session) => !isSyntheticVoiceSession(session));
+  const syntheticRowsExcluded = fetchedSessions.length - rawSessions.length;
+  if (syntheticRowsExcluded > 0) console.log(`Excluded ${syntheticRowsExcluded} synthetic smoke row(s).`);
 
   if (rawSessions.length === 0) {
-    console.log("No voice sessions to evaluate yet.");
+    console.log("No customer voice sessions to evaluate in this window.");
     process.exit(0);
   }
 
@@ -241,6 +245,7 @@ async function main() {
     JSON.stringify(
       {
         generatedAt: stamp,
+        syntheticRowsExcluded,
         aggregate,
         profileAggregates,
         experimentAggregates,
