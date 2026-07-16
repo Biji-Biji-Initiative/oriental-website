@@ -248,6 +248,9 @@ Read in order on first pass, then cherry-pick:
 - Do **not** use generic Coolify UUID secrets for this app; use `COOLIFY_ORIENTAL_APPLICATION_UUID` when scripting against Coolify.
 - Do **not** expand scope: no new abstractions for one-off helpers; no unrelated README/doc sweeps unless asked.
 - **Do** run `pnpm lint`, `pnpm typecheck`, and `pnpm test` when touching voice, API, or schemas.
+- The Vitest pool is intentionally capped at four workers so full validation
+  stays reliable on high-core shared agents; do not remove the cap based only
+  on logical CPU count.
 - **Do** update specs, runbooks, and this file in the same PR when runtime architecture, deployment, configuration, or agent workflow changes.
 - **Do not** use `agent-browser` for release proof; use the checked-in Playwright e2e/smoke scripts and deterministic HTTP verifier.
 - **Do** write chat/ACFS findings into a spec, issue, or PR immediately. Shared
