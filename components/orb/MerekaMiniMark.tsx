@@ -3,7 +3,7 @@
 import { useId } from "react";
 import { MEREKA_MARK_DOT, MEREKA_MARK_PATH, MEREKA_MARK_VIEWBOX } from "@/lib/brand-motion";
 
-export function MiniOrb({ size = 36 }: { size?: number }) {
+export function MerekaMiniMark({ size = 36 }: { size?: number }) {
   const id = useId().replaceAll(":", "");
   const gradientId = `mereka-mark-gradient-${id}`;
   return (

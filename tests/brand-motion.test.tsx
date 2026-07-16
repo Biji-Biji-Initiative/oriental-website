@@ -2,7 +2,7 @@ import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NebulaM, resolveMerekaMarkTarget } from "@/components/brand-motion/NebulaM";
 import { StagingSiteLoader } from "@/components/brand-motion/StagingSiteLoader";
-import { MiniOrb } from "@/components/orb/MiniOrb";
+import { MerekaMiniMark } from "@/components/orb/MerekaMiniMark";
 import {
   BRAND_MOTION_PREVIEW_HOST,
   isBrandMotionPreviewHost,
@@ -34,7 +34,7 @@ describe("brand motion staging gate", () => {
   });
 
   it("uses the canonical Mereka mark instead of the generic blue sphere", () => {
-    const { container } = render(<MiniOrb size={32} />);
+    const { container } = render(<MerekaMiniMark size={32} />);
     const mark = container.querySelector('[data-mereka-mark="true"]');
 
     expect(mark).toHaveAttribute("viewBox", "0 0 427.76 342.13");

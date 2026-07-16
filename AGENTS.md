@@ -51,7 +51,7 @@ components/
   admin/                  # admin login/review UI helpers
   site/                   # Hero, sections, Timeline, VoiceRail
   voice-agent/            # dialog, hooks, voice-state, HeroEmailCapture
-  orb/                    # MiniOrb (SVG)
+  orb/                    # MerekaMiniMark (canonical SVG brand mark)
   ui/                     # shadcn primitives — prefer extending, not replacing
   security/               # Turnstile compatibility provider
   voice/                  # Turnstile hook

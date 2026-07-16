@@ -3,7 +3,7 @@
 import { Mic2Icon, PhoneOffIcon, RadioIcon, SendIcon, SparklesIcon } from "lucide-react";
 import dynamic from "next/dynamic";
 import { type FormEvent, type RefObject, useEffect, useRef, useState } from "react";
-import { MiniOrb } from "@/components/orb/MiniOrb";
+import { MerekaMiniMark } from "@/components/orb/MerekaMiniMark";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { Input } from "@/components/ui/input";
@@ -21,7 +21,7 @@ export const WAITING_COPY_DELAY_MS = 300;
 const NebulaM = dynamic(() => import("@/components/brand-motion/NebulaM").then((module) => module.NebulaM), {
   loading: () => (
     <div className="relative">
-      <MiniOrb size={120} />
+      <MerekaMiniMark size={120} />
     </div>
   ),
   ssr: false,
@@ -68,11 +68,8 @@ export function VoiceSessionStage({
   const activeTopic = tourTopics.find((topic) => topic.id === activeTopicId) ?? null;
   const [showWaitingCopy, setShowWaitingCopy] = useState(false);
   useEffect(() => {
-    if (turnPhase !== "waiting_for_response") {
-      setShowWaitingCopy(false);
-      return;
-    }
-    const timer = window.setTimeout(() => setShowWaitingCopy(true), WAITING_COPY_DELAY_MS);
+    const waiting = turnPhase === "waiting_for_response";
+    const timer = window.setTimeout(() => setShowWaitingCopy(waiting), waiting ? WAITING_COPY_DELAY_MS : 0);
     return () => window.clearTimeout(timer);
   }, [turnPhase]);
   const statusCopy = voiceStatusCopy(connectionStatus, turnPhase, showWaitingCopy);
@@ -105,7 +102,7 @@ export function VoiceSessionStage({
     return (
       <div className="grid h-full min-h-[520px] place-items-center text-center">
         <div>
-          <MiniOrb size={72} />
+          <MerekaMiniMark size={72} />
           <h2 className="mt-6 text-4xl font-semibold">Sent to {selectedSegment.routedTo.name}.</h2>
           <p className="mx-auto mt-3 max-w-md text-white/62">
             The right Mereka team member has the context and will follow up within 2 working days.

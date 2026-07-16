@@ -1,7 +1,7 @@
 "use client";
 
 import type { ComponentPropsWithoutRef } from "react";
-import { MiniOrb } from "@/components/orb/MiniOrb";
+import { MerekaMiniMark } from "@/components/orb/MerekaMiniMark";
 import { useVoice } from "@/components/voice-agent/voice-state";
 import type { SegmentId } from "@/lib/segments";
 import { cn } from "@/lib/utils";
@@ -38,7 +38,7 @@ export function VoiceButton({
       onFocus={startsVoice ? voice.prewarm : undefined}
       onPointerEnter={startsVoice ? voice.prewarm : undefined}
     >
-      {orb ? <MiniOrb /> : null}
+      {orb ? <MerekaMiniMark /> : null}
       {children}
     </button>
   );

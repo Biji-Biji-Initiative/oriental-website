@@ -51,7 +51,7 @@ disagree on intent, this doc wins.
 - **Email** — AWS SES/SMTP fallback (transactional). Slack mirror to `#tech-team-test` through bot-token delivery for smoke testing, webhook fallback only.
 - **Rate limiting** — Redis-backed shared limiter in production, memory fallback only for local/degraded mode.
 - **Observability** — structured JSON route logs in Coolify, Sentry project `oriental-website`, Slack ops alerts to `#tech-team-test`, and token-gated `/admin/session-review`.
-- **3D** — Not installed in the current runtime; `MiniOrb` is SVG. Prototype R3F notes are reference-only.
+- **3D** — Not installed in the current runtime; `MerekaMiniMark` is the canonical SVG mark. Prototype R3F notes are reference-only.
 - **No auth** on the public site. Internal CRM is a separate workstream.
 
 ## Open stakeholder questions

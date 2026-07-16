@@ -1,7 +1,7 @@
 "use client";
 
 import { CheckIcon } from "lucide-react";
-import { MiniOrb } from "@/components/orb/MiniOrb";
+import { MerekaMiniMark } from "@/components/orb/MerekaMiniMark";
 import { Button } from "@/components/ui/button";
 import type { getSegment } from "@/lib/segments";
 import type { CapturedLead } from "@/lib/voice/realtime-events";
@@ -33,7 +33,7 @@ export function VoiceSubmittedConfirmation({ captured, selectedSegment, onClose 
     <div className="grid min-h-[520px] place-items-center px-6 py-10 text-center">
       <div className="w-full max-w-md">
         <div className="mx-auto grid size-16 place-items-center">
-          <MiniOrb size={64} />
+          <MerekaMiniMark size={64} />
         </div>
         <div className="mt-5 inline-flex items-center gap-1.5 rounded-full border border-mk-horizon/30 bg-mk-horizon/12 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-mk-horizon">
           <CheckIcon className="size-3.5" />

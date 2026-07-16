@@ -25,7 +25,7 @@ Runtime truth for the production build:
 | Observability | Sentry + structured logs + Slack ops alerts | Admin review at `/admin/session-review`; route logs stay in Coolify. |
 
 There is no React Three Fiber runtime in the current app. The public orb is the
-SVG `MiniOrb`.
+SVG `MerekaMiniMark`.
 
 ## 2. Repository Layout
 
@@ -46,7 +46,7 @@ components/
   site/                   # homepage sections, grids, nav, timeline, rail
   voice-agent/            # dialog, WebRTC hook, state, hero email capture
   security/               # Turnstile hook
-  orb/                    # MiniOrb SVG
+  orb/                    # MerekaMiniMark SVG
   ui/                     # shadcn primitives
 convex/
   schema.ts

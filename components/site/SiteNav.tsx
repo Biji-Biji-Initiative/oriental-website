@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { MiniOrb } from "@/components/orb/MiniOrb";
+import { MerekaMiniMark } from "@/components/orb/MerekaMiniMark";
 import { useVoice } from "@/components/voice-agent/voice-state";
 import { navItems } from "@/lib/content";
 import { cn } from "@/lib/utils";
@@ -142,7 +142,7 @@ export function SiteNav() {
             onClick={() => voice.open(undefined, { autoStart: false, mode: "form" })}
             type="button"
           >
-            <MiniOrb size={24} />
+            <MerekaMiniMark size={24} />
             <span className="hidden sm:inline">Talk to Mereka</span>
           </button>
         </div>
@@ -176,7 +176,7 @@ export function SiteNav() {
               }}
               type="button"
             >
-              <MiniOrb size={28} />
+              <MerekaMiniMark size={28} />
               Talk to Mereka
             </button>
           </nav>

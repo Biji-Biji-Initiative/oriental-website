@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { MiniOrb } from "@/components/orb/MiniOrb";
+import { MerekaMiniMark } from "@/components/orb/MerekaMiniMark";
 import { useVoice } from "@/components/voice-agent/voice-state";
 import type { SegmentId } from "@/lib/segments";
 import { cn } from "@/lib/utils";
@@ -65,7 +65,7 @@ export function VoiceRail() {
       type="button"
     >
       <span className="orb-breathe inline-flex">
-        <MiniOrb size={30} />
+        <MerekaMiniMark size={30} />
       </span>
       {context.label}
     </button>

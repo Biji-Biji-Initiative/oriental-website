@@ -68,7 +68,7 @@ rather than re-inlining realtime state into the dialog.
 
 | Runtime surface | Production path | Notes |
 |---|---|---|
-| Mini orb | `components/orb/MiniOrb.tsx` | Pure SVG. Used in nav, CTAs, and dialog. |
+| Mereka mini mark | `components/orb/MerekaMiniMark.tsx` | Canonical Mereka SVG mark. Used in nav, CTAs, and dialog. |
 | Living orb chrome | `.voice-orb*` in `app/globals.css` + `components/voice-agent/VoiceSessionStage.tsx` | Aurora rotation, idle breathing, voice-level ripples driven by `--voice-level`; inert under reduced motion. |
 
 There is no React Three Fiber runtime in the current app. Prototype R3F/WebGL
