@@ -776,11 +776,17 @@ function confirmCapturedEmail(
   if (!isExplicitEmailConfirmation(evidence)) {
     return { ok: false, output: { ok: false, error: "email_confirmation_not_explicit", key: "email" } };
   }
-  const latestAssistant = state.transcript.filter((entry) => entry.role === "assistant").at(-1)?.text ?? "";
-  if (!canonicalizeEmailSpeech(latestAssistant).includes(email.toLowerCase())) {
+  const latestUserIndex = state.transcript.findLastIndex((entry) => entry.role === "user");
+  const readbackBeforeConfirmation = state.transcript
+    .slice(0, latestUserIndex)
+    .findLast((entry) => entry.role === "assistant")?.text;
+  if (
+    !readbackBeforeConfirmation ||
+    !canonicalizeEmailSpeech(readbackBeforeConfirmation).includes(email.toLowerCase())
+  ) {
     return { ok: false, output: { ok: false, error: "email_readback_missing", key: "email" } };
   }
-  const latestUser = state.transcript.filter((entry) => entry.role === "user").at(-1)?.text ?? "";
+  const latestUser = state.transcript.at(latestUserIndex)?.text ?? "";
   if (!transcriptionPending && !normalizeEvidence(latestUser).includes(normalizeEvidence(evidence))) {
     return { ok: false, output: { ok: false, error: "ungrounded_email_confirmation", key: "email" } };
   }

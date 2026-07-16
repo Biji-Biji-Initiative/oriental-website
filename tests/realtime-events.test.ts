@@ -167,6 +167,13 @@ describe("reduceRealtimeServerEvent", () => {
       },
       confirmedState,
     ).state;
+    confirmedState = reduceRealtimeServerEvent(
+      {
+        type: "response.output_audio_transcript.done",
+        transcript: "Alright, let me lock that confirmation in first.",
+      },
+      confirmedState,
+    ).state;
     const contradictedConfirmation = reduceRealtimeServerEvent(
       {
         type: "response.done",
