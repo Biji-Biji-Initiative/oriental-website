@@ -13,6 +13,7 @@
 const STORAGE_KEY = "oriental:voice:conversation";
 // A reconnect within this window continues the same conversation.
 const CONTINUATION_WINDOW_MS = 30 * 60 * 1000;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type StoredConversation = { id: string; at: number };
 
@@ -22,13 +23,17 @@ function readStored(): StoredConversation | null {
     const raw = window.sessionStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<StoredConversation>;
-    if (typeof parsed?.id === "string" && typeof parsed.at === "number") {
+    if (isConversationId(parsed?.id) && typeof parsed.at === "number") {
       return { id: parsed.id, at: parsed.at };
     }
   } catch {
     // Corrupt or unavailable storage falls back to a fresh conversation.
   }
   return null;
+}
+
+export function isConversationId(value: unknown): value is string {
+  return typeof value === "string" && UUID_PATTERN.test(value);
 }
 
 function write(id: string, at: number) {

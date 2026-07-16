@@ -144,4 +144,14 @@ describe("POST /api/voice/session", () => {
       deployment_environment: "staging",
     });
   });
+
+  it("uses the managed environment behind an internal reverse-proxy URL", async () => {
+    process.env.APP_ENV = "staging";
+    const fetchMock = mockOpenAiFetch();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await POST(request({ intent: "technology" }));
+
+    expect(await json(response)).toMatchObject({ deployment_environment: "staging" });
+  });
 });

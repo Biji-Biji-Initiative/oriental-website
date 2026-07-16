@@ -107,4 +107,9 @@ describe("voice review snapshots", () => {
       snapshot,
     });
   });
+
+  it("omits an unassigned conversation id from prewarm snapshots", () => {
+    const snapshot = buildVoiceReviewSnapshot({ ...review, conversationId: "" }, state(), "idle");
+    expect(snapshot).not.toHaveProperty("conversationId");
+  });
 });

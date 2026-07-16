@@ -29,7 +29,12 @@ export async function GET() {
 export async function POST(request: Request) {
   const payload = await request.json().catch(() => null);
   const parsed = voiceReviewSnapshotSchema.safeParse(payload);
-  if (!parsed.success) return noStoreJson({ ok: false, error: "invalid_payload" }, { status: 400 });
+  if (!parsed.success) {
+    logWarn("voice_review.invalid_payload", {
+      issues: parsed.error.issues.slice(0, 12).map((issue) => ({ path: issue.path.join("."), code: issue.code })),
+    });
+    return noStoreJson({ ok: false, error: "invalid_payload" }, { status: 400 });
+  }
   const verified = verifyVoiceReviewCredentials(parsed.data.review.id, parsed.data.review.token);
   if (!verified && isProductionEnv()) return noStoreJson({ ok: false, error: "unauthorized" }, { status: 401 });
   const snapshot = { ...parsed.data.snapshot, reviewId: parsed.data.review.id };

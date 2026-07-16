@@ -1,4 +1,5 @@
 import { chromium, type Page, type Response } from "playwright";
+import { voiceReviewSnapshotSchema } from "../lib/schemas";
 
 const canonicalStagingOrigin = "https://staging.oriental.mereka.io";
 const targetOrigin = new URL(process.env.VOICE_SMOKE_URL ?? canonicalStagingOrigin).origin;
@@ -34,7 +35,17 @@ async function run() {
   const consoleErrors: string[] = [];
   const sessionMintStatuses: number[] = [];
   const debugStatuses: number[] = [];
-  const failedResponses: Array<{ host: string; path: string; status: number; retryAfter?: string }> = [];
+  const failedResponses: Array<{
+    host: string;
+    path: string;
+    status: number;
+    retryAfter?: string;
+    body?: string;
+    requestContentType?: string;
+    requestBodyBytes?: number;
+    schemaIssues?: Array<{ path: string; code: string }>;
+  }> = [];
+  const responseDiagnostics: Array<Promise<void>> = [];
   let rejectUpstreamFailure: ((error: Error) => void) | undefined;
   const upstreamFailure = new Promise<never>((_, reject) => {
     rejectUpstreamFailure = reject;
@@ -53,12 +64,23 @@ async function run() {
       recordApiStatus(response, sessionMintStatuses, debugStatuses);
       if (response.status() >= 400) {
         const url = new URL(response.url());
-        failedResponses.push({
+        const failedResponse: (typeof failedResponses)[number] = {
           host: url.host,
           path: url.pathname,
           status: response.status(),
           retryAfter: response.headers()["retry-after"],
-        });
+          body: "[unavailable]",
+          ...diagnoseFailedRequest(response),
+        };
+        failedResponses.push(failedResponse);
+        const bodyCapture = response
+          .text()
+          .then((body) => {
+            failedResponse.body = sanitizeDiagnostic(body);
+          })
+          .catch(() => undefined);
+        const bodyTimeout = new Promise<void>((resolve) => setTimeout(resolve, 2_000));
+        responseDiagnostics.push(Promise.race([bodyCapture, bodyTimeout]));
         if (url.host === "api.openai.com" && url.pathname === "/v1/realtime/calls") {
           rejectUpstreamFailure?.(new Error(`OpenAI Realtime call failed with HTTP ${response.status()}`));
         }
@@ -110,6 +132,7 @@ async function run() {
     if (!healthAfter.ok()) throw new Error(`Staging health failed after smoke: ${healthAfter.status()}`);
     if (!sessionMintStatuses.some((status) => status === 200)) throw new Error("Voice session mint was not observed");
     if (!debugStatuses.some((status) => status === 200)) throw new Error("Voice review snapshot was not persisted");
+    await Promise.allSettled(responseDiagnostics);
     if (pageErrors.length > 0 || consoleErrors.length > 0) {
       throw new Error(`Browser errors observed: page=${pageErrors.length} console=${consoleErrors.length}`);
     }
@@ -129,6 +152,7 @@ async function run() {
     };
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } catch (error) {
+    await Promise.allSettled(responseDiagnostics);
     const orbState = await page
       ?.locator(".voice-orb")
       .evaluate((orb) => ({ status: (orb as HTMLElement).dataset.status, turn: (orb as HTMLElement).dataset.turn }))
@@ -194,6 +218,28 @@ async function remoteAudioState(page: Page) {
 
 function sanitizeDiagnostic(message: string) {
   return message.replace(/[A-Za-z0-9_-]{32,}/g, "[redacted]").slice(0, 240);
+}
+
+function diagnoseFailedRequest(response: Response) {
+  const request = response.request();
+  const postData = request.postData();
+  if (!postData) return { requestContentType: request.headers()["content-type"] };
+  try {
+    const parsed = voiceReviewSnapshotSchema.safeParse(JSON.parse(postData));
+    return {
+      requestContentType: request.headers()["content-type"],
+      requestBodyBytes: Buffer.byteLength(postData),
+      schemaIssues: parsed.success
+        ? []
+        : parsed.error.issues.map((issue) => ({ path: issue.path.join("."), code: issue.code })).slice(0, 12),
+    };
+  } catch {
+    return {
+      requestContentType: request.headers()["content-type"],
+      requestBodyBytes: Buffer.byteLength(postData),
+      schemaIssues: [{ path: "<json>", code: "invalid_json" }],
+    };
+  }
 }
 
 run().catch((error: unknown) => {

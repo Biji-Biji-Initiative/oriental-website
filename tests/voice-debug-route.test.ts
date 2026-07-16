@@ -182,4 +182,25 @@ describe("POST /api/voice/debug", () => {
     expect(body).toMatchObject({ ok: false, error: "unauthorized" });
     expect(mocks.persistVoiceReviewSnapshot).not.toHaveBeenCalled();
   });
+
+  it("logs only PII-free issue paths for invalid snapshots", async () => {
+    const base = (await snapshotRequest().json()) as {
+      snapshot: { connectionStatus: string; captured: { email: string } };
+    };
+    base.snapshot.connectionStatus = "not-a-state";
+    base.snapshot.captured.email = "private@example.com";
+    const response = await POST(
+      new Request("http://127.0.0.1/api/voice/debug", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(base),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(mocks.logWarn).toHaveBeenCalledWith("voice_review.invalid_payload", {
+      issues: expect.arrayContaining([{ path: "snapshot.connectionStatus", code: "invalid_value" }]),
+    });
+    expect(JSON.stringify(mocks.logWarn.mock.calls)).not.toContain("private@example.com");
+  });
 });

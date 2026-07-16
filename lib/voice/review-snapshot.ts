@@ -1,4 +1,5 @@
 import type { VoiceReviewSnapshotRequest } from "@/lib/schemas";
+import { isConversationId } from "@/lib/voice/conversation";
 import type { VoiceModelCell, VoiceReasoningCell } from "@/lib/voice/experiments";
 import type { VoiceInputPolicy, VoiceLatencyTelemetry } from "@/lib/voice/latency";
 import type { VoiceRuntimeState } from "@/lib/voice/realtime-events";
@@ -44,7 +45,7 @@ export function buildVoiceReviewSnapshot(
 ): VoiceReviewSnapshotRequest["snapshot"] {
   return {
     sessionId: review.sessionId ?? review.id,
-    conversationId: review.conversationId,
+    ...(isConversationId(review.conversationId) ? { conversationId: review.conversationId } : {}),
     leadId: overrides.leadId,
     segment: state.segment,
     status: overrides.status ?? (overrides.submittedAt ? "submitted" : "idle"),
