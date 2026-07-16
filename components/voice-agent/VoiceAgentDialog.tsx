@@ -562,11 +562,11 @@ export function VoiceAgentDialog({
           </div>
         ) : (
           <div
-            className="grid h-full min-h-0 grid-cols-1 overflow-y-auto overscroll-contain lg:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_360px] xl:overflow-hidden"
+            className="grid h-full min-h-0 grid-cols-1 overflow-y-auto overscroll-contain lg:grid-cols-[200px_minmax(0,1fr)_320px] lg:overflow-hidden xl:grid-cols-[280px_minmax(0,1fr)_360px]"
             data-voice-dialog-layout
             ref={dialogLayoutRef}
           >
-            <aside className="order-2 border-t border-white/10 p-5 lg:order-none lg:row-span-2 lg:border-t-0 lg:border-r xl:row-span-1 xl:min-h-0 xl:overflow-y-auto xl:overscroll-contain">
+            <aside className="order-2 border-t border-white/10 p-5 lg:order-none lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:border-t-0 lg:border-r">
               <div className="mb-5 text-xs uppercase tracking-[0.16em] text-white/48">Partner type</div>
               <div className="flex gap-3 overflow-x-auto pb-2 lg:flex-col lg:overflow-visible">
                 {segmentOptions().map((option) => (
@@ -586,7 +586,7 @@ export function VoiceAgentDialog({
               </div>
             </aside>
 
-            <main className="order-1 min-w-0 p-5 sm:p-8 lg:order-none xl:min-h-0 xl:overflow-y-auto xl:overscroll-contain">
+            <main className="order-1 min-w-0 p-5 sm:p-8 lg:order-none lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
               {tunerEnabled ? (
                 <div className="mb-4 flex flex-wrap items-center gap-1.5">
                   <span className="mr-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/40">
@@ -639,7 +639,7 @@ export function VoiceAgentDialog({
 
             <HandoffPanel
               captured={captured}
-              className="order-3 lg:order-none lg:col-start-2 xl:col-start-auto xl:min-h-0 xl:overflow-y-auto xl:overscroll-contain"
+              className="order-3 lg:order-none lg:col-start-auto lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:border-t-0"
               emailVerification={emailVerification}
               form={form}
               onChange={runtime.updateCaptured}

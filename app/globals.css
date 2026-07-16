@@ -884,8 +884,83 @@
   }
 }
 
-/* Staging brand-motion preview. Production builds compile the flag out and
-   keep the legacy orb and page entrance unchanged. */
+/* Canonical Mereka mark used by every compact voice affordance. The old blue
+   sphere was generic; this keeps the approved mark geometry while giving its
+   trace and dot a restrained voice-like pulse. */
+.mereka-mini-mark {
+  overflow: visible;
+  filter: drop-shadow(0 5px 12px rgba(40, 81, 168, 0.3));
+}
+
+.mereka-mini-mark__aura {
+  fill: #73c0c9;
+  opacity: 0.2;
+  transform: scale(1.025);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.mereka-mini-mark__body,
+.mereka-mini-mark__dot {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.mereka-mini-mark__trace {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.72);
+  stroke-dasharray: 0.12 0.88;
+  stroke-linecap: round;
+  stroke-width: 8;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .mereka-mini-mark__body,
+  .mereka-mini-mark__aura {
+    animation: mereka-mini-mark-breathe 5.2s ease-in-out infinite;
+  }
+
+  .mereka-mini-mark__dot {
+    animation: mereka-mini-mark-dot 2.6s ease-in-out infinite;
+  }
+
+  .mereka-mini-mark__trace {
+    animation: mereka-mini-mark-trace 3.8s linear infinite;
+  }
+}
+
+@keyframes mereka-mini-mark-breathe {
+  0%,
+  100% {
+    opacity: 0.86;
+    transform: scale(0.985);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.018);
+  }
+}
+
+@keyframes mereka-mini-mark-dot {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes mereka-mini-mark-trace {
+  to {
+    stroke-dashoffset: -1;
+  }
+}
+
+/* Mereka brand motion. The voice mark is the production visual; the entrance
+   loader remains a staging-only build/host preview. */
 .brand-site-loader {
   position: fixed;
   inset: 0;

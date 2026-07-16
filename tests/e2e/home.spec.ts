@@ -25,9 +25,11 @@ test.beforeEach(async ({ page }) => {
 test("renders the Oriental microsite and opens the collaborative intake workspace", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /Reimagining/i })).toBeVisible();
+  await expect(page.locator('header [data-mereka-mark="true"]')).toBeVisible();
   await page.waitForTimeout(900);
   await page.getByRole("button", { name: /Tell us why/i }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.locator(".mereka-nebula")).toBeVisible();
   await expect(page.getByText("Handoff details", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Name")).toBeVisible();
   await page.getByRole("button", { name: "The spaces" }).click();
@@ -357,6 +359,18 @@ test("voice intake stays contained and resets scroll across short responsive vie
         page.locator('[data-slot="dialog-content"]').evaluate((dialog) => {
           const rect = dialog.getBoundingClientRect();
           const close = dialog.querySelector<HTMLElement>('[data-slot="dialog-close"]')?.getBoundingClientRect();
+          const layout = dialog.querySelector<HTMLElement>("[data-voice-dialog-layout]");
+          const compactThreePane =
+            window.innerWidth < 1024 ||
+            Boolean(
+              layout &&
+                layout.scrollHeight <= layout.clientHeight + 1 &&
+                getComputedStyle(layout).gridTemplateColumns.split(" ").length === 3 &&
+                [...layout.children].every(
+                  (region) =>
+                    getComputedStyle(region).overflowY === "auto" && region.clientHeight === layout.clientHeight,
+                ),
+            );
           return {
             dialogFits:
               rect.left >= -1 &&
@@ -370,11 +384,12 @@ test("voice intake stays contained and resets scroll across short responsive vie
                 close.right <= rect.right &&
                 close.bottom <= rect.bottom,
             ),
+            compactThreePane,
             noPageOverflow: document.documentElement.scrollWidth <= window.innerWidth,
           };
         }),
       )
-      .toEqual({ dialogFits: true, closeFits: true, noPageOverflow: true });
+      .toEqual({ dialogFits: true, closeFits: true, compactThreePane: true, noPageOverflow: true });
   }
 
   await page.setViewportSize({ width: 390, height: 844 });
