@@ -218,8 +218,10 @@ Current production floor:
   `oriental-website`.
 - Slack ops alerts through `SLACK_BOT_TOKEN` and
   `OPS_ALERT_SLACK_CHANNEL_ID=C01AVSGACFN` (`#tech-team-test`).
-- Token-gated `/admin/session-review` for recent Convex leads, voice session
-  snapshots, Realtime usage, transcript review, and notification failures.
+- Token-gated `/admin/session-review` for the latest enquiry pipeline,
+  organization accounts, returning contacts, owner workload, direct ClickUp
+  task records, voice session snapshots, Reka evaluations, transcripts, and
+  notification failures.
 
 Alert sources in source today:
 

@@ -51,6 +51,14 @@ export async function recordLeadNotificationStatus(
     emailOk: notifications.email?.ok === true,
     slackOk: notifications.slack?.ok === true,
     clickupOk: notifications.clickup?.ok === true,
+    clickupTaskId:
+      notifications.clickup?.ok === true && notifications.clickup.transport === "clickup"
+        ? notifications.clickup.externalId
+        : undefined,
+    clickupTaskUrl:
+      notifications.clickup?.ok === true && notifications.clickup.transport === "clickup"
+        ? notifications.clickup.externalUrl
+        : undefined,
     confirmationOk: notifications.confirmation?.ok === true,
     summary: notificationSummary(notifications),
   });

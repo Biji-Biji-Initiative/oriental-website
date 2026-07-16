@@ -225,13 +225,26 @@ export const recordLeadNotification = mutationGeneric({
     emailOk: v.boolean(),
     slackOk: v.boolean(),
     clickupOk: v.optional(v.boolean()),
+    clickupTaskId: v.optional(v.string()),
+    clickupTaskUrl: v.optional(v.string()),
     confirmationOk: v.optional(v.boolean()),
     summary: v.string(),
   },
   returns: v.object({ ok: v.boolean() }),
   handler: async (
     ctx,
-    { ingestSecret, leadId, notificationDelivered, emailOk, slackOk, clickupOk, confirmationOk, summary },
+    {
+      ingestSecret,
+      leadId,
+      notificationDelivered,
+      emailOk,
+      slackOk,
+      clickupOk,
+      clickupTaskId,
+      clickupTaskUrl,
+      confirmationOk,
+      summary,
+    },
   ) => {
     requireIngestSecret(ingestSecret);
     const lead = await ctx.db
@@ -244,6 +257,8 @@ export const recordLeadNotification = mutationGeneric({
       notificationEmailOk: emailOk,
       notificationSlackOk: slackOk,
       ...(typeof clickupOk === "boolean" ? { notificationClickUpOk: clickupOk } : {}),
+      ...(clickupTaskId?.trim() ? { notificationClickUpTaskId: clickupTaskId.trim() } : {}),
+      ...(clickupTaskUrl?.trim() ? { notificationClickUpTaskUrl: clickupTaskUrl.trim() } : {}),
       ...(typeof confirmationOk === "boolean" ? { notificationConfirmationOk: confirmationOk } : {}),
       notificationSummary: summary,
       lastNotificationAt: Date.now(),
@@ -263,26 +278,41 @@ export const confirmLeadClickUpMirror = mutationGeneric({
   args: {
     ingestSecret: v.string(),
     leadId: v.string(),
+    clickupTaskId: v.optional(v.string()),
+    clickupTaskUrl: v.optional(v.string()),
   },
   returns: v.union(
     v.object({ ok: v.literal(true), changed: v.boolean() }),
     v.object({ ok: v.literal(false), reason: v.literal("not_found") }),
   ),
-  handler: async (ctx, { ingestSecret, leadId }) => {
+  handler: async (ctx, { ingestSecret, leadId, clickupTaskId, clickupTaskUrl }) => {
     requireIngestSecret(ingestSecret);
     const lead = await ctx.db
       .query("leads")
       .withIndex("by_lead_id", (query) => query.eq("leadId", leadId))
       .unique();
     if (!lead) return { ok: false as const, reason: "not_found" as const };
-    if (lead.notificationClickUpOk === true) return { ok: true as const, changed: false };
 
-    await ctx.db.patch(lead._id, { notificationClickUpOk: true });
+    const cleanTaskId = clickupTaskId?.trim();
+    const cleanTaskUrl = clickupTaskUrl?.trim();
+    const changed =
+      lead.notificationClickUpOk !== true ||
+      (Boolean(cleanTaskId) && lead.notificationClickUpTaskId !== cleanTaskId) ||
+      (Boolean(cleanTaskUrl) && lead.notificationClickUpTaskUrl !== cleanTaskUrl);
+    if (!changed) return { ok: true as const, changed: false };
+
+    await ctx.db.patch(lead._id, {
+      notificationClickUpOk: true,
+      ...(cleanTaskId ? { notificationClickUpTaskId: cleanTaskId } : {}),
+      ...(cleanTaskUrl ? { notificationClickUpTaskUrl: cleanTaskUrl } : {}),
+    });
     await ctx.db.insert("leadEvents", {
       leadId,
       kind: "clickup_reconciled",
       actor: "system",
-      note: "Confirmed an existing ClickUp mirror task without changing the lead payload.",
+      note: cleanTaskId
+        ? "Confirmed the existing ClickUp mirror and stored its direct task reference without changing the lead payload."
+        : "Confirmed an existing ClickUp mirror task without changing the lead payload.",
       createdAt: Date.now(),
     });
     return { ok: true as const, changed: true };

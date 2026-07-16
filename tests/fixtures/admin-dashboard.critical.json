@@ -52,7 +52,7 @@
       "routedToEmail": "chewi@mereka.my",
       "name": "Daniel Lim",
       "email": "daniel@example.test",
-      "org": "Civic Studio",
+      "org": "Impact Robotics Lab",
       "message": "We are looking for 700 to 800 sq ft for a mission-aligned studio team.",
       "transcript": [],
       "utm": {},
@@ -64,6 +64,8 @@
       "notificationEmailOk": true,
       "notificationSlackOk": true,
       "notificationClickUpOk": true,
+      "notificationClickUpTaskId": "task_impact_2",
+      "notificationClickUpTaskUrl": "https://app.clickup.com/t/task_impact_2",
       "notificationSummary": "email=ses slack=slack clickup=clickup",
       "lastNotificationAt": 1781709552327,
       "createdAt": 1781707752327

@@ -3,7 +3,7 @@ import { isProductionEnv } from "@/lib/env";
 import { type LeadRequest, leadRequestSchema } from "@/lib/schemas";
 import { persistLead, recordLeadNotificationStatus } from "@/lib/server/convex";
 import { durationSince, errorMeta, logError, logInfo, logWarn } from "@/lib/server/logger";
-import { settledNotificationResult } from "@/lib/server/notification-results";
+import { publicNotificationResult, settledNotificationResult } from "@/lib/server/notification-results";
 import { notifyClickUp, notifyOwner, notifySlack, notifySubmitter, routeLead } from "@/lib/server/notifications";
 import { sendOpsAlert } from "@/lib/server/ops-alerts";
 import {
@@ -107,6 +107,12 @@ export async function POST(request: NextRequest) {
     clickup: settledNotificationResult(clickup, "clickup_failed", "lead.notification_rejected"),
     confirmation: settledNotificationResult(confirmation, "confirmation_failed", "lead.notification_rejected"),
   };
+  const publicNotifications = {
+    email: publicNotificationResult(notifications.email),
+    slack: publicNotificationResult(notifications.slack),
+    clickup: publicNotificationResult(notifications.clickup),
+    confirmation: publicNotificationResult(notifications.confirmation),
+  };
   const delivered =
     notifications.email.ok === true || notifications.slack.ok === true || notifications.clickup.ok === true;
   if (!persistence.persisted && isProductionEnv()) {
@@ -169,7 +175,13 @@ export async function POST(request: NextRequest) {
       fingerprint: lead.segment,
     });
     return noStoreJson(
-      { ok: false, error: "notification_failed", id: persistence.id, persisted: true, notifications },
+      {
+        ok: false,
+        error: "notification_failed",
+        id: persistence.id,
+        persisted: true,
+        notifications: publicNotifications,
+      },
       { status: 502 },
     );
   }
@@ -184,7 +196,7 @@ export async function POST(request: NextRequest) {
     notificationDelivered: delivered,
     voiceEmailVerificationSource:
       parsed.data.source === "voice" ? (parsed.data.voiceEmailVerificationSource ?? "unknown") : null,
-    notifications,
+    notifications: publicNotifications,
     rateLimitStore: limit.store,
     remaining: limit.remaining,
     durationMs: durationSince(startedAt),
@@ -193,7 +205,7 @@ export async function POST(request: NextRequest) {
     ok: true,
     id: persistence.id,
     persisted: persistence.persisted,
-    notifications,
+    notifications: publicNotifications,
   });
 }
 

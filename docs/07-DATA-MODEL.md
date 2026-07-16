@@ -38,9 +38,12 @@ capture.
 | `owner` | string? | Human owner currently responsible for follow-up. |
 | `workflowNote` | string? | Latest admin handoff / next-action note. |
 | `lastReviewedAt` | number? | Last admin workflow update timestamp. |
-| `notificationDelivered` | boolean? | True when the required delivery policy passed: owner email/Slack for full leads, subscriber confirmation for newsletter-only leads. |
+| `notificationDelivered` | boolean? | True when owner email, Slack, or ClickUp delivered for a full lead; newsletter-only capture uses subscriber confirmation. |
 | `notificationEmailOk` | boolean? | Last owner email delivery result when owner email was attempted. |
 | `notificationSlackOk` | boolean? | Last Slack delivery result when Slack was attempted. |
+| `notificationClickUpOk` | boolean? | Current confirmation that a ClickUp mirror task exists for the lead. |
+| `notificationClickUpTaskId` | string? | Provider task ID returned by ClickUp or recovered by reconciliation. |
+| `notificationClickUpTaskUrl` | string? | Direct URL to the confirmed ClickUp task. |
 | `notificationConfirmationOk` | boolean? | Last submitter or newsletter confirmation email result. |
 | `notificationSummary` | string? | Compact last notification status. |
 | `lastNotificationAt` | number? | Last notification status write timestamp. |
@@ -55,13 +58,13 @@ Indexes:
 
 ### `leadEvents`
 
-Append-only lead audit events. Launch writes `created`, notification status, and
-admin `workflow_update` events.
+Append-only lead audit events. Launch writes `created`, notification status,
+admin `workflow_update`, and `clickup_reconciled` events.
 
 | Field | Type | Notes |
 |---|---|---|
 | `leadId` | string | App lead ID, not Convex `_id`. |
-| `kind` | string | Values include `created`, `notification_delivered`, `notification_failed`, and `workflow_update`. |
+| `kind` | string | Values include `created`, `notification_delivered`, `notification_failed`, `clickup_reconciled`, and `workflow_update`. |
 | `actor` | string? | `system` for app-generated events; `admin` for console workflow mutations. |
 | `fromStatus` | string? | Previous status for workflow updates. |
 | `toStatus` | string? | New status for workflow updates. |
@@ -117,8 +120,14 @@ Indexes:
 5. Convex validates `CONVEX_INGEST_SECRET`, inserts `leads`, then inserts a
    `leadEvents` row.
 6. Owner email and Slack notifications are attempted after persistence for full lead submissions; newsletter-only captures send subscriber confirmation only.
-7. Notification status, including confirmation email status when present, is patched back to the lead and appended to `leadEvents`.
-8. Admin workflow changes from `/admin/session-review` patch `status`,
+7. Notification status, including confirmation email status and the optional
+   ClickUp task ID/URL, is patched back to the lead and appended to
+   `leadEvents`.
+8. Existing ClickUp tasks can be reconciled idempotently with
+   `pnpm backfill:clickup -- --reconcile-existing`. Reconciliation adds only
+   the confirmed task reference and a `clickup_reconciled` event; it does not
+   rewrite the lead payload, workflow fields, transcript, or timestamps.
+9. Admin workflow changes from `/admin/session-review` patch `status`,
    `priority`, `owner`, optional `workflowNote`, and append a `workflow_update`
    event.
 
@@ -195,3 +204,18 @@ Launch follow-ups:
 - Decide whether IP-derived abuse data should ever be persisted. It is not
   stored today.
 - Add export and richer CRM integration once a downstream CRM owner exists.
+
+## CRM Intelligence
+
+The admin CRM derives customer context from the complete lead set at read time:
+
+- exact normalized email (or phone fallback) identifies returning contacts;
+- normalized organization identifies account history and multi-enquiry
+  organizations;
+- same contact, segment, and normalized request within 30 minutes is flagged as
+  a possible duplicate for human review;
+- account portfolio, owner workload, and related-enquiry tables are derived
+  views and do not merge or delete lead documents.
+
+This keeps every enquiry independently auditable while giving operators
+account-level context.

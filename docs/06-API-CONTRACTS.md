@@ -148,7 +148,9 @@ degraded-success case.
    excerpt.
 5. ClickUp notification is attempted through `CLICKUP_API_TOKEN` plus
    `CLICKUP_LIST_ID` / `CLICKUP_LIST_URL` when configured. It creates one task
-   with routing, contact, brief, and transcript context.
+   with routing, contact, brief, and transcript context. A successful response
+   persists the provider task ID and direct URL on the lead so the admin CRM can
+   open the exact record.
 6. Submitter confirmation email is attempted separately and is included in the
    response and persisted notification summary. Production lead success still
    depends on owner email, Slack, or ClickUp delivery, not on submitter

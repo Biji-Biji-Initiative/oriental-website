@@ -10,3 +10,8 @@ export function settledNotificationResult(
   logWarn(logEvent, { fallback, error: errorMeta(result.reason) });
   return { ok: false, error: fallback };
 }
+
+export function publicNotificationResult(result: NotificationResult): NotificationResult {
+  if (!result.ok) return result;
+  return { ok: true, transport: result.transport };
+}

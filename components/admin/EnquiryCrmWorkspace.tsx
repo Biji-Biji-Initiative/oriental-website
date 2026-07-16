@@ -2,6 +2,13 @@ import { ArrowUpRightIcon, Building2Icon, MailIcon, PhoneIcon, UserRoundIcon } f
 import { AdminLeadWorkflowForm } from "@/components/admin/AdminLeadWorkflowForm";
 import { Badge } from "@/components/admin/Badge";
 import {
+  buildCrmIntelligence,
+  type CrmIntelligence,
+  type CrmRelationshipSummary,
+  type CrmSort,
+  sortCrmLeads,
+} from "@/lib/admin-crm";
+import {
   adminLeadPriorityLabels,
   adminLeadStatusLabels,
   normalizeAdminLeadPriority,
@@ -21,9 +28,11 @@ type CrmFilters = {
   status: string;
   priority: string;
   source: string;
+  sort: CrmSort;
 };
 
 type EnquiryCrmWorkspaceProps = {
+  allLeads: LeadRow[];
   events: LeadEventRow[];
   filters: CrmFilters;
   generatedAt: number;
@@ -35,6 +44,7 @@ type EnquiryCrmWorkspaceProps = {
 };
 
 export function EnquiryCrmWorkspace({
+  allLeads,
   events,
   filters,
   generatedAt,
@@ -44,18 +54,19 @@ export function EnquiryCrmWorkspace({
   view,
   voiceSessions,
 }: EnquiryCrmWorkspaceProps) {
-  const ordered = [...leads].sort((left, right) => right.createdAt - left.createdAt);
+  const intelligence = buildCrmIntelligence(allLeads, generatedAt);
+  const ordered = sortCrmLeads(leads, filters.sort, generatedAt);
   const rowLimit = view === "today" && !hasFilters(filters) ? 12 : ordered.length;
   const visible = ordered.slice(0, rowLimit);
-  const selected = ordered.find((lead) => lead.leadId === selectedLeadId) ?? visible[0];
-  const todayCount = ordered.filter((lead) => isSameKualaLumpurDay(lead.createdAt, generatedAt)).length;
-  const active = ordered.filter(isActiveLead).length;
-  const unassigned = ordered.filter((lead) => isActiveLead(lead) && !lead.owner?.trim()).length;
-  const important = ordered.filter((lead) => {
+  const selected = ordered.find((lead) => lead.leadId === selectedLeadId) ?? visible.find(isActiveLead) ?? visible[0];
+  const todayCount = allLeads.filter((lead) => isSameKualaLumpurDay(lead.createdAt, generatedAt)).length;
+  const active = allLeads.filter(isActiveLead).length;
+  const unassigned = allLeads.filter((lead) => isActiveLead(lead) && !lead.owner?.trim()).length;
+  const important = allLeads.filter((lead) => {
     const priority = normalizeAdminLeadPriority(lead.priority);
     return isActiveLead(lead) && (priority === "high" || priority === "urgent");
   }).length;
-  const clickUpGaps = ordered.filter((lead) => lead.notificationClickUpOk !== true).length;
+  const clickUpGaps = allLeads.filter((lead) => lead.notificationClickUpOk !== true).length;
 
   return (
     <section className="grid scroll-mt-32 gap-4" id="crm-workspace">
@@ -81,6 +92,8 @@ export function EnquiryCrmWorkspace({
           tone={clickUpGaps ? "red" : "green"}
         />
       </section>
+
+      <CrmIntelligencePanel filters={filters} generatedAt={generatedAt} intelligence={intelligence} view={view} />
 
       <section className="overflow-hidden rounded-2xl border border-mk-ash/20 bg-white shadow-sm" id="enquiry-table">
         <header className="flex flex-col gap-3 border-b border-mk-ash/15 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
@@ -147,6 +160,7 @@ export function EnquiryCrmWorkspace({
                       generatedAt={generatedAt}
                       key={lead.leadId}
                       lead={lead}
+                      relationship={intelligence.relationships.get(lead.leadId)}
                       selected={selected?.leadId === lead.leadId}
                       view={view}
                     />
@@ -162,6 +176,7 @@ export function EnquiryCrmWorkspace({
                   generatedAt={generatedAt}
                   key={`mobile:${lead.leadId}`}
                   lead={lead}
+                  relationship={intelligence.relationships.get(lead.leadId)}
                   selected={selected?.leadId === lead.leadId}
                   view={view}
                 />
@@ -174,8 +189,11 @@ export function EnquiryCrmWorkspace({
       {selected ? (
         <CrmRecord
           events={events.filter((event) => event.leadId === selected.leadId)}
+          filters={filters}
           generatedAt={generatedAt}
           lead={selected}
+          relationship={intelligence.relationships.get(selected.leadId)}
+          view={view}
           voiceSession={voiceSessionForLead(selected, voiceSessions)}
         />
       ) : null}
@@ -212,16 +230,211 @@ function CrmMetric({
   );
 }
 
+function CrmIntelligencePanel({
+  filters,
+  generatedAt,
+  intelligence,
+  view,
+}: {
+  filters: CrmFilters;
+  generatedAt: number;
+  intelligence: CrmIntelligence<LeadRow>;
+  view: EnquiryCrmWorkspaceProps["view"];
+}) {
+  const headlineStats = [
+    { label: "Organizations", value: intelligence.uniqueOrganizationCount, detail: "captured accounts" },
+    { label: "Multi-enquiry", value: intelligence.multiEnquiryAccountCount, detail: "accounts with history" },
+    { label: "Repeat contacts", value: intelligence.repeatContactCount, detail: "people who returned" },
+    { label: "Duplicate checks", value: intelligence.duplicateClusterCount, detail: "same request within 30m" },
+    {
+      label: "Account coverage",
+      value: `${intelligence.organizationCoverage}%`,
+      detail: "enquiries with organization",
+    },
+  ];
+  return (
+    <section className="overflow-hidden rounded-2xl border border-mk-blue/20 bg-white shadow-sm" id="crm-intelligence">
+      <header className="border-b border-mk-ash/15 bg-gradient-to-r from-mk-blue/[0.08] via-white to-white px-4 py-5 sm:px-5">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-mk-blue">
+              Customer intelligence
+            </div>
+            <h2 className="mt-1 text-xl font-semibold tracking-tight">Account portfolio &amp; ownership</h2>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-mk-ash">
+              See organizations as accounts, recognize returning contacts, catch likely duplicate submissions, and
+              balance follow-up ownership.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+            {headlineStats.map((stat) => (
+              <div className="min-w-28 rounded-lg border border-mk-ash/15 bg-white/90 px-3 py-2" key={stat.label}>
+                <div className="text-lg font-semibold tracking-tight">{stat.value}</div>
+                <div className="text-[10px] font-semibold uppercase tracking-[0.1em] text-mk-off-black/55">
+                  {stat.label}
+                </div>
+                <div className="mt-0.5 text-[10px] text-mk-ash">{stat.detail}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </header>
+      <div className="grid xl:grid-cols-[minmax(0,1.25fr)_minmax(380px,0.75fr)]">
+        <section
+          className="min-w-0 p-4 sm:p-5 xl:border-r xl:border-mk-ash/15"
+          aria-labelledby="account-portfolio-title"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="font-semibold" id="account-portfolio-title">
+                Account portfolio
+              </h3>
+              <p className="mt-1 text-xs text-mk-ash">Highest-context organizations, ordered by enquiry history.</p>
+            </div>
+            <Badge tone="blue">
+              {intelligence.accounts.length} {intelligence.accounts.length === 1 ? "account" : "accounts"}
+            </Badge>
+          </div>
+          {intelligence.accounts.length === 0 ? (
+            <p className="mt-4 rounded-lg bg-mk-paper p-4 text-sm text-mk-ash">
+              Organization context has not been captured yet.
+            </p>
+          ) : (
+            <div className="mt-4 overflow-x-auto rounded-xl border border-mk-ash/15">
+              <table className="w-full min-w-[660px] border-collapse text-left text-sm" data-account-table>
+                <caption className="sr-only">Oriental organization account portfolio</caption>
+                <thead className="bg-mk-paper/90 text-[10px] font-semibold uppercase tracking-[0.11em] text-mk-off-black/55">
+                  <tr>
+                    <th className="px-3 py-2.5" scope="col">
+                      Organization
+                    </th>
+                    <th className="px-3 py-2.5 text-right" scope="col">
+                      Contacts
+                    </th>
+                    <th className="px-3 py-2.5 text-right" scope="col">
+                      Enquiries
+                    </th>
+                    <th className="px-3 py-2.5 text-right" scope="col">
+                      Open
+                    </th>
+                    <th className="px-3 py-2.5" scope="col">
+                      Latest
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-mk-ash/12">
+                  {intelligence.accounts.slice(0, 7).map((account) => (
+                    <tr className="bg-white hover:bg-mk-paper/50" key={account.key}>
+                      <th className="px-3 py-3 font-normal" scope="row">
+                        <a
+                          className="font-semibold text-mk-blue hover:underline"
+                          href={portfolioHref(view, filters, account.name)}
+                        >
+                          {account.name}
+                        </a>
+                        <div className="mt-1 text-xs text-mk-ash">
+                          {account.segments
+                            .slice(0, 2)
+                            .map((segment) => getSegment(segment).label)
+                            .join(" · ")}
+                        </div>
+                      </th>
+                      <td className="px-3 py-3 text-right font-medium">{account.contactCount}</td>
+                      <td className="px-3 py-3 text-right font-semibold">{account.enquiryCount}</td>
+                      <td className="px-3 py-3 text-right">
+                        <Badge tone={account.openCount > 0 ? "amber" : "green"}>{account.openCount}</Badge>
+                      </td>
+                      <td className="px-3 py-3 text-xs text-mk-ash">
+                        {formatRelativeAge(account.latestAt, generatedAt)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+        <section className="min-w-0 bg-mk-paper/30 p-4 sm:p-5" aria-labelledby="owner-workload-title">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="font-semibold" id="owner-workload-title">
+                Owner workload
+              </h3>
+              <p className="mt-1 text-xs text-mk-ash">Open work, priority pressure, and stale follow-up.</p>
+            </div>
+            <Badge tone={intelligence.ownerWorkloads.some((row) => row.owner === "Unassigned") ? "amber" : "green"}>
+              {intelligence.ownerWorkloads.length} queues
+            </Badge>
+          </div>
+          <div className="mt-4 overflow-x-auto rounded-xl border border-mk-ash/15 bg-white">
+            <table className="w-full min-w-[360px] border-collapse text-left text-sm" data-owner-table>
+              <caption className="sr-only">Oriental enquiry owner workload</caption>
+              <thead className="bg-mk-paper/90 text-[10px] font-semibold uppercase tracking-[0.11em] text-mk-off-black/55">
+                <tr>
+                  <th className="px-3 py-2.5" scope="col">
+                    Owner
+                  </th>
+                  <th className="px-3 py-2.5 text-right" scope="col">
+                    Open
+                  </th>
+                  <th className="px-3 py-2.5 text-right" scope="col">
+                    High
+                  </th>
+                  <th className="px-3 py-2.5 text-right" scope="col">
+                    Stale
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-mk-ash/12">
+                {intelligence.ownerWorkloads.slice(0, 7).map((row) => (
+                  <tr className="bg-white" key={row.owner}>
+                    <th className="px-3 py-3 font-normal" scope="row">
+                      <a
+                        className={
+                          row.owner === "Unassigned"
+                            ? "font-semibold text-amber-800 hover:underline"
+                            : "font-semibold text-mk-blue hover:underline"
+                        }
+                        href={portfolioHref(
+                          view,
+                          filters,
+                          row.owner === "Unassigned" ? "" : row.owner,
+                          row.owner === "Unassigned",
+                        )}
+                      >
+                        {row.owner}
+                      </a>
+                    </th>
+                    <td className="px-3 py-3 text-right font-semibold">{row.openCount}</td>
+                    <td className="px-3 py-3 text-right">{row.highPriorityCount}</td>
+                    <td className="px-3 py-3 text-right">
+                      <span className={row.staleCount > 0 ? "font-semibold text-amber-800" : "text-mk-ash"}>
+                        {row.staleCount}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </section>
+  );
+}
+
 function CrmTableRow({
   filters,
   generatedAt,
   lead,
+  relationship,
   selected,
   view,
 }: {
   filters: CrmFilters;
   generatedAt: number;
   lead: LeadRow;
+  relationship?: CrmRelationshipSummary<LeadRow>;
   selected: boolean;
   view: EnquiryCrmWorkspaceProps["view"];
 }) {
@@ -245,6 +458,7 @@ function CrmTableRow({
         >
           {lead.email}
         </a>
+        <RelationshipBadges relationship={relationship} />
       </th>
       <td className="px-4 py-3.5 align-top">
         <p className="line-clamp-2 leading-5 text-mk-off-black">
@@ -272,12 +486,8 @@ function CrmTableRow({
       </td>
       <td className="px-4 py-3.5 align-top">
         <Badge tone={delivery.tone}>{delivery.label}</Badge>
-        <div className={`mt-2 text-xs font-semibold ${clickUpTextClass(lead.notificationClickUpOk)}`}>
-          {clickUpStatus(lead.notificationClickUpOk)}
-        </div>
-        <p className="mt-2 line-clamp-2 text-xs leading-5 text-mk-ash">
-          {lead.notificationSummary || "No delivery detail"}
-        </p>
+        <ClickUpTaskLink compact lead={lead} />
+        <p className="mt-2 line-clamp-2 text-xs leading-5 text-mk-ash">{deliverySummary(lead)}</p>
       </td>
       <td className="px-4 py-3.5 align-top">
         <div className="font-semibold text-mk-off-black">{formatRelativeAge(lead.createdAt, generatedAt)}</div>
@@ -300,12 +510,14 @@ function CrmMobileRow({
   filters,
   generatedAt,
   lead,
+  relationship,
   selected,
   view,
 }: {
   filters: CrmFilters;
   generatedAt: number;
   lead: LeadRow;
+  relationship?: CrmRelationshipSummary<LeadRow>;
   selected: boolean;
   view: EnquiryCrmWorkspaceProps["view"];
 }) {
@@ -326,6 +538,7 @@ function CrmMobileRow({
         <Badge tone={priorityTone(priority)}>{adminLeadPriorityLabels[priority]}</Badge>
         <Badge tone={lead.owner?.trim() ? "green" : "amber"}>{lead.owner?.trim() || "Unassigned"}</Badge>
       </div>
+      <RelationshipBadges relationship={relationship} />
       <a
         className="mt-3 inline-flex h-9 w-full items-center justify-center rounded-lg border border-mk-blue/20 bg-mk-blue/5 text-sm font-semibold text-mk-blue"
         href={recordHref(view, filters, lead.leadId)}
@@ -338,13 +551,19 @@ function CrmMobileRow({
 
 function CrmRecord({
   events,
+  filters,
   generatedAt,
   lead,
+  relationship,
+  view,
   voiceSession,
 }: {
   events: LeadEventRow[];
+  filters: CrmFilters;
   generatedAt: number;
   lead: LeadRow;
+  relationship?: CrmRelationshipSummary<LeadRow>;
+  view: EnquiryCrmWorkspaceProps["view"];
   voiceSession?: VoiceSessionRow;
 }) {
   const status = normalizeAdminLeadStatus(lead.status);
@@ -395,12 +614,13 @@ function CrmRecord({
                 Website <ArrowUpRightIcon className="ml-2 size-4" />
               </a>
             ) : null}
+            <ClickUpTaskLink lead={lead} />
           </div>
         </div>
       </header>
 
       <div className="grid gap-0 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)]">
-        <div className="grid gap-5 p-4 sm:p-6 xl:border-r xl:border-mk-ash/15">
+        <div className="grid content-start gap-5 p-4 sm:p-6 xl:border-r xl:border-mk-ash/15">
           <section>
             <SectionLabel>What they want</SectionLabel>
             <p className="mt-2 whitespace-pre-wrap text-base leading-7 text-mk-off-black">
@@ -429,6 +649,7 @@ function CrmRecord({
                 value={lead.lastNotificationAt ? formatDate(lead.lastNotificationAt) : undefined}
               />
               <DataField label="ClickUp sync" value={clickUpStatus(lead.notificationClickUpOk)} />
+              <DataField label="ClickUp task ID" value={lead.notificationClickUpTaskId} />
               <DataField label="Record age" value={formatRelativeAge(lead.createdAt, generatedAt)} />
             </dl>
           </section>
@@ -487,16 +708,7 @@ function CrmRecord({
             />
           </section>
 
-          <section className="rounded-xl border border-mk-ash/15 bg-white p-4">
-            <SectionLabel>Delivery</SectionLabel>
-            <div className="mt-3 flex items-center gap-2">
-              <Badge tone={delivery.tone}>{delivery.label}</Badge>
-              <Badge tone={clickUpTone(lead.notificationClickUpOk)}>{clickUpStatus(lead.notificationClickUpOk)}</Badge>
-            </div>
-            <p className="mt-3 text-sm leading-6 text-mk-ash">
-              {lead.notificationSummary || "No provider delivery detail was recorded."}
-            </p>
-          </section>
+          <DeliveryPanel lead={lead} />
 
           <section className="rounded-xl border border-mk-ash/15 bg-white p-4">
             <SectionLabel>Activity</SectionLabel>
@@ -523,6 +735,16 @@ function CrmRecord({
             </div>
           </section>
         </aside>
+      </div>
+
+      <div className="border-t border-mk-ash/15 p-4 sm:p-6">
+        <RelatedEnquiries
+          filters={filters}
+          generatedAt={generatedAt}
+          lead={lead}
+          relationship={relationship}
+          view={view}
+        />
       </div>
     </section>
   );
@@ -605,7 +827,24 @@ function recordHref(view: EnquiryCrmWorkspaceProps["view"], filters: CrmFilters,
   if (filters.status) params.set("status", filters.status);
   if (filters.priority) params.set("priority", filters.priority);
   if (filters.source) params.set("source", filters.source);
+  params.set("sort", filters.sort);
   params.set("lead", leadId);
+  return `/admin/session-review?${params.toString()}#crm-record`;
+}
+
+function portfolioHref(
+  _view: EnquiryCrmWorkspaceProps["view"],
+  filters: CrmFilters,
+  query: string,
+  unassigned = false,
+) {
+  const params = new URLSearchParams({ view: "leads", sort: unassigned ? "unassigned" : filters.sort });
+  if (query) params.set("q", query);
+  return `/admin/session-review?${params.toString()}#crm-workspace`;
+}
+
+function relationshipRecordHref(_view: EnquiryCrmWorkspaceProps["view"], filters: CrmFilters, leadId: string) {
+  const params = new URLSearchParams({ view: "leads", sort: filters.sort, lead: leadId });
   return `/admin/session-review?${params.toString()}#crm-record`;
 }
 
@@ -650,16 +889,40 @@ function notificationStatus(lead: LeadRow): { label: string; tone: "neutral" | "
   return { label: "Pending", tone: "amber" };
 }
 
+function deliverySummary(lead: LeadRow) {
+  const delivered = [
+    lead.notificationEmailOk === true ? "owner email" : null,
+    lead.notificationSlackOk === true ? "team Slack" : null,
+    lead.notificationClickUpOk === true ? "ClickUp" : null,
+  ].filter((value): value is string => Boolean(value));
+  if (delivered.length > 0) {
+    const confirmation =
+      lead.notificationConfirmationOk === true
+        ? " The visitor confirmation was also sent."
+        : lead.notificationConfirmationOk === false
+          ? " The team has the enquiry, but the visitor confirmation failed."
+          : "";
+    return `Delivered through ${formatList(delivered)}.${confirmation}`;
+  }
+  if (lead.notificationDelivered === false)
+    return "Saved safely, but no team delivery channel succeeded. Recover this handoff.";
+  if (lead.source === "hero-email") return "Captured in the CRM. No team delivery outcome was recorded.";
+  return "Saved in the CRM; delivery outcome has not been recorded yet.";
+}
+
+function deliveryChannelState(value: boolean | undefined): {
+  label: string;
+  tone: "green" | "red" | "amber";
+} {
+  if (value === true) return { label: "Delivered", tone: "green" };
+  if (value === false) return { label: "Failed", tone: "red" };
+  return { label: "Not recorded", tone: "amber" };
+}
+
 function clickUpStatus(value: boolean | undefined) {
   if (value === true) return "ClickUp synced";
   if (value === false) return "ClickUp failed";
   return "ClickUp not recorded";
-}
-
-function clickUpTone(value: boolean | undefined): "green" | "red" | "amber" {
-  if (value === true) return "green";
-  if (value === false) return "red";
-  return "amber";
 }
 
 function clickUpTextClass(value: boolean | undefined) {
@@ -700,6 +963,26 @@ function safeWebsiteHref(value: string | undefined) {
   }
 }
 
+function safeClickUpHref(value: string | undefined, taskId: string | undefined) {
+  if (value?.trim()) {
+    try {
+      const url = new URL(value);
+      if (
+        url.protocol === "https:" &&
+        (url.hostname === "app.clickup.com" || url.hostname === "clickup.com" || url.hostname.endsWith(".clickup.com"))
+      ) {
+        return url.toString();
+      }
+    } catch {
+      // Fall through to the task ID if the provider URL was malformed.
+    }
+  }
+  const cleanTaskId = taskId?.trim();
+  return cleanTaskId && /^[A-Za-z0-9_-]+$/.test(cleanTaskId)
+    ? `https://app.clickup.com/t/${encodeURIComponent(cleanTaskId)}`
+    : undefined;
+}
+
 function scoreTone(value: number, invert: boolean): "green" | "amber" | "red" {
   const normalized = invert ? 5 - value : value;
   if (normalized >= 3.75) return "green";
@@ -735,4 +1018,207 @@ function formatRelativeAge(value: number, now: number) {
 function isSameKualaLumpurDay(left: number, right: number) {
   const format = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kuala_Lumpur" });
   return format.format(new Date(left)) === format.format(new Date(right));
+}
+
+function formatList(values: string[]) {
+  if (values.length <= 1) return values[0] ?? "";
+  if (values.length === 2) return `${values[0]} and ${values[1]}`;
+  return `${values.slice(0, -1).join(", ")}, and ${values.at(-1)}`;
+}
+
+function RelationshipBadges({ relationship }: { relationship?: CrmRelationshipSummary<LeadRow> }) {
+  if (
+    !relationship ||
+    (relationship.contactEnquiryCount <= 1 &&
+      relationship.accountEnquiryCount <= 1 &&
+      relationship.possibleDuplicateCount === 0)
+  ) {
+    return null;
+  }
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {relationship.contactEnquiryCount > 1 ? (
+        <Badge tone="blue">Repeat contact · {relationship.contactEnquiryCount}</Badge>
+      ) : null}
+      {relationship.accountEnquiryCount > 1 ? (
+        <Badge tone="neutral">Account · {relationship.accountEnquiryCount}</Badge>
+      ) : null}
+      {relationship.possibleDuplicateCount > 0 ? (
+        <Badge tone="amber">Check duplicate · +{relationship.possibleDuplicateCount}</Badge>
+      ) : null}
+    </div>
+  );
+}
+
+function RelatedEnquiries({
+  filters,
+  generatedAt,
+  lead,
+  relationship,
+  view,
+}: {
+  filters: CrmFilters;
+  generatedAt: number;
+  lead: LeadRow;
+  relationship?: CrmRelationshipSummary<LeadRow>;
+  view: EnquiryCrmWorkspaceProps["view"];
+}) {
+  const related = relationship?.relatedLeads ?? [];
+  return (
+    <section className="rounded-xl border border-mk-blue/15 bg-mk-blue/[0.025] p-4" id="related-enquiries">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <SectionLabel>Account &amp; contact history</SectionLabel>
+          <p className="mt-1 text-sm text-mk-ash">
+            {related.length > 0
+              ? "Previous and parallel enquiries connected by exact contact or normalized organization."
+              : "This is the first captured enquiry for this contact and organization."}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          <Badge tone={relationship && relationship.contactEnquiryCount > 1 ? "blue" : "neutral"}>
+            {pluralizeCount(relationship?.contactEnquiryCount ?? 1, "contact enquiry", "contact enquiries")}
+          </Badge>
+          <Badge tone={relationship && relationship.accountEnquiryCount > 1 ? "blue" : "neutral"}>
+            {pluralizeCount(
+              relationship?.accountEnquiryCount ?? (lead.org.trim() ? 1 : 0),
+              "account enquiry",
+              "account enquiries",
+            )}
+          </Badge>
+          {relationship?.possibleDuplicateCount ? (
+            <Badge tone="amber">{relationship.possibleDuplicateCount} possible duplicate</Badge>
+          ) : null}
+        </div>
+      </div>
+      {related.length > 0 ? (
+        <div className="mt-4 overflow-x-auto rounded-lg border border-mk-ash/15 bg-white">
+          <table className="w-full min-w-[720px] border-collapse text-left text-sm" data-related-table>
+            <caption className="sr-only">Related enquiries for {lead.name || lead.email}</caption>
+            <thead className="bg-mk-paper/90 text-[10px] font-semibold uppercase tracking-[0.11em] text-mk-off-black/55">
+              <tr>
+                <th className="px-3 py-2.5" scope="col">
+                  Received
+                </th>
+                <th className="px-3 py-2.5" scope="col">
+                  Contact
+                </th>
+                <th className="px-3 py-2.5" scope="col">
+                  Request
+                </th>
+                <th className="px-3 py-2.5" scope="col">
+                  Pipeline
+                </th>
+                <th className="px-3 py-2.5 text-right" scope="col">
+                  Record
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-mk-ash/12">
+              {related.slice(0, 8).map((entry) => {
+                const status = normalizeAdminLeadStatus(entry.status);
+                return (
+                  <tr key={entry.leadId}>
+                    <td className="px-3 py-3 text-xs text-mk-ash">
+                      <div className="font-medium text-mk-off-black">
+                        {formatRelativeAge(entry.createdAt, generatedAt)}
+                      </div>
+                      {formatDate(entry.createdAt)}
+                    </td>
+                    <th className="px-3 py-3 font-normal" scope="row">
+                      <div className="font-semibold">{entry.name?.trim() || entry.email}</div>
+                      <div className="mt-1 text-xs text-mk-ash">{entry.email}</div>
+                    </th>
+                    <td className="max-w-64 px-3 py-3">
+                      <p className="line-clamp-2 text-xs leading-5">{entry.message || "No brief captured"}</p>
+                    </td>
+                    <td className="px-3 py-3">
+                      <Badge tone={statusTone(status)}>{adminLeadStatusLabels[status]}</Badge>
+                    </td>
+                    <td className="px-3 py-3 text-right">
+                      <a
+                        className="font-semibold text-mk-blue hover:underline"
+                        href={relationshipRecordHref(view, filters, entry.leadId)}
+                      >
+                        Open
+                      </a>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function DeliveryPanel({ lead }: { lead: LeadRow }) {
+  const channels = [
+    ["Owner email", lead.notificationEmailOk],
+    ["Team Slack", lead.notificationSlackOk],
+    ["ClickUp", lead.notificationClickUpOk],
+    ["Visitor confirmation", lead.notificationConfirmationOk],
+  ] as const;
+  return (
+    <section className="rounded-xl border border-mk-ash/15 bg-white p-4">
+      <SectionLabel>Delivery</SectionLabel>
+      <p className="mt-2 text-sm leading-6 text-mk-off-black">{deliverySummary(lead)}</p>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        {channels.map(([label, value]) => {
+          const state = deliveryChannelState(value);
+          return (
+            <div className="rounded-lg border border-mk-ash/12 bg-mk-paper/45 p-2.5" key={label}>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.1em] text-mk-off-black/55">{label}</div>
+              <div className="mt-1">
+                <Badge tone={state.tone}>{state.label}</Badge>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-3">
+        <ClickUpTaskLink lead={lead} />
+      </div>
+      {lead.notificationSummary ? (
+        <details className="mt-3 rounded-lg border border-mk-ash/12 bg-mk-paper/35">
+          <summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-mk-ash">Provider trace</summary>
+          <p className="break-words border-t border-mk-ash/12 px-3 py-2 font-mono text-[11px] leading-5 text-mk-ash">
+            {lead.notificationSummary}
+          </p>
+        </details>
+      ) : null}
+    </section>
+  );
+}
+
+function ClickUpTaskLink({ compact = false, lead }: { compact?: boolean; lead: LeadRow }) {
+  const href = safeClickUpHref(lead.notificationClickUpTaskUrl, lead.notificationClickUpTaskId);
+  if (!href) {
+    if (!compact) return null;
+    return (
+      <div className={`mt-2 text-xs font-semibold ${clickUpTextClass(lead.notificationClickUpOk)}`}>
+        {clickUpStatus(lead.notificationClickUpOk)}
+      </div>
+    );
+  }
+  return (
+    <a
+      className={
+        compact
+          ? "mt-2 inline-flex items-center text-xs font-semibold text-mk-blue hover:underline"
+          : "inline-flex h-10 items-center justify-center rounded-lg border border-mk-blue/20 bg-mk-blue/5 px-3 text-sm font-semibold text-mk-blue transition hover:border-mk-blue/40 hover:bg-mk-blue/10"
+      }
+      href={href}
+      rel="noreferrer"
+      target="_blank"
+    >
+      Open ClickUp task <ArrowUpRightIcon className="ml-1.5 size-3.5" />
+    </a>
+  );
+}
+
+function pluralizeCount(value: number, singular: string, plural: string) {
+  return `${value} ${value === 1 ? singular : plural}`;
 }

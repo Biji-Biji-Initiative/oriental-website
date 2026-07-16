@@ -40,6 +40,8 @@ export default defineSchema({
     notificationEmailOk: v.optional(v.boolean()),
     notificationSlackOk: v.optional(v.boolean()),
     notificationClickUpOk: v.optional(v.boolean()),
+    notificationClickUpTaskId: v.optional(v.string()),
+    notificationClickUpTaskUrl: v.optional(v.string()),
     notificationConfirmationOk: v.optional(v.boolean()),
     notificationSummary: v.optional(v.string()),
     lastNotificationAt: v.optional(v.number()),

@@ -224,7 +224,12 @@ describe("recordLeadNotificationStatus", () => {
         {
           email: { ok: false, error: "smtp_down" },
           slack: { ok: true, transport: "slack" },
-          clickup: { ok: true, transport: "clickup" },
+          clickup: {
+            ok: true,
+            transport: "clickup",
+            externalId: "task_123",
+            externalUrl: "https://app.clickup.com/t/task_123",
+          },
           confirmation: { ok: true, transport: "smtp" },
         },
         true,
@@ -238,6 +243,8 @@ describe("recordLeadNotificationStatus", () => {
       emailOk: false,
       slackOk: true,
       clickupOk: true,
+      clickupTaskId: "task_123",
+      clickupTaskUrl: "https://app.clickup.com/t/task_123",
       confirmationOk: true,
       summary: "email=smtp_down slack=slack clickup=clickup confirmation=smtp",
     });
