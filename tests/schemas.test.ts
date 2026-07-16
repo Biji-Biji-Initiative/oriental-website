@@ -162,6 +162,7 @@ describe("voice review latency schema", () => {
           inputPolicy: "fast",
           modelCell: "candidate",
           reasoningCell: "minimal",
+          activationAttempted: true,
           latency: {
             version: 1,
             activation: { tapToArmCueScheduledMs: 4, tapToLiveMs: 480 },

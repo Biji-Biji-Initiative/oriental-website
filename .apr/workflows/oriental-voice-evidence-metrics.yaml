@@ -1,0 +1,28 @@
+name: oriental-voice-evidence-metrics
+description: Adversarial review of audible-start evidence and experiment governance
+
+documents:
+  readme: README.md
+  spec: .apr/specs/oriental-voice-evidence-metrics.md
+  implementation: lib/eval/voice-eval.ts
+
+oracle:
+  model: "gemini-3.1-pro"
+
+rounds:
+  output_dir: .apr/rounds/oriental-voice-evidence-metrics
+  impl_every_n: 1
+
+template: |
+  Review this evidence contract for metric honesty, denominator correctness,
+  backward compatibility, attribution gaps, experiment confounding, and any
+  path that could overclaim product proof. Treat silent success inflation or
+  schema breakage as blockers. End with exactly `VERDICT: SHIP` or
+  `VERDICT: DO NOT SHIP`.
+
+template_with_impl: |
+  Review the attached evaluator against the evidence contract for metric
+  honesty, denominator correctness, backward compatibility, attribution gaps,
+  experiment confounding, and any path that could overclaim product proof.
+  Treat silent success inflation or schema breakage as blockers. End with
+  exactly `VERDICT: SHIP` or `VERDICT: DO NOT SHIP`.

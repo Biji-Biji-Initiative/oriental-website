@@ -86,7 +86,7 @@ export const voiceReviewSnapshotSchema = z.object({
     leadId: z.string().max(160).nullable().optional(),
     segment: segmentSchema,
     status: z.enum(["idle", "submitted"]).default("idle"),
-    connectionStatus: z.enum(["idle", "requesting_mic", "connecting", "listening"]),
+    connectionStatus: z.enum(["idle", "requesting_mic", "connecting", "reconnecting", "listening"]),
     closeReason: z
       .enum([
         "idle_timeout",
@@ -102,6 +102,9 @@ export const voiceReviewSnapshotSchema = z.object({
         "page_hidden",
       ])
       .optional(),
+    deviceProfile: z.enum(["mobile", "desktop"]).optional(),
+    deploymentEnvironment: z.enum(["local", "staging", "production"]).optional(),
+    activationAttempted: z.boolean().optional(),
     prewarmedAt: z.number().optional(),
     connectStartedAt: z.number().optional(),
     connectedAt: z.number().optional(),
@@ -157,6 +160,7 @@ export const voiceReviewSnapshotSchema = z.object({
           .object({
             tapToArmCueScheduledMs: z.number().nonnegative().max(10_000).optional(),
             tapToLiveMs: z.number().nonnegative().max(120_000).optional(),
+            tapToAudibleMs: z.number().nonnegative().max(120_000).optional(),
           })
           .optional(),
         turns: z
@@ -182,10 +186,12 @@ export const voiceReviewSnapshotSchema = z.object({
       .optional(),
     transport: z
       .object({
+        realtimeBusyRetryCount: z.number().int().nonnegative().default(0),
         disconnectCount: z.number().int().nonnegative(),
         recoveryCount: z.number().int().nonnegative(),
         iceRestartCount: z.number().int().nonnegative(),
         wasSpeakingAtClose: z.boolean().optional(),
+        remoteTrackReceivedAt: z.number().optional(),
         transitions: z
           .array(z.object({ state: z.string().max(24), at: z.number() }))
           .max(60)

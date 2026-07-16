@@ -18,20 +18,35 @@
  */
 
 import { z } from "zod";
+import { activeVoiceExperimentDimensions } from "../voice/experiments";
 
 export type EvalTranscriptTurn = { role: string; text: string };
 
 export type EvalTransport = {
+  /** Folded evidence that any call segment ended abnormally mid-utterance. */
+  droppedMidTurn?: boolean;
+  realtimeBusyRetryCount?: number;
   disconnectCount: number;
   recoveryCount: number;
   iceRestartCount: number;
   wasSpeakingAtClose?: boolean | null;
+  remoteTrackReceivedAt?: number | null;
   worstStats?: { packetsLostPct?: number; maxJitterMs?: number; maxRttMs?: number } | null;
 } | null;
 
+export type EvalActivation = {
+  tapToArmCueScheduledMs?: number;
+  tapToLiveMs?: number;
+  tapToAudibleMs?: number;
+};
+
 export type EvalLatency = {
   version: 1;
-  activation?: { tapToArmCueScheduledMs?: number; tapToLiveMs?: number };
+  activation?: EvalActivation;
+  /** Evaluation-only fold of observed activation telemetry, including legacy rows. */
+  activationSamples?: EvalActivation[];
+  /** Evaluation-only fold of explicitly marked user-initiated attempts. */
+  activationAttempts?: EvalActivation[];
   turns: Array<{
     sequence: number;
     inputPolicy: "baseline" | "fast" | "patient";
@@ -57,6 +72,9 @@ export type VoiceEvalSession = {
   status: string;
   connectionStatus: string;
   closeReason?: string | null;
+  deviceProfile?: "mobile" | "desktop" | null;
+  deploymentEnvironment?: "local" | "staging" | "production" | null;
+  activationAttempted?: boolean | null;
   leadId?: string | null;
   connectStartedAt?: number | null;
   connectedAt?: number | null;
@@ -74,6 +92,8 @@ export type VoiceEvalSession = {
   submittedAt?: number | null;
   /** Review ids of the call segments folded into this conversation (if merged). */
   callReviewIds?: string[];
+  /** Close reasons from every call segment, retained across conversation folding. */
+  callCloseReasons?: string[];
 };
 
 // ---------------------------------------------------------------------------
@@ -131,8 +151,18 @@ export function mergeConversationSessions(sessions: VoiceEvalSession[]): VoiceEv
     const ordered = [...group].sort((a, b) => callStartAt(a) - callStartAt(b));
     const head = ordered[ordered.length - 1] as VoiceEvalSession;
     const submitted = ordered.find((s) => Boolean(s.submittedAt) || Boolean(s.leadId));
-    const transport = ordered.reduce<EvalTransport>((acc, s) => foldEvalTransport(acc, s.transport ?? null), null);
-    const latency = foldEvalLatency(ordered.map((session) => session.latency ?? null));
+    const foldedTransport = ordered.reduce<EvalTransport>(
+      (acc, s) => foldEvalTransport(acc, s.transport ?? null),
+      null,
+    );
+    const droppedMidTurn = ordered.some(
+      (session) =>
+        ABNORMAL_CLOSE_REASONS.has(session.closeReason ?? "") && session.transport?.wasSpeakingAtClose === true,
+    );
+    const transport = foldedTransport
+      ? { ...foldedTransport, droppedMidTurn: Boolean(foldedTransport.droppedMidTurn || droppedMidTurn) }
+      : null;
+    const latency = foldEvalLatency(ordered);
     merged.push({
       ...head,
       // The latest call row heads the conversation, but timings and outcome span
@@ -148,27 +178,55 @@ export function mergeConversationSessions(sessions: VoiceEvalSession[]): VoiceEv
       errors: ordered.flatMap((s) => s.errors),
       transport,
       latency,
+      activationAttempted: ordered.some((session) => session.activationAttempted === true),
       routeRequested: ordered.some((s) => s.routeRequested),
       callReviewIds: ordered.map((s) => s.reviewId),
+      callCloseReasons: ordered.flatMap(
+        (s) => s.callCloseReasons ?? (typeof s.closeReason === "string" ? [s.closeReason] : []),
+      ),
     });
   }
   return merged;
 }
 
-function foldEvalLatency(latencies: EvalLatency[]): EvalLatency {
-  const turns = latencies.flatMap((latency) => latency?.turns ?? []);
-  const activation = latencies.find((latency) => latency?.activation)?.activation;
-  return turns.length > 0 || activation ? { version: 1, ...(activation ? { activation } : {}), turns } : null;
+function foldEvalLatency(sessions: VoiceEvalSession[]): EvalLatency {
+  const turns = sessions.flatMap((session) => session.latency?.turns ?? []);
+  const activationSamples = sessions.flatMap((session) => {
+    const latency = session.latency;
+    if (!latency) return [];
+    if (latency.activationSamples && latency.activationSamples.length > 0) return latency.activationSamples;
+    if (latency.activationAttempts && latency.activationAttempts.length > 0) return latency.activationAttempts;
+    if (latency.activation) return [latency.activation];
+    return [];
+  });
+  const activationAttempts = sessions.flatMap((session) => {
+    if (session.activationAttempted !== true) return [];
+    const latency = session.latency;
+    if (latency?.activationAttempts && latency.activationAttempts.length > 0) return latency.activationAttempts;
+    if (latency?.activation) return [latency.activation];
+    return [{}];
+  });
+  const activation = activationSamples[0] ?? activationAttempts[0];
+  return turns.length > 0 || activation
+    ? {
+        version: 1,
+        ...(activation ? { activation, activationSamples, activationAttempts } : {}),
+        turns,
+      }
+    : null;
 }
 
 function foldEvalTransport(acc: EvalTransport, next: EvalTransport): EvalTransport {
   if (!next) return acc;
   if (!acc) return next;
   return {
+    droppedMidTurn: Boolean(acc.droppedMidTurn || next.droppedMidTurn),
+    realtimeBusyRetryCount: (acc.realtimeBusyRetryCount ?? 0) + (next.realtimeBusyRetryCount ?? 0),
     disconnectCount: acc.disconnectCount + next.disconnectCount,
     recoveryCount: acc.recoveryCount + next.recoveryCount,
     iceRestartCount: acc.iceRestartCount + next.iceRestartCount,
     wasSpeakingAtClose: next.wasSpeakingAtClose ?? acc.wasSpeakingAtClose,
+    remoteTrackReceivedAt: acc.remoteTrackReceivedAt ?? next.remoteTrackReceivedAt,
     worstStats: {
       packetsLostPct: maxOrNull(acc.worstStats?.packetsLostPct, next.worstStats?.packetsLostPct),
       maxJitterMs: maxOrNull(acc.worstStats?.maxJitterMs, next.worstStats?.maxJitterMs),
@@ -195,6 +253,8 @@ export type TransportSignals = {
   droppedMidTurn: boolean;
   hadDisconnect: boolean;
   recoveredAfterDisconnect: boolean;
+  realtimeBusyRetries: number;
+  remoteTrackReceived: boolean;
   worstPacketsLostPct: number | null;
   worstRttMs: number | null;
 };
@@ -204,15 +264,29 @@ export function deriveTransportSignals(session: VoiceEvalSession): TransportSign
   const disconnects = transport?.disconnectCount ?? 0;
   const recoveries = transport?.recoveryCount ?? 0;
   return {
-    droppedMidTurn: ABNORMAL_CLOSE_REASONS.has(session.closeReason ?? "") && transport?.wasSpeakingAtClose === true,
+    droppedMidTurn:
+      transport?.droppedMidTurn ??
+      (ABNORMAL_CLOSE_REASONS.has(session.closeReason ?? "") && transport?.wasSpeakingAtClose === true),
     hadDisconnect: disconnects > 0,
     recoveredAfterDisconnect: disconnects > 0 && recoveries >= disconnects,
+    realtimeBusyRetries: transport?.realtimeBusyRetryCount ?? 0,
+    remoteTrackReceived: typeof transport?.remoteTrackReceivedAt === "number",
     worstPacketsLostPct: transport?.worstStats?.packetsLostPct ?? null,
     worstRttMs: transport?.worstStats?.maxRttMs ?? null,
   };
 }
 
 export type LatencySignals = {
+  activationSamples: Array<{
+    tapToArmCueMs: number | null;
+    tapToLiveMs: number | null;
+    tapToAudibleMs: number | null;
+  }>;
+  activationAttempts: Array<{
+    tapToArmCueMs: number | null;
+    tapToLiveMs: number | null;
+    tapToAudibleMs: number | null;
+  }>;
   sampledTurns: number;
   firstOutputSamples: number;
   firstOutputP50Ms: number | null;
@@ -232,12 +306,34 @@ export type LatencySignals = {
   bargeInP95Ms: number | null;
   tapToArmCueMs: number | null;
   tapToLiveMs: number | null;
+  tapToAudibleMs: number | null;
   interruptedTurns: number;
   rapidResumeTurns: number;
 };
 
 export function deriveLatencySignals(session: VoiceEvalSession): LatencySignals {
   const turns = session.latency?.turns ?? [];
+  const rawActivationSamples =
+    session.latency?.activationSamples && session.latency.activationSamples.length > 0
+      ? session.latency.activationSamples
+      : session.latency?.activation
+        ? [session.latency.activation]
+        : [];
+  const rawActivationAttempts =
+    session.activationAttempted === true &&
+    session.latency?.activationAttempts &&
+    session.latency.activationAttempts.length > 0
+      ? session.latency.activationAttempts
+      : session.activationAttempted === true && session.latency?.activation
+        ? [session.latency.activation]
+        : session.activationAttempted === true
+          ? [{}]
+          : [];
+  const activationSamples = rawActivationSamples.map(toActivationSignal);
+  const activationAttempts = rawActivationAttempts.map((activation) => ({
+    ...toActivationSignal(activation),
+  }));
+  const firstActivation = activationSamples[0] ?? activationAttempts[0];
   const firstOutput = turns.flatMap((turn) =>
     typeof turn.stopToFirstOutputEventMs === "number" ? [turn.stopToFirstOutputEventMs] : [],
   );
@@ -258,6 +354,8 @@ export function deriveLatencySignals(session: VoiceEvalSession): LatencySignals 
   );
   const tool = turns.flatMap((turn) => (typeof turn.toolDurationMs === "number" ? [turn.toolDurationMs] : []));
   return {
+    activationSamples,
+    activationAttempts,
     sampledTurns: turns.length,
     firstOutputSamples: firstOutput.length,
     firstOutputP50Ms: percentile(firstOutput, 0.5),
@@ -275,10 +373,19 @@ export function deriveLatencySignals(session: VoiceEvalSession): LatencySignals 
     toolP50Ms: percentile(tool, 0.5),
     toolP95Ms: percentile(tool, 0.95),
     bargeInP95Ms: percentile(bargeIn, 0.95),
-    tapToArmCueMs: session.latency?.activation?.tapToArmCueScheduledMs ?? null,
-    tapToLiveMs: session.latency?.activation?.tapToLiveMs ?? null,
+    tapToArmCueMs: firstActivation?.tapToArmCueMs ?? null,
+    tapToLiveMs: firstActivation?.tapToLiveMs ?? null,
+    tapToAudibleMs: firstActivation?.tapToAudibleMs ?? null,
     interruptedTurns: turns.filter((turn) => turn.interrupted).length,
     rapidResumeTurns: turns.filter((turn) => turn.rapidResume).length,
+  };
+}
+
+function toActivationSignal(activation: EvalActivation) {
+  return {
+    tapToArmCueMs: activation.tapToArmCueScheduledMs ?? null,
+    tapToLiveMs: activation.tapToLiveMs ?? null,
+    tapToAudibleMs: activation.tapToAudibleMs ?? null,
   };
 }
 
@@ -335,9 +442,15 @@ export type LatencyAutopilotGate = {
  * release signal that still requires the normal reviewed deployment path.
  */
 export function assessLatencyAutopilotGate(sessions: VoiceEvalSession[]): LatencyAutopilotGate {
-  const candidate = profileLatencyGateMetrics(sessions.filter((session) => session.runtimeProfile === "instant-v1"));
+  const isControlModelAndReasoning = (session: VoiceEvalSession) =>
+    (session.modelCell ?? "control") === "control" && (session.reasoningCell ?? "low") === "low";
+  const candidate = profileLatencyGateMetrics(
+    sessions.filter((session) => session.runtimeProfile === "instant-v1" && isControlModelAndReasoning(session)),
+  );
   const control = profileLatencyGateMetrics(
-    sessions.filter((session) => (session.runtimeProfile ?? "baseline") === "baseline"),
+    sessions.filter(
+      (session) => (session.runtimeProfile ?? "baseline") === "baseline" && isControlModelAndReasoning(session),
+    ),
   );
   const missingEvidence: string[] = [];
 
@@ -565,6 +678,9 @@ export type SessionEval = {
   callCount: number;
   segment: string;
   closeReason: string | null;
+  closeReasons: string[];
+  deviceProfile: "mobile" | "desktop" | "unknown";
+  deploymentEnvironment: "local" | "staging" | "production" | "unknown";
   runtimeProfile: "baseline" | "instant-v1";
   inputPolicy: "baseline" | "fast" | "patient";
   modelCell: "control" | "candidate";
@@ -582,6 +698,9 @@ export function buildSessionEval(session: VoiceEvalSession, score: JudgeScore | 
     callCount: session.callReviewIds?.length ?? 1,
     segment: session.segment,
     closeReason: session.closeReason ?? null,
+    closeReasons: session.callCloseReasons ?? (typeof session.closeReason === "string" ? [session.closeReason] : []),
+    deviceProfile: session.deviceProfile ?? "unknown",
+    deploymentEnvironment: session.deploymentEnvironment ?? "unknown",
     runtimeProfile: session.runtimeProfile ?? "baseline",
     inputPolicy: session.inputPolicy ?? "baseline",
     modelCell: session.modelCell ?? "control",
@@ -601,11 +720,27 @@ export type EvalAggregate = {
   cleanRecoveries: number;
   submitRate: number;
   activation: {
+    attempts: number;
     tapToLiveSamples: number;
     tapToLiveP50Ms: number | null;
     tapToLiveP95Ms: number | null;
+    tapToAudibleSamples: number;
+    tapToAudibleP50Ms: number | null;
+    tapToAudibleP95Ms: number | null;
+    usefulStartWithinTwoSeconds: number;
+    usefulStartRate: number | null;
     armCueSamples: number;
     armCueP95Ms: number | null;
+  };
+  availability: {
+    realtimeBusySessions: number;
+    webrtcFailedSessions: number;
+    retrySessions: number;
+    remoteTrackWithoutAudioSessions: number;
+  };
+  attribution: {
+    environments: Record<"production" | "staging" | "local" | "unknown", number>;
+    devices: Record<"mobile" | "desktop" | "unknown", number>;
   };
   averages: {
     routingCorrect: number | null;
@@ -626,12 +761,20 @@ export function aggregateEvals(evals: SessionEval[]): EvalAggregate {
       : round(scored.reduce((sum, entry) => sum + pick(entry.score as JudgeScore), 0) / scored.length);
 
   const droppedMidTurn = evals.filter((entry) => entry.transport.droppedMidTurn);
-  const tapToLive = evals.flatMap((entry) =>
-    typeof entry.latency.tapToLiveMs === "number" ? [entry.latency.tapToLiveMs] : [],
+  const activationSamples = evals.flatMap((entry) => entry.latency.activationSamples);
+  const activationAttempts = evals.flatMap((entry) => entry.latency.activationAttempts);
+  const tapToLive = activationSamples.flatMap((attempt) =>
+    typeof attempt.tapToLiveMs === "number" ? [attempt.tapToLiveMs] : [],
   );
-  const armCue = evals.flatMap((entry) =>
-    typeof entry.latency.tapToArmCueMs === "number" ? [entry.latency.tapToArmCueMs] : [],
+  const tapToAudible = activationSamples.flatMap((attempt) =>
+    typeof attempt.tapToAudibleMs === "number" ? [attempt.tapToAudibleMs] : [],
   );
+  const armCue = activationSamples.flatMap((attempt) =>
+    typeof attempt.tapToArmCueMs === "number" ? [attempt.tapToArmCueMs] : [],
+  );
+  const usefulStartWithinTwoSeconds = activationAttempts.filter(
+    (attempt) => typeof attempt.tapToAudibleMs === "number" && attempt.tapToAudibleMs <= 2_000,
+  ).length;
   const worstSessions = [
     ...droppedMidTurn.map((entry) => ({ reviewId: entry.reviewId, reason: "dropped mid-utterance" })),
     ...scored
@@ -651,11 +794,34 @@ export function aggregateEvals(evals: SessionEval[]): EvalAggregate {
     submitRate:
       evals.length === 0 ? 0 : round(evals.filter((entry) => entry.engagement.submitted).length / evals.length),
     activation: {
+      attempts: activationAttempts.length,
       tapToLiveSamples: tapToLive.length,
       tapToLiveP50Ms: percentile(tapToLive, 0.5),
       tapToLiveP95Ms: percentile(tapToLive, 0.95),
+      tapToAudibleSamples: tapToAudible.length,
+      tapToAudibleP50Ms: percentile(tapToAudible, 0.5),
+      tapToAudibleP95Ms: percentile(tapToAudible, 0.95),
+      usefulStartWithinTwoSeconds,
+      usefulStartRate:
+        activationAttempts.length === 0 ? null : round(usefulStartWithinTwoSeconds / activationAttempts.length),
       armCueSamples: armCue.length,
       armCueP95Ms: percentile(armCue, 0.95),
+    },
+    availability: {
+      realtimeBusySessions: evals.filter((entry) => entry.closeReasons.includes("realtime_busy")).length,
+      webrtcFailedSessions: evals.filter((entry) => entry.closeReasons.includes("webrtc_failed")).length,
+      retrySessions: evals.filter((entry) => entry.transport.realtimeBusyRetries > 0).length,
+      remoteTrackWithoutAudioSessions: evals.filter(
+        (entry) => entry.transport.remoteTrackReceived && entry.latency.tapToAudibleMs === null,
+      ).length,
+    },
+    attribution: {
+      environments: countBy(
+        evals,
+        ["production", "staging", "local", "unknown"],
+        (entry) => entry.deploymentEnvironment,
+      ),
+      devices: countBy(evals, ["mobile", "desktop", "unknown"], (entry) => entry.deviceProfile),
     },
     averages: {
       routingCorrect: average((score) => score.routingCorrect),
@@ -665,6 +831,13 @@ export function aggregateEvals(evals: SessionEval[]): EvalAggregate {
     },
     worstSessions,
   };
+}
+
+function countBy<T, K extends string>(items: T[], keys: readonly K[], pick: (item: T) => K): Record<K, number> {
+  return Object.fromEntries(keys.map((key) => [key, items.filter((item) => pick(item) === key).length])) as Record<
+    K,
+    number
+  >;
 }
 
 export function aggregateEvalsByRuntimeProfile(evals: SessionEval[]): Record<string, EvalAggregate> {
@@ -680,12 +853,28 @@ export function aggregateEvalsByRuntimeProfile(evals: SessionEval[]): Record<str
 export function aggregateEvalsByExperimentCell(evals: SessionEval[]): Record<string, EvalAggregate> {
   const groups = new Map<string, SessionEval[]>();
   for (const entry of evals) {
-    const key = `${entry.modelCell}/${entry.reasoningCell}`;
+    const key = `${entry.runtimeProfile}/${entry.modelCell}/${entry.reasoningCell}`;
     const group = groups.get(key);
     if (group) group.push(entry);
     else groups.set(key, [entry]);
   }
   return Object.fromEntries([...groups.entries()].map(([cell, entries]) => [cell, aggregateEvals(entries)]));
+}
+
+export type VoiceExperimentEvidenceValidation = { ok: boolean; failures: string[] };
+
+/** Reject rows that vary more than one controlled experiment dimension. */
+export function validateVoiceExperimentEvidence(evals: SessionEval[]): VoiceExperimentEvidenceValidation {
+  const failures = evals.flatMap((entry) => {
+    const activeDimensions = activeVoiceExperimentDimensions(entry);
+    return activeDimensions.length > 1
+      ? [
+          `${entry.reviewId} varies multiple experiment dimensions: ${activeDimensions.join(", ")} ` +
+            `(${entry.runtimeProfile}/${entry.modelCell}/${entry.reasoningCell})`,
+        ]
+      : [];
+  });
+  return { ok: failures.length === 0, failures };
 }
 
 export type EvalThresholds = {
@@ -702,26 +891,26 @@ export function meetsThreshold(
 ): { ok: boolean; failures: string[] } {
   const failures: string[] = [];
   const { averages } = aggregate;
-  if (
-    typeof thresholds.minConversationQuality === "number" &&
-    averages.conversationQuality !== null &&
-    averages.conversationQuality < thresholds.minConversationQuality
-  ) {
-    failures.push(`conversationQuality ${averages.conversationQuality} < ${thresholds.minConversationQuality}`);
+  if (typeof thresholds.minConversationQuality === "number") {
+    if (averages.conversationQuality === null) {
+      failures.push("conversationQuality unavailable (0 scored conversations)");
+    } else if (averages.conversationQuality < thresholds.minConversationQuality) {
+      failures.push(`conversationQuality ${averages.conversationQuality} < ${thresholds.minConversationQuality}`);
+    }
   }
-  if (
-    typeof thresholds.minRoutingCorrect === "number" &&
-    averages.routingCorrect !== null &&
-    averages.routingCorrect < thresholds.minRoutingCorrect
-  ) {
-    failures.push(`routingCorrect ${averages.routingCorrect} < ${thresholds.minRoutingCorrect}`);
+  if (typeof thresholds.minRoutingCorrect === "number") {
+    if (averages.routingCorrect === null) {
+      failures.push("routingCorrect unavailable (0 scored conversations)");
+    } else if (averages.routingCorrect < thresholds.minRoutingCorrect) {
+      failures.push(`routingCorrect ${averages.routingCorrect} < ${thresholds.minRoutingCorrect}`);
+    }
   }
-  if (
-    typeof thresholds.maxFrustration === "number" &&
-    averages.frustration !== null &&
-    averages.frustration > thresholds.maxFrustration
-  ) {
-    failures.push(`frustration ${averages.frustration} > ${thresholds.maxFrustration}`);
+  if (typeof thresholds.maxFrustration === "number") {
+    if (averages.frustration === null) {
+      failures.push("frustration unavailable (0 scored conversations)");
+    } else if (averages.frustration > thresholds.maxFrustration) {
+      failures.push(`frustration ${averages.frustration} > ${thresholds.maxFrustration}`);
+    }
   }
   if (
     typeof thresholds.maxDroppedMidTurn === "number" &&

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveVoiceExperimentConfig } from "@/lib/voice/experiments";
+import { activeVoiceExperimentDimensions, resolveVoiceExperimentConfig } from "@/lib/voice/experiments";
 
 describe("voice experiment cells", () => {
   it("defaults to the measured control cell", () => {
@@ -41,5 +41,22 @@ describe("voice experiment cells", () => {
     });
     expect(config.modelCell).toBe("control");
     expect(config.reasoningCell).toBe("low");
+  });
+
+  it("identifies every active non-control experiment dimension", () => {
+    expect(
+      activeVoiceExperimentDimensions({
+        runtimeProfile: "instant-v1",
+        modelCell: "candidate",
+        reasoningCell: "minimal",
+      }),
+    ).toEqual(["runtime", "model", "reasoning"]);
+    expect(
+      activeVoiceExperimentDimensions({
+        runtimeProfile: "baseline",
+        modelCell: "control",
+        reasoningCell: "low",
+      }),
+    ).toEqual([]);
   });
 });

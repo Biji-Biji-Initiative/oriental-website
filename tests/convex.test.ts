@@ -222,7 +222,11 @@ describe("persistVoiceReviewSnapshot", () => {
     inputPolicy: "fast" as const,
     modelCell: "candidate" as const,
     reasoningCell: "minimal" as const,
+    deviceProfile: "desktop" as const,
+    deploymentEnvironment: "staging" as const,
+    activationAttempted: true,
     transport: {
+      realtimeBusyRetryCount: 0,
       disconnectCount: 1,
       recoveryCount: 1,
       iceRestartCount: 1,
@@ -286,6 +290,9 @@ describe("persistVoiceReviewSnapshot", () => {
     expect(retryArgs.snapshot).not.toHaveProperty("inputPolicy");
     expect(retryArgs.snapshot).not.toHaveProperty("modelCell");
     expect(retryArgs.snapshot).not.toHaveProperty("reasoningCell");
+    expect(retryArgs.snapshot).not.toHaveProperty("deviceProfile");
+    expect(retryArgs.snapshot).not.toHaveProperty("deploymentEnvironment");
+    expect(retryArgs.snapshot).not.toHaveProperty("activationAttempted");
     expect(retryArgs.snapshot).toMatchObject({ reviewId: "review_1" });
   });
 });

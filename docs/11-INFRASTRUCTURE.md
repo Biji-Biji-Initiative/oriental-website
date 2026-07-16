@@ -93,12 +93,14 @@ Never run interactive `infisical login` in automation. Use Universal Auth:
 ```bash
 source ~/.config/infisical/universal-auth.env
 export INFISICAL_API_URL
-export INFISICAL_TOKEN=$(infisical login --method=universal-auth \
+export INFISICAL_TOKEN=$(infisical login --domain="$INFISICAL_API_URL" \
+  --method=universal-auth \
   --client-id="$INFISICAL_UA_CLIENT_ID" \
   --client-secret="$INFISICAL_UA_CLIENT_SECRET" \
   --silent --plain 2>/dev/null)
-infisical export --env=prod --path=/deploy/oriental-website \
-  --projectId=6bfac905-9bb1-449e-8be8-f25f9634802b --format=dotenv
+infisical export --domain="$INFISICAL_API_URL" --env=prod \
+  --path=/deploy/oriental-website \
+  --projectId=6bfac905-9bb1-449e-8be8-f25f9634802b --output=dotenv
 ```
 
 Coolify should materialize the exported values as normal environment variables
@@ -126,7 +128,15 @@ on the same Coolify app host under
 for the commit under review. It is routed through the Coolify Traefik network
 with `coolify.managed=false`, so it is host-managed rather than a full Coolify
 UI application until a dedicated Coolify staging app/API token is provisioned.
-Current staging caveat: `/deploy/oriental-website` has no populated Infisical `staging` environment. The staging container therefore uses a host-local copy of the production runtime env with non-secret overrides such as `COOLIFY_FQDN`, `COOLIFY_URL`, `SOURCE_COMMIT`, `GIT_SHA`, `SENTRY_ENVIRONMENT=staging`, and `NEXT_PUBLIC_SENTRY_ENVIRONMENT=staging`. Do not treat staging submissions as an isolated data/notification sandbox until separate staging Convex, SES, Slack, Redis, and OpenAI secrets are created.
+The Infisical `staging` environment now contains the complete application
+contract plus explicit baseline/control/low, staging-Sentry, and QA-picker-off
+overrides. The host-managed staging container still materializes those values
+through its host-local env file; Infisical is the canonical comparison source,
+not a runtime SDK dependency. Staging and production still share upstream
+Convex, SES/SMTP, Slack, Redis, and OpenAI accounts. Redis keys are separated by
+environment, and new voice snapshots carry deployment attribution, but do not
+treat staging submissions as a fully isolated data/notification sandbox until
+dedicated staging services are provisioned.
 
 Staging rollback/removal is host-local:
 
@@ -174,8 +184,9 @@ REDIS_URL=
 
 `CONVEX_INGEST_SECRET` protects app-to-Convex mutations.
 
-Rate limiting uses Redis/Valkey keys under `oriental:rate:*` when `REDIS_URL`,
-`UPSTASH_REDIS_URL`, or `VALKEY_URL` is set. Route logs include
+Rate limiting uses Redis/Valkey keys under `oriental:rate:*` in production and
+`oriental:<environment>:rate:*` outside production, based on
+`SENTRY_ENVIRONMENT`, when `REDIS_URL`, `UPSTASH_REDIS_URL`, or `VALKEY_URL` is set. Route logs include
 `rateLimitStore`; production should normally show `"redis"`.
 
 Slack delivery uses `SLACK_BOT_TOKEN` + `SLACK_CHANNEL_ID` first. Current smoke
@@ -272,8 +283,9 @@ Rotation means updating Infisical/Coolify and redeploying the app.
 
 ## Open Infra Questions
 
-- Confirm final Coolify service naming and resource limits in the live UI.
-- Confirm Cloudflare zone ownership and WAF rules.
+- Confirm final Coolify resource limits in the live UI.
+- Retain Cloudflare zone ownership evidence; do not require WAF rules while the
+  canonical records intentionally remain DNS-only.
 - Define Convex backup/export process and retention.
 - Tune Sentry alerts, Slack alert thresholds, and dashboard review cadence after
   the first real traffic.

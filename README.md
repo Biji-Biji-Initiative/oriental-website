@@ -37,7 +37,11 @@ Copy `.env.local.example` to `.env.local` for local work. The Convex URL is non-
 
 The production app-scoped Infisical folder is `/deploy/oriental-website` in project `6bfac905-9bb1-449e-8be8-f25f9634802b`. It mirrors the Coolify runtime variable names below so env syncs do not need ad hoc `ORIENTAL_*` remapping.
 
-Staging is live at `https://staging.oriental.mereka.io` on the Coolify app host. Its container currently reuses the production image and a host-local env copy with staging metadata overrides; the Infisical `staging` environment for `/deploy/oriental-website` is intentionally not documented as authoritative until separate staging secrets are populated.
+Staging is live at `https://staging.oriental.mereka.io` on the Coolify app host. The Infisical `staging`
+environment at `/deploy/oriental-website` is populated and authoritative for its runtime contract. Staging uses a
+dedicated image build so staging-only client flags can differ safely, but Convex, notifications, Redis, and OpenAI
+still use shared upstream accounts; environment attribution and Redis key namespacing prevent evidence and limiter
+collisions while dedicated staging services remain a separate infrastructure migration.
 
 The Mereka brand-motion preview is a staging-only build cell. `scripts/deploy-coolify-host.sh --target staging`
 builds with `NEXT_PUBLIC_BRAND_MOTION_PREVIEW=true`; production builds force the flag to `false`. The UI also
@@ -118,6 +122,23 @@ Model and reasoning experiments use `VOICE_MODEL_CELL=control|candidate` and
 `baseline` / `control` / `low`; `instant-v1` and candidate cells must remain off
 until the evaluation gate has qualifying audible-latency, false-endpoint,
 barge-in, and contact-correction evidence.
+
+Only one experiment dimension may differ from control in a deployment. The
+voice-variant picker is QA-only, defaults off, and must stay off during runtime,
+model, or reasoning trials. The primary activation outcome is useful voice
+start within two seconds, measured from the initiating tap to independently
+detected remote audio. Its evaluator denominator covers reviewed post-mint
+attempts, including reconnect attempts, but excludes client-secret mint
+failures; it is therefore not the full-funnel product availability rate.
+Tap-to-live alone is not a product-success claim.
+
+The latest reviewed corpus (2026-07-16) stitches the newest 100 call rows into
+80 conversations, all on `baseline` / `control` / `low`. It contains 24 legacy
+arm-cue telemetry samples, but zero explicitly attributable post-mint attempts
+under the new marker and zero tap-to-live or audible-onset samples, plus 6
+`realtime_busy` and 11 `webrtc_failed` conversations. The promotion gate is
+therefore `insufficient_data`. This is operational failure evidence, not proof
+that voice feels instant, multilingual, or culturally authentic.
 
 Voice rendering is controlled by environment as well as prompt. `OPENAI_REALTIME_VOICE` must be one of the supported Realtime built-in voices, and `OPENAI_REALTIME_SPEED` is clamped to OpenAI's supported `0.25` to `1.5` range. Source fallback is `marin` at `1.18`; production is currently configured to `coral` at `1.28` so Reka speaks faster and more brightly. Human listening QA still decides whether this is Malaysian enough. Input transcription defaults to `gpt-4o-transcribe` and can be switched (for example to `gpt-realtime-whisper`) with the optional `OPENAI_REALTIME_TRANSCRIPTION_MODEL` variable without a code change.
 

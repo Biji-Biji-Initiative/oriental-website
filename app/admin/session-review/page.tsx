@@ -2410,6 +2410,14 @@ function VoiceQaRollup({ sessions }: { sessions: VoiceSessionRow[] }) {
           <div>
             Tap to live p50/p95: {formatLatency(latency.tapToLive.p50Ms)} / {formatLatency(latency.tapToLive.p95Ms)}
           </div>
+          <div>
+            Tap to audible p50/p95: {formatLatency(latency.tapToAudible.p50Ms)} /{" "}
+            {formatLatency(latency.tapToAudible.p95Ms)}
+          </div>
+          <div>
+            Useful voice start ≤2s: {latency.usefulStartRate === null ? "--" : `${latency.usefulStartRate}%`} (
+            {latency.usefulStarts}/{latency.activationAttempts} post-mint attempts)
+          </div>
           <div>Browser tool execution p95: {formatLatency(latency.tool.p95Ms)}</div>
           <div>
             {latency.rapidResumeTurns} rapid resumes · {latency.interruptedTurns} interrupted replies
@@ -2431,6 +2439,7 @@ function VoiceQaRollup({ sessions }: { sessions: VoiceSessionRow[] }) {
               <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Errors</th>
               <th className="py-2 font-semibold uppercase tracking-[0.12em]">Tokens</th>
               <th className="py-2 font-semibold uppercase tracking-[0.12em]">Tap→live p50/p95</th>
+              <th className="py-2 font-semibold uppercase tracking-[0.12em]">Tap→audible p50/p95</th>
               <th className="py-2 font-semibold uppercase tracking-[0.12em]">Audio p50/p95</th>
             </tr>
           </thead>
@@ -2454,6 +2463,9 @@ function VoiceQaRollup({ sessions }: { sessions: VoiceSessionRow[] }) {
                 <td className="py-2">{row.responseTokens}</td>
                 <td className="py-2">
                   {formatLatency(row.tapToLive.p50Ms)} / {formatLatency(row.tapToLive.p95Ms)}
+                </td>
+                <td className="py-2">
+                  {formatLatency(row.tapToAudible.p50Ms)} / {formatLatency(row.tapToAudible.p95Ms)}
                 </td>
                 <td className="py-2">
                   {formatLatency(row.remoteAudio.p50Ms)} / {formatLatency(row.remoteAudio.p95Ms)}
@@ -2700,6 +2712,7 @@ type VoiceVariantSummaryRow = {
   errorSessions: number;
   responseTokens: number;
   tapToLiveSamples: number[];
+  tapToAudibleSamples: number[];
   remoteAudioSamples: number[];
 };
 
@@ -2724,6 +2737,7 @@ function summarizeVoiceVariants(sessions: VoiceSessionRow[]) {
       errorSessions: 0,
       responseTokens: 0,
       tapToLiveSamples: [],
+      tapToAudibleSamples: [],
       remoteAudioSamples: [],
     };
     row.sessions += 1;
@@ -2733,6 +2747,9 @@ function summarizeVoiceVariants(sessions: VoiceSessionRow[]) {
     row.responseTokens += session.usage?.responseTokens ?? 0;
     if (typeof session.latency?.activation?.tapToLiveMs === "number") {
       row.tapToLiveSamples.push(session.latency.activation.tapToLiveMs);
+    }
+    if (typeof session.latency?.activation?.tapToAudibleMs === "number") {
+      row.tapToAudibleSamples.push(session.latency.activation.tapToAudibleMs);
     }
     const timedTurns = (session.latency?.turns ?? []) as Array<{ stopToRemoteAudioMs?: number }>;
     row.remoteAudioSamples.push(
@@ -2746,6 +2763,7 @@ function summarizeVoiceVariants(sessions: VoiceSessionRow[]) {
       submitRate: Math.round((row.submitted / row.sessions) * 100),
       connectRate: Math.round((row.connected / row.sessions) * 100),
       tapToLive: latencyPercentiles(row.tapToLiveSamples),
+      tapToAudible: latencyPercentiles(row.tapToAudibleSamples),
       remoteAudio: latencyPercentiles(row.remoteAudioSamples),
     }))
     .sort((left, right) => right.sessions - left.sessions || right.errorSessions - left.errorSessions);
@@ -2780,6 +2798,10 @@ function summarizeSessionLatency(sessions: VoiceSessionRow[]) {
   const tapToLive = sessions.flatMap((session) =>
     typeof session.latency?.activation?.tapToLiveMs === "number" ? [session.latency.activation.tapToLiveMs] : [],
   );
+  const tapToAudible = sessions.flatMap((session) =>
+    typeof session.latency?.activation?.tapToAudibleMs === "number" ? [session.latency.activation.tapToAudibleMs] : [],
+  );
+  const usefulStarts = tapToAudible.filter((duration) => duration <= 2_000).length;
   return {
     sampledTurns: turns.length,
     firstOutput: latencyPercentiles(firstOutput),
@@ -2791,6 +2813,10 @@ function summarizeSessionLatency(sessions: VoiceSessionRow[]) {
     bargeIn: latencyPercentiles(bargeIn),
     activation: latencyPercentiles(activation),
     tapToLive: latencyPercentiles(tapToLive),
+    tapToAudible: latencyPercentiles(tapToAudible),
+    activationAttempts: activation.length,
+    usefulStarts,
+    usefulStartRate: activation.length === 0 ? null : Math.round((usefulStarts / activation.length) * 100),
     interruptedTurns: turns.filter((turn) => turn.interrupted).length,
     rapidResumeTurns: turns.filter((turn) => turn.rapidResume).length,
   };

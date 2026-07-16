@@ -4,6 +4,7 @@ import { type RefObject, useCallback, useEffect, useRef, useState } from "react"
 import { measureTapToLive, type VoiceActivationCue } from "@/components/voice-agent/live-chime";
 import type { SegmentId } from "@/lib/segments";
 import { type RealtimeOutboundEvent, serializeInputPolicyUpdate } from "@/lib/voice/client-events";
+import { ownsVoiceConnectAttempt } from "@/lib/voice/connect-attempt";
 import type { VoiceModelCell, VoiceReasoningCell } from "@/lib/voice/experiments";
 import {
   createVoiceLatencyState,
@@ -14,6 +15,7 @@ import {
   type VoiceTurnPhase,
 } from "@/lib/voice/latency";
 import { type RealtimeServerEvent, responseHasFunctionCall } from "@/lib/voice/realtime-events";
+import { realtimeBusyRetryDelayMs, shouldRetryRealtimeCall } from "@/lib/voice/realtime-retry";
 import {
   inputPolicyForAssistantText,
   resolveVoiceRuntimeProfile,
@@ -30,7 +32,7 @@ import {
   type VoiceTransportTelemetry,
 } from "@/lib/voice/transport-telemetry";
 
-export type VoiceConnectionStatus = "idle" | "requesting_mic" | "connecting" | "listening";
+export type VoiceConnectionStatus = "idle" | "requesting_mic" | "connecting" | "reconnecting" | "listening";
 export type VoiceCloseReason =
   | "idle_timeout"
   | "max_duration"
@@ -56,6 +58,9 @@ export type VoiceReviewMetadata = {
   reasoningCell?: VoiceReasoningCell;
   voice?: string;
   speed?: number;
+  deviceProfile?: "mobile" | "desktop";
+  deploymentEnvironment?: "local" | "staging" | "production";
+  activationAttempted?: boolean;
   variant?: string | null;
   runtimeProfile?: VoiceRuntimeProfileId;
   inputPolicy?: VoiceInputPolicy;
@@ -80,6 +85,8 @@ type VoiceSessionResponse = {
   reasoning_cell?: VoiceReasoningCell;
   voice?: string;
   speed?: number;
+  device_profile?: "mobile" | "desktop";
+  deployment_environment?: "local" | "staging" | "production";
   variant?: string | null;
   runtime_profile?: VoiceRuntimeProfileId;
   input_policy?: VoiceInputPolicy;
@@ -142,7 +149,10 @@ export function useRealtimeVoiceSession({
   const idleTimerRef = useRef<number | null>(null);
   const idleWarningTimerRef = useRef<number | null>(null);
   const idleClosingRef = useRef(false);
-  const connectGateRef = useRef(false);
+  const connectGateRef = useRef<number | null>(null);
+  // Monotonic ownership token for async mic/session work. Connection status
+  // alone cannot distinguish a stale permission prompt from a newer attempt.
+  const connectAttemptRef = useRef(0);
   const maxTimerRef = useRef<number | null>(null);
   // ICE recovery grace timer + periodic getStats sampler.
   const iceGraceTimerRef = useRef<number | null>(null);
@@ -197,6 +207,10 @@ export function useRealtimeVoiceSession({
 
   const teardownVoice = useCallback(
     (reason: VoiceCloseReason = "manual") => {
+      // Invalidate pending getUserMedia/session work before exposing idle. A
+      // late result must never attach itself to the next connection attempt.
+      connectAttemptRef.current += 1;
+      connectGateRef.current = null;
       const hadActiveSession =
         statusRef.current !== "idle" ||
         Boolean(dataChannelRef.current) ||
@@ -305,7 +319,7 @@ export function useRealtimeVoiceSession({
     statusRef.current = status;
   }, []);
 
-  const acquireMicStream = useCallback(async () => {
+  const acquireMicStream = useCallback(async (attemptId: number) => {
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -314,7 +328,7 @@ export function useRealtimeVoiceSession({
     }
     // The session may have been torn down while the prompt was open or after a
     // parallel mint failure; never leave an unowned live microphone behind.
-    if (statusRef.current === "idle") {
+    if (!ownsVoiceConnectAttempt(connectAttemptRef.current, attemptId, statusRef.current)) {
       for (const track of stream.getTracks()) track.stop();
       throw new VoiceConnectionFailure("manual");
     }
@@ -375,6 +389,8 @@ export function useRealtimeVoiceSession({
         reasoningCell: session.reasoning_cell ?? "low",
         voice: session.voice,
         speed: session.speed,
+        deviceProfile: session.device_profile,
+        deploymentEnvironment: session.deployment_environment,
         variant: session.variant ?? null,
         runtimeProfile: session.runtime_profile ?? "baseline",
         inputPolicy: session.input_policy ?? "baseline",
@@ -455,8 +471,10 @@ export function useRealtimeVoiceSession({
   const connectVoice = useCallback(async () => {
     // Guard on refs, not React state: a double-click during the permission
     // query would otherwise start two connect flows and spend quota twice.
-    if (connectGateRef.current || statusRef.current !== "idle") return;
-    connectGateRef.current = true;
+    if (connectGateRef.current !== null || statusRef.current !== "idle") return;
+    const attemptId = connectAttemptRef.current + 1;
+    connectAttemptRef.current = attemptId;
+    connectGateRef.current = attemptId;
     const connectStartedAt = Date.now();
     const activation = nextActivationRef.current;
     firstEventAtRef.current = undefined;
@@ -474,7 +492,7 @@ export function useRealtimeVoiceSession({
       if (permission === "granted") {
         // Returning visitor: the mic opens silently, so mint in parallel.
         setStatus("connecting");
-        const streamPromise = acquireMicStream();
+        const streamPromise = acquireMicStream(attemptId);
         // Pre-attach a handler so a late mic rejection after a mint failure
         // cannot surface as an unhandled promise rejection.
         streamPromise.catch(() => null);
@@ -484,9 +502,15 @@ export function useRealtimeVoiceSession({
         // the daily voice quota once the microphone is actually granted —
         // unless a prewarmed session already spent it.
         setStatus("requesting_mic");
-        stream = await acquireMicStream();
+        stream = await acquireMicStream(attemptId);
         setStatus("connecting");
         session = await obtainVoiceSession();
+      }
+
+      if (!ownsVoiceConnectAttempt(connectAttemptRef.current, attemptId, statusRef.current)) {
+        if (localStreamRef.current === stream) localStreamRef.current = null;
+        for (const track of stream.getTracks()) track.stop();
+        throw new VoiceConnectionFailure("manual");
       }
 
       const runtimeProfile = resolveVoiceRuntimeProfile(session.runtime_profile);
@@ -497,9 +521,14 @@ export function useRealtimeVoiceSession({
       latencyRef.current = createVoiceLatencyState(
         initialInputPolicy,
         activation ? { tapToArmCueScheduledMs: activation.tapToArmCueScheduledMs } : undefined,
+        activation?.tapStartedAt,
       );
 
-      emitSessionReady(session, { prewarmedAt: activePrewarmedAtRef.current, connectStartedAt });
+      emitSessionReady(session, {
+        prewarmedAt: activePrewarmedAtRef.current,
+        connectStartedAt,
+        activationAttempted: Boolean(activation),
+      });
 
       const peer = new RTCPeerConnection();
       connectionRef.current = peer;
@@ -578,6 +607,10 @@ export function useRealtimeVoiceSession({
         peer.addTrack(track, stream);
       });
       peer.ontrack = (event) => {
+        if (transportRef.current.remoteTrackReceivedAt === undefined) {
+          transportRef.current = { ...transportRef.current, remoteTrackReceivedAt: Date.now() };
+          emitTransport();
+        }
         const [remoteStream] = event.streams;
         if (audioRef.current && remoteStream) {
           audioRef.current.srcObject = remoteStream;
@@ -704,20 +737,33 @@ export function useRealtimeVoiceSession({
 
       const offer = await peer.createOffer();
       await peer.setLocalDescription(offer);
-      const sdpResponse = await fetchWithTimeout(
-        "https://api.openai.com/v1/realtime/calls",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${session.client_secret.value}`,
-            "Content-Type": "application/sdp",
+      let retriesUsed = 0;
+      let sdpResponse: Response;
+      for (;;) {
+        sdpResponse = await fetchWithTimeout(
+          "https://api.openai.com/v1/realtime/calls",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${session.client_secret.value}`,
+              "Content-Type": "application/sdp",
+            },
+            body: offer.sdp,
           },
-          body: offer.sdp,
-        },
-        sdpExchangeTimeoutMs,
-      ).catch(() => {
-        throw new VoiceConnectionFailure("webrtc_failed");
-      });
+          sdpExchangeTimeoutMs,
+        ).catch(() => {
+          throw new VoiceConnectionFailure("webrtc_failed");
+        });
+        if (!shouldRetryRealtimeCall(sdpResponse.status, retriesUsed)) break;
+        retriesUsed += 1;
+        transportRef.current = { ...transportRef.current, realtimeBusyRetryCount: retriesUsed };
+        emitTransport();
+        setStatus("reconnecting");
+        await wait(realtimeBusyRetryDelayMs());
+        if (connectionRef.current !== peer || statusRef.current === "idle") {
+          throw new VoiceConnectionFailure("manual");
+        }
+      }
       if (connectionRef.current !== peer || statusRef.current === "idle") throw new VoiceConnectionFailure("manual");
       if (!sdpResponse.ok) throw new VoiceConnectionFailure(realtimeCallCloseReason(sdpResponse.status));
       const answerSdp = await sdpResponse.text();
@@ -726,9 +772,14 @@ export function useRealtimeVoiceSession({
         throw new VoiceConnectionFailure(statusRef.current === "idle" ? "manual" : "webrtc_failed");
       });
     } catch (error) {
-      teardownVoice(error instanceof VoiceConnectionFailure ? error.reason : "error");
+      // A cancelled permission prompt may settle after the visitor has already
+      // started a newer attempt. Only the flow that still owns the token may
+      // tear down shared connection state.
+      if (connectAttemptRef.current === attemptId) {
+        teardownVoice(error instanceof VoiceConnectionFailure ? error.reason : "error");
+      }
     } finally {
-      connectGateRef.current = false;
+      if (connectGateRef.current === attemptId) connectGateRef.current = null;
     }
   }, [
     acquireMicStream,
@@ -797,6 +848,10 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, tim
   } finally {
     window.clearTimeout(timeout);
   }
+}
+
+function wait(durationMs: number) {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, durationMs));
 }
 
 async function queryMicrophonePermission(): Promise<PermissionState> {

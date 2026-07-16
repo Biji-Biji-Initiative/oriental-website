@@ -75,7 +75,10 @@ export async function persistVoiceReviewSnapshot(input: VoiceReviewSnapshotReque
       input.runtimeProfile ||
       input.inputPolicy ||
       input.modelCell ||
-      input.reasoningCell
+      input.reasoningCell ||
+      input.deviceProfile ||
+      input.deploymentEnvironment ||
+      typeof input.activationAttempted === "boolean"
     ) {
       const {
         transport: _transport,
@@ -84,6 +87,9 @@ export async function persistVoiceReviewSnapshot(input: VoiceReviewSnapshotReque
         inputPolicy: _inputPolicy,
         modelCell: _modelCell,
         reasoningCell: _reasoningCell,
+        deviceProfile: _deviceProfile,
+        deploymentEnvironment: _deploymentEnvironment,
+        activationAttempted: _activationAttempted,
         ...rest
       } = input;
       const result = await client.client.mutation(api.leads.recordVoiceSession, {

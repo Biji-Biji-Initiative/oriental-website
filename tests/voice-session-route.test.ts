@@ -4,19 +4,26 @@ import { resetRateLimitBucketsForTest } from "@/lib/server/security";
 
 const originalEnv = process.env;
 
-function request(body: unknown, ip = "203.0.113.10") {
-  return new Request("http://127.0.0.1/api/voice/session", {
+function request(body: unknown, ip = "203.0.113.10", url = "http://127.0.0.1/api/voice/session") {
+  return new Request(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "x-forwarded-for": ip,
+      "user-agent": "Mozilla/5.0",
     },
     body: typeof body === "string" ? body : JSON.stringify(body),
   }) as never;
 }
 
 async function json(response: Response) {
-  return (await response.json()) as { ok?: boolean; error?: string; review?: { id?: string; token?: string } };
+  return (await response.json()) as {
+    ok?: boolean;
+    error?: string;
+    review?: { id?: string; token?: string };
+    device_profile?: string;
+    deployment_environment?: string;
+  };
 }
 
 function mockOpenAiFetch() {
@@ -121,5 +128,20 @@ describe("POST /api/voice/session", () => {
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("api.openai.com");
+  });
+
+  it("labels staging evidence independently from production", async () => {
+    const fetchMock = mockOpenAiFetch();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await POST(
+      request({ intent: "technology" }, "203.0.113.10", "https://staging.oriental.mereka.io/api/voice/session"),
+    );
+
+    expect(await json(response)).toMatchObject({
+      ok: true,
+      device_profile: "desktop",
+      deployment_environment: "staging",
+    });
   });
 });

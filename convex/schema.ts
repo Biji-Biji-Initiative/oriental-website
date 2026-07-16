@@ -69,6 +69,11 @@ export default defineSchema({
     status: v.string(),
     connectionStatus: v.string(),
     closeReason: v.optional(v.string()),
+    deviceProfile: v.optional(v.union(v.literal("mobile"), v.literal("desktop"))),
+    deploymentEnvironment: v.optional(v.union(v.literal("local"), v.literal("staging"), v.literal("production"))),
+    // Explicit post-mint user activation. This distinguishes failed attempts
+    // with missing latency payloads from unused permission-aware prewarms.
+    activationAttempted: v.optional(v.boolean()),
     prewarmedAt: v.optional(v.number()),
     connectStartedAt: v.optional(v.number()),
     connectedAt: v.optional(v.number()),
@@ -125,6 +130,7 @@ export default defineSchema({
           v.object({
             tapToArmCueScheduledMs: v.optional(v.number()),
             tapToLiveMs: v.optional(v.number()),
+            tapToAudibleMs: v.optional(v.number()),
           }),
         ),
         turns: v.array(
@@ -148,10 +154,12 @@ export default defineSchema({
     ),
     transport: v.optional(
       v.object({
+        realtimeBusyRetryCount: v.optional(v.number()),
         disconnectCount: v.number(),
         recoveryCount: v.number(),
         iceRestartCount: v.number(),
         wasSpeakingAtClose: v.optional(v.boolean()),
+        remoteTrackReceivedAt: v.optional(v.number()),
         transitions: v.array(v.object({ state: v.string(), at: v.number() })),
         lastStats: v.optional(
           v.object({

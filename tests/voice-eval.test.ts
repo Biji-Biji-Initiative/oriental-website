@@ -14,6 +14,7 @@ import {
   mergeConversationSessions,
   parseJudgeResponse,
   type VoiceEvalSession,
+  validateVoiceExperimentEvidence,
 } from "@/lib/eval/voice-eval";
 
 function latencyGateSessions(
@@ -102,6 +103,8 @@ describe("deriveTransportSignals", () => {
       droppedMidTurn: false,
       hadDisconnect: false,
       recoveredAfterDisconnect: false,
+      realtimeBusyRetries: 0,
+      remoteTrackReceived: false,
       worstPacketsLostPct: null,
       worstRttMs: null,
     });
@@ -136,9 +139,11 @@ describe("mergeConversationSessions", () => {
       connectedAt: 1_100,
       closedAt: 2_000,
       closeReason: "disconnected",
+      activationAttempted: true,
       transport: { disconnectCount: 1, recoveryCount: 0, iceRestartCount: 1, wasSpeakingAtClose: true },
       latency: {
         version: 1,
+        activation: { tapToArmCueScheduledMs: 4, tapToLiveMs: 300, tapToAudibleMs: 1_200 },
         turns: [
           {
             sequence: 1,
@@ -165,6 +170,7 @@ describe("mergeConversationSessions", () => {
       submittedAt: 4_500,
       leadId: "lead-9",
       closeReason: "manual",
+      activationAttempted: true,
       transport: { disconnectCount: 0, recoveryCount: 0, iceRestartCount: 0, wasSpeakingAtClose: false },
       latency: {
         version: 1,
@@ -203,6 +209,10 @@ describe("mergeConversationSessions", () => {
     // Transport counts sum across segments.
     expect(conversation?.transport?.disconnectCount).toBe(1);
     expect(conversation?.latency?.turns).toHaveLength(2);
+    expect(conversation?.latency?.activationAttempts).toHaveLength(2);
+    const aggregate = aggregateEvals([buildSessionEval(conversation as VoiceEvalSession, null)]);
+    expect(aggregate.activation).toMatchObject({ attempts: 2, usefulStartWithinTwoSeconds: 1, usefulStartRate: 0.5 });
+    expect(aggregate.droppedMidTurnCount).toBe(1);
     expect(deriveEngagementSignals(conversation as VoiceEvalSession).submitted).toBe(true);
   });
 
@@ -212,6 +222,33 @@ describe("mergeConversationSessions", () => {
       session({ reviewId: "legacy-2", conversationId: null }),
     ]);
     expect(merged).toHaveLength(2);
+  });
+
+  it("preserves an explicit dropped-mid-turn signal across a later clean segment", () => {
+    const merged = mergeConversationSessions([
+      session({
+        reviewId: "explicit-drop",
+        conversationId: "conv-drop",
+        connectStartedAt: 1,
+        closeReason: "manual",
+        transport: {
+          droppedMidTurn: true,
+          disconnectCount: 1,
+          recoveryCount: 0,
+          iceRestartCount: 0,
+          wasSpeakingAtClose: false,
+        },
+      }),
+      session({
+        reviewId: "clean-finish",
+        conversationId: "conv-drop",
+        connectStartedAt: 2,
+        closeReason: "manual",
+        transport: { disconnectCount: 0, recoveryCount: 0, iceRestartCount: 0, wasSpeakingAtClose: false },
+      }),
+    ]);
+
+    expect(deriveTransportSignals(merged[0] as VoiceEvalSession).droppedMidTurn).toBe(true);
   });
 });
 
@@ -246,6 +283,8 @@ describe("deriveLatencySignals", () => {
     );
 
     expect(signals).toEqual({
+      activationSamples: [],
+      activationAttempts: [],
       sampledTurns: 2,
       firstOutputSamples: 2,
       firstOutputP50Ms: 300,
@@ -265,6 +304,7 @@ describe("deriveLatencySignals", () => {
       bargeInP95Ms: null,
       tapToArmCueMs: null,
       tapToLiveMs: null,
+      tapToAudibleMs: null,
       interruptedTurns: 1,
       rapidResumeTurns: 1,
     });
@@ -296,6 +336,28 @@ describe("assessLatencyAutopilotGate", () => {
     expect(gate.candidate.possibleFalseEndpointRate).toBe(0.01);
     expect(gate.candidate.contactCorrectionRate).toBe(0);
     expect(gate.control.contactCorrectionRate).toBe(1);
+  });
+
+  it("excludes model and reasoning candidates from the runtime promotion cohorts", () => {
+    const modelCandidates = latencyGateSessions("baseline", { corrected: true }).map((entry, index) => ({
+      ...entry,
+      reviewId: `model-candidate-${index}`,
+      modelCell: "candidate" as const,
+    }));
+    const reasoningCandidates = latencyGateSessions("instant-v1", { corrected: true }).map((entry, index) => ({
+      ...entry,
+      reviewId: `reasoning-candidate-${index}`,
+      reasoningCell: "minimal" as const,
+    }));
+    const gate = assessLatencyAutopilotGate([
+      ...latencyGateSessions("baseline"),
+      ...latencyGateSessions("instant-v1"),
+      ...modelCandidates,
+      ...reasoningCandidates,
+    ]);
+
+    expect(gate.control.sessions).toBe(20);
+    expect(gate.candidate.sessions).toBe(20);
   });
 
   it("fails a fully sampled candidate that misses latency or correction quality", () => {
@@ -414,6 +476,7 @@ describe("aggregateEvals + meetsThreshold", () => {
     expect(aggregate.averages.conversationQuality).toBe(3); // (4 + 2) / 2
     expect(aggregate.submitRate).toBeCloseTo(0.33, 2);
     expect(aggregate.activation.tapToLiveSamples).toBe(0);
+    expect(aggregate.activation.usefulStartRate).toBeNull();
     const reasons = aggregate.worstSessions.map((entry) => entry.reason);
     expect(reasons).toContain("dropped mid-utterance");
     expect(reasons).toContain("high visitor frustration");
@@ -425,10 +488,15 @@ describe("aggregateEvals + meetsThreshold", () => {
         session({
           reviewId: `activation-${index}`,
           runtimeProfile: index === 0 ? "baseline" : "instant-v1",
+          activationAttempted: true,
           modelCell: index === 2 ? "candidate" : "control",
           latency: {
             version: 1,
-            activation: { tapToArmCueScheduledMs: 4 + index, tapToLiveMs },
+            activation: {
+              tapToArmCueScheduledMs: 4 + index,
+              tapToLiveMs,
+              tapToAudibleMs: [1_200, 1_900, 2_300][index],
+            },
             turns: [],
           },
         }),
@@ -438,14 +506,135 @@ describe("aggregateEvals + meetsThreshold", () => {
 
     const aggregate = aggregateEvals(evalsWithActivation);
     expect(aggregate.activation).toEqual({
+      attempts: 3,
       tapToLiveSamples: 3,
       tapToLiveP50Ms: 480,
       tapToLiveP95Ms: 700,
+      tapToAudibleSamples: 3,
+      tapToAudibleP50Ms: 1_900,
+      tapToAudibleP95Ms: 2_300,
+      usefulStartWithinTwoSeconds: 2,
+      usefulStartRate: 0.67,
       armCueSamples: 3,
       armCueP95Ms: 6,
     });
     expect(aggregateEvalsByRuntimeProfile(evalsWithActivation)["instant-v1"]?.activation.tapToLiveP50Ms).toBe(480);
-    expect(aggregateEvalsByExperimentCell(evalsWithActivation)["candidate/low"]?.activation.tapToLiveP50Ms).toBe(700);
+    expect(
+      aggregateEvalsByExperimentCell(evalsWithActivation)["instant-v1/candidate/low"]?.activation.tapToLiveP50Ms,
+    ).toBe(700);
+  });
+
+  it("counts each post-mint activation once when legacy telemetry is partial", () => {
+    const aggregate = aggregateEvals([
+      buildSessionEval(
+        session({
+          reviewId: "cue-only",
+          activationAttempted: true,
+          latency: {
+            version: 1,
+            activation: { tapToArmCueScheduledMs: 4 },
+            turns: [],
+          },
+        }),
+        null,
+      ),
+      buildSessionEval(
+        session({
+          reviewId: "audible-without-cue",
+          activationAttempted: true,
+          latency: {
+            version: 1,
+            activation: { tapToAudibleMs: 1_500 },
+            turns: [],
+          },
+        }),
+        null,
+      ),
+      buildSessionEval(
+        session({
+          reviewId: "explicit-failed-attempt",
+          activationAttempted: true,
+          latency: null,
+        }),
+        null,
+      ),
+      buildSessionEval(
+        session({
+          reviewId: "no-activation",
+          latency: { version: 1, turns: [] },
+        }),
+        null,
+      ),
+    ]);
+
+    expect(aggregate.activation.attempts).toBe(3);
+    expect(aggregate.activation.usefulStartWithinTwoSeconds).toBe(1);
+    expect(aggregate.activation.usefulStartRate).toBe(0.33);
+    expect(aggregate.activation.armCueSamples).toBe(1);
+    expect(aggregate.activation.tapToAudibleSamples).toBe(1);
+  });
+
+  it("keeps legacy activation telemetry visible without inventing an attempt denominator", () => {
+    const aggregate = aggregateEvals([
+      buildSessionEval(
+        session({
+          reviewId: "legacy-activation",
+          activationAttempted: null,
+          latency: {
+            version: 1,
+            activation: { tapToArmCueScheduledMs: 8, tapToLiveMs: 600 },
+            turns: [],
+          },
+        }),
+        null,
+      ),
+    ]);
+
+    expect(aggregate.activation).toMatchObject({
+      attempts: 0,
+      usefulStartRate: null,
+      armCueSamples: 1,
+      tapToLiveSamples: 1,
+      tapToLiveP50Ms: 600,
+    });
+  });
+
+  it("separates capacity, WebRTC, retry, and remote-track-without-audio failures", () => {
+    const aggregate = aggregateEvals([
+      buildSessionEval(
+        session({
+          reviewId: "busy",
+          closeReason: "realtime_busy",
+          transport: {
+            realtimeBusyRetryCount: 1,
+            disconnectCount: 0,
+            recoveryCount: 0,
+            iceRestartCount: 0,
+          },
+        }),
+        null,
+      ),
+      buildSessionEval(
+        session({
+          reviewId: "no-audio",
+          closeReason: "webrtc_failed",
+          transport: {
+            disconnectCount: 0,
+            recoveryCount: 0,
+            iceRestartCount: 0,
+            remoteTrackReceivedAt: 1_000,
+          },
+        }),
+        null,
+      ),
+    ]);
+
+    expect(aggregate.availability).toEqual({
+      realtimeBusySessions: 1,
+      webrtcFailedSessions: 1,
+      retrySessions: 1,
+      remoteTrackWithoutAudioSessions: 1,
+    });
   });
 
   it("fails the gate when a threshold is breached", () => {
@@ -460,6 +649,21 @@ describe("aggregateEvals + meetsThreshold", () => {
     const aggregate = aggregateEvals([evals[0] as (typeof evals)[number]]);
     const gate = meetsThreshold(aggregate, { minRoutingCorrect: 3, maxFrustration: 3 });
     expect(gate.ok).toBe(true);
+  });
+
+  it("fails score thresholds closed when there are no scored conversations", () => {
+    const aggregate = aggregateEvals([buildSessionEval(session(), null)]);
+    const gate = meetsThreshold(aggregate, {
+      minConversationQuality: 3,
+      minRoutingCorrect: 3,
+      maxFrustration: 3,
+    });
+    expect(gate.ok).toBe(false);
+    expect(gate.failures).toEqual([
+      "conversationQuality unavailable (0 scored conversations)",
+      "routingCorrect unavailable (0 scored conversations)",
+      "frustration unavailable (0 scored conversations)",
+    ]);
   });
 
   it("keeps runtime-profile comparisons separate from voice variants", () => {
@@ -480,7 +684,28 @@ describe("aggregateEvals + meetsThreshold", () => {
         null,
       ),
     ]);
-    expect(grouped["control/low"]?.sessionCount).toBe(1);
-    expect(grouped["candidate/minimal"]?.submitRate).toBe(1);
+    expect(grouped["baseline/control/low"]?.sessionCount).toBe(1);
+    expect(grouped["baseline/candidate/minimal"]?.submitRate).toBe(1);
+  });
+
+  it("rejects evidence rows that confound multiple experiment dimensions", () => {
+    const valid = buildSessionEval(
+      session({ reviewId: "runtime-only", runtimeProfile: "instant-v1", modelCell: "control", reasoningCell: "low" }),
+      null,
+    );
+    const confounded = buildSessionEval(
+      session({
+        reviewId: "confounded",
+        runtimeProfile: "instant-v1",
+        modelCell: "candidate",
+        reasoningCell: "minimal",
+      }),
+      null,
+    );
+
+    expect(validateVoiceExperimentEvidence([valid])).toEqual({ ok: true, failures: [] });
+    const validation = validateVoiceExperimentEvidence([valid, confounded]);
+    expect(validation.ok).toBe(false);
+    expect(validation.failures[0]).toContain("runtime, model, reasoning");
   });
 });

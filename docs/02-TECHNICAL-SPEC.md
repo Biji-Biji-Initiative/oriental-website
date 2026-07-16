@@ -17,9 +17,9 @@ Runtime truth for the production build:
 | Data | Convex | `convex/schema.ts`, `convex/leads.ts`, `lib/server/convex.ts`. |
 | Email | SMTP or AWS SESv2 | SMTP preferred when configured; otherwise SESv2 by region. SMTP sends one message to all recipients in a single transaction. |
 | Slack | Bot token + channel id, webhook fallback | Lead mirror to `#tech-team-test` via `SLACK_CHANNEL_ID`; `SLACK_WEBHOOK_URL` is fallback-only. |
-| Abuse protection | Cloudflare Turnstile | Verified server-side on all intake POST routes. |
+| Abuse protection | Redis rate limits + optional Cloudflare Turnstile | Redis protects every intake route; Turnstile can be required for unsigned form/newsletter posts but its client UI is currently disabled. |
 | Rate limiting | Redis/Valkey via `REDIS_URL`, memory fallback | Shared limiter is active in production; memory mode is degraded fallback only. |
-| DNS / TLS / WAF | Cloudflare | In front of Coolify origin. |
+| DNS / TLS | Cloudflare DNS + Coolify Traefik | DNS-only records resolve to the Coolify origin; Traefik terminates TLS with Let's Encrypt. Cloudflare WAF/cache are not on the request path. |
 | Secrets | Infisical + Coolify env | Project `6bfac905-9bb1-449e-8be8-f25f9634802b`, folder `/deploy/oriental-website`. |
 | Hosting | Coolify | Docker standalone Next.js app. |
 | Observability | Sentry + structured logs + Slack ops alerts | Admin review at `/admin/session-review`; route logs stay in Coolify. |
@@ -111,7 +111,7 @@ Production secrets live in Infisical:
 - host: `https://secrets.mereka.io/api`
 - project ID: `6bfac905-9bb1-449e-8be8-f25f9634802b`
 - folder: `/deploy/oriental-website`
-- envs: `dev`, `staging`, `prod`
+- populated envs: `staging`, `prod` (`dev` remains unprovisioned)
 
 Use Universal Auth machine credentials only. Do not use interactive
 `infisical login`.
@@ -119,12 +119,14 @@ Use Universal Auth machine credentials only. Do not use interactive
 ```bash
 source ~/.config/infisical/universal-auth.env
 export INFISICAL_API_URL
-export INFISICAL_TOKEN=$(infisical login --method=universal-auth \
+export INFISICAL_TOKEN=$(infisical login --domain="$INFISICAL_API_URL" \
+  --method=universal-auth \
   --client-id="$INFISICAL_UA_CLIENT_ID" \
   --client-secret="$INFISICAL_UA_CLIENT_SECRET" \
   --silent --plain 2>/dev/null)
-infisical export --env=prod --path=/deploy/oriental-website \
-  --projectId=6bfac905-9bb1-449e-8be8-f25f9634802b --format=dotenv
+infisical export --domain="$INFISICAL_API_URL" --env=prod \
+  --path=/deploy/oriental-website \
+  --projectId=6bfac905-9bb1-449e-8be8-f25f9634802b --output=dotenv
 ```
 
 Runtime contract:
@@ -135,8 +137,13 @@ CONVEX_URL=
 CONVEX_INGEST_SECRET=
 OPENAI_API_KEY=
 OPENAI_REALTIME_MODEL=gpt-realtime-2
+OPENAI_REALTIME_MODEL_CANDIDATE=gpt-realtime-2.1
+VOICE_MODEL_CELL=control
+VOICE_REASONING_CELL=low
 OPENAI_REALTIME_VOICE=coral
 OPENAI_REALTIME_SPEED=1.28
+VOICE_RUNTIME_PROFILE=baseline
+VOICE_VARIANT_PICKER=false
 REDIS_URL=
 TURNSTILE_SITE_KEY=
 TURNSTILE_SECRET_KEY=

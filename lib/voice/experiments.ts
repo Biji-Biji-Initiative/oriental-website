@@ -11,6 +11,20 @@ export type VoiceExperimentConfig = {
   reasoningEffort: VoiceReasoningCell;
 };
 
+export type VoiceExperimentDimension = "runtime" | "model" | "reasoning";
+
+export function activeVoiceExperimentDimensions(input: {
+  runtimeProfile?: string | null;
+  modelCell?: string | null;
+  reasoningCell?: string | null;
+}): VoiceExperimentDimension[] {
+  const dimensions: VoiceExperimentDimension[] = [];
+  if (unquote(input.runtimeProfile) === "instant-v1") dimensions.push("runtime");
+  if (unquote(input.modelCell) === "candidate") dimensions.push("model");
+  if (unquote(input.reasoningCell) === "minimal") dimensions.push("reasoning");
+  return dimensions;
+}
+
 export function resolveVoiceExperimentConfig(input: {
   modelCell?: string | null;
   controlModel: string;

@@ -57,6 +57,7 @@ export async function POST(request: NextRequest) {
   let mintStartedAt: number | undefined;
   try {
     const deviceProfile = detectDeviceProfile(request.headers.get("user-agent"));
+    const deploymentEnvironment = detectDeploymentEnvironment(request.url);
     mintStartedAt = performance.now();
     const secret = await createRealtimeClientSecret(
       hashIp(ip, "openai-safety"),
@@ -81,12 +82,18 @@ export async function POST(request: NextRequest) {
       transcriptionModel: secret.transcription_model,
       noiseReduction: secret.noise_reduction,
       deviceProfile,
+      deploymentEnvironment,
       reviewId: review.id,
       rateLimitStore: limit.store,
       remaining: limit.remaining,
       durationMs: durationSince(startedAt),
     });
-    return timedJson({ ok: true, ...secret, review }, {}, timings, timingStartedAt);
+    return timedJson(
+      { ok: true, ...secret, review, device_profile: deviceProfile, deployment_environment: deploymentEnvironment },
+      {},
+      timings,
+      timingStartedAt,
+    );
   } catch (error) {
     if (mintStartedAt !== undefined) timings.openai_mint = performance.now() - mintStartedAt;
     const message = error instanceof Error ? error.message : "openai_unavailable";
@@ -114,6 +121,13 @@ export async function POST(request: NextRequest) {
 
 function detectDeviceProfile(userAgent: string | null): RealtimeDeviceProfile {
   return userAgent && /mobile|android|iphone/i.test(userAgent) ? "mobile" : "desktop";
+}
+
+function detectDeploymentEnvironment(requestUrl: string) {
+  const hostname = new URL(requestUrl).hostname.toLowerCase();
+  if (hostname === "staging.oriental.mereka.io") return "staging" as const;
+  if (hostname === "oriental.mereka.io") return "production" as const;
+  return "local" as const;
 }
 
 function timedJson(data: unknown, init: ResponseInit, timings: ServerTimingMetrics, timingStartedAt: number) {

@@ -1,10 +1,10 @@
 ---
 title: "Oriental Instant Voice Architecture v1"
 type: "voice_ai_spec"
-status: "staged"
+status: "implemented_evidence_gated"
 owner: "Mereka Engineering"
 vehicle: "web_webrtc"
-last_updated: "2026-07-15"
+last_updated: "2026-07-16"
 links:
   related_docs:
     - "05-VOICE-AGENT-SPEC.md"
@@ -37,7 +37,7 @@ dimension, and prove the exact staged commit before promotion.
 - Activation, turn phase, endpoint/VAD, model/tool/playout telemetry, compact
   prompt/tools, evaluation, staged release, and rollback.
 - Persisted session metadata in the existing bounded Convex `voiceSessions`
-  latency object.
+  record and latency object.
 
 ## Non-goals
 
@@ -59,6 +59,13 @@ dimension, and prove the exact staged commit before promotion.
   data channel becoming live. Only the duration is persisted; the monotonic tap
   marker MUST remain browser-local. Returning-visitor tap-to-live is an
   experimental SLO of less than 500 ms p50, not a claim about current results.
+- The primary product metric MUST be useful voice start within two seconds:
+  initiating tap through independently detected remote audio. The evaluator
+  MUST report the post-mint denominator explicitly and MUST NOT imply that it
+  includes client-secret mint failures.
+- New snapshots MUST persist an explicit activation-attempt marker before the
+  SDP exchange so a missing latency payload counts as a failed attempt without
+  misclassifying unused prewarms or legacy rows.
 - `connectionStatus` MUST remain transport state; conversational activity MUST
   use orthogonal `turnPhase` state.
 - Waiting copy MUST be delayed approximately 300 ms and MUST not claim semantic
@@ -68,6 +75,10 @@ dimension, and prove the exact staged commit before promotion.
 - Per-turn telemetry MUST retain at most 80 samples and MUST include available
   speech, endpoint, response-created, first-output, remote-audio, playout,
   browser-tool, response, interruption, and rapid-resume durations/signals.
+- An OpenAI Realtime SDP `429` MUST receive at most one retry after 300–700 ms
+  jitter. The retry MUST reuse the existing mint, offer, microphone, and typed
+  context; other status codes, mic denial, local quota, and malformed sessions
+  MUST NOT use this retry path.
 
 ### Endpointing and controlled cells
 
@@ -77,7 +88,19 @@ dimension, and prove the exact staged commit before promotion.
   response.
 - Runtime profile/input policy, model/reasoning cells, and voice variant MUST be
   persisted and comparable independently.
+- Conversation stitching MUST retain every activation attempt and every close
+  reason. A later successful reconnect MUST NOT erase an earlier failed useful
+  start or mid-utterance drop.
+- New snapshots MUST persist server-resolved deployment environment and device
+  class so staging smokes cannot be mistaken for production evidence.
 - Control MUST remain `gpt-realtime-2`/`low` unless an explicit cell is selected.
+- At most one of runtime profile, model cell, and reasoning cell MAY differ
+  from control in one deployment. The QA voice-variant picker MUST remain off
+  while any experimental dimension is active.
+- Evaluator cohort keys MUST include runtime, model, and reasoning, and a row
+  varying more than one non-control dimension MUST fail evidence validation.
+- Configured judge thresholds MUST fail closed when no conversations have
+  valid scores.
 
 ### Prompt, tools, and capture
 
@@ -129,7 +152,11 @@ dimension, and prove the exact staged commit before promotion.
 - [x] AC-10 — Exact tap-to-live telemetry and independent profile/cell rollups:
   `tests/voice-cues.test.ts`, `tests/voice-eval.test.ts`, and the voice QA admin
   table.
-- [ ] AC-11 — Staging release proof and human observation.
+- [x] AC-11 — Bounded Realtime-busy recovery, exact retry/remote-track
+  diagnostics, tap-to-audible telemetry, and useful-start rollups:
+  `tests/realtime-retry.test.ts`, `tests/voice-latency.test.ts`,
+  `tests/voice-eval.test.ts`, and `tests/voice-dialog-copy.test.ts`.
+- [ ] AC-12 — Staging release proof and human observation.
   - [x] A real staged WebRTC call produced live remote audio.
   - [x] A typed interruption exercised cancellation/barge-in and recovered to a
     new spoken response.
@@ -172,7 +199,8 @@ a Bahasa Melayu turn followed by English; a barge-in while Reka speaks; and a
 noisy or unclear utterance that should trigger clarification. Record the exact
 commit and selected cells with every result.
 
-Report tap-to-live, local endpoint-to-server-stop, stop-to-remote-audio,
+Report tap-to-live, tap-to-audible, useful-start-within-two-seconds,
+local endpoint-to-server-stop, stop-to-remote-audio,
 first-output-to-remote-audio, tool duration, barge-in silence, rapid-resume
 proxy, contact-correction rate, submission rate, and the conversation-quality
 judge. A cell with faster latency but worse correction, overlap, false-endpoint,
@@ -189,7 +217,7 @@ an unperformed listening result is never a pass.
   plus runtime/model cells.
 - `pnpm eval:voice -- --dry` writes a gitignored report containing the guarded
   promotion status and aggregate-only console output, including tap-to-live
-  p50/p95 by runtime profile and model/reasoning cell.
+  p50/p95 by runtime profile and full runtime/model/reasoning cell.
 - Raw transcripts and captured PII MUST NOT appear in structured route logs.
 
 ## Rollout and Rollback
@@ -197,13 +225,13 @@ an unperformed listening result is never a pass.
 1. Deploy Convex schema/functions before the web commit.
 2. Deploy the exact tested web commit only to
    `https://staging.oriental.mereka.io` and verify `/api/health` version.
-3. Run the dry evaluation and manual AC-10 checks without submitting a staging
+3. Run the dry evaluation and manual AC-12 checks without submitting a staging
    lead while staging shares the production data plane.
 4. Keep `VOICE_RUNTIME_PROFILE=baseline`, `VOICE_MODEL_CELL=control`, and
    `VOICE_REASONING_CELL=low` until the promotion gate and human review pass.
 5. Roll back endpointing with `VOICE_RUNTIME_PROFILE=baseline`; roll back model
    or reasoning independently with their control env values. Roll back the
-   prompt/tool slice independently by redeploying exact pre-slice commit
+prompt/tool slice independently by redeploying exact pre-slice commit
    `b4a11f160f0be50fb1c878b019fdfe4d7fe64e03`; roll back the full web release by
    redeploying the previous exact image/commit.
 
@@ -238,6 +266,12 @@ an unperformed listening result is never a pass.
 
 - Human Malaysian voice-quality sign-off remains unknown and MUST NOT be
   represented as passed.
+- The 2026-07-16 production read stitched the newest 100 call rows into 80
+  baseline conversations. It found 24 legacy arm-cue telemetry samples but
+  zero explicitly attributable post-mint attempts under the new marker, zero
+  tap-to-live or audible-onset samples, 5 submissions, 6 `realtime_busy`
+  conversations, and 11 `webrtc_failed` conversations. That is useful failure
+  evidence, not proof that voice feels instant or excellent.
 - The measured gate blocks `instant-v1`, candidate model, and minimal reasoning
   promotion. It does not block the owner's explicitly authorized deployment of
   the reviewed web code while production stays baseline/control/low.
