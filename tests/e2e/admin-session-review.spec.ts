@@ -14,50 +14,54 @@ test.describe("admin session review console", () => {
         name: adminCookieName,
         sameSite: "Lax",
         secure: false,
-        url: process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000",
+        url: process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3011",
         value: createAdminSessionCookie(),
       },
     ]);
     await page.goto("/admin/session-review");
 
-    await expect(page.getByRole("heading", { name: "Oriental intake cockpit" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Enquiry CRM" })).toBeVisible();
   });
 
-  test("shows the newest enquiries and explains interaction evaluations on the default view", async ({ page }) => {
-    const latest = page.locator("#latest-enquiries");
-    await expect(latest.getByRole("heading", { name: "Latest enquiries" })).toBeVisible();
-    await expect(latest.getByText("What they want").first()).toBeVisible();
-    await expect(latest.locator("article").first()).toHaveAttribute("data-lead-id", "lead-closed-3");
+  test("shows a CRM table and a complete interaction record on the default view", async ({ page }, testInfo) => {
+    const table = page.locator("[data-crm-table]");
+    await expect(page.getByRole("heading", { name: "Enquiry pipeline" })).toBeVisible();
+    const desktop = testInfo.project.name !== "mobile";
+    if (desktop) {
+      await expect(table.getByRole("columnheader", { name: "Contact" })).toBeVisible();
+      await expect(table.getByRole("columnheader", { name: "Request" })).toBeVisible();
+      await expect(table.getByRole("columnheader", { name: "Pipeline" })).toBeVisible();
+      await expect(table.locator("tbody tr").first()).toHaveAttribute("data-lead-id", "lead-closed-3");
+    } else {
+      await expect(table).toBeHidden();
+      await expect(page.locator('article[data-lead-id="lead-closed-3"]')).toBeVisible();
+    }
 
-    const voiceEnquiry = latest.locator('[data-lead-id="lead-critical-1"]');
-    await expect(voiceEnquiry.getByText("Aisha Rahman")).toBeVisible();
-    await expect(voiceEnquiry.getByText("We want a technology partnership", { exact: false })).toBeVisible();
-    await expect(voiceEnquiry.getByText("Routing", { exact: true })).toBeVisible();
-    await expect(voiceEnquiry.locator('[data-eval-dimension="routing"]').getByText("4/5")).toBeVisible();
-    await expect(voiceEnquiry.getByText("Capture", { exact: true })).toBeVisible();
-    await expect(voiceEnquiry.locator('[data-eval-dimension="capture"]').getByText("5/5")).toBeVisible();
-    await expect(voiceEnquiry.getByText("Quality", { exact: true })).toBeVisible();
-    await expect(voiceEnquiry.locator('[data-eval-dimension="quality"]').getByText("2/5")).toBeVisible();
-    await expect(voiceEnquiry.getByText("Frustration", { exact: true })).toBeVisible();
-    await expect(voiceEnquiry.getByText(/lower is better for frustration/i)).toBeVisible();
-    await expect(voiceEnquiry.getByRole("link", { name: "aisha@example.test" })).toHaveAttribute(
-      "href",
-      "mailto:aisha%40example.test",
-    );
+    const voiceRow = page.locator(`${desktop ? "tr" : "article"}[data-lead-id="lead-critical-1"]`);
+    await expect(voiceRow.getByText("Aisha Rahman")).toBeVisible();
+    await expect(voiceRow.getByText("We want a technology partnership", { exact: false })).toBeVisible();
+    await voiceRow
+      .getByRole("link", { name: desktop ? "Open Aisha Rahman enquiry record" : "Open CRM record" })
+      .click();
 
-    const formEnquiry = latest.locator('[data-lead-id="lead-priority-2"]');
-    await expect(formEnquiry.getByText("Evaluation not applicable")).toBeVisible();
+    const record = page.locator("#crm-record");
+    await expect(record.getByRole("heading", { name: "Aisha Rahman" })).toBeVisible();
+    await expect(record.getByText("What they want")).toBeVisible();
+    await expect(record.getByText("aisha@example.test")).toBeVisible();
+    await expect(record.locator('[data-eval-dimension="routing"]').getByText("4/5")).toBeVisible();
+    await expect(record.locator('[data-eval-dimension="capture"]').getByText("5/5")).toBeVisible();
+    await expect(record.locator('[data-eval-dimension="quality"]').getByText("2/5")).toBeVisible();
+    await expect(record.getByText("Frustration", { exact: true })).toBeVisible();
+    await expect(record.getByText(/lower is better for frustration/i)).toBeVisible();
+    await expect(record.getByText("ClickUp failed", { exact: true }).first()).toBeVisible();
   });
 
   test("renders the operator queues without horizontal overflow", async ({ page }) => {
     await page.goto("/admin/session-review?view=all");
-    await expect(page.getByRole("heading", { name: "Needs attention" })).toBeVisible();
-    await expect(page.getByText("Next best action")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Find a handoff" })).toBeVisible();
-    await expect(page.getByText("Lead action queue")).toBeVisible();
-    await expect(page.getByText("Recoverable voice leads", { exact: true })).toBeVisible();
-    await expect(page.getByText("Notification recovery", { exact: true })).toBeVisible();
-    await expect(page.getByText("Aisha Rahman").first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Search enquiries" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Enquiry pipeline" })).toBeVisible();
+    await expect(page.getByText("CRM data")).toBeVisible();
+    await expect(page.getByText("Aisha Rahman").filter({ visible: true }).first()).toBeVisible();
 
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -65,13 +69,36 @@ test.describe("admin session review console", () => {
     expect(overflow).toBeLessThanOrEqual(1);
   });
 
-  test("filters queue rows from URL search params", async ({ page }) => {
-    await page.goto("/admin/session-review?view=leads&q=Aisha&source=voice#work-queues");
+  test("filters queue rows from URL search params", async ({ page }, testInfo) => {
+    await page.goto("/admin/session-review?view=leads&q=Aisha&source=voice#crm-workspace");
 
     await expect(page.getByText("Filtered queue view")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Lead action queue" })).toBeVisible();
-    await expect(page.getByText("Aisha Rahman").first()).toBeVisible();
-    await expect(page.getByText("Bonobo").first()).toBeHidden();
+    await expect(page.getByRole("heading", { name: "Enquiry pipeline" })).toBeVisible();
+    const filteredRow = page.locator(
+      `${testInfo.project.name === "mobile" ? "article" : "tr"}[data-lead-id="lead-critical-1"]`,
+    );
+    await expect(filteredRow.getByText("Aisha Rahman")).toBeVisible();
+    await expect(page.locator("[data-crm-table] tbody tr")).toHaveCount(1);
+    await expect(page.getByText("Daniel Lim").first()).toBeHidden();
+  });
+
+  test("explains Reka evaluation scores in an operator-facing register", async ({ page }, testInfo) => {
+    await page.goto("/admin/session-review?view=reka#reka-quality");
+
+    await expect(page.getByRole("heading", { name: "Reka evaluations" })).toBeVisible();
+    await expect(page.getByText("1 of 2 saved voice sessions")).toBeVisible();
+    await expect(page.getByText(/higher is better except frustration/i)).toBeVisible();
+    await expect(page.getByText("1 = smooth · 5 = severe visitor friction")).toBeVisible();
+
+    const evaluation =
+      testInfo.project.name === "mobile"
+        ? page.locator("#reka-quality article").filter({ hasText: "Aisha Rahman" })
+        : page.locator("[data-eval-table] tbody tr").filter({ hasText: "Aisha Rahman" });
+    await expect(evaluation).toBeVisible();
+    await expect(evaluation.getByText("4/5").first()).toBeVisible();
+    await expect(evaluation.getByText("5/5")).toBeVisible();
+    await expect(evaluation.getByText("2/5")).toBeVisible();
+    await expect(evaluation.getByRole("link", { name: "Open CRM record" })).toBeVisible();
   });
 
   test("keeps deep diagnostics collapsed until requested", async ({ page }) => {
@@ -109,7 +136,7 @@ test.describe("admin session review console", () => {
     await expect(page.getByText("Arm cue scheduling p95: 4ms")).toBeVisible();
   });
 
-  test("submits a workflow update from a collapsed lead card", async ({ page }, testInfo) => {
+  test("submits a workflow update from the CRM record", async ({ page }, testInfo) => {
     test.skip(testInfo.project.name === "mobile", "Workflow mutation smoke runs once on desktop.");
     let sawWorkflowUpdate = false;
     await page.route("**/api/admin/leads/lead-critical-1", async (route) => {
@@ -128,11 +155,9 @@ test.describe("admin session review console", () => {
       await route.fulfill({ contentType: "application/json", json: { ok: true } });
     });
 
-    await page.goto("/admin/session-review?view=leads");
-    const card = page.locator("#lead-lead-critical-1");
+    await page.goto("/admin/session-review?view=leads&lead=lead-critical-1#crm-record");
+    const card = page.locator("#crm-record");
     await page.waitForLoadState("networkidle");
-    await card.locator("details", { hasText: "Update workflow" }).locator("summary").click();
-    await page.waitForTimeout(1000);
     const form = card.locator("form").first();
     const owner = form.getByLabel("Owner");
     await owner.fill("Gurpreet");
