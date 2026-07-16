@@ -164,7 +164,7 @@ export function HandoffPanel({
                   </FormDescription>
                 ) : emailIsConfirmed && emailVerification?.source === "speech" ? (
                   <FormDescription aria-live="polite" className="text-xs leading-5 text-mk-horizon">
-                    Confirmed from your voice.
+                    Captured from your voice · edit anytime.
                   </FormDescription>
                 ) : null}
                 <FormMessage className={messageClassName} />

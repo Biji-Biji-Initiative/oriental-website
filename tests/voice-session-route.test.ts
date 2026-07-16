@@ -23,6 +23,7 @@ async function json(response: Response) {
     review?: { id?: string; token?: string };
     device_profile?: string;
     deployment_environment?: string;
+    email_capture_mode?: string;
   };
 }
 
@@ -143,6 +144,16 @@ describe("POST /api/voice/session", () => {
       device_profile: "desktop",
       deployment_environment: "staging",
     });
+  });
+
+  it("returns the server-governed adaptive email mode to the browser", async () => {
+    process.env.VOICE_EMAIL_CAPTURE_MODE = "adaptive";
+    const fetchMock = mockOpenAiFetch();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await POST(request({ intent: "technology" }));
+
+    expect(await json(response)).toMatchObject({ ok: true, email_capture_mode: "adaptive" });
   });
 
   it("uses the managed environment behind an internal reverse-proxy URL", async () => {

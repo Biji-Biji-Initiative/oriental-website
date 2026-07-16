@@ -162,4 +162,35 @@ describe("golden voice session", () => {
       { type: "submit_voice", callId: "call_route_drifted_contact", segment: "education" },
     ]);
   });
+
+  it("finishes the adaptive happy path in one fewer visitor turn", () => {
+    let runtime: VoiceRuntimeState = { segment: "technology", captured: emptyCapturedLead, transcript: [] };
+    const step = (event: RealtimeServerEvent) => {
+      const result = reduceRealtimeServerEvent({ ...event, email_capture_mode: "adaptive" }, runtime);
+      runtime = result.state;
+      return result;
+    };
+
+    step({
+      type: "conversation.item.input_audio_transcription.completed",
+      transcript: "My email is asha dot lim at example dot my and we run digital skills workshops.",
+    });
+    const captured = step(
+      functionCall("call_adaptive_contact", "capture_fields", {
+        fields: [
+          { key: "email", value: "asha.lim@example.my", evidence: "asha dot lim at example dot my" },
+          { key: "message", value: "Run digital-skills workshops." },
+        ],
+      }),
+    );
+
+    expect(captured.commands[0]).toMatchObject({
+      output: { ok: true, emailConfirmationRequired: false, emailCaptureMode: "adaptive" },
+    });
+    expect(runtime.emailVerification).toMatchObject({ status: "confirmed", confidence: "high" });
+
+    const routed = step(functionCall("call_adaptive_route", "route_to_team", { segment: "education" }));
+    expect(routed.commands).toEqual([{ type: "submit_voice", callId: "call_adaptive_route", segment: "education" }]);
+    expect(runtime.transcript.filter((entry) => entry.role === "user")).toHaveLength(1);
+  });
 });

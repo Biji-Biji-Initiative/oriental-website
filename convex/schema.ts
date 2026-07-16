@@ -102,6 +102,7 @@ export default defineSchema({
         matchesCaptured: v.boolean(),
       }),
     ),
+    emailCaptureMode: v.optional(v.union(v.literal("strict"), v.literal("adaptive"))),
     transcript: v.array(
       v.object({
         role: v.string(),

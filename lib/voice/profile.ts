@@ -1,4 +1,5 @@
 import { SEGMENT_IDS, SEGMENTS, type SegmentId } from "@/lib/segments";
+import { adaptiveEmailToolInstructions, type VoiceEmailCaptureMode } from "@/lib/voice/email-capture-policy";
 import { ORIENTAL_KNOWLEDGE_TOPICS } from "@/lib/voice/knowledge";
 import { VOICE_DURATION_DEFAULTS } from "@/lib/voice/session-policy";
 
@@ -289,6 +290,7 @@ export function buildVoiceInstructions(
   profile: VoiceProfile = VOICE_PROFILE,
   initialSegment?: SegmentId,
   personaNote?: string,
+  emailCaptureMode: VoiceEmailCaptureMode = "strict",
 ) {
   const initial = initialSegment ? SEGMENTS[initialSegment] : null;
   return [
@@ -310,7 +312,8 @@ export function buildVoiceInstructions(
     section("Tool Contract", [
       "Use capture_fields once for every field learned in the turn before speaking again. The tool retains valid fields and returns rejectedFields separately; retry only those rejected details. Every saved field remains reversible with clear_field.",
       "For name, email, and organisation include exact evidence from the visitor's latest transcript. Never infer identity from examples or background audio.",
-      "Email characters are exact, never approximate. After a speech email is captured, read it back and use confirm_email only on the visitor's clear affirmation.",
+      "Email characters are exact, never approximate.",
+      ...adaptiveEmailToolInstructions(emailCaptureMode),
       "Use lookup_oriental for factual questions about spaces, pricing, partners, programmes, timelines, or process. If it has no match, do not invent an answer; capture the question for the team.",
       "The visible handoff context is user-provided. Do not ask again for a non-empty field. Typed messages are equivalent to speech.",
       "route_to_team and end_call are irreversible actions. Call them separately, only on clear visitor intent. Never include routing inside a capture batch.",

@@ -152,6 +152,7 @@ const voiceSessionValidator = v.object({
   inputPolicy: v.optional(v.union(v.literal("baseline"), v.literal("fast"), v.literal("patient"))),
   captured: capturedValidator,
   emailVerification: v.optional(emailVerificationValidator),
+  emailCaptureMode: v.optional(v.union(v.literal("strict"), v.literal("adaptive"))),
   transcript: transcriptValidator,
   usage: v.optional(usageValidator),
   errors: v.array(
@@ -342,6 +343,7 @@ export const recordVoiceSession = mutationGeneric({
       ...(typeof snapshot.closedAt === "number" ? { closedAt: snapshot.closedAt } : {}),
       captured: snapshot.captured,
       ...(snapshot.emailVerification ? { emailVerification: snapshot.emailVerification } : {}),
+      ...(snapshot.emailCaptureMode ? { emailCaptureMode: snapshot.emailCaptureMode } : {}),
       transcript: snapshot.transcript,
       errors: snapshot.errors,
       rateLimits: snapshot.rateLimits,

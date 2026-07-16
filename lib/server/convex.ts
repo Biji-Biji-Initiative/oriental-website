@@ -81,6 +81,7 @@ export async function persistVoiceReviewSnapshot(input: VoiceReviewSnapshotReque
       convexInput.deviceProfile ||
       convexInput.deploymentEnvironment ||
       convexInput.emailVerification ||
+      convexInput.emailCaptureMode ||
       typeof convexInput.activationAttempted === "boolean"
     ) {
       const {
@@ -93,6 +94,7 @@ export async function persistVoiceReviewSnapshot(input: VoiceReviewSnapshotReque
         deviceProfile: _deviceProfile,
         deploymentEnvironment: _deploymentEnvironment,
         emailVerification: _emailVerification,
+        emailCaptureMode: _emailCaptureMode,
         activationAttempted: _activationAttempted,
         ...rest
       } = convexInput;
