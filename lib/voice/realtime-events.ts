@@ -327,7 +327,7 @@ function applyFunctionCall(
         ok: true,
         fields: applied,
         captured,
-        ...(emailApplied ? { emailConfirmationRequired: !isVoiceEmailConfirmed(next) } : {}),
+        ...(emailApplied ? emailConfirmationInstructions(next) : {}),
       };
       break;
     }
@@ -579,7 +579,18 @@ function captureOutput(capture: AppliedCapture, state: VoiceRuntimeState): Recor
     key: capture.key,
     mode: capture.mode,
     captured: capture.captured,
-    ...(capture.key === "email" ? { emailConfirmationRequired: !isVoiceEmailConfirmed(state) } : {}),
+    ...(capture.key === "email" ? emailConfirmationInstructions(state) : {}),
+  };
+}
+
+function emailConfirmationInstructions(
+  state: Pick<VoiceRuntimeState, "captured" | "emailVerification">,
+): Record<string, unknown> {
+  if (isVoiceEmailConfirmed(state)) return { emailConfirmationRequired: false };
+  return {
+    emailConfirmationRequired: true,
+    emailReadback: spokenEmailForm(state.captured.email),
+    nextAction: "Read emailReadback verbatim now, ask if it is exactly correct, and wait for the visitor's answer.",
   };
 }
 
@@ -800,7 +811,17 @@ const EXPLICIT_EMAIL_CONFIRMATIONS = new Set([
 ]);
 
 function isExplicitEmailConfirmation(value: string): boolean {
-  return EXPLICIT_EMAIL_CONFIRMATIONS.has(normalizeEvidence(value));
+  const normalized = normalizeEvidence(value);
+  if (EXPLICIT_EMAIL_CONFIRMATIONS.has(normalized)) return true;
+  const contradicted = ["notcorrect", "incorrect", "wrong", "salah", "takbetul", "tidakbetul"].some((phrase) =>
+    normalized.includes(phrase),
+  );
+  return (
+    !contradicted &&
+    ["yes", "yeah", "yep", "correct", "thatscorrect", "thatsright", "betul"].some((prefix) =>
+      normalized.startsWith(prefix),
+    )
+  );
 }
 
 /** Exact containment, falling back to tolerance-bounded approximate containment. */
