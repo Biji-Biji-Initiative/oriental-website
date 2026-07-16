@@ -77,6 +77,21 @@ export function serializeTypedInterruption(createEventId: EventIdFactory = defau
   ];
 }
 
+/**
+ * A typed turn always supersedes any queued speech. Cancelling unconditionally
+ * also closes the tiny opener race before response.created reaches the client.
+ */
+export function serializeTypedTurn(
+  text: string,
+  createEventId: EventIdFactory = defaultEventId,
+): RealtimeOutboundEvent[] {
+  return [
+    ...serializeTypedInterruption(createEventId),
+    serializeUserText(text, createEventId),
+    serializeResponseCreate(undefined, createEventId),
+  ];
+}
+
 export function serializeUserText(text: string, createEventId: EventIdFactory = defaultEventId): RealtimeOutboundEvent {
   return {
     type: "conversation.item.create",

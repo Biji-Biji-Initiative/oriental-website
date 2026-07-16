@@ -5,6 +5,7 @@ import {
   serializeRealtimeCommand,
   serializeResponseCreate,
   serializeTypedInterruption,
+  serializeTypedTurn,
   serializeUserText,
 } from "@/lib/voice/client-events";
 
@@ -141,6 +142,25 @@ describe("serializeRealtimeCommand", () => {
     expect(serializeTypedInterruption(nextEventId(["evt_cancel", "evt_clear"]))).toEqual([
       { type: "response.cancel", event_id: "evt_cancel" },
       { type: "output_audio_buffer.clear", event_id: "evt_clear" },
+    ]);
+  });
+
+  it("serializes a typed turn as cancel, clear, text, then response", () => {
+    expect(
+      serializeTypedTurn("My email is mei@example.com", nextEventId(["cancel", "clear", "text", "response"])),
+    ).toEqual([
+      { type: "response.cancel", event_id: "cancel" },
+      { type: "output_audio_buffer.clear", event_id: "clear" },
+      {
+        type: "conversation.item.create",
+        event_id: "text",
+        item: {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: "My email is mei@example.com" }],
+        },
+      },
+      { type: "response.create", event_id: "response" },
     ]);
   });
 
