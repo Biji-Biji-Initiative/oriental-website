@@ -136,6 +136,16 @@
           "code": "transport_error"
         }
       ],
+      "eval": {
+        "routingCorrect": 4,
+        "captureCompleteness": 5,
+        "conversationQuality": 2,
+        "frustration": 4,
+        "summary": "Routing and lead capture were strong, but the transport drop made the conversation frustrating.",
+        "droppedMidTurn": true,
+        "model": "gpt-4o-mini",
+        "evaluatedAt": 1781714052327
+      },
       "rateLimits": [],
       "routeRequested": true,
       "latency": {
@@ -321,11 +331,56 @@
       }
     },
     "evals": {
-      "evaluated": 0,
-      "droppedMidTurn": 0,
-      "averages": null,
-      "trend": { "daily": [], "weekly": [] },
-      "attention": []
+      "evaluated": 1,
+      "droppedMidTurn": 1,
+      "averages": {
+        "routingCorrect": 4,
+        "captureCompleteness": 5,
+        "conversationQuality": 2,
+        "frustration": 4
+      },
+      "trend": {
+        "daily": [
+          {
+            "key": "2026-06-17",
+            "count": 1,
+            "droppedMidTurn": 1,
+            "averages": {
+              "routingCorrect": 4,
+              "captureCompleteness": 5,
+              "conversationQuality": 2,
+              "frustration": 4
+            }
+          }
+        ],
+        "weekly": [
+          {
+            "key": "2026-W25",
+            "count": 1,
+            "droppedMidTurn": 1,
+            "averages": {
+              "routingCorrect": 4,
+              "captureCompleteness": 5,
+              "conversationQuality": 2,
+              "frustration": 4
+            }
+          }
+        ]
+      },
+      "attention": [
+        {
+          "reviewId": "voice-critical-1",
+          "segment": "technology",
+          "routingCorrect": 4,
+          "captureCompleteness": 5,
+          "conversationQuality": 2,
+          "frustration": 4,
+          "summary": "Routing and lead capture were strong, but the transport drop made the conversation frustrating.",
+          "droppedMidTurn": true,
+          "model": "gpt-4o-mini",
+          "evaluatedAt": 1781714052327
+        }
+      ]
     }
   },
   "queues": {

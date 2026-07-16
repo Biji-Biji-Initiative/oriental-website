@@ -23,8 +23,35 @@ test.describe("admin session review console", () => {
     await expect(page.getByRole("heading", { name: "Oriental intake cockpit" })).toBeVisible();
   });
 
+  test("shows the newest enquiries and explains interaction evaluations on the default view", async ({ page }) => {
+    const latest = page.locator("#latest-enquiries");
+    await expect(latest.getByRole("heading", { name: "Latest enquiries" })).toBeVisible();
+    await expect(latest.getByText("What they want").first()).toBeVisible();
+    await expect(latest.locator("article").first()).toHaveAttribute("data-lead-id", "lead-closed-3");
+
+    const voiceEnquiry = latest.locator('[data-lead-id="lead-critical-1"]');
+    await expect(voiceEnquiry.getByText("Aisha Rahman")).toBeVisible();
+    await expect(voiceEnquiry.getByText("We want a technology partnership", { exact: false })).toBeVisible();
+    await expect(voiceEnquiry.getByText("Routing", { exact: true })).toBeVisible();
+    await expect(voiceEnquiry.locator('[data-eval-dimension="routing"]').getByText("4/5")).toBeVisible();
+    await expect(voiceEnquiry.getByText("Capture", { exact: true })).toBeVisible();
+    await expect(voiceEnquiry.locator('[data-eval-dimension="capture"]').getByText("5/5")).toBeVisible();
+    await expect(voiceEnquiry.getByText("Quality", { exact: true })).toBeVisible();
+    await expect(voiceEnquiry.locator('[data-eval-dimension="quality"]').getByText("2/5")).toBeVisible();
+    await expect(voiceEnquiry.getByText("Frustration", { exact: true })).toBeVisible();
+    await expect(voiceEnquiry.getByText(/lower is better for frustration/i)).toBeVisible();
+    await expect(voiceEnquiry.getByRole("link", { name: "aisha@example.test" })).toHaveAttribute(
+      "href",
+      "mailto:aisha%40example.test",
+    );
+
+    const formEnquiry = latest.locator('[data-lead-id="lead-priority-2"]');
+    await expect(formEnquiry.getByText("Evaluation not applicable")).toBeVisible();
+  });
+
   test("renders the operator queues without horizontal overflow", async ({ page }) => {
-    await expect(page.getByText("Needs attention")).toBeVisible();
+    await page.goto("/admin/session-review?view=all");
+    await expect(page.getByRole("heading", { name: "Needs attention" })).toBeVisible();
     await expect(page.getByText("Next best action")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Find a handoff" })).toBeVisible();
     await expect(page.getByText("Lead action queue")).toBeVisible();
@@ -39,7 +66,7 @@ test.describe("admin session review console", () => {
   });
 
   test("filters queue rows from URL search params", async ({ page }) => {
-    await page.goto("/admin/session-review?q=Aisha&source=voice#work-queues");
+    await page.goto("/admin/session-review?view=leads&q=Aisha&source=voice#work-queues");
 
     await expect(page.getByText("Filtered queue view")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Lead action queue" })).toBeVisible();
@@ -48,6 +75,7 @@ test.describe("admin session review console", () => {
   });
 
   test("keeps deep diagnostics collapsed until requested", async ({ page }) => {
+    await page.goto("/admin/session-review?view=all");
     const diagnostics = page.locator("#voice-diagnostics");
     await expect(diagnostics).toBeVisible();
     await expect(page.getByText("Realtime snapshots for QA")).toBeHidden();
@@ -60,6 +88,7 @@ test.describe("admin session review console", () => {
   });
 
   test("labels Realtime first-output timing without claiming speaker playback latency", async ({ page }) => {
+    await page.goto("/admin/session-review?view=all");
     const diagnostics = page.locator("#voice-diagnostics");
     await diagnostics.locator(":scope > summary").click();
 
@@ -72,6 +101,7 @@ test.describe("admin session review console", () => {
   });
 
   test("shows exact tap-to-live timing separately from the local arm cue", async ({ page }) => {
+    await page.goto("/admin/session-review?view=all");
     const diagnostics = page.locator("#voice-diagnostics");
     await diagnostics.locator(":scope > summary").click();
 
@@ -98,6 +128,7 @@ test.describe("admin session review console", () => {
       await route.fulfill({ contentType: "application/json", json: { ok: true } });
     });
 
+    await page.goto("/admin/session-review?view=leads");
     const card = page.locator("#lead-lead-critical-1");
     await page.waitForLoadState("networkidle");
     await card.locator("details", { hasText: "Update workflow" }).locator("summary").click();

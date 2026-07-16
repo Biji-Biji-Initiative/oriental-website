@@ -84,6 +84,12 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
       <AdminSectionTabs activeView={view} data={dashboard.data} sessionsWithRealErrors={sessionsWithRealErrors} />
       {showToday ? (
         <>
+          <LatestEnquiriesPanel
+            generatedAt={dashboard.data.generatedAt}
+            leads={dashboard.data.leads}
+            voiceSessions={dashboard.data.voiceSessions}
+          />
+
           <section
             className="grid scroll-mt-36 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.42fr)]"
             id="command-center"
@@ -1089,9 +1095,9 @@ function OperatorFilters({
                 name="source"
               >
                 <option value="">All</option>
-                <option value="form">Form</option>
-                <option value="voice">Voice</option>
-                <option value="newsletter">Newsletter</option>
+                <option value="form">Website form</option>
+                <option value="voice">Reka voice</option>
+                <option value="hero-email">Email interest</option>
               </select>
             </label>
             <div className="flex items-end">
@@ -1102,7 +1108,7 @@ function OperatorFilters({
             <div className="flex items-end">
               <a
                 className="inline-flex h-10 w-full items-center justify-center rounded-lg border border-mk-ash/25 bg-white px-3 text-sm font-medium transition hover:bg-mk-paper"
-                href="/admin/session-review#work-queues"
+                href={adminModeHref(targetView, targetHash)}
               >
                 Reset
               </a>
@@ -2918,6 +2924,300 @@ function formatDate(value: number) {
   }).format(value);
 }
 
+function formatRelativeAge(value: number, now: number) {
+  const elapsedMinutes = Math.max(Math.floor((now - value) / 60_000), 0);
+  if (elapsedMinutes < 1) return "Just now";
+  if (elapsedMinutes < 60) return `${elapsedMinutes}m ago`;
+  const elapsedHours = Math.floor(elapsedMinutes / 60);
+  if (elapsedHours < 24) return `${elapsedHours}h ago`;
+  const elapsedDays = Math.floor(elapsedHours / 24);
+  return `${elapsedDays}d ago`;
+}
+
+function isSameKualaLumpurDay(left: number, right: number) {
+  const formatter = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kuala_Lumpur" });
+  return formatter.format(left) === formatter.format(right);
+}
+
+function leadSourceLabel(source: LeadRow["source"]) {
+  if (source === "voice") return "Reka voice";
+  if (source === "form") return "Website form";
+  if (source === "hero-email") return "Email interest";
+  return source;
+}
+
+function safeWebsiteHref(value: string | undefined) {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  try {
+    const url = new URL(/^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function LatestEnquiriesPanel({
+  leads,
+  voiceSessions,
+  generatedAt,
+}: {
+  leads: LeadRow[];
+  voiceSessions: VoiceSessionRow[];
+  generatedAt: number;
+}) {
+  const latest = [...leads].sort((left, right) => right.createdAt - left.createdAt).slice(0, 8);
+  const todayCount = leads.filter((lead) => isSameKualaLumpurDay(lead.createdAt, generatedAt)).length;
+
+  return (
+    <Card className="scroll-mt-36 border-mk-blue/25 bg-white shadow-sm" id="latest-enquiries">
+      <CardHeader>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle>Latest enquiries</CardTitle>
+            <CardDescription>
+              Newest saved handoffs first, with the visitor, their intent, contact route, owner, delivery state, and
+              interaction evaluation in one place.
+            </CardDescription>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Badge tone={todayCount > 0 ? "blue" : "neutral"}>{todayCount} today</Badge>
+            <Badge tone="neutral">{leads.length} in recent window</Badge>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        {latest.length === 0 ? <EmptyState label="No enquiries have been saved yet." /> : null}
+        {latest.map((lead) => {
+          const voiceSession = voiceSessionForLead(lead, voiceSessions);
+          return (
+            <LatestEnquiryCard generatedAt={generatedAt} key={lead.leadId} lead={lead} voiceSession={voiceSession} />
+          );
+        })}
+        {leads.length > latest.length ? (
+          <a
+            className="inline-flex min-h-10 items-center justify-center rounded-lg border border-mk-ash/20 bg-mk-paper px-4 text-sm font-semibold text-mk-off-black transition hover:border-mk-blue/40 hover:bg-white"
+            href={adminModeHref("leads", "workflow")}
+          >
+            Open all {leads.length} recent enquiries
+          </a>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function LatestEnquiryCard({
+  lead,
+  voiceSession,
+  generatedAt,
+}: {
+  lead: LeadRow;
+  voiceSession?: VoiceSessionRow;
+  generatedAt: number;
+}) {
+  const status = normalizeAdminLeadStatus(lead.status);
+  const priority = normalizeAdminLeadPriority(lead.priority);
+  const notification = notificationStatus(lead);
+  const websiteHref = safeWebsiteHref(lead.website);
+  const segment = getSegment(lead.segment);
+
+  return (
+    <article
+      className="grid gap-4 rounded-xl border border-mk-ash/15 bg-mk-paper/55 p-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]"
+      data-lead-id={lead.leadId}
+    >
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="truncate text-base font-semibold text-mk-off-black">{lead.name || "Unnamed visitor"}</div>
+            <div className="mt-1 truncate text-sm text-mk-ash">{lead.org || "No organisation provided"}</div>
+          </div>
+          <div className="text-right text-xs text-mk-ash">
+            <div className="font-semibold text-mk-off-black">{formatRelativeAge(lead.createdAt, generatedAt)}</div>
+            <div className="mt-1">{formatDate(lead.createdAt)}</div>
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Badge tone={lead.source === "voice" ? "blue" : "neutral"}>{leadSourceLabel(lead.source)}</Badge>
+          <Badge tone={statusTone(status)}>{adminLeadStatusLabels[status]}</Badge>
+          <Badge tone={priorityTone(priority)}>{adminLeadPriorityLabels[priority]}</Badge>
+          <Badge tone={lead.owner?.trim() ? "green" : "amber"}>{lead.owner?.trim() || "Unassigned"}</Badge>
+          <Badge tone={notification.tone}>{notification.label}</Badge>
+        </div>
+
+        <div className="mt-4 rounded-lg border border-mk-ash/15 bg-white p-3">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
+            What they want
+          </div>
+          <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-mk-off-black">
+            {lead.message?.trim() || "No enquiry brief was captured."}
+          </p>
+        </div>
+
+        <div className="mt-3 flex flex-wrap gap-2 text-xs">
+          <a
+            className="inline-flex min-h-8 items-center rounded-full border border-mk-blue/20 bg-white px-3 font-semibold text-mk-blue transition hover:border-mk-blue/45 hover:bg-mk-blue/5"
+            href={`mailto:${encodeURIComponent(lead.email)}`}
+          >
+            {lead.email}
+          </a>
+          {lead.phone ? (
+            <a
+              className="inline-flex min-h-8 items-center rounded-full border border-mk-ash/20 bg-white px-3 font-semibold text-mk-off-black transition hover:border-mk-blue/40"
+              href={`tel:${lead.phone.replace(/[^+\d]/g, "")}`}
+            >
+              {lead.phone}
+            </a>
+          ) : null}
+          {websiteHref ? (
+            <a
+              className="inline-flex min-h-8 items-center rounded-full border border-mk-ash/20 bg-white px-3 font-semibold text-mk-off-black transition hover:border-mk-blue/40"
+              href={websiteHref}
+              rel="noreferrer"
+              target="_blank"
+            >
+              Website
+            </a>
+          ) : null}
+        </div>
+
+        <div className="mt-3 grid gap-2 text-xs text-mk-ash sm:grid-cols-2">
+          <div>
+            <span className="font-semibold text-mk-off-black">Enquiry type:</span> {segment.label}
+          </div>
+          <div>
+            <span className="font-semibold text-mk-off-black">Routed to:</span> {lead.routedTo}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid content-start gap-3">
+        <LeadInteractionEvaluation lead={lead} voiceSession={voiceSession} />
+        <div className="rounded-lg border border-mk-ash/15 bg-white p-3 text-sm leading-6">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">Do next</div>
+          <p className="mt-1 text-mk-ash">{leadActionHint(lead)}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <a
+            className="inline-flex min-h-9 flex-1 items-center justify-center rounded-full bg-mk-off-black px-4 text-xs font-semibold text-white transition hover:bg-mk-blue"
+            href={`mailto:${encodeURIComponent(lead.email)}`}
+          >
+            Contact visitor
+          </a>
+          <a
+            className="inline-flex min-h-9 flex-1 items-center justify-center rounded-full border border-mk-ash/20 bg-white px-4 text-xs font-semibold text-mk-off-black transition hover:border-mk-blue/40"
+            href={adminModeHref("leads", leadAnchorId(lead))}
+          >
+            Open workflow
+          </a>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function LeadInteractionEvaluation({ lead, voiceSession }: { lead: LeadRow; voiceSession?: VoiceSessionRow }) {
+  if (lead.source !== "voice") {
+    return (
+      <section aria-label="Interaction evaluation" className="rounded-lg border border-mk-ash/15 bg-white p-3">
+        <Badge tone="neutral">Evaluation not applicable</Badge>
+        <p className="mt-2 text-xs leading-5 text-mk-ash">Only Reka voice conversations receive interaction scores.</p>
+      </section>
+    );
+  }
+
+  const evaluation = voiceSession?.eval;
+  if (!evaluation) {
+    return (
+      <section
+        aria-label="Interaction evaluation"
+        className="rounded-lg border border-amber-700/20 bg-amber-500/10 p-3"
+      >
+        <Badge tone="amber">Evaluation pending</Badge>
+        <p className="mt-2 text-xs leading-5 text-amber-900/75">
+          The enquiry is safely stored, but no 1–5 evaluator result has been persisted for this conversation yet.
+        </p>
+        {voiceSession ? (
+          <a
+            className="mt-2 inline-flex text-xs font-semibold text-mk-blue hover:underline"
+            href={adminModeHref("voice", voiceSessionAnchorId(voiceSession.reviewId))}
+          >
+            Open voice interaction
+          </a>
+        ) : null}
+      </section>
+    );
+  }
+
+  const dimensions = [
+    { label: "Routing", value: evaluation.routingCorrect, invert: false },
+    { label: "Capture", value: evaluation.captureCompleteness, invert: false },
+    { label: "Quality", value: evaluation.conversationQuality, invert: false },
+    { label: "Frustration", value: evaluation.frustration, invert: true },
+  ];
+
+  return (
+    <section aria-label="Interaction evaluation" className="rounded-lg border border-mk-blue/20 bg-white p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
+          Interaction evaluation
+        </div>
+        <Badge tone={evaluation.droppedMidTurn ? "red" : "green"}>
+          {evaluation.droppedMidTurn ? "Dropped mid-turn" : "Completed"}
+        </Badge>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        {dimensions.map((dimension) => (
+          <div
+            className="rounded-md bg-mk-paper px-2.5 py-2"
+            data-eval-dimension={dimension.label.toLowerCase()}
+            key={dimension.label}
+          >
+            <div className="text-[10px] font-semibold uppercase tracking-[0.1em] text-mk-off-black/55">
+              {dimension.label}
+            </div>
+            <div className="mt-1 flex items-center justify-between gap-2">
+              <span className="text-sm font-semibold text-mk-off-black">{dimension.value}/5</span>
+              <Badge tone={scoreTone(dimension.value, dimension.invert)}>
+                {scoreVerdict(dimension.value, dimension.invert)}
+              </Badge>
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className="mt-2 text-[11px] leading-5 text-mk-ash">
+        Higher is better for routing, capture, and quality. Lower is better for frustration.
+      </p>
+      {evaluation.summary ? <p className="mt-2 text-xs leading-5 text-mk-ash">{evaluation.summary}</p> : null}
+      <div className="mt-2 flex flex-wrap justify-between gap-2 text-[10px] text-mk-ash">
+        <span>{evaluation.model}</span>
+        <span>
+          {evaluation.evaluatedAt ? `Evaluated ${formatDate(evaluation.evaluatedAt)}` : "Evaluation time unavailable"}
+        </span>
+      </div>
+      {voiceSession ? (
+        <a
+          className="mt-2 inline-flex text-xs font-semibold text-mk-blue hover:underline"
+          href={adminModeHref("voice", voiceSessionAnchorId(voiceSession.reviewId))}
+        >
+          Open voice interaction
+        </a>
+      ) : null}
+    </section>
+  );
+}
+
+function voiceSessionForLead(lead: LeadRow, sessions: VoiceSessionRow[]) {
+  return sessions.find(
+    (session) =>
+      (lead.voiceReviewId && session.reviewId === lead.voiceReviewId) ||
+      (session.leadId && session.leadId === lead.leadId),
+  );
+}
+
 function parseAdminFilters(searchParams: Awaited<AdminSearchParams> | undefined): AdminFilters {
   const readParam = (key: string) => {
     const value = searchParams?.[key];
@@ -2927,21 +3227,21 @@ function parseAdminFilters(searchParams: Awaited<AdminSearchParams> | undefined)
     q: readParam("q").trim(),
     status: normalizeFilterValue(readParam("status"), Object.keys(adminLeadStatusLabels)),
     priority: normalizeFilterValue(readParam("priority"), Object.keys(adminLeadPriorityLabels)),
-    source: normalizeFilterValue(readParam("source"), ["form", "voice", "newsletter"]),
+    source: normalizeFilterValue(readParam("source"), ["form", "voice", "hero-email"]),
   };
 }
 
 function parseAdminView(searchParams: Awaited<AdminSearchParams> | undefined): AdminView {
   const value = searchParams?.view;
   const view = Array.isArray(value) ? value[0] : value;
-  if (view === "today" || view === "leads" || view === "reka" || view === "voice" || view === "audit") return view;
-  return "all";
+  if (view === "all" || view === "today" || view === "leads" || view === "reka" || view === "voice" || view === "audit")
+    return view;
+  return "today";
 }
 
 function adminModeHref(view: AdminView, hash?: string) {
-  const query = view === "all" ? "" : `?view=${view}`;
   const fragment = hash ? `#${hash}` : "";
-  return `/admin/session-review${query}${fragment}`;
+  return `/admin/session-review?view=${view}${fragment}`;
 }
 
 function hasActiveFilters(filters: AdminFilters) {
