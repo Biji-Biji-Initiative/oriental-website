@@ -27,7 +27,20 @@ Focused tests cover classifier bodies (including malformed 429), capacity-only
 retry selection, email capture/readback/confirmation/contradiction, API 409,
 typed event ordering, durable lead linkage, PII-free telemetry, aggregate
 availability, and synthetic exclusion. `smoke-staging-intake.ts` uses the
-reserved `qa.nebula@example.test` address and asserts zero lead POSTs.
+reserved `qa.nebula@example.test` address. Its executable assertions:
+
+1. wait until the normalized address populates the Email input;
+2. require pending-confirmation copy and prove its closest form label is Email;
+3. require a Reka transcript turn containing the exact address components;
+4. send grounded explicit confirmation and require the pending copy to
+   disappear and the voice-confirmed copy to appear;
+5. require the captured address to remain exact and the `/api/leads` POST count
+   to remain zero; and
+6. end voice cleanly and require zero page or console errors.
+
+That script passed against the source staging stack at `17992e8` before
+integration. It must run again against the final merge SHA; historical proof is
+not substituted for the final release gate.
 
 The source staging stack was already live at
 `17992e88405c29b5f800da30922a39d87d9495f9` before this integration. The final
@@ -52,3 +65,14 @@ During integration review, quota classification was found to occur only after
 the retry loop. The hook now parses every failed response before calling
 `shouldRetryRealtimeCall`; that policy accepts `realtime_busy` only. A focused
 test explicitly rejects retry for `realtime_quota_exhausted`.
+
+## APR round 1 correction closure
+
+The first combined intake review blocked because the evidence summarized only
+the smoke's no-submit assertion and did not attach the retry/revival proof.
+The six concrete smoke assertions are now enumerated above. The actual browser
+connection hook received a separate full-code APR trace at
+`.apr/rounds/oriental-realtime-busy-recovery/round_4.md`: it proves retry reuse
+of the same mint/peer/data channel/offer/stream, monotonic attempt ownership,
+manual teardown invalidation, stale-catch isolation, and duplicate-mint gates,
+ending `VERDICT: SHIP`.
