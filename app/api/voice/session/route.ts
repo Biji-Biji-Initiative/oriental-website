@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { readPositiveIntEnv } from "@/lib/env";
+import { readEnv, readPositiveIntEnv } from "@/lib/env";
 import { voiceSessionRequestSchema } from "@/lib/schemas";
 import { durationSince, errorMeta, logError, logInfo, logWarn } from "@/lib/server/logger";
 import { createRealtimeClientSecret, type RealtimeDeviceProfile } from "@/lib/server/openai-realtime";
@@ -124,6 +124,9 @@ function detectDeviceProfile(userAgent: string | null): RealtimeDeviceProfile {
 }
 
 function detectDeploymentEnvironment(requestUrl: string) {
+  const configured = readEnv("APP_ENV") ?? readEnv("SENTRY_ENVIRONMENT");
+  if (configured === "staging") return "staging" as const;
+  if (configured === "production") return "production" as const;
   const hostname = new URL(requestUrl).hostname.toLowerCase();
   if (hostname === "staging.oriental.mereka.io") return "staging" as const;
   if (hostname === "oriental.mereka.io") return "production" as const;
