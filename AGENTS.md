@@ -241,8 +241,8 @@ sequenceDiagram
 
 - **Profile:** `VOICE_PROFILE` in `lib/voice/profile.ts` drives instructions, tools, turn detection, truncation.
 - **Capture:** governed staging/production use `VOICE_EMAIL_CAPTURE_MODE=adaptive`; accept only syntax-valid, independently grounded latest-turn evidence. `strict` is the exact-readback/confirmation rollback. Never loosen the reducer or API submission boundary to achieve lower friction.
-- **Events:** `lib/voice/realtime-events.ts` handles grounded state/tool events; `lib/voice/latency.ts` handles bounded turn and PII-free per-tool timings. Never persist arguments, call IDs, contact values, or raw browser timestamps. Add focused tests for either reducer.
-- **Responsive voice UI:** preserve explicit proof at 320x568, 360x800, 390x844, 844x390, 1024x600, 1280x720, and 1440x900 plus mobile-to-desktop resize. At >=1024 all three panes scroll independently.
+- **Events:** `lib/voice/realtime-events.ts` handles grounded state/tool events; `lib/voice/latency.ts` handles bounded turn and PII-free per-tool timings. Persist each completed tool sample to review metadata immediately—`wait_for_user` may have no later response. Never persist arguments, call IDs, contact values, or raw browser timestamps. Add focused tests for either reducer.
+- **Responsive voice UI:** preserve explicit proof at 320x568, 360x800, 390x844, 844x390, 1024x600, 1280x720, and 1440x900 plus mobile-to-desktop resize. Assert the primary Start Voice action is initially visible before any scroll; `scrollIntoView` proves reachability, not fit. At >=1024 all three panes scroll independently.
 - **Specs:** `docs/05-VOICE-AGENT-SPEC.md` covers product flow and `docs/13-VOICE-INSTANT-RELEASE-SPEC.md` covers the staged latency/endpointing release contract; verify both against code before assuming parity.
 
 ---

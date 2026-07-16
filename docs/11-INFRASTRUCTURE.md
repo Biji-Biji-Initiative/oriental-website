@@ -110,6 +110,11 @@ before recreating containers. The app reads `process.env.*` and has no
 Infisical SDK runtime dependency. Source checks alone are insufficient; inspect
 the running container after every configuration release.
 
+`pnpm release:verify:voice-cell` is the fast, non-secret parity check. Run it
+under `infisical run` for both native `staging` and `prod` environments before
+the full release preflight; it requires exact
+`baseline/control/low/adaptive` values and an explicitly false picker.
+
 Secret contract is enforced by `scripts/check-secrets.ts`.
 
 ## Coolify
@@ -148,6 +153,13 @@ Convex, SES/SMTP, Slack, Redis, and OpenAI accounts. Redis keys are separated by
 environment, and new voice snapshots carry deployment attribution, but do not
 treat staging submissions as a fully isolated data/notification sandbox until
 dedicated staging services are provisioned.
+
+The governed host deployer renders and atomically replaces staging's `.env`,
+rewriting the five non-secret voice-cell values to
+`baseline/control/low/adaptive` with the picker explicitly off, alongside the
+exact SHA. It does not copy secrets or replace the full Infisical
+reconciliation; it prevents a stale experiment cell from surviving an ordinary
+release recreation.
 
 Staging rollback/removal is host-local:
 

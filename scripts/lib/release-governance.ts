@@ -65,8 +65,8 @@ export function validateManagedVoiceCell(env: Record<string, string | undefined>
   if (env.VOICE_EMAIL_CAPTURE_MODE !== CONTROL_VOICE_CELL.emailCaptureMode) {
     failures.push(`VOICE_EMAIL_CAPTURE_MODE must be ${CONTROL_VOICE_CELL.emailCaptureMode}`);
   }
-  if (env.VOICE_VARIANT_PICKER === "true") {
-    failures.push("VOICE_VARIANT_PICKER must be false for a governed release");
+  if (env.VOICE_VARIANT_PICKER !== "false") {
+    failures.push("VOICE_VARIANT_PICKER must be explicitly false for a governed release");
   }
   return failures;
 }

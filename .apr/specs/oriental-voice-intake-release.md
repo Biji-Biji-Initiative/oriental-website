@@ -2,8 +2,8 @@
 
 ## Scope
 
-Merge the staging-proven availability classification and contact-integrity
-corrections into the governed production release while retaining
+Merge the availability classification and contact-integrity corrections into a
+governed staging candidate for later production review while retaining
 `baseline/control/low` voice cells and the explicitly approved
 `VOICE_EMAIL_CAPTURE_MODE=adaptive` policy.
 
@@ -57,15 +57,18 @@ corrections into the governed production release while retaining
 13. The intake dialog MUST remain fully contained at 320x568, 360x800,
     390x844, 844x390, 1024x600, 1280x720, and 1440x900; reset nested scroll at
     responsive-layout changes; keep desktop panes independently scrollable;
-    and avoid opening the mobile keyboard automatically. The canonical Mereka
-    M, not the generic blue sphere, MUST render in compact and main voice UI.
+    keep the primary Start Voice action inside the initial viewport before any
+    scroll; and avoid opening the mobile keyboard automatically. The canonical
+    Mereka M, not the generic blue sphere, MUST render in compact and main voice UI.
 14. The staging voice smoke MUST verify the session model and cell against the
     deployed public health contract (or an explicit expected override), not a
     hard-coded candidate. It MUST not imply model promotion.
 15. Tool telemetry MUST persist at most 120 PII-free per-call samples with
     bounded name/outcome plus response-created-to-call, execution, and result
-    timing. `route_to_team` MUST start persistence and notification fan-out
-    concurrently without weakening durability or failure handling.
+    timing. Every completed tool sample MUST update review metadata immediately,
+    including tools such as `wait_for_user` that may not create another response.
+    `route_to_team` MUST start persistence and notification fan-out concurrently
+    without weakening durability or failure handling.
 16. Microphone lifecycle copy MUST treat `prompt` as first use or an expired
     one-time grant, explain persistent versus one-time access honestly, release
     the microphone on close, and keep blocked-mic recovery actionable.
@@ -80,11 +83,12 @@ corrections into the governed production release while retaining
 - Lint, typecheck, all unit tests, secret contract, build, and mobile
   performance gate MUST pass.
 - APR MUST return `VERDICT: SHIP SAFE DEFAULTS`.
-- After merge, deploy the exact full SHA to staging, run deterministic public
-  verification and both voice smokes, then promote the same SHA to production
-  and verify both canonical environments.
-- Roll back the web release to the prior exact production SHA if intake,
-  transport, health, or performance proof fails. Candidate cells remain off.
+- After merge, deploy the exact full SHA to staging and run deterministic public
+  verification plus both voice smokes. Production remains on its current exact
+  SHA until the user reviews staging and explicitly approves the promotion.
+- Roll staging back to its prior exact staging SHA if intake, transport, health,
+  or performance proof fails. Production remains untouched and candidate cells
+  remain off.
 - Roll back capture friction independently with
   `VOICE_EMAIL_CAPTURE_MODE=strict` on the same exact image.
 

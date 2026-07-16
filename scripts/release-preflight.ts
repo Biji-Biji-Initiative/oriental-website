@@ -5,10 +5,11 @@ import { validateManagedVoiceCell, validateReleaseSha, validateReleaseStaticCont
 type Args = {
   sha?: string;
   managedEnv: boolean;
+  voiceCellOnly: boolean;
 };
 
 function parseArgs(argv: string[]): Args {
-  const args: Args = { managedEnv: true };
+  const args: Args = { managedEnv: true, voiceCellOnly: false };
   const normalizedArgv = argv.filter((argument) => argument !== "--");
   for (let index = 0; index < normalizedArgv.length; index += 1) {
     const flag = normalizedArgv[index];
@@ -19,8 +20,12 @@ function parseArgs(argv: string[]): Args {
       args.managedEnv = true;
     } else if (flag === "--allow-unmanaged") {
       args.managedEnv = false;
+    } else if (flag === "--voice-cell-only") {
+      args.voiceCellOnly = true;
     } else if (flag === "--help") {
-      process.stdout.write("Usage: pnpm release:preflight -- --sha <40-char-main-sha> [--allow-unmanaged]\n");
+      process.stdout.write(
+        "Usage: pnpm release:preflight -- --sha <40-char-main-sha> [--allow-unmanaged] [--voice-cell-only]\n",
+      );
       process.exit(0);
     } else {
       throw new Error(`Unknown argument: ${flag}`);
@@ -35,6 +40,15 @@ function git(...args: string[]) {
 
 function main() {
   const args = parseArgs(process.argv.slice(2));
+  if (args.voiceCellOnly) {
+    const failures = validateManagedVoiceCell(process.env);
+    if (failures.length > 0) {
+      for (const failure of failures) process.stderr.write(`release-preflight: ${failure}\n`);
+      process.exit(1);
+    }
+    process.stdout.write(`${JSON.stringify({ ok: true, voiceCellOnly: true }, null, 2)}\n`);
+    return;
+  }
   const expectedSha = args.sha ?? git("rev-parse", "HEAD");
   const failures = validateReleaseSha(expectedSha);
   const head = git("rev-parse", "HEAD");

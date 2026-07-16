@@ -101,6 +101,14 @@ After the runtime PR merges:
 git switch main
 git pull --ff-only
 sha="$(git rev-parse HEAD)"
+for managed_env in staging prod; do
+  infisical run \
+    --domain https://secrets.mereka.io \
+    --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
+    --env "$managed_env" \
+    --path /deploy/oriental-website \
+    -- pnpm release:verify:voice-cell
+done
 infisical run \
   --domain https://secrets.mereka.io \
   --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
@@ -112,7 +120,9 @@ infisical run \
 Managed-environment validation is the default and requires explicit
 `baseline/control/low/adaptive` plus the QA picker off. `--allow-unmanaged` exists only
 for testing the Git/static contract and MUST NOT be used as production release
-evidence.
+evidence. The fast parity command runs against both native Infisical
+environments before the full production-env preflight, preventing staging
+source drift from being hidden by the deployer's host-side safe defaults.
 
 Once preflight passes, the SHA is frozen. Any runtime code, Docker, config, spec,
 or runbook correction invalidates the freeze and restarts at Phase 1. Do not
@@ -132,7 +142,10 @@ include release docs before the first deployment.
 
    The script rechecks that SHA while holding the host deployment lock. If
    staging moved, stop and coordinate with its current owner; never overwrite an
-   unknown experiment.
+   unknown experiment. As part of the same atomic `.env` update, it materializes
+   the governed non-secret `baseline/control/low/adaptive` voice cell with the
+   picker explicitly off; the full secret set must already be reconciled from
+   Infisical.
 
 3. Run the deterministic public verifier:
 

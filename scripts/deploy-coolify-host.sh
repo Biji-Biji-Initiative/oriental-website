@@ -152,13 +152,16 @@ fi
 
 cp -p "$target_dir/docker-compose.yaml" "$target_dir/docker-compose.yaml.deploy-backup-${timestamp}"
 cp -p "$target_dir/.env" "$target_dir/.env.deploy-backup-${timestamp}"
-python3 - "$target_dir" "$image" "$sha" <<'PY'
+python3 - "$target_dir" "$image" "$sha" "$target" <<'PY'
 from pathlib import Path
+import os
 import sys
+import tempfile
 
 app_dir = Path(sys.argv[1])
 image = sys.argv[2]
 sha = sys.argv[3]
+target = sys.argv[4]
 
 compose = app_dir / "docker-compose.yaml"
 lines = []
@@ -168,10 +171,21 @@ for line in compose.read_text().splitlines():
         lines.append(f"{indent}image: '{image}'")
     else:
         lines.append(line)
-compose.write_text("\n".join(lines) + "\n")
+compose_text = "\n".join(lines) + "\n"
 
 env_path = app_dir / ".env"
 overrides = {"SOURCE_COMMIT": sha, "GIT_SHA": sha}
+if target == "staging":
+    # This is the non-secret governed release cell. Infisical's staging
+    # environment remains canonical; the host deployment materializes the same
+    # safe values atomically so stale experiment flags cannot survive a release.
+    overrides.update({
+        "VOICE_RUNTIME_PROFILE": "baseline",
+        "VOICE_MODEL_CELL": "control",
+        "VOICE_REASONING_CELL": "low",
+        "VOICE_EMAIL_CAPTURE_MODE": "adaptive",
+        "VOICE_VARIANT_PICKER": "false",
+    })
 seen = set()
 out = []
 for line in env_path.read_text().splitlines():
@@ -187,7 +201,34 @@ for line in env_path.read_text().splitlines():
 for key, value in overrides.items():
     if key not in seen:
         out.append(f"{key}={value}")
-env_path.write_text("\n".join(out) + "\n")
+env_text = "\n".join(out) + "\n"
+
+def atomic_write(path: Path, value: str) -> None:
+    mode = path.stat().st_mode & 0o777
+    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        os.fchmod(descriptor, mode)
+        with os.fdopen(descriptor, "w") as handle:
+            handle.write(value)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        directory = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+
+# Render both files completely before replacing either one. Each replacement is
+# atomic; if the process stops between them, no container has been recreated and
+# the optimistic-SHA retry safely converges the pair.
+atomic_write(compose, compose_text)
+atomic_write(env_path, env_text)
 PY
 
 cd "$target_dir"
