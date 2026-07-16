@@ -7,6 +7,7 @@ import {
   validateHealthPayload,
   validateManagedVoiceCell,
   validateReleaseSha,
+  validateReleaseStaticContracts,
 } from "../scripts/lib/release-governance";
 
 const sha = "bb8e2673e5f129f342fba78f3eb653a54de8763b";
@@ -28,6 +29,11 @@ describe("release governance", () => {
   it("requires full immutable release SHAs", () => {
     expect(validateReleaseSha(sha)).toEqual([]);
     expect(validateReleaseSha("bb8e267")).not.toEqual([]);
+  });
+
+  it("matches every static preflight contract against the real repository", () => {
+    expect(validateReleaseStaticContracts((path) => readFileSync(path, "utf8"))).toEqual([]);
+    expect(validateReleaseStaticContracts(() => "")).toHaveLength(4);
   });
 
   it("fails managed releases that drift from the safe voice cell", () => {

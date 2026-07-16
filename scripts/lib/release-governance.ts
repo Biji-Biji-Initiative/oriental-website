@@ -17,8 +17,37 @@ export const RELEASE_TARGETS = {
 
 export type ReleaseTargetName = keyof typeof RELEASE_TARGETS;
 
+export const RELEASE_STATIC_CONTRACTS = [
+  {
+    path: "Dockerfile",
+    text: 'ENV HOSTNAME="0.0.0.0"',
+    failure: "Dockerfile must bind the standalone server to 0.0.0.0",
+  },
+  {
+    path: "scripts/deploy-coolify-host.sh",
+    text: `image="\${app_uuid}:staging-\${sha}"`,
+    failure: "staging must use a distinct staging-<sha> image tag",
+  },
+  {
+    path: "docs/11-INFRASTRUCTURE.md",
+    text: "health-check host is `127.0.0.1`",
+    failure: "infrastructure docs must pin Coolify's health-check host to 127.0.0.1",
+  },
+  {
+    path: "docs/12-CHAT-RELEASE-RUNBOOK.md",
+    text: "Final-SHA freeze",
+    failure: "the governed release runbook must retain the final-SHA freeze",
+  },
+] as const;
+
 export function validateReleaseSha(value: string): string[] {
   return /^[0-9a-f]{40}$/.test(value) ? [] : ["release SHA must be a full 40-character lowercase git SHA"];
+}
+
+export function validateReleaseStaticContracts(readText: (path: string) => string): string[] {
+  return RELEASE_STATIC_CONTRACTS.flatMap(({ path, text, failure }) =>
+    readText(path).includes(text) ? [] : [failure],
+  );
 }
 
 export function validateManagedVoiceCell(env: Record<string, string | undefined>): string[] {

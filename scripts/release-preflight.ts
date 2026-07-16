@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { validateManagedVoiceCell, validateReleaseSha } from "./lib/release-governance";
+import { validateManagedVoiceCell, validateReleaseSha, validateReleaseStaticContracts } from "./lib/release-governance";
 
 type Args = {
   sha?: string;
@@ -33,12 +33,6 @@ function git(...args: string[]) {
   return execFileSync("git", args, { encoding: "utf8" }).trim();
 }
 
-function requireText(path: string, pattern: string | RegExp, message: string, failures: string[]) {
-  const content = readFileSync(path, "utf8");
-  const matches = typeof pattern === "string" ? content.includes(pattern) : pattern.test(content);
-  if (!matches) failures.push(message);
-}
-
 function main() {
   const args = parseArgs(process.argv.slice(2));
   const expectedSha = args.sha ?? git("rev-parse", "HEAD");
@@ -53,30 +47,7 @@ function main() {
   if (branch !== "main") failures.push(`release preflight must run from main, not ${branch || "detached HEAD"}`);
   if (worktree) failures.push("release preflight requires a clean worktree");
 
-  requireText(
-    "Dockerfile",
-    'ENV HOSTNAME="0.0.0.0"',
-    "Dockerfile must bind the standalone server to 0.0.0.0",
-    failures,
-  );
-  requireText(
-    "scripts/deploy-coolify-host.sh",
-    String.raw`image="\${app_uuid}:staging-\${sha}"`,
-    "staging must use a distinct staging-<sha> image tag",
-    failures,
-  );
-  requireText(
-    "docs/11-INFRASTRUCTURE.md",
-    "health-check host is `127.0.0.1`",
-    "infrastructure docs must pin Coolify's health-check host to 127.0.0.1",
-    failures,
-  );
-  requireText(
-    "docs/12-CHAT-RELEASE-RUNBOOK.md",
-    "Final-SHA freeze",
-    "the governed release runbook must retain the final-SHA freeze",
-    failures,
-  );
+  failures.push(...validateReleaseStaticContracts((path) => readFileSync(path, "utf8")));
 
   if (args.managedEnv) failures.push(...validateManagedVoiceCell(process.env));
 
