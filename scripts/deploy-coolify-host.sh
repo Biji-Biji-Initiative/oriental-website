@@ -79,8 +79,17 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "building_image=${image}"
-DOCKER_BUILDKIT=1 docker build --progress=plain -t "$image" "$workdir"
+brand_motion_preview="false"
+if [[ "$target" == "staging" ]]; then
+  brand_motion_preview="true"
+fi
+
+echo "building_image=${image} brand_motion_preview=${brand_motion_preview}"
+DOCKER_BUILDKIT=1 docker build \
+  --build-arg "NEXT_PUBLIC_BRAND_MOTION_PREVIEW=${brand_motion_preview}" \
+  --progress=plain \
+  -t "$image" \
+  "$workdir"
 
 if [[ "$target" == "production" ]]; then
   target_dir="$prod_dir"
