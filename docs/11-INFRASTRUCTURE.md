@@ -121,6 +121,9 @@ Secret contract is enforced by `scripts/check-secrets.ts`.
 | Health check | `GET /api/health` |
 | Build | Next.js `output: "standalone"` |
 
+The runtime image sets `HOSTNAME=0.0.0.0` so the standalone Next.js server is
+reachable both through Traefik and through Coolify's loopback health probe.
+
 Staging is available at `https://staging.oriental.mereka.io`, following the
 `staging.<service>.mereka.io` convention. It is a lightweight Compose deployment
 on the same Coolify app host under
