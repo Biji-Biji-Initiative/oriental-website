@@ -3,7 +3,7 @@
 ## Patch identity
 
 - Pull request: `#41 feat(admin): add CRM account intelligence`
-- Reviewed head: `7dfeffabdae2b3e26bc3a3f8963129669ab8f8e7`
+- Feature head: `9c18e18cae97ce2b4a891387657870574404b2be`
 - Base at review: `dc23760c365f1005279b129cbc6d6cd2bf653c3b`
 - GitHub CI `verify`: passed; PR reports mergeable.
 
@@ -14,7 +14,8 @@ Read-only aggregate inspection of production before reconciliation found:
 - 31 leads, 30 with an organization, representing 20 normalized organizations;
 - 3 multi-enquiry organizations and 4 repeat contacts;
 - 30 unassigned leads;
-- 31 existing ClickUp tasks for 31 Convex lead IDs;
+- 31 ClickUp tasks scanned, mapping one-to-one to 31 Convex lead IDs;
+- zero duplicate lead-to-task mappings;
 - zero missing ClickUp tasks and zero stored direct task links.
 
 The reconciliation dry run therefore reports 31 enrichment candidates and no
@@ -32,7 +33,9 @@ reviewed Convex functions are deployed.
   embedded lead ID, detects missing references independently of the legacy
   boolean, defaults to dry-run, requires `--apply` for task creation, and never
   recreates a task when a match exists. `--reconcile-existing` is the explicit
-  enrichment mutation flag.
+  enrichment mutation flag. The audit reports total tasks scanned, mapped lead
+  IDs, and duplicate lead-to-task mappings, and refuses every mutation if one
+  lead maps to more than one task.
 - No duplicate lead or account is automatically merged. Duplicate clusters are
   display-only evidence based on contact and a 30-minute window.
 
@@ -82,8 +85,19 @@ dedicated views. No evidence is removed.
 ## Release boundary
 
 No production data mutation or web deployment has occurred for this change.
-After a ship verdict and merge, the exact main SHA will pass managed preflight,
-Convex will deploy before web code, staging will be verified without submitting
-a lead, production will be promoted by exact SHA, ClickUp references will be
-reconciled with before/after payload hashes and lead counts, and the separately
-owned PR #37 staging SHA will be restored.
+This is a merge-authorization review, not a claim of live completion. After a
+merge verdict, the exact main SHA must pass managed preflight. Convex then
+deploys before any web promotion. The release stops unless reconciliation
+proves all of the following before staging web deployment:
+
+- the immutable lead payload hash and 31-lead count are unchanged;
+- the same total ClickUp task count exists before and after;
+- 31 lead IDs map one-to-one to 31 existing task references;
+- duplicate lead-to-task mappings and newly created tasks both equal zero;
+- all 31 leads store direct links; and
+- a second reconciliation reports zero candidates and zero mutations.
+
+Only then may staging and production be promoted and verified by exact SHA.
+The final Webwright run follows production, and the separately owned PR #37
+staging SHA is restored afterward. Any failed gate leaves the web release
+undeployed and the outcome explicitly incomplete.

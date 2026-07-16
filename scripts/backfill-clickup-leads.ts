@@ -58,7 +58,8 @@ async function main() {
     ingestSecret,
     limit: args.limit,
   })) as ConvexLead[];
-  const existingTasks = await existingClickUpTasks(clickUpToken, clickUpListId);
+  const clickUpAudit = await existingClickUpTasks(clickUpToken, clickUpListId);
+  const existingTasks = clickUpAudit.tasksByLeadId;
   const missing = leads.filter((lead) => !existingTasks.has(lead.leadId));
   const reconcileCandidates = leads.filter((lead) => {
     const task = existingTasks.get(lead.leadId);
@@ -76,7 +77,9 @@ async function main() {
         dry: args.dry,
         reconcileExisting: args.reconcileExisting,
         convexLeads: leads.length,
+        clickupTasksScanned: clickUpAudit.scannedTaskCount,
         clickupLeadIdsFound: existingTasks.size,
+        duplicateLeadMappings: clickUpAudit.duplicateLeadIds.length,
         missing: missing.length,
         reconcileCandidates: reconcileCandidates.length,
         directLinksStored: leads.filter((lead) => Boolean(lead.notificationClickUpTaskUrl)).length,
@@ -85,6 +88,12 @@ async function main() {
       2,
     ),
   );
+
+  if (clickUpAudit.duplicateLeadIds.length > 0) {
+    throw new Error(
+      `${clickUpAudit.duplicateLeadIds.length} lead IDs map to more than one ClickUp task; refusing to mutate`,
+    );
+  }
 
   if (args.dry) {
     for (const lead of missing.slice(0, 20)) {
@@ -177,6 +186,8 @@ function toStoredLead(lead: ConvexLead): StoredLead {
 
 async function existingClickUpTasks(token: string, listId: string) {
   const tasksByLeadId = new Map<string, ClickUpReference>();
+  const duplicateLeadIds = new Set<string>();
+  let scannedTaskCount = 0;
   for (let page = 0; page < 100; page += 1) {
     const url = new URL(`https://api.clickup.com/api/v2/list/${encodeURIComponent(listId)}/task`);
     url.searchParams.set("include_closed", "true");
@@ -186,17 +197,21 @@ async function existingClickUpTasks(token: string, listId: string) {
     if (!response.ok) throw new Error(`ClickUp task list failed: ${response.status}`);
     const body = (await response.json()) as { tasks?: ClickUpTask[] };
     const tasks = body.tasks ?? [];
+    scannedTaskCount += tasks.length;
     for (const task of tasks) {
       if (!task.id) continue;
       for (const id of extractLeadIds(task)) {
-        if (!tasksByLeadId.has(id)) {
+        const existing = tasksByLeadId.get(id);
+        if (existing && existing.id !== task.id) {
+          duplicateLeadIds.add(id);
+        } else if (!existing) {
           tasksByLeadId.set(id, { id: task.id, url: task.url ?? clickUpTaskUrl(task.id) });
         }
       }
     }
     if (tasks.length === 0) break;
   }
-  return tasksByLeadId;
+  return { duplicateLeadIds: [...duplicateLeadIds].sort(), scannedTaskCount, tasksByLeadId };
 }
 
 function extractLeadIds(task: ClickUpTask) {

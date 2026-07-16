@@ -36,8 +36,16 @@ without deleting, rewriting, hiding, or leaking enquiry data.
 
 ## Review request
 
-Inspect the implementation evidence adversarially. Report only concrete
-ship-blockers or materially unsafe gaps in data preservation, privacy,
-idempotency, CRM correctness, usability, or release safety. Do not ask for a
-full external CRM, speculative abstractions, or unrelated redesign. End with
-exactly `VERDICT: SHIP CRM` or `VERDICT: DO NOT SHIP`.
+This round is the pre-merge code gate: decide whether the PR may merge and
+enter the governed exact-SHA release sequence. Live reconciliation and release
+proof cannot exist for an unmerged final SHA and must not be represented as
+complete. They are mandatory post-merge stop gates before the operator outcome
+is declared shipped.
+
+Inspect the implementation evidence adversarially. Report only a concrete code
+or plan blocker to merging, or a materially unsafe gap in data preservation,
+privacy, idempotency, CRM correctness, usability, or release safety. Do not
+block merely because correctly sequenced post-merge evidence is not yet
+available. Do not ask for a full external CRM, speculative abstractions, or
+unrelated redesign. End with exactly `VERDICT: MERGE CRM` or
+`VERDICT: DO NOT MERGE`.
