@@ -1,5 +1,6 @@
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { NebulaM } from "@/components/brand-motion/NebulaM";
 import { StagingSiteLoader } from "@/components/brand-motion/StagingSiteLoader";
 import {
   BRAND_MOTION_PREVIEW_HOST,
@@ -10,6 +11,7 @@ import {
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   vi.useRealTimers();
   document.documentElement.style.overflow = "";
 });
@@ -32,6 +34,18 @@ describe("brand motion staging gate", () => {
   it("does not mount the site loader when the build flag is disabled", () => {
     render(<StagingSiteLoader enabled={false} />);
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("keeps the static WebGL fallback decorative and unfocusable", async () => {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => ({ matches: true })),
+    );
+    render(<NebulaM connectionStatus="idle" levelsRef={{ current: { user: 0, voice: 0 } }} turnPhase="quiet" />);
+
+    await waitFor(() => expect(document.querySelector('[data-fallback="true"]')).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: /interactive mereka nebula/i })).not.toBeInTheDocument();
+    expect(document.querySelector('[data-fallback="true"]')).not.toHaveAttribute("tabindex");
   });
 
   it("shows the trace entrance briefly and restores document scrolling", () => {

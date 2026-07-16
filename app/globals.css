@@ -1019,13 +1019,8 @@
 .mereka-nebula {
   position: absolute;
   inset: -16%;
-  padding: 0;
-  border: 0;
-  cursor: pointer;
   color: inherit;
-  background: transparent;
   touch-action: pan-y;
-  -webkit-tap-highlight-color: transparent;
 }
 
 .mereka-nebula::before {
@@ -1039,12 +1034,6 @@
   opacity: calc(0.38 + var(--voice-level, 0) * 0.55 + var(--user-level, 0) * 0.35);
   transform: scale(calc(0.92 + var(--voice-level, 0) * 0.2 + var(--user-level, 0) * 0.12));
   transition: opacity 180ms ease;
-}
-
-.mereka-nebula:focus-visible {
-  border-radius: 22%;
-  outline: 2px solid rgba(201, 213, 236, 0.86);
-  outline-offset: 4px;
 }
 
 .mereka-nebula__canvas,

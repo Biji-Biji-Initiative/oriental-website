@@ -74,13 +74,20 @@ export function VoiceSessionStage({
   const statusCopy = voiceStatusCopy(connectionStatus, turnPhase, showWaitingCopy);
   const completion = handoffCompletion(captured);
   const orbRef = useRef<HTMLDivElement | null>(null);
+  const brandMotionLevelsRef = useRef({ user: 0, voice: 0 });
   const [draft, setDraft] = useState("");
   const micPermission = useMicrophonePermissionState();
   const brandMotionPreview = useBrandMotionPreview();
   useVoiceAudioLevel(audioRef, orbRef, connectionStatus === "listening", {
+    onLevel: (level) => {
+      brandMotionLevelsRef.current.voice = level;
+    },
     onActivityStart: onRemoteAudioStarted,
   });
   useMicAudioLevel(getLocalStream, orbRef, connectionStatus === "listening", {
+    onLevel: (level) => {
+      brandMotionLevelsRef.current.user = level;
+    },
     onActivityStop: onLocalSpeechEnded,
   });
 
@@ -129,7 +136,7 @@ export function VoiceSessionStage({
           ref={orbRef}
         >
           {brandMotionPreview ? (
-            <NebulaM connectionStatus={connectionStatus} turnPhase={turnPhase} />
+            <NebulaM connectionStatus={connectionStatus} levelsRef={brandMotionLevelsRef} turnPhase={turnPhase} />
           ) : (
             <>
               <div aria-hidden className="voice-orb__aurora" />

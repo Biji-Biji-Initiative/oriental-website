@@ -7,6 +7,7 @@ type StreamSource = () => MediaStream | null;
 type ActivityCallbacks = {
   onActivityStart?: (at: number) => void;
   onActivityStop?: (at: number) => void;
+  onLevel?: (level: number) => void;
 };
 
 /**
@@ -58,6 +59,7 @@ function useStreamLevel(
         const at = performance.now();
         const detected = detectAudioActivity(activity, level, at);
         activity = detected.state;
+        callbacksRef.current.onLevel?.(level);
         if (detected.transition === "started") callbacksRef.current.onActivityStart?.(at);
         if (detected.transition === "stopped") callbacksRef.current.onActivityStop?.(at);
         if (!reduceMotion) target.style.setProperty(cssVar, level.toFixed(3));
@@ -85,6 +87,7 @@ function useStreamLevel(
       cancelAnimationFrame(frame);
       source?.disconnect();
       void context?.close().catch(() => null);
+      callbacksRef.current.onLevel?.(0);
       target.style.removeProperty(cssVar);
     };
   }, [active, cssVar, targetRef]);

@@ -1,0 +1,27 @@
+name: oriental-staging-brand-motion
+description: Ship-blocker review for the staging-only Mereka brand-motion preview
+
+documents:
+  readme: README.md
+  spec: .apr/specs/oriental-staging-brand-motion.md
+  implementation: components/brand-motion/NebulaM.tsx
+
+oracle:
+  model: "gemini-3.1-pro"
+
+rounds:
+  output_dir: .apr/rounds/oriental-staging-brand-motion
+  impl_every_n: 1
+
+template: |
+  Perform the requested adversarial ship review. Treat production leakage,
+  accessibility/reduced-motion regressions, unbounded GPU work, and cleanup
+  errors as blockers. Do not propose unrelated visual redesign. End with
+  exactly `VERDICT: SHIP STAGING PREVIEW` or `VERDICT: DO NOT SHIP`.
+
+template_with_impl: |
+  Perform the requested adversarial ship review against the attached WebGL
+  implementation. Treat production leakage, accessibility/reduced-motion
+  regressions, unbounded GPU work, and cleanup errors as blockers. Do not
+  propose unrelated visual redesign. End with exactly
+  `VERDICT: SHIP STAGING PREVIEW` or `VERDICT: DO NOT SHIP`.

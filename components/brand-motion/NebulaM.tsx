@@ -1,6 +1,6 @@
 "use client";
 
-import { type PointerEvent, useEffect, useRef, useState } from "react";
+import { type PointerEvent, type RefObject, useEffect, useRef, useState } from "react";
 import type { VoiceConnectionStatus } from "@/components/voice-agent/useRealtimeVoiceSession";
 import {
   MEREKA_MARK_DOT,
@@ -96,6 +96,7 @@ const FRAGMENT_SHADER = `
 
 type NebulaMProps = {
   connectionStatus: VoiceConnectionStatus;
+  levelsRef: RefObject<{ user: number; voice: number }>;
   turnPhase: VoiceTurnPhase;
 };
 
@@ -108,16 +109,13 @@ type ParticleField = {
   seed: Float32Array;
 };
 
-type ManualResolve = {
-  target: number | null;
-  until: number;
-};
+const MAX_PARTICLE_SAMPLE_ATTEMPTS = MEREKA_NEBULA_PARTICLE_COUNT * 20;
+let cachedParticleField: ParticleField | null = null;
 
-export function NebulaM({ connectionStatus, turnPhase }: NebulaMProps) {
+export function NebulaM({ connectionStatus, levelsRef, turnPhase }: NebulaMProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const stateRef = useRef<VoiceVisualState>({ connectionStatus, turnPhase });
   const pointerRef = useRef({ x: 0, y: 0, targetX: 0, targetY: 0 });
-  const manualResolveRef = useRef<ManualResolve>({ target: null, until: 0 });
   const currentResolveRef = useRef(0);
   const [webglReady, setWebglReady] = useState(false);
   const [fallback, setFallback] = useState(false);
@@ -127,6 +125,8 @@ export function NebulaM({ connectionStatus, turnPhase }: NebulaMProps) {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    setWebglReady(false);
+    setFallback(false);
 
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     if (reducedMotion.matches || typeof Path2D === "undefined") {
@@ -146,37 +146,27 @@ export function NebulaM({ connectionStatus, turnPhase }: NebulaMProps) {
       return;
     }
 
-    let program: WebGLProgram;
-    let particles: ParticleField;
+    let program: WebGLProgram | null = null;
+    const buffers: WebGLBuffer[] = [];
+    let attributes: ReturnType<typeof resolveAttributes>;
+    let uniforms: ReturnType<typeof resolveUniforms>;
     try {
+      // Sample the silhouette before allocating GPU resources. If Canvas 2D
+      // is unavailable, the component can fall back without anything to free.
+      const particles = createParticleField();
       program = createProgram(gl, VERTEX_SHADER, FRAGMENT_SHADER);
-      particles = createParticleField();
+      attributes = resolveAttributes(gl, program);
+      uniforms = resolveUniforms(gl, program);
+      buffers.push(bindAttribute(gl, attributes.nebula, particles.nebula, 3));
+      buffers.push(bindAttribute(gl, attributes.home, particles.home, 3));
+      buffers.push(bindAttribute(gl, attributes.delay, particles.delay, 1));
+      buffers.push(bindAttribute(gl, attributes.seed, particles.seed, 1));
     } catch {
+      for (const buffer of buffers) gl.deleteBuffer(buffer);
+      if (program) gl.deleteProgram(program);
       setFallback(true);
       return;
     }
-
-    const attributes = {
-      delay: requireAttribute(gl, program, "aDelay"),
-      home: requireAttribute(gl, program, "aHome"),
-      nebula: requireAttribute(gl, program, "aNebula"),
-      seed: requireAttribute(gl, program, "aSeed"),
-    };
-    const uniforms = {
-      dpr: requireUniform(gl, program, "uDpr"),
-      resolve: requireUniform(gl, program, "uResolve"),
-      tilt: requireUniform(gl, program, "uTilt"),
-      time: requireUniform(gl, program, "uTime"),
-      user: requireUniform(gl, program, "uUser"),
-      voice: requireUniform(gl, program, "uVoice"),
-    };
-
-    const buffers = [
-      bindAttribute(gl, attributes.nebula, particles.nebula, 3),
-      bindAttribute(gl, attributes.home, particles.home, 3),
-      bindAttribute(gl, attributes.delay, particles.delay, 1),
-      bindAttribute(gl, attributes.seed, particles.seed, 1),
-    ];
 
     // biome-ignore lint/complexity/useLiteralKeys: dot syntax is misidentified as a React hook by useHookAtTopLevel.
     gl["useProgram"](program);
@@ -187,12 +177,13 @@ export function NebulaM({ connectionStatus, turnPhase }: NebulaMProps) {
 
     let animationFrame = 0;
     let visible = !document.hidden;
+    let contextLost = false;
     let lastFrame = performance.now();
     let autoTarget = 0;
     let nextAutoFlip = lastFrame + 2_800;
 
-    const resize = () => {
-      const { width, height } = canvas.getBoundingClientRect();
+    const resize = (width: number, height: number) => {
+      if (contextLost) return;
       if (width <= 0 || height <= 0) return;
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const renderWidth = Math.max(1, Math.round(width * dpr));
@@ -204,11 +195,13 @@ export function NebulaM({ connectionStatus, turnPhase }: NebulaMProps) {
       gl.viewport(0, 0, renderWidth, renderHeight);
     };
 
-    const resizeObserver = new ResizeObserver(resize);
+    const resizeObserver = new ResizeObserver(([entry]) => {
+      if (entry) resize(entry.contentRect.width, entry.contentRect.height);
+    });
     resizeObserver.observe(canvas);
-    resize();
 
     const onVisibilityChange = () => {
+      if (contextLost) return;
       visible = !document.hidden;
       if (visible) {
         lastFrame = performance.now();
@@ -218,13 +211,18 @@ export function NebulaM({ connectionStatus, turnPhase }: NebulaMProps) {
       }
     };
 
-    const onContextLost = (event: Event) => {
-      event.preventDefault();
+    const onContextLost = () => {
+      contextLost = true;
+      visible = false;
       window.cancelAnimationFrame(animationFrame);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      resizeObserver.disconnect();
+      setWebglReady(false);
       setFallback(true);
     };
 
     const draw = (now: number) => {
+      if (contextLost) return;
       const deltaSeconds = Math.min((now - lastFrame) / 1_000, 0.05);
       lastFrame = now;
       const state = stateRef.current;
@@ -234,9 +232,7 @@ export function NebulaM({ connectionStatus, turnPhase }: NebulaMProps) {
         nextAutoFlip = now + (autoTarget > 0.5 ? 4_100 : 3_300);
       }
 
-      const manual = manualResolveRef.current;
-      if (manual.target !== null && now >= manual.until) manual.target = null;
-      const targetResolve = manual.target ?? resolveTargetForVoiceState(state, autoTarget);
+      const targetResolve = resolveTargetForVoiceState(state, autoTarget);
       const resolveEase = 1 - Math.exp(-deltaSeconds * 1.85);
       currentResolveRef.current += (targetResolve - currentResolveRef.current) * resolveEase;
 
@@ -245,10 +241,10 @@ export function NebulaM({ connectionStatus, turnPhase }: NebulaMProps) {
       pointer.x += (pointer.targetX - pointer.x) * pointerEase;
       pointer.y += (pointer.targetY - pointer.y) * pointerEase;
 
-      const levelSource = canvas.closest<HTMLElement>(".voice-orb");
-      const computed = levelSource ? window.getComputedStyle(levelSource) : null;
-      const voiceLevel = clampLevel(computed?.getPropertyValue("--voice-level"));
-      const userLevel = clampLevel(computed?.getPropertyValue("--user-level"));
+      // The audio analyser writes into this ref. Reading it here keeps the
+      // render loop independent of DOM queries and synchronous style work.
+      const voiceLevel = clampLevel(levelsRef.current?.voice);
+      const userLevel = clampLevel(levelsRef.current?.user);
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
       gl.clear(gl.COLOR_BUFFER_BIT);
@@ -262,7 +258,7 @@ export function NebulaM({ connectionStatus, turnPhase }: NebulaMProps) {
       gl.uniform2f(uniforms.tilt, pointer.x, pointer.y);
       gl.drawArrays(gl.POINTS, 0, MEREKA_NEBULA_PARTICLE_COUNT);
 
-      if (visible) animationFrame = window.requestAnimationFrame(draw);
+      if (visible && !contextLost) animationFrame = window.requestAnimationFrame(draw);
     };
 
     document.addEventListener("visibilitychange", onVisibilityChange);
@@ -278,17 +274,9 @@ export function NebulaM({ connectionStatus, turnPhase }: NebulaMProps) {
       for (const buffer of buffers) gl.deleteBuffer(buffer);
       gl.deleteProgram(program);
     };
-  }, []);
+  }, [levelsRef]);
 
-  const toggleResolve = () => {
-    const now = performance.now();
-    manualResolveRef.current = {
-      target: currentResolveRef.current > 0.5 ? 0 : 1,
-      until: now + 8_000,
-    };
-  };
-
-  const handlePointerMove = (event: PointerEvent<HTMLButtonElement>) => {
+  const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
     pointerRef.current.targetX = ((event.clientX - rect.left) / rect.width - 0.5) * 0.46;
     pointerRef.current.targetY = ((event.clientY - rect.top) / rect.height - 0.5) * -0.34;
@@ -300,15 +288,13 @@ export function NebulaM({ connectionStatus, turnPhase }: NebulaMProps) {
   };
 
   return (
-    <button
-      aria-label="Interactive Mereka nebula — press to resolve the stars into the M mark"
+    <div
+      aria-hidden
       className="mereka-nebula"
       data-fallback={fallback ? "true" : undefined}
       data-ready={webglReady && !fallback ? "true" : undefined}
-      onClick={toggleResolve}
       onPointerLeave={handlePointerLeave}
       onPointerMove={handlePointerMove}
-      type="button"
     >
       <svg aria-hidden className="mereka-nebula__fallback" viewBox={MEREKA_MARK_VIEWBOX}>
         <title>Mereka mark fallback</title>
@@ -316,7 +302,7 @@ export function NebulaM({ connectionStatus, turnPhase }: NebulaMProps) {
         <circle cx={MEREKA_MARK_DOT.cx} cy={MEREKA_MARK_DOT.cy} r={MEREKA_MARK_DOT.radius} />
       </svg>
       <canvas aria-hidden className="mereka-nebula__canvas" ref={canvasRef} />
-    </button>
+    </div>
   );
 }
 
@@ -330,6 +316,7 @@ function resolveTargetForVoiceState(state: VoiceVisualState, autoTarget: number)
 }
 
 function createParticleField(): ParticleField {
+  if (cachedParticleField) return cachedParticleField;
   const samplingCanvas = document.createElement("canvas");
   const context = samplingCanvas.getContext("2d");
   if (!context) throw new Error("Canvas 2D is unavailable");
@@ -342,7 +329,12 @@ function createParticleField(): ParticleField {
   const seed = new Float32Array(MEREKA_NEBULA_PARTICLE_COUNT);
 
   let accepted = 0;
+  let attempts = 0;
   while (accepted < MEREKA_NEBULA_PARTICLE_COUNT) {
+    attempts += 1;
+    if (attempts > MAX_PARTICLE_SAMPLE_ATTEMPTS) {
+      throw new Error("Mereka silhouette sampling exceeded its bounded attempt budget");
+    }
     const x = random() * MEREKA_MARK_WIDTH;
     const y = random() * MEREKA_MARK_HEIGHT;
     const dotX = x - MEREKA_MARK_DOT.cx;
@@ -371,7 +363,8 @@ function createParticleField(): ParticleField {
     accepted += 1;
   }
 
-  return { delay, home, nebula, seed };
+  cachedParticleField = { delay, home, nebula, seed };
+  return cachedParticleField;
 }
 
 function seededRandom(initialSeed: number) {
@@ -387,20 +380,26 @@ function seededRandom(initialSeed: number) {
 
 function createProgram(gl: WebGLRenderingContext, vertexSource: string, fragmentSource: string) {
   const vertex = compileShader(gl, gl.VERTEX_SHADER, vertexSource);
-  const fragment = compileShader(gl, gl.FRAGMENT_SHADER, fragmentSource);
-  const program = gl.createProgram();
-  if (!program) throw new Error("Unable to create WebGL program");
-  gl.attachShader(program, vertex);
-  gl.attachShader(program, fragment);
-  gl.linkProgram(program);
-  gl.deleteShader(vertex);
-  gl.deleteShader(fragment);
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-    const message = gl.getProgramInfoLog(program) ?? "Unable to link WebGL program";
-    gl.deleteProgram(program);
-    throw new Error(message);
+  let fragment: WebGLShader | null = null;
+  let program: WebGLProgram | null = null;
+  try {
+    fragment = compileShader(gl, gl.FRAGMENT_SHADER, fragmentSource);
+    program = gl.createProgram();
+    if (!program) throw new Error("Unable to create WebGL program");
+    gl.attachShader(program, vertex);
+    gl.attachShader(program, fragment);
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      throw new Error(gl.getProgramInfoLog(program) ?? "Unable to link WebGL program");
+    }
+    return program;
+  } catch (error) {
+    if (program) gl.deleteProgram(program);
+    throw error;
+  } finally {
+    gl.deleteShader(vertex);
+    if (fragment) gl.deleteShader(fragment);
   }
-  return program;
 }
 
 function compileShader(gl: WebGLRenderingContext, type: number, source: string) {
@@ -438,7 +437,27 @@ function requireUniform(gl: WebGLRenderingContext, program: WebGLProgram, name: 
   return location;
 }
 
-function clampLevel(rawValue: string | undefined) {
-  const value = Number.parseFloat(rawValue ?? "0");
+function resolveAttributes(gl: WebGLRenderingContext, program: WebGLProgram) {
+  return {
+    delay: requireAttribute(gl, program, "aDelay"),
+    home: requireAttribute(gl, program, "aHome"),
+    nebula: requireAttribute(gl, program, "aNebula"),
+    seed: requireAttribute(gl, program, "aSeed"),
+  };
+}
+
+function resolveUniforms(gl: WebGLRenderingContext, program: WebGLProgram) {
+  return {
+    dpr: requireUniform(gl, program, "uDpr"),
+    resolve: requireUniform(gl, program, "uResolve"),
+    tilt: requireUniform(gl, program, "uTilt"),
+    time: requireUniform(gl, program, "uTime"),
+    user: requireUniform(gl, program, "uUser"),
+    voice: requireUniform(gl, program, "uVoice"),
+  };
+}
+
+function clampLevel(rawValue: number | undefined) {
+  const value = rawValue ?? 0;
   return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0;
 }
