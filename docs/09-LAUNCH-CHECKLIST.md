@@ -5,43 +5,48 @@ those go to [`10-ROADMAP.md`](./10-ROADMAP.md).
 
 Use this on the day of soft-launch and again 24 hours before public-launch.
 
+Evidence status on 2026-07-16: the engineering release is live on staging and
+production at exact commit `669eeb965bfa2f86e68bed0e6297df4152bf1b23`, but
+the instant-voice product outcome remains evidence-gated. The current corpus is
+baseline/control/low only and the promotion evaluator reports
+`insufficient_data`. Unchecked human, legal, listening, data-retention, and
+availability gates are real handoff work; they MUST NOT be reported as complete.
+
 ---
 
 ## Code & deploy
 
-- [ ] `main` branch builds clean in Coolify (preview environment)
+- [x] `main` branch builds clean in Coolify
 - [ ] Image size < 220 MB
-- [ ] `pnpm exec convex deploy` completed with the production deploy key
-- [ ] `/api/health` returns `200` for 5 consecutive checks
-- [ ] `/api/health` reports the expected deployed `version` commit and `convex: true`
-- [ ] Cloudflare DNS for `oriental.mereka.io` resolves to Coolify origin
-- [ ] Cloudflare cert active (Full Strict mode)
-- [ ] Cloudflare cache rules avoid stale HTML while the root layout is dynamic
-- [ ] Cloudflare WAF rules active (no-UA block on `/api/*`)
-- [ ] Coolify auto-deploy webhook wired to `main`
+- [x] `pnpm exec convex deploy` completed with the production deploy key
+- [x] `/api/health` returns `200` for 5 consecutive checks on both canonical hosts
+- [x] `/api/health` reports the expected deployed `version` commit and `convex: true`
+- [x] Cloudflare DNS for both canonical hosts resolves directly to Coolify origin `194.233.71.200`
+- [x] Coolify Traefik serves valid Let's Encrypt certificates for both canonical hosts
+- [x] Cloudflare proxy/cache/WAF are intentionally not on the request path; records are DNS-only
+- [x] Coolify auto-deploy from `main` has produced exact-SHA releases
 
 ## Secrets
 
-- [ ] Infisical project `6bfac905-9bb1-449e-8be8-f25f9634802b` has all keys from
+- [x] Infisical project `6bfac905-9bb1-449e-8be8-f25f9634802b` has the production runtime keys from
       [`02-TECHNICAL-SPEC.md`](./02-TECHNICAL-SPEC.md) §5 populated in `/deploy/oriental-website` for `prod`
 - [ ] Coolify machine identity has read-only access to `/deploy/oriental-website`
 - [ ] CI/check machine identity has read-only access where used
 - [ ] Rotation calendar reminder set for OPENAI / AWS keys (90 days)
-- [ ] CI's `scripts/check-secrets.ts` passes for all three environments
-- [ ] `REDIS_URL` is present in production and API logs show `rateLimitStore: "redis"`
-- [ ] `COOLIFY_ORIENTAL_APPLICATION_UUID` is set to `mtrl2z6a7zvoyevxvufpntij` for deploy scripts
-- [ ] `ADMIN_REVIEW_TOKEN` is present in `/deploy/oriental-website`
-- [ ] Sentry `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_ORG`, and
+- [ ] Populate an isolated `dev` scope and dedicated staging upstream services; the staging Infisical contract exists, but its Convex/notification accounts are still shared
+- [x] `REDIS_URL` is present in production and API logs show `rateLimitStore: "redis"`
+- [x] `COOLIFY_ORIENTAL_APPLICATION_UUID` is set to `mtrl2z6a7zvoyevxvufpntij` for deploy scripts
+- [x] `ADMIN_REVIEW_TOKEN` is present in `/deploy/oriental-website`
+- [x] Sentry `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_ORG`, and
       `SENTRY_PROJECT=oriental-website` are present
-- [ ] `OPS_ALERT_SLACK_CHANNEL_ID=C01AVSGACFN` targets `#tech-team-test`
+- [x] `OPS_ALERT_SLACK_CHANNEL_ID=C01AVSGACFN` targets `#tech-team-test`
 
-## Cloudflare Turnstile
+## Optional Cloudflare Turnstile
 
-- [ ] Site key embedded in client (NEXT_PUBLIC_TURNSTILE_SITE_KEY)
-- [ ] Secret key in Infisical
-- [ ] Widget renders invisibly on page load
-- [ ] Submitting `/api/leads` without a token returns `403 turnstile_failed`
-- [ ] Submitting with a tampered token returns `403`
+- [x] Client Turnstile UI is deliberately disabled; Redis remains the active abuse-control layer
+- [x] Site and secret keys are held in Infisical for a deliberate future enablement
+- [x] Required-enforcement tests reject missing and tampered tokens for unsigned form/newsletter intake
+- [x] Signed voice handoffs remain valid without a Turnstile token
 
 ## Convex
 
@@ -56,7 +61,7 @@ Use this on the day of soft-launch and again 24 hours before public-launch.
 
 ## OpenAI Realtime
 
-- [ ] `/api/voice/session` mints a working ephemeral token in staging
+- [x] `/api/voice/session` has minted working ephemeral tokens in staging
 - [ ] WebRTC handshake completes in < 2s on stable broadband
 - [ ] Tool calls `set_partner_type` / `capture_fields` / `lookup_oriental` /
       `summarise_lead` / `route_to_team` / `wait_for_user` fire correctly in a staged conversation
@@ -70,8 +75,8 @@ Use this on the day of soft-launch and again 24 hours before public-launch.
 - [ ] Human listening QA signs off that the configured Realtime voice is Malaysian enough for launch
 - [ ] `/admin/session-review` shows the test voice transcript, captured fields,
       usage counters, and submitted lead id after a voice submit
-- [ ] Falls back to typed handoff panel on mic-denied
-- [ ] Falls back to typed handoff panel on session 429
+- [x] Falls back to typed handoff panel on mic-denied
+- [x] Realtime capacity 429 receives one bounded retry, then preserves the typed handoff if still busy
 
 ## Email (SES)
 
@@ -161,8 +166,7 @@ Walk through every user path on the staging URL:
 - [ ] Privacy notice link visible in the voice modal footer
 - [ ] Privacy notice link in main footer
 - [ ] "No recordings kept" claim verified against actual behaviour
-- [ ] Cookie banner not required (we use only Cloudflare's first-party
-      analytics, which is cookieless) — confirm with legal
+- [ ] Cookie-banner decision confirmed with legal; no analytics script is currently shipped
 
 ## Stakeholder sign-off
 
@@ -183,6 +187,6 @@ Walk through every user path on the staging URL:
 ## First 72 hours (post-launch)
 
 - [ ] Monitor Coolify container errors hourly
-- [ ] Monitor Cloudflare Turnstile failure rate
+- [ ] Monitor Realtime mint/SDP 429s, ICE failures, remote-track/no-audio failures, and useful voice start rate
 - [ ] Monitor OpenAI usage / spend
 - [ ] Daily lead count posted to the agreed launch channel

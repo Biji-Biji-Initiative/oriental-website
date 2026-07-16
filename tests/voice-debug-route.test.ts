@@ -146,6 +146,9 @@ describe("POST /api/voice/debug", () => {
         rateLimitCount: 0,
         usage: expect.objectContaining({ responseCount: 1, transcriptionCount: 1 }),
         latency: {
+          tapToLiveMs: 480,
+          tapToAudibleMs: null,
+          usefulStartWithinTwoSeconds: null,
           sampledTurns: 1,
           firstOutputSamples: 1,
           firstOutputP50Ms: 420,

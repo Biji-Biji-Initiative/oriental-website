@@ -36,7 +36,8 @@ Separate workstream, separate repo, behind auth.
 
 ### Analytics
 
-- Cloudflare Web Analytics already on (cookieless).
+- No analytics script is currently shipped. If analytics is approved, prefer a
+  small server-side event endpoint with an explicit privacy review.
 - Add **event tracking** through a small server-side analytics endpoint:
   `/api/track` accepting `{ event, props }`. No third-party JS.
 - Events: `voice_opened`, `voice_session_started`, `voice_submitted`,
@@ -117,7 +118,7 @@ decisions.
 | 2026-05 | Next.js 16 over Astro / SvelteKit | Team familiarity; RSC story for static + dynamic mix. |
 | 2026-05 | Coolify over Vercel | Mereka infra standard; cost. |
 | 2026-05 | Infisical at `secrets.mereka.io` | Existing org-wide secrets platform. |
-| 2026-05 | Cloudflare Turnstile over hCaptcha | Already on Cloudflare; lower friction. |
+| 2026-05 | Optional Cloudflare Turnstile over hCaptcha | Compatible with the authoritative DNS provider; currently disabled in the client and not an edge/WAF dependency. |
 | 2026-05 | Convex over Postgres + Drizzle for launch intake | Faster managed launch path; current runtime stores leads and lead events through Convex mutations. |
 | 2026-05 | shadcn/ui over Mantine / MUI | Aligns with Tailwind v4; least runtime bloat. |
 | 2026-05 | Single page, anchored sections | Content fits; routing complexity not justified. |

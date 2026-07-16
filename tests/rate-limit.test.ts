@@ -5,6 +5,7 @@ const redisState = vi.hoisted(() => ({
   connectError: null as Error | null,
   events: [] as string[],
   expireCalls: 0,
+  keys: [] as string[],
 }));
 
 vi.mock("ioredis", () => ({
@@ -24,7 +25,10 @@ vi.mock("ioredis", () => ({
     pipeline() {
       redisState.events.push("pipeline");
       const pipeline = {
-        incr: () => pipeline,
+        incr: (key: string) => {
+          redisState.keys.push(key);
+          return pipeline;
+        },
         pttl: () => pipeline,
         exec: async () => [
           [null, 1],
@@ -61,8 +65,21 @@ describe("checkRateLimit", () => {
     redisState.connectError = null;
     redisState.events = [];
     redisState.expireCalls = 0;
+    redisState.keys = [];
     vi.mocked(logWarn).mockClear();
     resetRateLimitBucketsForTest();
+  });
+
+  it("isolates non-production rate limits without changing production keys", async () => {
+    vi.stubEnv("SENTRY_ENVIRONMENT", "staging");
+    await checkRateLimit("voice:abc", 3, 60_000);
+    expect(redisState.keys).toEqual(["oriental:staging:rate:voice:abc"]);
+
+    globalThis.__orientalRateLimitRedis = undefined;
+    redisState.keys = [];
+    vi.stubEnv("SENTRY_ENVIRONMENT", "production");
+    await checkRateLimit("voice:abc", 3, 60_000);
+    expect(redisState.keys).toEqual(["oriental:rate:voice:abc"]);
   });
 
   it("connects a lazy Redis client before the first pipeline", async () => {

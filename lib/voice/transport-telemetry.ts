@@ -21,6 +21,8 @@ export type VoiceTransportStats = {
 };
 
 export type VoiceTransportTelemetry = {
+  /** Number of bounded SDP retries after an upstream Realtime capacity 429. */
+  realtimeBusyRetryCount: number;
   /** Number of times the connection dropped to a recoverable `disconnected`. */
   disconnectCount: number;
   /** Number of times it climbed back to `connected` after a disconnect. */
@@ -29,6 +31,8 @@ export type VoiceTransportTelemetry = {
   iceRestartCount: number;
   /** Whether the visitor was mid-utterance at the moment the session closed. */
   wasSpeakingAtClose?: boolean;
+  /** Epoch timestamp for the first remote media track, when one arrived. */
+  remoteTrackReceivedAt?: number;
   /** Bounded log of connection-state transitions, oldest first. */
   transitions: Array<{ state: string; at: number }>;
   /** Most recent getStats sample. */
@@ -42,7 +46,13 @@ export type ConnectionAction = "none" | "start_grace" | "recovered" | "teardown"
 const MAX_TRANSITIONS = 60;
 
 export function emptyTransportTelemetry(): VoiceTransportTelemetry {
-  return { disconnectCount: 0, recoveryCount: 0, iceRestartCount: 0, transitions: [] };
+  return {
+    realtimeBusyRetryCount: 0,
+    disconnectCount: 0,
+    recoveryCount: 0,
+    iceRestartCount: 0,
+    transitions: [],
+  };
 }
 
 /**

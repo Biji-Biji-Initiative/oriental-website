@@ -68,7 +68,9 @@ function getRedisClient() {
 
 async function checkRedisLimit(redis: Redis, key: string, limit: number, windowMs: number): Promise<RateLimitResult> {
   await ensureRedisReady(redis);
-  const redisKey = `oriental:rate:${key}`;
+  const environment = readEnv("SENTRY_ENVIRONMENT");
+  const scope = environment && environment !== "production" ? `${safeRateLimitScope(environment)}:` : "";
+  const redisKey = `oriental:${scope}rate:${key}`;
   const results = await redis.pipeline().incr(redisKey).pttl(redisKey).exec();
   const count = Number(results?.[0]?.[1] ?? 0);
   let ttl = Number(results?.[1]?.[1] ?? -1);
@@ -84,6 +86,15 @@ async function checkRedisLimit(redis: Redis, key: string, limit: number, windowM
     resetAt: Date.now() + Math.max(0, ttl),
     store: "redis",
   };
+}
+
+function safeRateLimitScope(value: string) {
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]/g, "-")
+      .slice(0, 40) || "unknown"
+  );
 }
 
 async function ensureRedisReady(redis: Redis) {

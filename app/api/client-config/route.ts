@@ -11,7 +11,9 @@ export async function GET() {
   return Response.json(
     {
       turnstileSiteKey: null,
-      voiceVariantPicker: true,
+      // Variant selection is a QA tool, not a production default. Keeping it
+      // opt-in prevents voice/persona changes from contaminating latency trials.
+      voiceVariantPicker: process.env.VOICE_VARIANT_PICKER === "true",
     },
     { headers: { "Cache-Control": "no-store" } },
   );

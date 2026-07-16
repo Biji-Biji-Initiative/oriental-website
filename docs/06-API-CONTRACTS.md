@@ -355,7 +355,10 @@ type VoiceReviewSnapshotRequest = {
     leadId?: string | null;
     segment: SegmentId;
     status: "idle" | "submitted";
-    connectionStatus: "idle" | "connecting" | "listening";
+    connectionStatus: "idle" | "requesting_mic" | "connecting" | "reconnecting" | "listening";
+    deviceProfile?: "mobile" | "desktop";
+    deploymentEnvironment?: "local" | "staging" | "production";
+    activationAttempted?: boolean;
     model?: string;
     voice?: string;
     speed?: number;
@@ -364,6 +367,18 @@ type VoiceReviewSnapshotRequest = {
     usage?: RealtimeUsageSummary;
     errors: Array<{ eventId?: string; message: string; code?: string }>;
     rateLimits: Array<Record<string, unknown>>;
+    latency?: {
+      version: 1;
+      activation?: { tapToArmCueScheduledMs?: number; tapToLiveMs?: number; tapToAudibleMs?: number };
+      turns: VoiceTurnLatencySample[];
+    };
+    transport?: {
+      realtimeBusyRetryCount?: number;
+      disconnectCount: number;
+      recoveryCount: number;
+      iceRestartCount: number;
+      remoteTrackReceivedAt?: number;
+    };
     routeRequested: boolean;
     submittedAt?: number;
   };

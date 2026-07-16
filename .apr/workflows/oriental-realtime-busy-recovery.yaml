@@ -1,0 +1,29 @@
+name: oriental-realtime-busy-recovery
+description: Adversarial review of the one-shot OpenAI Realtime capacity retry
+
+documents:
+  readme: README.md
+  spec: .apr/specs/oriental-realtime-busy-recovery.md
+  implementation: components/voice-agent/useRealtimeVoiceSession.ts
+
+oracle:
+  model: "gemini-3.1-pro"
+
+rounds:
+  output_dir: .apr/rounds/oriental-realtime-busy-recovery
+  impl_every_n: 1
+
+template: |
+  Review this recovery contract as a voice availability and state-machine
+  change. Treat any retry beyond one SDP 429, duplicate mic/session minting,
+  context loss, teardown race, status dishonesty, or credential exposure as a
+  blocker. Do not ask to promote candidate voice settings. End with exactly
+  `VERDICT: SHIP` or `VERDICT: DO NOT SHIP`.
+
+template_with_impl: |
+  Review the attached browser voice hook against the recovery contract. Trace
+  connect, retry, teardown, and error classification paths adversarially.
+  Treat any retry beyond one SDP 429, duplicate mic/session minting, context
+  loss, teardown race, status dishonesty, or credential exposure as a blocker.
+  Do not ask to promote candidate voice settings. End with exactly
+  `VERDICT: SHIP` or `VERDICT: DO NOT SHIP`.

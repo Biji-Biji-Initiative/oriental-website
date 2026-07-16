@@ -100,10 +100,10 @@ describe("voice latency telemetry", () => {
         { type: "remote_audio_started", at: 820 },
         { type: "response_done", at: 1_200 },
       ],
-      createVoiceLatencyState("fast", { tapToArmCueScheduledMs: 4 }),
+      createVoiceLatencyState("fast", { tapToArmCueScheduledMs: 4 }, 50),
     );
 
-    expect(state.telemetry.activation).toEqual({ tapToArmCueScheduledMs: 4 });
+    expect(state.telemetry.activation).toEqual({ tapToArmCueScheduledMs: 4, tapToAudibleMs: 770 });
     expect(state.telemetry.turns[0]).toMatchObject({
       inputPolicy: "fast",
       localSpeechEndToSpeechStoppedMs: 80,
@@ -111,6 +111,20 @@ describe("voice latency telemetry", () => {
       firstOutputEventToRemoteAudioMs: 60,
       toolDurationMs: 37,
     });
+  });
+
+  it("records opener audio as tap-to-audible before the visitor speaks", () => {
+    const state = reduce(
+      [{ type: "remote_audio_started", at: 1_450 }],
+      createVoiceLatencyState("baseline", { tapToArmCueScheduledMs: 3, tapToLiveMs: 480 }, 100),
+    );
+
+    expect(state.telemetry.activation).toEqual({
+      tapToArmCueScheduledMs: 3,
+      tapToLiveMs: 480,
+      tapToAudibleMs: 1_350,
+    });
+    expect(state.telemetry.turns).toEqual([]);
   });
 
   it("accumulates and bounds browser-side tool execution within one response chain", () => {

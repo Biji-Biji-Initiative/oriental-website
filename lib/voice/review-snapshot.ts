@@ -15,6 +15,9 @@ export type VoiceReviewCredentials = VoiceReviewSnapshotRequest["review"] & {
   reasoningCell?: VoiceReasoningCell;
   voice?: string;
   speed?: number;
+  deviceProfile?: "mobile" | "desktop";
+  deploymentEnvironment?: "local" | "staging" | "production";
+  activationAttempted?: boolean;
   variant?: string | null;
   runtimeProfile?: VoiceRuntimeProfileId;
   inputPolicy?: VoiceInputPolicy;
@@ -59,6 +62,9 @@ export function buildVoiceReviewSnapshot(
     reasoningCell: review.reasoningCell,
     voice: review.voice,
     speed: review.speed,
+    deviceProfile: review.deviceProfile,
+    deploymentEnvironment: review.deploymentEnvironment,
+    activationAttempted: review.activationAttempted,
     variant: review.variant,
     runtimeProfile: review.runtimeProfile,
     inputPolicy: review.inputPolicy,

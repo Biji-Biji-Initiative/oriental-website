@@ -167,6 +167,8 @@ function buildHealthSnapshotSignature(snapshot: VoiceReviewSnapshotRequest["snap
     status: snapshot.status,
     connectionStatus: snapshot.connectionStatus,
     closeReason: snapshot.closeReason ?? null,
+    deviceProfile: snapshot.deviceProfile ?? null,
+    deploymentEnvironment: snapshot.deploymentEnvironment ?? null,
     prewarmedAt: snapshot.prewarmedAt ?? null,
     connectStartedAt: snapshot.connectStartedAt ?? null,
     connectedAt: snapshot.connectedAt ?? null,
@@ -194,10 +196,12 @@ function buildHealthSnapshotSignature(snapshot: VoiceReviewSnapshotRequest["snap
 function summarizeTransport(transport: VoiceReviewSnapshotRequest["snapshot"]["transport"]) {
   if (!transport) return null;
   return {
+    realtimeBusyRetryCount: transport.realtimeBusyRetryCount,
     disconnectCount: transport.disconnectCount,
     recoveryCount: transport.recoveryCount,
     iceRestartCount: transport.iceRestartCount,
     wasSpeakingAtClose: transport.wasSpeakingAtClose ?? null,
+    remoteTrackReceived: typeof transport.remoteTrackReceivedAt === "number",
     transitionCount: transport.transitions.length,
     packetsLostPct: transport.worstStats?.packetsLostPct ?? null,
     maxJitterMs: transport.worstStats?.maxJitterMs ?? null,
@@ -216,6 +220,10 @@ function summarizeLatency(latency: VoiceReviewSnapshotRequest["snapshot"]["laten
   );
   const tool = latency.turns.flatMap((turn) => (typeof turn.toolDurationMs === "number" ? [turn.toolDurationMs] : []));
   return {
+    tapToLiveMs: latency.activation?.tapToLiveMs ?? null,
+    tapToAudibleMs: latency.activation?.tapToAudibleMs ?? null,
+    usefulStartWithinTwoSeconds:
+      typeof latency.activation?.tapToAudibleMs === "number" ? latency.activation.tapToAudibleMs <= 2_000 : null,
     sampledTurns: latency.turns.length,
     firstOutputSamples: firstOutput.length,
     firstOutputP50Ms: percentile(firstOutput, 0.5),

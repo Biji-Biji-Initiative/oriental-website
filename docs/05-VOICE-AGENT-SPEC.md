@@ -153,7 +153,7 @@ See [`06-API-CONTRACTS.md`](./06-API-CONTRACTS.md) §`/api/voice/session`.
 | Mic permission denied | Voice is unavailable; the handoff form remains editable. Show toast: "Voice unavailable. You can keep typing here." |
 | WebRTC ICE fails | Same — handoff form remains editable. |
 | `/api/voice/session` returns 429 | Handoff form remains editable + toast: "Voice limit reached for today." |
-| OpenAI Realtime call returns 429 | Handoff remains editable + transient "Live voice is busy right now" guidance; do not mislabel it as the visitor's daily limit |
+| OpenAI Realtime call returns 429 | Reuse the current mint/offer for one retry after 300–700 ms jitter while showing `Reconnecting`; if it is still busy, preserve the editable handoff and show transient capacity guidance. Never mislabel it as the visitor's daily limit. |
 | OpenAI Realtime returns 5xx | Same. Track in Coolify logs until a dedicated observability stack is added. |
 | User goes idle in voice mode | Reka says a one-sentence goodbye ~6 s before the cutoff, then voice tears down after 20 seconds of inactivity. The form and captured fields remain visible. |
 | Conversation reaches max duration | Voice waits for a natural speech stop, gives the configured goodbye grace, and tears down at the server-resolved cap (10 minutes by default). The form remains visible and reconnecting resumes with recent context. |

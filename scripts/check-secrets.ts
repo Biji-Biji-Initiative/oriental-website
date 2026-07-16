@@ -1,4 +1,5 @@
 import { hasShellEscapedQuoteWrapper, unwrapEnvValue } from "../lib/env";
+import { activeVoiceExperimentDimensions } from "../lib/voice/experiments";
 
 const required = [
   "OPENAI_API_KEY",
@@ -44,6 +45,7 @@ const managedEnvironment = [
   "VOICE_RUNTIME_PROFILE",
   "VOICE_MODEL_CELL",
   "VOICE_REASONING_CELL",
+  "VOICE_VARIANT_PICKER",
   "VOICE_MAX_DURATION_MS",
   "VOICE_IDLE_TIMEOUT_MS",
   "VOICE_IDLE_GOODBYE_GRACE_MS",
@@ -167,6 +169,20 @@ if (modelCell === "candidate" && !envValue("OPENAI_REALTIME_MODEL_CANDIDATE")) {
 const reasoningCell = envValue("VOICE_REASONING_CELL");
 if (reasoningCell && reasoningCell !== "low" && reasoningCell !== "minimal") {
   console.error("VOICE_REASONING_CELL must be low or minimal.");
+  process.exit(1);
+}
+
+const activeExperimentDimensions = activeVoiceExperimentDimensions({ runtimeProfile, modelCell, reasoningCell });
+if (activeExperimentDimensions.length > 1) {
+  console.error(
+    `Only one voice experiment dimension may differ from control at a time; active: ${activeExperimentDimensions.join(
+      ", ",
+    )}.`,
+  );
+  process.exit(1);
+}
+if (activeExperimentDimensions.length > 0 && envValue("VOICE_VARIANT_PICKER") === "true") {
+  console.error("VOICE_VARIANT_PICKER must be false while a runtime, model, or reasoning experiment is active.");
   process.exit(1);
 }
 

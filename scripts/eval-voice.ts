@@ -33,6 +33,7 @@ import {
   parseJudgeResponse,
   type SessionEval,
   type VoiceEvalSession,
+  validateVoiceExperimentEvidence,
 } from "../lib/eval/voice-eval";
 
 type Args = {
@@ -184,6 +185,7 @@ async function main() {
   const aggregate = aggregateEvals(evals);
   const profileAggregates = aggregateEvalsByRuntimeProfile(evals);
   const experimentAggregates = aggregateEvalsByExperimentCell(evals);
+  const experimentValidation = validateVoiceExperimentEvidence(evals);
   const latencyAutopilotGate = assessLatencyAutopilotGate(sessions);
 
   if (args.persist && !dry) {
@@ -211,7 +213,11 @@ async function main() {
     maxFrustration: args.maxFrustration,
     maxDroppedMidTurn: args.maxDropped,
   };
-  const gate = meetsThreshold(aggregate, thresholds);
+  const thresholdGate = meetsThreshold(aggregate, thresholds);
+  const gate = {
+    ok: thresholdGate.ok && experimentValidation.ok,
+    failures: [...experimentValidation.failures, ...thresholdGate.failures],
+  };
 
   // Full report (with transcripts) → gitignored dir only.
   mkdirSync(args.out, { recursive: true });
@@ -220,7 +226,16 @@ async function main() {
   writeFileSync(
     reportPath,
     JSON.stringify(
-      { generatedAt: stamp, aggregate, profileAggregates, experimentAggregates, latencyAutopilotGate, evals, sessions },
+      {
+        generatedAt: stamp,
+        aggregate,
+        profileAggregates,
+        experimentAggregates,
+        experimentValidation,
+        latencyAutopilotGate,
+        evals,
+        sessions,
+      },
       null,
       2,
     ),
@@ -229,7 +244,7 @@ async function main() {
   printSummary(aggregate, profileAggregates, experimentAggregates, latencyAutopilotGate, gate, reportPath, dry);
 
   const gateActive = Object.values(thresholds).some((value) => typeof value === "number");
-  if (gateActive && !gate.ok) process.exit(2);
+  if (!experimentValidation.ok || (gateActive && !thresholdGate.ok)) process.exit(2);
 }
 
 function printSummary(
@@ -251,13 +266,25 @@ function printSummary(
   console.log(
     `tap to live p50/p95: ${fmtMs(aggregate.activation.tapToLiveP50Ms)} / ${fmtMs(aggregate.activation.tapToLiveP95Ms)} (${aggregate.activation.tapToLiveSamples} samples)`,
   );
+  console.log(
+    `tap to audible p50/p95: ${fmtMs(aggregate.activation.tapToAudibleP50Ms)} / ${fmtMs(aggregate.activation.tapToAudibleP95Ms)} (${aggregate.activation.tapToAudibleSamples} samples)`,
+  );
+  console.log(
+    `useful start <=2s:    ${fmtRate(aggregate.activation.usefulStartRate)} (${aggregate.activation.usefulStartWithinTwoSeconds}/${aggregate.activation.attempts} explicitly marked post-mint attempts)`,
+  );
+  console.log(
+    `availability failures: busy=${aggregate.availability.realtimeBusySessions} webrtc=${aggregate.availability.webrtcFailedSessions} remote-track-no-audio=${aggregate.availability.remoteTrackWithoutAudioSessions} retried=${aggregate.availability.retrySessions}`,
+  );
+  console.log(
+    `evidence attribution: prod=${aggregate.attribution.environments.production} staging=${aggregate.attribution.environments.staging} local=${aggregate.attribution.environments.local} legacy-unknown=${aggregate.attribution.environments.unknown}; mobile=${aggregate.attribution.devices.mobile} desktop=${aggregate.attribution.devices.desktop} device-unknown=${aggregate.attribution.devices.unknown}`,
+  );
   console.log("--- runtime profiles ---");
   for (const [profile, profileAggregate] of Object.entries(profileAggregates)) {
     console.log(
       `${profile}: ${profileAggregate.sessionCount} sessions, ${(profileAggregate.submitRate * 100).toFixed(0)}% submit, tap→live ${fmtMs(profileAggregate.activation.tapToLiveP50Ms)}/${fmtMs(profileAggregate.activation.tapToLiveP95Ms)} p50/p95`,
     );
   }
-  console.log("--- model/reasoning cells ---");
+  console.log("--- runtime/model/reasoning cells ---");
   for (const [cell, cellAggregate] of Object.entries(experimentAggregates)) {
     console.log(
       `${cell}: ${cellAggregate.sessionCount} sessions, ${(cellAggregate.submitRate * 100).toFixed(0)}% submit, tap→live ${fmtMs(cellAggregate.activation.tapToLiveP50Ms)}/${fmtMs(cellAggregate.activation.tapToLiveP95Ms)} p50/p95`,
@@ -287,6 +314,10 @@ function printSummary(
 
 function fmtMs(value: number | null) {
   return value === null ? "n/a" : `${value}ms`;
+}
+
+function fmtRate(value: number | null) {
+  return value === null ? "n/a" : `${Math.round(value * 100)}%`;
 }
 
 void main();

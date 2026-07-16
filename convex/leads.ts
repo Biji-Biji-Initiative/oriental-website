@@ -66,10 +66,12 @@ const usageValidator = v.object({
 });
 
 const transportValidator = v.object({
+  realtimeBusyRetryCount: v.optional(v.number()),
   disconnectCount: v.number(),
   recoveryCount: v.number(),
   iceRestartCount: v.number(),
   wasSpeakingAtClose: v.optional(v.boolean()),
+  remoteTrackReceivedAt: v.optional(v.number()),
   transitions: v.array(v.object({ state: v.string(), at: v.number() })),
   lastStats: v.optional(
     v.object({
@@ -95,6 +97,7 @@ const latencyValidator = v.object({
     v.object({
       tapToArmCueScheduledMs: v.optional(v.number()),
       tapToLiveMs: v.optional(v.number()),
+      tapToAudibleMs: v.optional(v.number()),
     }),
   ),
   turns: v.array(
@@ -125,6 +128,9 @@ const voiceSessionValidator = v.object({
   status: v.string(),
   connectionStatus: v.string(),
   closeReason: v.optional(v.string()),
+  deviceProfile: v.optional(v.union(v.literal("mobile"), v.literal("desktop"))),
+  deploymentEnvironment: v.optional(v.union(v.literal("local"), v.literal("staging"), v.literal("production"))),
+  activationAttempted: v.optional(v.boolean()),
   prewarmedAt: v.optional(v.number()),
   connectStartedAt: v.optional(v.number()),
   connectedAt: v.optional(v.number()),
@@ -315,6 +321,11 @@ export const recordVoiceSession = mutationGeneric({
       status: snapshot.status,
       connectionStatus: snapshot.connectionStatus,
       ...(snapshot.closeReason ? { closeReason: snapshot.closeReason } : {}),
+      ...(snapshot.deviceProfile ? { deviceProfile: snapshot.deviceProfile } : {}),
+      ...(snapshot.deploymentEnvironment ? { deploymentEnvironment: snapshot.deploymentEnvironment } : {}),
+      ...(typeof snapshot.activationAttempted === "boolean"
+        ? { activationAttempted: snapshot.activationAttempted }
+        : {}),
       ...(typeof snapshot.prewarmedAt === "number" ? { prewarmedAt: snapshot.prewarmedAt } : {}),
       ...(typeof snapshot.connectStartedAt === "number" ? { connectStartedAt: snapshot.connectStartedAt } : {}),
       ...(typeof snapshot.connectedAt === "number" ? { connectedAt: snapshot.connectedAt } : {}),
@@ -425,6 +436,9 @@ export const voiceSessionsForEval = queryGeneric({
       status: session.status,
       connectionStatus: session.connectionStatus,
       closeReason: session.closeReason ?? null,
+      deviceProfile: session.deviceProfile ?? null,
+      deploymentEnvironment: session.deploymentEnvironment ?? null,
+      activationAttempted: session.activationAttempted ?? null,
       leadId: session.leadId ?? null,
       connectStartedAt: session.connectStartedAt ?? null,
       connectedAt: session.connectedAt ?? null,

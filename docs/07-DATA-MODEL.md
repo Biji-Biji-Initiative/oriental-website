@@ -86,7 +86,12 @@ submission.
 | `segment` | string | Current routed segment. |
 | `status` | string | Dialog status (`idle` or `submitted`). |
 | `connectionStatus` | string | WebRTC state from the client. |
+| `deviceProfile` / `deploymentEnvironment` | optional | Evidence attribution for device class and local/staging/production traffic. |
+| `activationAttempted` | boolean? | Explicit post-mint user activation; distinguishes an empty failed attempt from an unused prewarm or legacy unknown row. |
 | `model` / `voice` / `speed` | optional | Realtime render settings used for the session. |
+| `runtimeProfile` / `modelCell` / `reasoningCell` | optional | Controlled experiment dimensions; only one may differ from control in a release. |
+| `latency` | object? | Bounded activation and turn timing, including tap-to-live and tap-to-audible. |
+| `transport` | object? | Retry, remote-track, disconnect, ICE recovery, and bounded network diagnostics. |
 | `captured` | object | Current editable handoff fields. |
 | `transcript` | `{ role: string; text: string }[]` | Latest text transcript. |
 | `usage` | object? | Reduced Realtime usage counters. |

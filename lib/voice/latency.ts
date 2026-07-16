@@ -44,6 +44,8 @@ export type VoiceLatencyTelemetry = {
     tapToArmCueScheduledMs?: number;
     /** Initiating tap to the Realtime data channel becoming live. */
     tapToLiveMs?: number;
+    /** Initiating tap to independently detected remote-stream audio activity. */
+    tapToAudibleMs?: number;
   };
   turns: VoiceTurnLatencySample[];
 };
@@ -83,6 +85,8 @@ export type VoiceLatencyState = {
   nextSequence: number;
   activeResponse: boolean;
   pendingBargeInAt?: number;
+  /** Monotonic browser marker; used to derive a duration and never persisted. */
+  activationStartedAt?: number;
   current?: VoiceTurnDraft;
 };
 
@@ -92,6 +96,7 @@ export const RAPID_RESUME_WINDOW_MS = 1_500;
 export function createVoiceLatencyState(
   inputPolicy: VoiceInputPolicy = "baseline",
   activation?: VoiceLatencyTelemetry["activation"],
+  activationStartedAt?: number,
 ): VoiceLatencyState {
   return {
     phase: "quiet",
@@ -99,6 +104,7 @@ export function createVoiceLatencyState(
     inputPolicy,
     nextSequence: 1,
     activeResponse: false,
+    activationStartedAt,
   };
 }
 
@@ -232,12 +238,24 @@ function recordLocalSpeechEnded(state: VoiceLatencyState, at: number): VoiceLate
 }
 
 function recordRemoteAudioStarted(state: VoiceLatencyState, at: number): VoiceLatencyState {
+  const activation =
+    state.activationStartedAt !== undefined && state.telemetry.activation?.tapToAudibleMs === undefined
+      ? {
+          ...state.telemetry.activation,
+          tapToAudibleMs: elapsed(state.activationStartedAt, at),
+        }
+      : state.telemetry.activation;
   const current = state.current;
-  if (!current || current.speechSegmentStartedAt !== undefined || current.remoteAudioAt !== undefined) return state;
+  if (!current || current.speechSegmentStartedAt !== undefined || current.remoteAudioAt !== undefined) {
+    return activation === state.telemetry.activation
+      ? state
+      : { ...state, telemetry: { ...state.telemetry, activation } };
+  }
   return {
     ...state,
     phase: "assistant_speaking",
     current: { ...current, remoteAudioAt: at },
+    telemetry: { ...state.telemetry, activation },
   };
 }
 

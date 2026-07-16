@@ -49,6 +49,13 @@ export function voiceStatusCopy(
       button: "Connecting...",
     };
   }
+  if (status === "reconnecting") {
+    return {
+      label: "Reconnecting",
+      detail: "Live voice is busy. Reka is making one quick retry without losing your handoff.",
+      button: "Reconnecting...",
+    };
+  }
   if (status === "listening") {
     if (turnPhase === "user_speaking") {
       return {

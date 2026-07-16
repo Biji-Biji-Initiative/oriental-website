@@ -37,4 +37,12 @@ describe("voice dialogue activation copy", () => {
     });
     expect(voiceCloseReasonToast("voice_limit_reached")?.title).toBe("Voice limit reached for today.");
   });
+
+  it("shows the bounded capacity retry without clearing the handoff", () => {
+    expect(voiceStatusCopy("reconnecting")).toEqual({
+      label: "Reconnecting",
+      detail: "Live voice is busy. Reka is making one quick retry without losing your handoff.",
+      button: "Reconnecting...",
+    });
+  });
 });
