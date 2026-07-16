@@ -6,6 +6,7 @@ import { notifyClickUp, type StoredLead } from "@/lib/server/notifications";
 type Args = {
   dry: boolean;
   limit: number;
+  reconcileExisting: boolean;
 };
 
 type ConvexLead = {
@@ -22,6 +23,7 @@ type ConvexLead = {
   message: string;
   transcript: StoredLead["transcript"];
   utm: Record<string, string>;
+  notificationClickUpOk?: boolean;
 };
 
 type ClickUpTask = {
@@ -50,14 +52,19 @@ async function main() {
   })) as ConvexLead[];
   const existingLeadIds = await existingClickUpLeadIds(clickUpToken, clickUpListId);
   const missing = leads.filter((lead) => !existingLeadIds.has(lead.leadId));
+  const reconcileCandidates = leads.filter(
+    (lead) => existingLeadIds.has(lead.leadId) && lead.notificationClickUpOk !== true,
+  );
 
   console.log(
     JSON.stringify(
       {
         dry: args.dry,
+        reconcileExisting: args.reconcileExisting,
         convexLeads: leads.length,
         clickupLeadIdsFound: existingLeadIds.size,
         missing: missing.length,
+        reconcileCandidates: reconcileCandidates.length,
       },
       null,
       2,
@@ -76,16 +83,40 @@ async function main() {
   for (const lead of missing) {
     const result = await notifyClickUp(toStoredLead(lead));
     if (result.ok) {
-      created += 1;
-      console.log(`created ${lead.leadId}`);
+      const confirmed = await confirmClickUpMirror(convex, ingestSecret, lead.leadId);
+      if (confirmed) {
+        created += 1;
+        console.log(`created ${lead.leadId}`);
+      } else {
+        failed += 1;
+        console.error(`created task but failed to confirm ${lead.leadId}`);
+      }
     } else {
       failed += 1;
       console.error(`failed ${lead.leadId}: ${result.error ?? result.reason ?? "unknown"}`);
     }
   }
 
-  console.log(JSON.stringify({ created, failed, skippedExisting: leads.length - missing.length }, null, 2));
+  let reconciled = 0;
+  if (args.reconcileExisting) {
+    for (const lead of reconcileCandidates) {
+      if (await confirmClickUpMirror(convex, ingestSecret, lead.leadId)) {
+        reconciled += 1;
+        console.log(`reconciled ${lead.leadId}`);
+      } else {
+        failed += 1;
+        console.error(`failed to reconcile ${lead.leadId}`);
+      }
+    }
+  }
+
+  console.log(JSON.stringify({ created, reconciled, failed, skippedExisting: leads.length - missing.length }, null, 2));
   if (failed > 0) process.exit(1);
+}
+
+async function confirmClickUpMirror(convex: ConvexHttpClient, ingestSecret: string, leadId: string) {
+  const result = await convex.mutation(api.leads.confirmLeadClickUpMirror, { ingestSecret, leadId });
+  return result.ok;
 }
 
 main().catch((error) => {
@@ -155,11 +186,12 @@ function getClickUpListId() {
 }
 
 function parseArgs(argv: string[]): Args {
-  const parsed: Args = { dry: false, limit: 500 };
+  const parsed: Args = { dry: false, limit: 500, reconcileExisting: false };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     const next = argv[index + 1];
     if (arg === "--dry") parsed.dry = true;
+    else if (arg === "--reconcile-existing") parsed.reconcileExisting = true;
     else if (arg === "--limit") {
       parsed.limit = Number(next) || parsed.limit;
       index += 1;

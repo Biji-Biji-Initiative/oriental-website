@@ -259,6 +259,36 @@ export const recordLeadNotification = mutationGeneric({
   },
 });
 
+export const confirmLeadClickUpMirror = mutationGeneric({
+  args: {
+    ingestSecret: v.string(),
+    leadId: v.string(),
+  },
+  returns: v.union(
+    v.object({ ok: v.literal(true), changed: v.boolean() }),
+    v.object({ ok: v.literal(false), reason: v.literal("not_found") }),
+  ),
+  handler: async (ctx, { ingestSecret, leadId }) => {
+    requireIngestSecret(ingestSecret);
+    const lead = await ctx.db
+      .query("leads")
+      .withIndex("by_lead_id", (query) => query.eq("leadId", leadId))
+      .unique();
+    if (!lead) return { ok: false as const, reason: "not_found" as const };
+    if (lead.notificationClickUpOk === true) return { ok: true as const, changed: false };
+
+    await ctx.db.patch(lead._id, { notificationClickUpOk: true });
+    await ctx.db.insert("leadEvents", {
+      leadId,
+      kind: "clickup_reconciled",
+      actor: "system",
+      note: "Confirmed an existing ClickUp mirror task without changing the lead payload.",
+      createdAt: Date.now(),
+    });
+    return { ok: true as const, changed: true };
+  },
+});
+
 export const updateLeadWorkflow = mutationGeneric({
   args: {
     ingestSecret: v.string(),
