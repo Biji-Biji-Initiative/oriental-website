@@ -6,6 +6,7 @@ import { sendOpsAlert } from "@/lib/server/ops-alerts";
 import { noStoreJson } from "@/lib/server/security";
 import { verifyVoiceReviewCredentials } from "@/lib/server/voice-review-token";
 import { isVoiceAvailabilityFailure } from "@/lib/voice/realtime-call-failure";
+import { isBenignVoiceError } from "@/lib/voice/realtime-events";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -108,6 +109,8 @@ async function reportVoiceAvailabilityFailure(reviewId: string, snapshot: VoiceR
 // Surface voice session health in structured server logs without captured PII or transcript text.
 // Snapshots repost on every state change, so dedupe per review id.
 function logVoiceSessionHealth(reviewId: string, snapshot: VoiceReviewSnapshotRequest["snapshot"]) {
+  const actionableErrors = snapshot.errors.filter((error) => !isBenignVoiceError(error));
+  const benignErrorCount = snapshot.errors.length - actionableErrors.length;
   const signature = buildHealthSnapshotSignature(snapshot);
   if (loggedSnapshotSignatures.get(reviewId) !== signature) {
     loggedSnapshotSignatures.set(reviewId, signature);
@@ -137,7 +140,8 @@ function logVoiceSessionHealth(reviewId: string, snapshot: VoiceReviewSnapshotRe
       capturedFieldCount: Object.values(capturedFields).filter(Boolean).length,
       capturedMessageChars: snapshot.captured.message.length,
       routeRequested: snapshot.routeRequested,
-      errorCount: snapshot.errors.length,
+      errorCount: actionableErrors.length,
+      benignErrorCount,
       rateLimitCount: snapshot.rateLimits.length,
       usage: snapshot.usage ?? null,
       submittedAt: snapshot.submittedAt ?? null,
@@ -166,16 +170,17 @@ function logVoiceSessionHealth(reviewId: string, snapshot: VoiceReviewSnapshotRe
       transitionCount: snapshot.transport?.transitions.length ?? 0,
     });
   }
-  if (snapshot.errors.length > (loggedErrorCounts.get(reviewId) ?? 0)) {
-    loggedErrorCounts.set(reviewId, snapshot.errors.length);
+  if (actionableErrors.length > (loggedErrorCounts.get(reviewId) ?? 0)) {
+    loggedErrorCounts.set(reviewId, actionableErrors.length);
     trimToRecent(loggedErrorCounts);
     logWarn("voice_review.session_errors", {
       reviewId,
       sessionId: snapshot.sessionId,
       status: snapshot.status,
       connectionStatus: snapshot.connectionStatus,
-      errorCount: snapshot.errors.length,
-      errors: snapshot.errors.map((entry) => ({ code: entry.code, message: entry.message })),
+      errorCount: actionableErrors.length,
+      benignErrorCount,
+      errors: actionableErrors.map((entry) => ({ code: entry.code, message: entry.message })),
     });
   }
   if (snapshot.status === "submitted" && !loggedSubmissions.has(reviewId)) {
@@ -223,7 +228,8 @@ function buildHealthSnapshotSignature(snapshot: VoiceReviewSnapshotRequest["snap
     transcriptRoles: countTranscriptRoles(snapshot.transcript),
     capturedFields: buildCapturedFieldSummary(snapshot.captured),
     routeRequested: snapshot.routeRequested,
-    errorCount: snapshot.errors.length,
+    actionableErrorCount: snapshot.errors.filter((error) => !isBenignVoiceError(error)).length,
+    benignErrorCount: snapshot.errors.filter(isBenignVoiceError).length,
     rateLimitCount: snapshot.rateLimits.length,
     usage: snapshot.usage ?? null,
     submitted: snapshot.status === "submitted",

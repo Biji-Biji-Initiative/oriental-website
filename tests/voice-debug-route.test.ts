@@ -153,6 +153,7 @@ describe("POST /api/voice/debug", () => {
         capturedFieldCount: 4,
         routeRequested: false,
         errorCount: 0,
+        benignErrorCount: 0,
         rateLimitCount: 0,
         usage: expect.objectContaining({ responseCount: 1, transcriptionCount: 1 }),
         latency: {
@@ -191,6 +192,29 @@ describe("POST /api/voice/debug", () => {
     expect(response.status).toBe(401);
     expect(body).toMatchObject({ ok: false, error: "unauthorized" });
     expect(mocks.persistVoiceReviewSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("keeps expected cancellation races out of actionable error warnings", async () => {
+    const request = await snapshotRequest();
+    const body = (await request.json()) as { snapshot: { errors: Array<{ code: string; message: string }> } };
+    body.snapshot.errors = [
+      { code: "response_cancel_not_active", message: "Cancellation failed: no active response found" },
+    ];
+
+    const response = await POST(
+      new Request(request.url, {
+        method: "POST",
+        headers: request.headers,
+        body: JSON.stringify(body),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.logInfo).toHaveBeenCalledWith(
+      "voice_review.session_snapshot",
+      expect.objectContaining({ errorCount: 0, benignErrorCount: 1 }),
+    );
+    expect(mocks.logWarn).not.toHaveBeenCalledWith("voice_review.session_errors", expect.anything());
   });
 
   it("logs only PII-free issue paths for invalid snapshots", async () => {
