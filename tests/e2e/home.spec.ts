@@ -353,6 +353,7 @@ test("voice intake stays contained and resets scroll across short responsive vie
     { width: 360, height: 800 },
     { width: 390, height: 844 },
     { width: 844, height: 390 },
+    { width: 1024, height: 390 },
     { width: 1024, height: 600 },
     { width: 1024, height: 651 },
     { width: 1024, height: 675 },
@@ -468,6 +469,7 @@ test("a maximum-length live caption keeps the voice action in the initial short 
   for (const viewport of [
     { width: 320, height: 568 },
     { width: 844, height: 390 },
+    { width: 1024, height: 390 },
     { width: 1024, height: 600 },
   ]) {
     await page.setViewportSize(viewport);
@@ -495,4 +497,58 @@ test("a maximum-length live caption keeps the voice action in the initial short 
       .toEqual({ actionFits: true, captionClamp: "2", initialScroll: 0 });
     await expect(page.locator("[data-voice-primary-action]")).toBeInViewport({ ratio: 1 });
   }
+});
+
+test("mobile dialog source order, first focus, and tuner contrast stay voice-first", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 568 });
+  await page.goto("/");
+  await page.locator('header button[aria-label="Talk to Mereka"]').click();
+  const dialog = page.getByRole("dialog");
+  const layout = page.locator("[data-voice-dialog-layout]");
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toBeFocused();
+
+  await expect
+    .poll(() =>
+      layout.evaluate((element) =>
+        [...element.children].map((child) => {
+          if (child.matches("[data-voice-primary-region]")) return "voice";
+          if (child.matches("[data-voice-partner-region]")) return "partner";
+          return child.tagName.toLowerCase();
+        }),
+      ),
+    )
+    .toEqual(["voice", "partner", "aside"]);
+
+  await page.waitForTimeout(150);
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("button", { name: "Switch Reka voice to Reka · Polished" })).toBeFocused();
+  await expect.poll(() => layout.evaluate((element) => element.scrollTop)).toBe(0);
+
+  const tunerContrast = await page.locator("[data-voice-tuner-label]").evaluate((label) => {
+    const parse = (value: string) => {
+      const channels = value.match(/[\d.]+/g)?.map(Number) ?? [];
+      return { r: channels[0] ?? 0, g: channels[1] ?? 0, b: channels[2] ?? 0, a: channels[3] ?? 1 };
+    };
+    const background = parse(
+      getComputedStyle(label.closest('[data-slot="dialog-content"]') as Element).backgroundColor,
+    );
+    const foreground = parse(getComputedStyle(label).color);
+    const composite = {
+      r: foreground.r * foreground.a + background.r * (1 - foreground.a),
+      g: foreground.g * foreground.a + background.g * (1 - foreground.a),
+      b: foreground.b * foreground.a + background.b * (1 - foreground.a),
+    };
+    const luminance = ({ r, g, b }: { r: number; g: number; b: number }) => {
+      const linear = [r, g, b].map((channel) => {
+        const value = channel / 255;
+        return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+      });
+      return (linear[0] ?? 0) * 0.2126 + (linear[1] ?? 0) * 0.7152 + (linear[2] ?? 0) * 0.0722;
+    };
+    const lighter = Math.max(luminance(composite), luminance(background));
+    const darker = Math.min(luminance(composite), luminance(background));
+    return (lighter + 0.05) / (darker + 0.05);
+  });
+  expect(tunerContrast).toBeGreaterThanOrEqual(4.5);
 });
