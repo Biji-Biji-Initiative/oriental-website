@@ -28,6 +28,7 @@ then use as reference.
 | 11 | [`11-INFRASTRUCTURE.md`](./11-INFRASTRUCTURE.md) | Eng, DevOps | Coolify + Cloudflare + Infisical — deploy, secrets, DNS, monitoring |
 | 12 | [`12-CHAT-RELEASE-RUNBOOK.md`](./12-CHAT-RELEASE-RUNBOOK.md) | QA, Eng | Evergreen exact-SHA release governance, verification, timing, and rollback |
 | 13 | [`13-VOICE-INSTANT-RELEASE-SPEC.md`](./13-VOICE-INSTANT-RELEASE-SPEC.md) | QA, Eng, AI | Instant voice contracts, experiment gates, evidence mapping, and rollback |
+| 14 | [`14-PERFORMANCE-BUDGET.md`](./14-PERFORMANCE-BUDGET.md) | QA, Eng | Mobile LCP, CLS, initial JavaScript, and accessibility budgets |
 | ASSETS | [`ASSET-SOURCES.md`](./ASSET-SOURCES.md) | Eng, Brand | Runtime logo/favicon provenance and approval notes |
 
 ## Source of truth

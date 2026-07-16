@@ -130,6 +130,7 @@ pnpm typecheck
 pnpm test                   # vitest
 pnpm build
 pnpm test:e2e               # needs app; README uses PORT=3011 for standalone proof
+pnpm build && pnpm test:performance  # production mobile LCP/CLS/JS/a11y gate
 pnpm check-secrets          # validate expected env keys (local)
 pnpm local:ngrok -- --check  # prove ngrok secret lookup without opening a tunnel
 pnpm smoke:staging:voice    # real canonical-staging WebRTC/audio/persistence proof
@@ -234,6 +235,7 @@ Read in order on first pass, then cherry-pick:
 | [`docs/09-LAUNCH-CHECKLIST.md`](docs/09-LAUNCH-CHECKLIST.md) | Pre-launch gates |
 | [`docs/11-INFRASTRUCTURE.md`](docs/11-INFRASTRUCTURE.md) | Coolify, Cloudflare, Infisical |
 | [`docs/13-VOICE-INSTANT-RELEASE-SPEC.md`](docs/13-VOICE-INSTANT-RELEASE-SPEC.md) | Instant voice requirements, evidence gates, rollout, rollback |
+| [`docs/14-PERFORMANCE-BUDGET.md`](docs/14-PERFORMANCE-BUDGET.md) | Mobile LCP, CLS, initial-JS, and accessibility budgets |
 | [`docs/ASSET-SOURCES.md`](docs/ASSET-SOURCES.md) | Logo and favicon provenance |
 | [`README.md`](README.md) | Human quickstart, env list, standalone run |
 
