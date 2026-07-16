@@ -39,6 +39,10 @@ The production app-scoped Infisical folder is `/deploy/oriental-website` in proj
 
 Staging is live at `https://staging.oriental.mereka.io` on the Coolify app host. Its container currently reuses the production image and a host-local env copy with staging metadata overrides; the Infisical `staging` environment for `/deploy/oriental-website` is intentionally not documented as authoritative until separate staging secrets are populated.
 
+The Mereka brand-motion preview is a staging-only build cell. `scripts/deploy-coolify-host.sh --target staging`
+builds with `NEXT_PUBLIC_BRAND_MOTION_PREVIEW=true`; production builds force the flag to `false`. The UI also
+checks the staging hostname before enabling the preview. This keeps the production orb and page entrance unchanged.
+
 Required production variables:
 
 ```dotenv
