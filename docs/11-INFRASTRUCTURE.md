@@ -124,10 +124,13 @@ Secret contract is enforced by `scripts/check-secrets.ts`.
 Staging is available at `https://staging.oriental.mereka.io`, following the
 `staging.<service>.mereka.io` convention. It is a lightweight Compose deployment
 on the same Coolify app host under
-`/data/coolify/applications/oriental-staging`, reusing the production image tag
-for the commit under review. It is routed through the Coolify Traefik network
-with `coolify.managed=false`, so it is host-managed rather than a full Coolify
-UI application until a dedicated Coolify staging app/API token is provisioned.
+`/data/coolify/applications/oriental-staging`. Staging images use the distinct
+`mtrl2z6a7zvoyevxvufpntij:staging-<sha>` tag while production uses
+`mtrl2z6a7zvoyevxvufpntij:<sha>`; build-time staging previews must never mutate
+or replace a production image tag. Staging is routed through the Coolify
+Traefik network with `coolify.managed=false`, so it is host-managed rather than
+a full Coolify UI application until a dedicated Coolify staging app/API token
+is provisioned.
 The Infisical `staging` environment now contains the complete application
 contract plus explicit baseline/control/low, staging-Sentry, and QA-picker-off
 overrides. The host-managed staging container still materializes those values
