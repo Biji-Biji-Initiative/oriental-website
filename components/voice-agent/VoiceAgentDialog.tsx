@@ -575,30 +575,16 @@ export function VoiceAgentDialog({
             data-voice-dialog-layout
             ref={dialogLayoutRef}
           >
-            <aside className="order-2 border-t border-white/10 p-5 lg:order-none lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:border-t-0 lg:border-r">
-              <div className="mb-5 text-xs uppercase tracking-[0.16em] text-white/48">Partner type</div>
-              <div className="flex gap-3 overflow-x-auto pb-2 lg:flex-col lg:overflow-visible">
-                {segmentOptions().map((option) => (
-                  <button
-                    className={cn(
-                      "min-w-56 rounded-lg border border-white/10 p-4 text-left transition hover:border-white/28 hover:bg-white/8 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mk-horizon lg:min-w-0",
-                      option.id === segment && "border-mk-horizon bg-white/10",
-                    )}
-                    key={option.id}
-                    onClick={() => runtime.setSegment(option.id)}
-                    type="button"
-                  >
-                    <div className="text-sm font-semibold">{option.label}</div>
-                    <div className="mt-1 text-xs leading-5 text-white/58">{option.blurb}</div>
-                  </button>
-                ))}
-              </div>
-            </aside>
-
-            <main className="order-1 min-w-0 p-5 sm:p-8 lg:order-none lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
+            <main
+              className="order-1 min-w-0 p-5 sm:p-8 lg:order-none lg:col-start-2 lg:row-start-1 lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain"
+              data-voice-primary-region
+            >
               {tunerEnabled ? (
                 <div className="mb-4 flex flex-wrap items-center gap-1.5" data-voice-tuner>
-                  <span className="mr-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/40">
+                  <span
+                    className="mr-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#aaa8af]"
+                    data-voice-tuner-label
+                  >
                     Voice
                   </span>
                   {VOICE_VARIANTS.map((variant) => {
@@ -646,9 +632,32 @@ export function VoiceAgentDialog({
               />
             </main>
 
+            <aside
+              className="order-2 border-t border-white/10 p-5 lg:order-none lg:col-start-1 lg:row-start-1 lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:border-t-0 lg:border-r"
+              data-voice-partner-region
+            >
+              <div className="mb-5 text-xs uppercase tracking-[0.16em] text-white/48">Partner type</div>
+              <div className="flex gap-3 overflow-x-auto pb-2 lg:flex-col lg:overflow-visible">
+                {segmentOptions().map((option) => (
+                  <button
+                    className={cn(
+                      "min-w-56 rounded-lg border border-white/10 p-4 text-left transition hover:border-white/28 hover:bg-white/8 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mk-horizon lg:min-w-0",
+                      option.id === segment && "border-mk-horizon bg-white/10",
+                    )}
+                    key={option.id}
+                    onClick={() => runtime.setSegment(option.id)}
+                    type="button"
+                  >
+                    <div className="text-sm font-semibold">{option.label}</div>
+                    <div className="mt-1 text-xs leading-5 text-white/58">{option.blurb}</div>
+                  </button>
+                ))}
+              </div>
+            </aside>
+
             <HandoffPanel
               captured={captured}
-              className="order-3 lg:order-none lg:col-start-auto lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:border-t-0"
+              className="order-3 lg:order-none lg:col-start-3 lg:row-start-1 lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:border-t-0"
               emailVerification={emailVerification}
               form={form}
               onChange={runtime.updateCaptured}

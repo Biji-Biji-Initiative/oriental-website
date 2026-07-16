@@ -1162,7 +1162,32 @@
   }
 }
 
-@media (max-width: 1023px) and (max-height: 500px) {
+@media (max-width: 1279px) and (max-height: 500px) {
+  [data-voice-agent-dialog] {
+    height: calc(100dvh - 1rem);
+    max-height: calc(100dvh - 1rem);
+  }
+
+  [data-voice-tuner] {
+    flex-wrap: nowrap;
+    gap: 0.25rem;
+    overflow-x: auto;
+  }
+
+  [data-voice-tuner-label],
+  [data-voice-tuner] button {
+    flex: none;
+  }
+
+  [data-voice-tuner-label] {
+    margin-right: 0;
+  }
+
+  [data-voice-tuner] button {
+    padding-inline: 0.5rem;
+    font-size: 0.625rem;
+  }
+
   [data-voice-session-stage] [data-voice-stage-orb] {
     width: 6rem;
     height: 6rem;
