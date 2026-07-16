@@ -26,7 +26,7 @@ then use as reference.
 | 09 | [`09-LAUNCH-CHECKLIST.md`](./09-LAUNCH-CHECKLIST.md) | QA, Eng, PM | Pre-launch gates and post-launch monitoring |
 | 10 | [`10-ROADMAP.md`](./10-ROADMAP.md) | PM | What's deferred, sequencing, dependencies |
 | 11 | [`11-INFRASTRUCTURE.md`](./11-INFRASTRUCTURE.md) | Eng, DevOps | Coolify + Cloudflare + Infisical — deploy, secrets, DNS, monitoring |
-| 12 | [`12-CHAT-RELEASE-RUNBOOK.md`](./12-CHAT-RELEASE-RUNBOOK.md) | QA, Eng | Chat-integration release: deploy order, voice QA script, watch list |
+| 12 | [`12-CHAT-RELEASE-RUNBOOK.md`](./12-CHAT-RELEASE-RUNBOOK.md) | QA, Eng | Evergreen exact-SHA release governance, verification, timing, and rollback |
 | 13 | [`13-VOICE-INSTANT-RELEASE-SPEC.md`](./13-VOICE-INSTANT-RELEASE-SPEC.md) | QA, Eng, AI | Instant voice contracts, experiment gates, evidence mapping, and rollback |
 | ASSETS | [`ASSET-SOURCES.md`](./ASSET-SOURCES.md) | Eng, Brand | Runtime logo/favicon provenance and approval notes |
 
@@ -44,7 +44,7 @@ disagree on intent, this doc wins.
 - **Hosting** — Coolify on Mereka infrastructure. Single Docker service, Next.js standalone output.
 - **Edge / DNS / TLS** — Cloudflare authoritative DNS points directly to Coolify Traefik, which terminates TLS; the current records are DNS-only.
 - **Bot / abuse protection** — Turnstile is optional for form/newsletter intake; voice uses signed session credentials and Redis-backed rate limits.
-- **Secrets** — Infisical at `secrets.mereka.io`. Nothing in `.env` files, nothing in code. Coolify pulls at deploy time via a machine identity.
+- **Secrets** — Infisical at `secrets.mereka.io` is canonical. Coolify and the host-managed staging `.env` hold explicitly reconciled runtime copies; nothing secret is committed.
 - **Voice** — OpenAI Realtime API via ephemeral tokens, WebRTC client.
 - **Database** — Convex for launch lead and lead-event persistence.
 - **Email** — AWS SES/SMTP fallback (transactional). Slack mirror to `#tech-team-test` through bot-token delivery for smoke testing, webhook fallback only.
@@ -65,4 +65,4 @@ Tracked in [`10-ROADMAP.md`](./10-ROADMAP.md) §Blockers. Highest-priority:
 
 ---
 
-*Last revised — instant voice contract alignment, 2026-07-15.*
+*Last revised — release governance and Realtime model alignment, 2026-07-16.*

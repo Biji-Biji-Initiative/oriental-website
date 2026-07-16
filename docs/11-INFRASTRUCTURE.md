@@ -103,9 +103,12 @@ infisical export --domain="$INFISICAL_API_URL" --env=prod \
   --projectId=6bfac905-9bb1-449e-8be8-f25f9634802b --output=dotenv
 ```
 
-Coolify should materialize the exported values as normal environment variables
-at deploy time. The app itself reads `process.env.*` and has no Infisical SDK
-runtime dependency.
+Infisical is the canonical comparison source. Coolify does not consume that
+folder through the app at runtime: an operator must reconcile the values into
+Coolify's environment-variable store, and into staging's host-local `.env`,
+before recreating containers. The app reads `process.env.*` and has no
+Infisical SDK runtime dependency. Source checks alone are insufficient; inspect
+the running container after every configuration release.
 
 Secret contract is enforced by `scripts/check-secrets.ts`.
 
@@ -118,11 +121,13 @@ Secret contract is enforced by `scripts/check-secrets.ts`.
 | Type | Docker application |
 | Branch | `main` for production |
 | Runtime port | `3000` by default |
-| Health check | `GET /api/health` |
+| Health check | `GET http://127.0.0.1:3000/api/health` |
 | Build | Next.js `output: "standalone"` |
 
 The runtime image sets `HOSTNAME=0.0.0.0` so the standalone Next.js server is
 reachable both through Traefik and through Coolify's loopback health probe.
+The Coolify health-check host is `127.0.0.1`; do not use `localhost`, because
+BusyBox `wget` may resolve it to IPv6 while the standalone server is IPv4-bound.
 
 Staging is available at `https://staging.oriental.mereka.io`, following the
 `staging.<service>.mereka.io` convention. It is a lightweight Compose deployment
@@ -154,11 +159,15 @@ docker compose -p oriental-staging down
 Deploy flow:
 
 1. PR opens → GitHub `verify` workflow runs.
-2. Merge to `main` → Coolify builds the app image.
-3. Coolify injects Infisical/Coolify env values.
-4. Container starts.
-5. Coolify waits for `/api/health`.
-6. Traffic swaps to the new container.
+2. Merge once to `main`, run release preflight, and freeze the full SHA.
+3. Reconcile Infisical with Coolify and the host-managed staging `.env`.
+4. Build/prove the distinct staging image.
+5. Run `pnpm release:deploy:production` with the frozen SHA, live production
+   SHA, and operator credential from Infisical `/platform/coolify`.
+6. The deployer pins and reads back Coolify's commit, inspects the deployment
+   record, and proves public health; Coolify swaps traffic only after the
+   candidate is healthy.
+7. Run `pnpm release:verify -- --sha <sha> --target both`.
 
 Convex function deployment is separate:
 

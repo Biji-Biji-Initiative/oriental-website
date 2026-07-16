@@ -19,6 +19,9 @@
     "backfill:clickup": "tsx scripts/backfill-clickup-leads.ts",
     "eval:voice": "tsx scripts/eval-voice.ts",
     "smoke:staging:voice": "tsx scripts/smoke-staging-voice.ts",
+    "release:preflight": "pnpm lint && pnpm typecheck && pnpm test && pnpm check-secrets && pnpm build && tsx scripts/release-preflight.ts",
+    "release:deploy:production": "tsx scripts/deploy-coolify-production.ts",
+    "release:verify": "tsx scripts/release-verify.ts",
     "voice:debug": "tsx scripts/voice-debug.ts",
     "local:ngrok": "tsx scripts/local-ngrok.ts"
   },
