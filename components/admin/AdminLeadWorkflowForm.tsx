@@ -16,6 +16,7 @@ import {
 } from "@/lib/admin-workflow";
 
 type AdminLeadWorkflowFormProps = {
+  compact?: boolean;
   leadId: string;
   initialOwner?: string | null;
   initialPriority: AdminLeadPriority;
@@ -23,6 +24,7 @@ type AdminLeadWorkflowFormProps = {
 };
 
 export function AdminLeadWorkflowForm({
+  compact = false,
   leadId,
   initialOwner,
   initialPriority,
@@ -58,7 +60,7 @@ export function AdminLeadWorkflowForm({
 
   return (
     <form className="mt-4 grid gap-3 rounded-lg border border-mk-ash/15 bg-white p-3" onSubmit={submit}>
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className={compact ? "grid gap-3 2xl:grid-cols-3" : "grid gap-3 sm:grid-cols-3"}>
         <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
           Status
           <select

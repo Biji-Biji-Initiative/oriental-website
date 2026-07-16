@@ -1,16 +1,17 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const externalBaseUrl = process.env.PLAYWRIGHT_BASE_URL;
-const baseURL = externalBaseUrl ?? "http://localhost:3000";
+const localPort = process.env.PLAYWRIGHT_PORT ?? "3011";
+const baseURL = externalBaseUrl ?? `http://127.0.0.1:${localPort}`;
 
 export default defineConfig({
   testDir: "./tests/e2e",
   webServer: externalBaseUrl
     ? undefined
     : {
-        command: "pnpm dev",
+        command: `pnpm exec next dev --hostname 127.0.0.1 --port ${localPort}`,
         url: baseURL,
-        reuseExistingServer: true,
+        reuseExistingServer: false,
         timeout: 120_000,
       },
   use: {

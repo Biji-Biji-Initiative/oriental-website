@@ -8,6 +8,8 @@ import { AdminLoginForm } from "@/components/admin/AdminLoginForm";
 import { AdminVoiceFollowUpButton } from "@/components/admin/AdminVoiceFollowUpButton";
 import { AdminVoiceSessionTranscript } from "@/components/admin/AdminVoiceSessionTranscript";
 import { Badge } from "@/components/admin/Badge";
+import { EnquiryCrmWorkspace } from "@/components/admin/EnquiryCrmWorkspace";
+import { RekaQualityWorkspace } from "@/components/admin/RekaQualityWorkspace";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -47,6 +49,7 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
   const resolvedSearchParams = await searchParams;
   const filters = parseAdminFilters(resolvedSearchParams);
   const view = parseAdminView(resolvedSearchParams);
+  const selectedLeadId = parseSelectedLeadId(resolvedSearchParams);
   const filterActive = hasActiveFilters(filters);
   const cookieStore = await cookies();
   const auth = verifyAdminSessionCookie(cookieStore.get(adminCookieName)?.value);
@@ -68,9 +71,6 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
     session.errors.some((error: VoiceRuntimeError) => !isBenignVoiceError(error)),
   ).length;
   const filteredLeads = filterLeads(dashboard.data.leads, filters);
-  const filteredTriage = filterLeads(dashboard.data.queues.triage, filters);
-  const filteredPriority = filterLeads(dashboard.data.queues.highPriority, filters);
-  const filteredNotifications = filterLeads(dashboard.data.queues.failedNotifications, filters);
   const filteredVoiceSessions = filterVoiceSessions(dashboard.data.voiceSessions, filters.q);
   const showAll = view === "all";
   const showToday = showAll || view === "today";
@@ -82,31 +82,41 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
   return (
     <AdminShell generatedAt={dashboard.data.generatedAt}>
       <AdminSectionTabs activeView={view} data={dashboard.data} sessionsWithRealErrors={sessionsWithRealErrors} />
-      {showToday ? (
+      {showToday || showLeadQueues ? (
         <>
-          <LatestEnquiriesPanel
+          <OperatorFilters
+            filterActive={filterActive}
+            filters={filters}
+            leadCount={filteredLeads.length}
+            totalLeads={dashboard.data.leads.length}
+            totalVoiceRecoverable={recoverableVoiceSessions(dashboard.data.voiceSessions).length}
+            view={view}
+            voiceRecoverableCount={recoverableVoiceSessions(filteredVoiceSessions).length}
+          />
+          <EnquiryCrmWorkspace
+            events={dashboard.data.leadEvents}
+            filters={filters}
             generatedAt={dashboard.data.generatedAt}
-            leads={dashboard.data.leads}
+            leads={filteredLeads}
+            selectedLeadId={selectedLeadId}
+            totalLeads={dashboard.data.leads.length}
+            view={showAll ? "all" : view === "today" ? "today" : "leads"}
             voiceSessions={dashboard.data.voiceSessions}
           />
-
-          <section
-            className="grid scroll-mt-36 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.42fr)]"
-            id="command-center"
-          >
-            <ActionQueuePanel data={dashboard.data} sessionsWithRealErrors={sessionsWithRealErrors} />
-            <NextBestActionPanel data={dashboard.data} sessionsWithRealErrors={sessionsWithRealErrors} />
-          </section>
-
-          <OperationalHealthStrip data={dashboard.data} sessionsWithRealErrors={sessionsWithRealErrors} />
-
-          <OperatingBriefPanel data={dashboard.data} sessionsWithRealErrors={sessionsWithRealErrors} />
         </>
       ) : null}
 
-      {showReka ? <VoiceQualityPanel data={dashboard.data} /> : null}
+      {showReka ? (
+        <RekaQualityWorkspace
+          averages={dashboard.data.analytics.evals.averages}
+          droppedMidTurn={dashboard.data.analytics.evals.droppedMidTurn}
+          evaluated={dashboard.data.analytics.evals.evaluated}
+          leads={dashboard.data.leads}
+          voiceSessions={dashboard.data.voiceSessions}
+        />
+      ) : null}
 
-      {showLeadQueues || view === "voice" ? (
+      {view === "voice" ? (
         <OperatorFilters
           filterActive={filterActive}
           filters={filters}
@@ -116,35 +126,6 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
           view={view}
           voiceRecoverableCount={recoverableVoiceSessions(filteredVoiceSessions).length}
         />
-      ) : null}
-
-      {showLeadQueues ? (
-        <section className="grid scroll-mt-36 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.55fr)]" id="work-queues">
-          <WorkflowPanel filterActive={filterActive} leads={filteredLeads} totalLeads={dashboard.data.leads.length} />
-          <div className="grid content-start gap-5">
-            <RecoverableVoicePanel
-              filterActive={filterActive}
-              query={filters.q}
-              sessions={filteredVoiceSessions}
-              totalRecoverable={recoverableVoiceSessions(dashboard.data.voiceSessions).length}
-            />
-            <TriagePanel
-              filterActive={filterActive}
-              leads={filteredTriage}
-              totalLeads={dashboard.data.queues.triage.length}
-            />
-            <PriorityPanel
-              filterActive={filterActive}
-              leads={filteredPriority}
-              totalLeads={dashboard.data.queues.highPriority.length}
-            />
-            <NotificationPanel
-              filterActive={filterActive}
-              leads={filteredNotifications}
-              totalLeads={dashboard.data.queues.failedNotifications.length}
-            />
-          </div>
-        </section>
       ) : null}
 
       {view === "voice" ? (
@@ -190,11 +171,10 @@ function AdminShell({ children, generatedAt }: { children: ReactNode; generatedA
       <div className="mx-auto grid max-w-[1500px] gap-6">
         <header className="flex flex-col gap-4 border-b border-mk-ash/20 pb-5 md:flex-row md:items-end md:justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-mk-blue">Oriental Admin</p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-tight">Oriental intake cockpit</h1>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-mk-blue">Oriental Building · Admin</p>
+            <h1 className="mt-2 text-3xl font-semibold tracking-tight">Enquiry CRM</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-mk-ash">
-              Start with the next action, then use the queues below to assign leads, recover unsent voice handoffs, and
-              check delivery or Reka quality when something looks off.
+              One customer pipeline for new enquiries, ownership, follow-up, delivery, and interaction evidence.
             </p>
             {generatedAt ? <p className="mt-2 text-xs text-mk-ash">Fresh as of {formatDate(generatedAt)}</p> : null}
           </div>
@@ -223,100 +203,71 @@ function AdminSectionTabs({
   sessionsWithRealErrors: number;
   activeView: AdminView;
 }) {
-  const recoverable = recoverableVoiceSessions(data.voiceSessions).length;
-  const stale = staleActiveLeads(data.leads, data.generatedAt).length;
-  const unassigned = countUnassignedActiveLeads(data.leads);
-  const fixAreas = buildRekaFixActions(data.analytics.evals.attention).length;
+  const todayCount = data.leads.filter((lead) => isSameKualaLumpurDay(lead.createdAt, data.generatedAt)).length;
   const items: Array<{
     view: AdminView;
     label: string;
-    eyebrow: string;
-    detail: string;
     badge: string;
     tone: AdminTone;
   }> = [
     {
       view: "today",
-      label: "Today",
-      eyebrow: "Command",
-      detail: "Next action, blockers, and close criteria.",
-      badge: data.metrics.activeLeads > 0 ? `${data.metrics.activeLeads} open` : "clear",
-      tone: data.metrics.activeLeads > 0 ? "amber" : "green",
+      label: "Overview",
+      badge: `${todayCount} today`,
+      tone: todayCount > 0 ? "blue" : "neutral",
     },
     {
       view: "leads",
-      label: "Leads",
-      eyebrow: "Pipeline",
-      detail: `${unassigned} unassigned · ${stale} stale · ${data.metrics.qualifiedLeads} qualified`,
+      label: "Enquiries",
       badge: `${data.metrics.recentLeads} saved`,
-      tone: stale > 0 || unassigned > 0 ? "amber" : "green",
+      tone: "neutral",
     },
     {
       view: "reka",
-      label: "Reka",
-      eyebrow: "Learning loop",
-      detail: `${fixAreas} fix areas · ${recoverable} recoverable voice leads`,
+      label: "Reka quality",
       badge: `${data.analytics.evals.evaluated} evals`,
-      tone: fixAreas > 0 || recoverable > 0 ? "amber" : "green",
+      tone: data.analytics.evals.attention.length > 0 ? "amber" : "green",
     },
     {
       view: "voice",
-      label: "Voice QA",
-      eyebrow: "Runtime",
-      detail: `${data.metrics.connectedSessions}/${data.metrics.reviewedSessions} connected · ${recoverable} unsent`,
+      label: "Voice diagnostics",
       badge: sessionsWithRealErrors > 0 ? `${sessionsWithRealErrors} errors` : "clean",
       tone: sessionsWithRealErrors > 0 ? "red" : "green",
     },
     {
       view: "audit",
-      label: "Audit",
-      eyebrow: "Evidence",
-      detail: "Acquisition mix, notifications, and event trail.",
+      label: "Activity & audit",
       badge: `${data.leadEvents.length} events`,
       tone: "blue",
-    },
-    {
-      view: "all",
-      label: "All",
-      eyebrow: "Full cockpit",
-      detail: "Everything on one page for cross-checking.",
-      badge: "full",
-      tone: "neutral",
     },
   ];
   return (
     <nav
       aria-label="Admin work modes"
-      className="sticky top-0 z-20 -mx-4 overflow-x-auto border-y border-mk-ash/15 bg-mk-paper/95 px-4 py-3 backdrop-blur sm:mx-0 sm:rounded-2xl sm:border sm:bg-white/90 sm:shadow-sm"
+      className="sticky top-0 z-20 -mx-4 overflow-x-auto border-y border-mk-ash/15 bg-white/95 px-4 py-2 backdrop-blur sm:mx-0 sm:rounded-xl sm:border sm:shadow-sm"
     >
-      <div className="grid min-w-[1180px] grid-cols-6 gap-2">
+      <div className="grid min-w-[860px] grid-cols-5 gap-1">
         {items.map((item) => {
           const active = item.view === activeView;
           return (
             <a
               aria-current={active ? "page" : undefined}
-              className={`group rounded-xl border px-3 py-3 transition ${
-                active
-                  ? "border-mk-blue/35 bg-mk-blue/5 shadow-sm"
-                  : "border-mk-ash/15 bg-white hover:border-mk-blue/35 hover:bg-mk-blue/5"
+              className={`group flex min-h-11 items-center justify-between gap-2 rounded-lg px-3 py-2 transition ${
+                active ? "bg-mk-off-black text-white shadow-sm" : "text-mk-off-black hover:bg-mk-paper"
               }`}
               href={adminModeHref(item.view)}
               key={item.view}
             >
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-mk-ash">
-                    {item.eyebrow}
-                  </div>
-                  <div
-                    className={`mt-1 text-sm font-semibold ${active ? "text-mk-blue" : "text-mk-off-black group-hover:text-mk-blue"}`}
-                  >
-                    {item.label}
-                  </div>
-                </div>
-                <Badge tone={item.tone}>{item.badge}</Badge>
-              </div>
-              <p className="mt-2 text-xs leading-5 text-mk-ash">{item.detail}</p>
+              <span className="text-sm font-semibold">{item.label}</span>
+              <span
+                className={
+                  active
+                    ? "rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-white"
+                    : ""
+                }
+              >
+                {active ? item.badge : <Badge tone={item.tone}>{item.badge}</Badge>}
+              </span>
             </a>
           );
         })}
@@ -325,7 +276,7 @@ function AdminSectionTabs({
   );
 }
 
-function NextBestActionPanel({
+function _NextBestActionPanel({
   data,
   sessionsWithRealErrors,
 }: {
@@ -444,7 +395,7 @@ function NextBestActionPanel({
   );
 }
 
-function OperationalHealthStrip({
+function _OperationalHealthStrip({
   data,
   sessionsWithRealErrors,
 }: {
@@ -511,7 +462,7 @@ type BriefInsight = {
   tone: "neutral" | "blue" | "green" | "red" | "amber";
 };
 
-function OperatingBriefPanel({
+function _OperatingBriefPanel({
   data,
   sessionsWithRealErrors,
 }: {
@@ -719,7 +670,7 @@ type RekaFixAction = {
   entries: EvalAttentionEntry[];
 };
 
-function VoiceQualityPanel({ data }: { data: DashboardData }) {
+function _VoiceQualityPanel({ data }: { data: DashboardData }) {
   const evals = data.analytics.evals;
   const averages = evals.averages;
   const dims = [
@@ -1051,18 +1002,19 @@ function OperatorFilters({
   totalVoiceRecoverable: number;
   view: AdminView;
 }) {
-  const targetView = view === "voice" ? "voice" : "leads";
-  const targetHash = targetView === "voice" ? "voice-recovery" : "work-queues";
+  const targetView = view === "voice" ? "voice" : view === "today" ? "today" : "leads";
+  const targetHash = targetView === "voice" ? "voice-recovery" : "crm-workspace";
   return (
     <section aria-label="Operator filters" className="scroll-mt-36" id="operator-filters">
       <Card className="border-mk-ash/20 bg-white shadow-sm">
         <CardHeader className="pb-3">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <CardTitle>Find a handoff</CardTitle>
+              <CardTitle>{view === "voice" ? "Find a voice session" : "Search enquiries"}</CardTitle>
               <CardDescription>
-                Filter the visible queues by contact, organisation, source, status, or priority. Metrics above stay
-                unfiltered.
+                {view === "voice"
+                  ? "Search recoverable voice sessions by customer or captured contact details."
+                  : "Filter the CRM by contact, organisation, request, source, pipeline status, or priority."}
               </CardDescription>
             </div>
             <Badge tone={filterActive ? "blue" : "neutral"}>
@@ -1378,7 +1330,7 @@ function DisclosureSection({
   );
 }
 
-function WorkflowPanel({
+function _WorkflowPanel({
   leads,
   filterActive,
   totalLeads,
@@ -1642,7 +1594,7 @@ function LeadContactChips({ lead }: { lead: LeadRow }) {
   );
 }
 
-function TriagePanel({
+function _TriagePanel({
   leads,
   filterActive,
   totalLeads,
@@ -1667,7 +1619,7 @@ function TriagePanel({
   );
 }
 
-function PriorityPanel({
+function _PriorityPanel({
   leads,
   filterActive,
   totalLeads,
@@ -1692,7 +1644,7 @@ function PriorityPanel({
   );
 }
 
-function NotificationPanel({
+function _NotificationPanel({
   leads,
   filterActive,
   totalLeads,
@@ -1936,7 +1888,7 @@ function leadAnchorId(lead: LeadRow) {
   return `lead-${lead.leadId.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 }
 
-function ActionQueuePanel({ data, sessionsWithRealErrors }: { data: DashboardData; sessionsWithRealErrors: number }) {
+function _ActionQueuePanel({ data, sessionsWithRealErrors }: { data: DashboardData; sessionsWithRealErrors: number }) {
   const recoverable = recoverableVoiceSessions(data.voiceSessions).length;
   const staleActive = staleActiveLeads(data.leads, data.generatedAt).length;
   const unassigned = countUnassignedActiveLeads(data.leads);
@@ -2958,7 +2910,7 @@ function safeWebsiteHref(value: string | undefined) {
   }
 }
 
-function LatestEnquiriesPanel({
+function _LatestEnquiriesPanel({
   leads,
   voiceSessions,
   generatedAt,
@@ -3229,6 +3181,11 @@ function parseAdminFilters(searchParams: Awaited<AdminSearchParams> | undefined)
     priority: normalizeFilterValue(readParam("priority"), Object.keys(adminLeadPriorityLabels)),
     source: normalizeFilterValue(readParam("source"), ["form", "voice", "hero-email"]),
   };
+}
+
+function parseSelectedLeadId(searchParams: Awaited<AdminSearchParams> | undefined) {
+  const value = searchParams?.lead;
+  return (Array.isArray(value) ? value[0] : value)?.trim() || undefined;
 }
 
 function parseAdminView(searchParams: Awaited<AdminSearchParams> | undefined): AdminView {

@@ -39,7 +39,8 @@
       "notificationDelivered": false,
       "notificationEmailOk": false,
       "notificationSlackOk": false,
-      "notificationSummary": "email=failed slack=failed",
+      "notificationClickUpOk": false,
+      "notificationSummary": "email=failed slack=failed clickup=failed",
       "lastNotificationAt": 1781713152327,
       "createdAt": 1781538552327
     },
@@ -62,7 +63,8 @@
       "notificationDelivered": true,
       "notificationEmailOk": true,
       "notificationSlackOk": true,
-      "notificationSummary": "email=ses slack=slack",
+      "notificationClickUpOk": true,
+      "notificationSummary": "email=ses slack=slack clickup=clickup",
       "lastNotificationAt": 1781709552327,
       "createdAt": 1781707752327
     },
