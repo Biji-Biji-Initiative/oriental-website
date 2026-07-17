@@ -20,6 +20,16 @@ const JUDGE_CONCURRENCY = 3;
 const JUDGE_TIMEOUT_MS = 30_000;
 /** Hard ceiling per admin-triggered run so a single click cannot fan out unbounded model spend. */
 export const MAX_ADMIN_EVAL_SESSIONS = 50;
+export const ADMIN_EVAL_FAILURE_CATEGORIES = [
+  "provider_timeout",
+  "provider_rate_limited",
+  "provider_auth",
+  "provider_error",
+  "empty_response",
+  "invalid_response",
+] as const;
+
+export type AdminEvalFailureCategory = (typeof ADMIN_EVAL_FAILURE_CATEGORIES)[number];
 
 export { ADMIN_EVAL_MODEL_CHOICES, DEFAULT_EVAL_JUDGE_MODEL };
 
@@ -37,6 +47,7 @@ export type AdminEvalRunResult =
       judged: number;
       persisted: number;
       failures: number;
+      failureCategories: Record<AdminEvalFailureCategory, number>;
     };
 
 /**
@@ -89,13 +100,13 @@ export async function runAdminVoiceEvals(options: {
   // an operator click into a long retry storm. The SDK default timeout is far
   // too long for a synchronous admin action.
   const client = new OpenAI({ apiKey: openaiKey, maxRetries: 1, timeout: JUDGE_TIMEOUT_MS });
-  const scores = new Map<string, JudgeScore | null>();
+  const outcomes = new Map<string, JudgeOutcome>();
   await mapPool(judgeable, JUDGE_CONCURRENCY, async (session) => {
-    scores.set(session.reviewId, await judgeSession(client, model, session));
+    outcomes.set(session.reviewId, await judgeSession(client, model, session));
   });
 
   const evals: SessionEval[] = judgeable.map((session) =>
-    buildSessionEval(session, scores.get(session.reviewId) ?? null),
+    buildSessionEval(session, outcomes.get(session.reviewId)?.score ?? null),
   );
   const payloads = evals
     .filter((entry): entry is SessionEval & { score: NonNullable<SessionEval["score"]> } => entry.score !== null)
@@ -122,6 +133,13 @@ export async function runAdminVoiceEvals(options: {
     }
   }
 
+  const failureCategories = Object.fromEntries(
+    ADMIN_EVAL_FAILURE_CATEGORIES.map((category) => [
+      category,
+      [...outcomes.values()].filter((outcome) => outcome.failure === category).length,
+    ]),
+  ) as Record<AdminEvalFailureCategory, number>;
+
   return {
     ok: true,
     model,
@@ -130,6 +148,7 @@ export async function runAdminVoiceEvals(options: {
     judged: judgeable.length,
     persisted,
     failures: judgeable.length - payloads.length,
+    failureCategories,
   };
 }
 
@@ -138,7 +157,9 @@ export function needsAdminEvaluation(session: VoiceEvalSession, model: string, t
   return targeted || session.eval?.model !== model;
 }
 
-async function judgeSession(client: OpenAI, model: string, session: VoiceEvalSession): Promise<JudgeScore | null> {
+type JudgeOutcome = { score: JudgeScore | null; failure?: AdminEvalFailureCategory };
+
+async function judgeSession(client: OpenAI, model: string, session: VoiceEvalSession): Promise<JudgeOutcome> {
   try {
     const completion = await client.chat.completions.create({
       model,
@@ -149,10 +170,25 @@ async function judgeSession(client: OpenAI, model: string, session: VoiceEvalSes
       ],
     });
     const content = completion.choices[0]?.message?.content;
-    return content ? parseJudgeResponse(content) : null;
-  } catch {
-    return null;
+    if (!content) return { score: null, failure: "empty_response" };
+    const score = parseJudgeResponse(content);
+    return score ? { score } : { score: null, failure: "invalid_response" };
+  } catch (error) {
+    return { score: null, failure: classifyJudgeError(error) };
   }
+}
+
+export function classifyJudgeError(error: unknown): AdminEvalFailureCategory {
+  const candidate = error as { code?: unknown; name?: unknown; status?: unknown } | null;
+  const status = typeof candidate?.status === "number" ? candidate.status : 0;
+  const code = typeof candidate?.code === "string" ? candidate.code.toLowerCase() : "";
+  const name = typeof candidate?.name === "string" ? candidate.name.toLowerCase() : "";
+  if (name.includes("timeout") || name === "aborterror" || code.includes("timeout") || code === "etimedout") {
+    return "provider_timeout";
+  }
+  if (status === 429) return "provider_rate_limited";
+  if (status === 401 || status === 403) return "provider_auth";
+  return "provider_error";
 }
 
 /** Run an async mapper over items with a fixed concurrency. */

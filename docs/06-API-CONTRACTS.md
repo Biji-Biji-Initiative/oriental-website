@@ -568,6 +568,7 @@ type AdminEvalsResponse = {
   judged: number;
   persisted: number;
   failures: number; // judged but unscorable (judge error/parse failure)
+  failureCategories: Record<string, number>; // aggregate provider/parse categories; no per-session identifiers
 };
 ```
 

@@ -63,6 +63,7 @@ export async function POST(request: Request) {
     judged: result.judged,
     persisted: result.persisted,
     failures: result.failures,
+    failureCategories: result.failureCategories,
   });
   const { ok: _ok, ...summary } = result;
   return noStoreJson({ ok: true, ...summary });

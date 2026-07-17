@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { POST } from "@/app/api/admin/evals/route";
 import { resetRateLimitBucketsForTest } from "@/lib/server/rate-limit";
-import { needsAdminEvaluation, runAdminVoiceEvals } from "@/lib/server/voice-evals";
+import { classifyJudgeError, needsAdminEvaluation, runAdminVoiceEvals } from "@/lib/server/voice-evals";
 
 vi.mock("@/lib/server/voice-evals", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/server/voice-evals")>();
@@ -32,6 +32,14 @@ describe("admin evals route", () => {
       judged: 3,
       persisted: 3,
       failures: 0,
+      failureCategories: {
+        provider_timeout: 0,
+        provider_rate_limited: 0,
+        provider_auth: 0,
+        provider_error: 0,
+        empty_response: 0,
+        invalid_response: 0,
+      },
     });
   });
 
@@ -120,6 +128,13 @@ describe("admin evals route", () => {
     expect(needsAdminEvaluation(evaluated as never, "gpt-4o-mini", false)).toBe(false);
     expect(needsAdminEvaluation(evaluated as never, "gpt-5.6-luna", false)).toBe(true);
     expect(needsAdminEvaluation(evaluated as never, "gpt-4o-mini", true)).toBe(true);
+  });
+
+  it("classifies provider failures without exposing provider messages", () => {
+    expect(classifyJudgeError({ name: "APIConnectionTimeoutError" })).toBe("provider_timeout");
+    expect(classifyJudgeError({ status: 429 })).toBe("provider_rate_limited");
+    expect(classifyJudgeError({ status: 401 })).toBe("provider_auth");
+    expect(classifyJudgeError(new Error("private upstream detail"))).toBe("provider_error");
   });
 });
 
