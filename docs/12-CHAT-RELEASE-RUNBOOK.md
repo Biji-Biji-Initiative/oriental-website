@@ -137,8 +137,8 @@ infisical run \
 
 Managed-environment validation is the default. This staging preview requires
 `baseline/candidate/low/adaptive` with `gpt-realtime-2.1`; production requires
-`baseline/control/low/adaptive` with `gpt-realtime-2`. Both require the QA
-picker off. `--allow-unmanaged` exists only
+`baseline/control/low/adaptive` with `gpt-realtime-2`. Candidate staging requires
+the QA picker on; production control requires it off. `--allow-unmanaged` exists only
 for testing the Git/static contract and MUST NOT be used as production release
 evidence. The fast parity command runs against both native Infisical
 environments before the full production-env preflight, preventing staging
@@ -172,8 +172,13 @@ include release docs before the first deployment.
    unknown experiment. As part of the same atomic `.env` update, it materializes
    the selected governed non-secret voice cell. Candidate is legal only for
    staging and resolves to `baseline/candidate/low/adaptive`; every production
-   host path rejects it. The picker is explicitly off and the full secret set
-   must already be reconciled from Infisical.
+   host path rejects it. The picker is explicitly on for this staging audition
+   cell, remains off in production, and the full secret set must already be
+   reconciled from Infisical.
+
+   While the picker is on, treat staging as an audition surface. Those sessions
+   are stratified by variant/voice/speed and fail the one-dimension experiment
+   validator; they are not valid candidate-model promotion evidence.
 
 3. Run the deterministic public verifier:
 

@@ -35,6 +35,7 @@ export function VoiceVariantPicker() {
         aria-label={`Choose Reka voice. Current voice: ${activeLabel}. ${VOICE_VARIANTS.length} voices available.`}
         className="fixed bottom-5 left-5 z-40 inline-flex max-w-[calc(100vw-40px)] items-center gap-2.5 rounded-full border border-mk-off-black/12 bg-white/92 px-3.5 py-2 text-left text-mk-off-black shadow-2xl backdrop-blur transition hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mk-anchor-blue disabled:cursor-wait disabled:opacity-70 sm:left-auto sm:right-5 sm:bottom-20 sm:gap-3 sm:py-2.5"
         disabled={!hydrated}
+        data-voice-global-picker
         onClick={() => setExpanded(true)}
         type="button"
       >
@@ -56,6 +57,7 @@ export function VoiceVariantPicker() {
     <section
       aria-label="Choose Reka voice"
       className="fixed bottom-5 left-5 z-40 max-h-[min(620px,calc(100svh-40px))] w-[min(320px,calc(100vw-40px))] overflow-y-auto rounded-xl border border-mk-off-black/12 bg-white/96 p-3 text-mk-off-black shadow-2xl backdrop-blur sm:left-auto sm:right-5 sm:bottom-20"
+      data-voice-global-picker
     >
       <header className="mb-2 flex items-center justify-between gap-2">
         <span className="text-[11px] font-semibold uppercase text-mk-off-black/50">

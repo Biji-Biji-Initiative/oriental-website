@@ -15,8 +15,8 @@
  *
  * This module is the single source of truth: the server resolves the selected
  * id when minting a session (so voice/speed/persona are never client-supplied),
- * and the tuning picker (dev, or production with /?voices=1) renders the same
- * list.
+ * and the tuning picker (development or an explicitly enabled staging runtime)
+ * renders the same list. Production remains disabled server-side.
  */
 export type VoiceVariant = {
   id: string;
@@ -44,7 +44,7 @@ export const VOICE_VARIANTS: readonly VoiceVariant[] = [
     voice: "marin",
     speed: 1.22,
     personaNote:
-      "Register for this variant: the polished Klang Valley professional — the host who welcomes partners in a Bangsar studio or a partner boardroom. Clean, articulate Malaysian English in crisp, efficient sentences: lead with the answer, then one sharp follow-up question. Signature moves: 'Quick one —' before a qualifying question, a confident 'can' when confirming something is possible, at most one light 'ya?' in a beat and never stacked particles. A sharp KL creative-industry founder — warm, direct, zero fluff.",
+      "Register for this variant: the polished Klang Valley professional — the host who welcomes partners in a Bangsar studio or a partner boardroom. Clean, articulate Malaysian English in crisp, efficient sentences: lead with the answer, then one sharp follow-up question. Ask qualifying questions directly without a stock preamble; use a confident 'can' when confirming something is possible, at most one light 'ya?' in a beat and never stacked particles. A sharp KL creative-industry founder — warm, direct, zero fluff.",
   },
   {
     id: "malay-warm",

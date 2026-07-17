@@ -58,12 +58,16 @@ export async function POST(request: NextRequest) {
   try {
     const deviceProfile = detectDeviceProfile(request.headers.get("user-agent"));
     const deploymentEnvironment = detectDeploymentEnvironment(request.url);
+    const variantId =
+      deploymentEnvironment === "staging" && readEnv("VOICE_VARIANT_PICKER", "false") === "true"
+        ? parsed.data.variant
+        : undefined;
     mintStartedAt = performance.now();
     const secret = await createRealtimeClientSecret(
       hashIp(ip, "openai-safety"),
       parsed.data.intent,
       deviceProfile,
-      parsed.data.variant,
+      variantId,
     );
     timings.openai_mint = performance.now() - mintStartedAt;
     const review = createVoiceReviewCredentials();
@@ -125,12 +129,13 @@ function detectDeviceProfile(userAgent: string | null): RealtimeDeviceProfile {
 }
 
 function detectDeploymentEnvironment(requestUrl: string) {
+  const hostname = new URL(requestUrl).hostname.toLowerCase();
+  // A public production hostname always wins over a stale/mistyped env flag.
+  if (hostname === "oriental.mereka.io") return "production" as const;
+  if (hostname === "staging.oriental.mereka.io") return "staging" as const;
   const configured = readEnv("APP_ENV") ?? readEnv("SENTRY_ENVIRONMENT");
   if (configured === "staging") return "staging" as const;
   if (configured === "production") return "production" as const;
-  const hostname = new URL(requestUrl).hostname.toLowerCase();
-  if (hostname === "staging.oriental.mereka.io") return "staging" as const;
-  if (hostname === "oriental.mereka.io") return "production" as const;
   return "local" as const;
 }
 

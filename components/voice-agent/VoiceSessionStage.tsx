@@ -155,7 +155,7 @@ export function VoiceSessionStage({
             className="mt-8 max-w-2xl text-[clamp(1.8rem,3vw,2.9rem)] font-medium leading-tight text-balance"
             data-voice-stage-headline
           >
-            What would you like to build at Oriental?
+            Build with Mereka at Oriental.
           </p>
         )}
         <p className="mt-3 max-w-xl text-sm leading-6 text-white/58" data-voice-stage-detail>

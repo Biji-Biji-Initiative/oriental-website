@@ -191,8 +191,13 @@ if (activeExperimentDimensions.length > 1) {
   );
   process.exit(1);
 }
-if (activeExperimentDimensions.length > 0 && envValue("VOICE_VARIANT_PICKER") === "true") {
-  console.error("VOICE_VARIANT_PICKER must be false while a runtime, model, or reasoning experiment is active.");
+const deploymentEnvironment = envValue("APP_ENV") ?? envValue("SENTRY_ENVIRONMENT");
+if (
+  activeExperimentDimensions.length > 0 &&
+  envValue("VOICE_VARIANT_PICKER") === "true" &&
+  deploymentEnvironment !== "staging"
+) {
+  console.error("VOICE_VARIANT_PICKER may accompany an active experiment only in staging.");
   process.exit(1);
 }
 

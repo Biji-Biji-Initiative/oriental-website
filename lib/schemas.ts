@@ -263,6 +263,7 @@ export const voiceReviewSnapshotSchema = z.object({
                 "confirm_email",
                 "lookup_oriental",
                 "clear_field",
+                "clear_fields",
                 "summarise_lead",
                 "route_to_team",
                 "wait_for_user",
