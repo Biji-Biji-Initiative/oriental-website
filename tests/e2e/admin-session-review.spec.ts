@@ -362,7 +362,9 @@ test.describe("admin session review console", () => {
     await workspace.getByRole("button", { name: "Archive 1" }).click();
 
     const dialog = page.getByRole("dialog", { name: "Archive enquiries" });
-    await expect(dialog.getByText(/no customer, transcript, delivery, or audit data is deleted/i)).toBeVisible();
+    await expect(
+      dialog.getByText(/archiving does not delete them now.*published two-year retention window/i),
+    ).toBeVisible();
     await expect(dialog.getByLabel("Reason")).toBeVisible();
     await expect(dialog.getByText(/atomic action.*revision checked/i)).toBeVisible();
     await expect(dialog.getByRole("button", { name: "Archive records" })).toBeDisabled();
