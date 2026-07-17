@@ -194,7 +194,6 @@ export default defineSchema({
                 v.literal("confirm_email"),
                 v.literal("lookup_oriental"),
                 v.literal("clear_field"),
-                v.literal("clear_fields"),
                 v.literal("summarise_lead"),
                 v.literal("route_to_team"),
                 v.literal("wait_for_user"),
