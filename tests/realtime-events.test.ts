@@ -1061,6 +1061,950 @@ describe("reduceRealtimeServerEvent", () => {
     expect(result.state.captured.email).toBe("asha.lim+ai@example.com");
   });
 
+  it("keeps a grounded email valid across a trailing unrelated microphone transcription", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_fields",
+              call_id: "call_email_after_mic_race",
+              arguments: JSON.stringify({
+                fields: [
+                  {
+                    key: "email",
+                    value: "qa.nebula@example.test",
+                    evidence: "q a dot nebula at example dot test",
+                  },
+                ],
+              }),
+            },
+          ],
+        },
+      },
+      state({
+        transcript: [
+          { role: "user", text: "My email is q a dot nebula at example dot test." },
+          { role: "user", text: "Sorry, background audio says we can meet at 3." },
+        ],
+      }),
+    );
+
+    expect(result.state.captured.email).toBe("qa.nebula@example.test");
+    expect(result.state.emailVerification).toMatchObject({ status: "confirmed", confidence: "high" });
+    expect(result.commands[0]).toMatchObject({ output: { ok: true, emailConfirmationRequired: false } });
+  });
+
+  it("does not revive an older email after a newer correction", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_stale_email_after_correction",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "old@example.com",
+                evidence: "old at example dot com",
+              }),
+            },
+          ],
+        },
+      },
+      state({
+        transcript: [
+          { role: "user", text: "My email is old at example dot com." },
+          { role: "user", text: "Actually, use new at example dot com instead." },
+        ],
+      }),
+    );
+
+    expect(result.state.captured.email).toBe("");
+    expect(result.commands[0]).toMatchObject({
+      output: { ok: false, error: "ungrounded_identity_capture", key: "email" },
+    });
+  });
+
+  it("rejects a stale email when the latest correction repeats it before the replacement", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_repeated_stale_email",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "old@example.com",
+                evidence: "old@example.com",
+              }),
+            },
+          ],
+        },
+      },
+      state({
+        transcript: [
+          { role: "user", text: "My email is old@example.com." },
+          { role: "user", text: "Actually, old@example.com was wrong; use new@example.com." },
+        ],
+      }),
+    );
+
+    expect(result.state.captured.email).toBe("");
+    expect(result.commands[0]).toMatchObject({
+      output: { ok: false, error: "ungrounded_identity_capture", key: "email" },
+    });
+  });
+
+  it("accepts the replacement address when the visitor says what they meant", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_corrected_email",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "new@example.com",
+                evidence: "new@example.com",
+              }),
+            },
+          ],
+        },
+      },
+      state({
+        transcript: [
+          { role: "user", text: "My email is old@example.com." },
+          { role: "user", text: "Actually, I meant new@example.com." },
+        ],
+      }),
+    );
+
+    expect(result.state.captured.email).toBe("new@example.com");
+    expect(result.state.emailVerification).toMatchObject({ status: "confirmed", confidence: "high" });
+    expect(result.commands[0]).toMatchObject({ output: { ok: true, emailConfirmationRequired: false } });
+  });
+
+  it("does not reuse an older address after a fragment-only correction", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_email_after_fragment_correction",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "old@example.com",
+                evidence: "old@example.com",
+              }),
+            },
+          ],
+        },
+      },
+      state({
+        transcript: [
+          { role: "user", text: "My email is old@example.com." },
+          { role: "user", text: "Sorry, I meant the local part should be new." },
+        ],
+      }),
+    );
+
+    expect(result.state.captured.email).toBe("");
+    expect(result.commands[0]).toMatchObject({
+      output: { ok: false, error: "ungrounded_identity_capture", key: "email" },
+    });
+  });
+
+  it("keeps prior email grounding across unrelated correction-like microphone text", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_email_before_unrelated_should_be",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "old@example.com",
+                evidence: "old@example.com",
+              }),
+            },
+          ],
+        },
+      },
+      state({
+        transcript: [
+          { role: "user", text: "My email is old@example.com." },
+          { role: "user", text: "The meeting should be at three." },
+        ],
+      }),
+    );
+
+    expect(result.state.captured.email).toBe("old@example.com");
+    expect(result.state.emailVerification).toMatchObject({ status: "confirmed", confidence: "high" });
+  });
+
+  it("does not confuse an address with a suffix of the corrected address", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_email_suffix_collision",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "a@example.com",
+                evidence: "a@example.com",
+              }),
+            },
+          ],
+        },
+      },
+      state({
+        transcript: [
+          { role: "user", text: "My email is a@example.com." },
+          { role: "user", text: "Actually, I meant qa@example.com." },
+        ],
+      }),
+    );
+
+    expect(result.state.captured.email).toBe("");
+    expect(result.commands[0]).toMatchObject({
+      output: { ok: false, error: "ungrounded_identity_capture", key: "email" },
+    });
+  });
+
+  it("does not confuse a spoken address with a suffix of the corrected local part", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_spoken_email_suffix_collision",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "a@example.com",
+                evidence: "a at example dot com",
+              }),
+            },
+          ],
+        },
+      },
+      state({
+        transcript: [
+          { role: "user", text: "My email is a at example dot com." },
+          { role: "user", text: "Actually, I meant q a at example dot com." },
+        ],
+      }),
+    );
+
+    expect(result.state.captured.email).toBe("");
+    expect(result.commands[0]).toMatchObject({
+      output: { ok: false, error: "ungrounded_identity_capture", key: "email" },
+    });
+  });
+
+  it.each([
+    "qa@example.com.",
+    "q a at example dot com.",
+  ])("does not revive a suffix address from a different latest address: %s", (latestAddress) => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_email_suffix_without_correction",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "a@example.com",
+                evidence: "a@example.com",
+              }),
+            },
+          ],
+        },
+      },
+      state({
+        transcript: [
+          { role: "user", text: "My email is a@example.com." },
+          { role: "user", text: latestAddress },
+        ],
+      }),
+    );
+
+    expect(result.state.captured.email).toBe("");
+    expect(result.commands[0]).toMatchObject({
+      output: { ok: false, error: "ungrounded_identity_capture", key: "email" },
+    });
+  });
+
+  it.each([
+    "a@example.com.",
+    "a at example dot com.",
+  ])("does not expand a different latest address into a prefixed stale address: %s", (latestAddress) => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_email_prefix_without_correction",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "qa@example.com",
+                evidence: "qa@example.com",
+              }),
+            },
+          ],
+        },
+      },
+      state({
+        transcript: [
+          { role: "user", text: "My email is qa@example.com." },
+          { role: "user", text: latestAddress },
+        ],
+      }),
+    );
+
+    expect(result.state.captured.email).toBe("");
+    expect(result.commands[0]).toMatchObject({
+      output: { ok: false, error: "ungrounded_identity_capture", key: "email" },
+    });
+  });
+
+  it.each([
+    "The right email is a@y.com.",
+    "The right email is a at y dot com.",
+  ])("lets a newer different address supersede the older exact address: %s", (latestAddress) => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_older_email_after_new_address",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "a@x.com",
+                evidence: "a@x.com",
+              }),
+            },
+          ],
+        },
+      },
+      state({
+        transcript: [
+          { role: "user", text: "My email is a@x.com." },
+          { role: "user", text: latestAddress },
+        ],
+      }),
+    );
+
+    expect(result.state.captured.email).toBe("");
+    expect(result.commands[0]).toMatchObject({
+      output: { ok: false, error: "ungrounded_identity_capture", key: "email" },
+    });
+  });
+
+  it.each([
+    "ca",
+    "au",
+    "agency",
+    "museum",
+  ])("recognises an arbitrary valid spoken domain suffix when superseding: .%s", (suffix) => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_older_email_after_spoken_tld",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "a@example.com",
+                evidence: "a@example.com",
+              }),
+            },
+          ],
+        },
+      },
+      state({
+        transcript: [
+          { role: "user", text: "My email is a@example.com." },
+          { role: "user", text: `a at example dot ${suffix}.` },
+        ],
+      }),
+    );
+
+    expect(result.state.captured.email).toBe("");
+    expect(result.commands[0]).toMatchObject({
+      output: { ok: false, error: "ungrounded_identity_capture", key: "email" },
+    });
+  });
+
+  it.each([
+    "a at example dot c a.",
+    "a at example dot a u.",
+  ])("recognises a letter-spelled spoken suffix when superseding: %s", (spokenAddress) => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_older_email_after_spelled_tld",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "a@example.com",
+                evidence: "a@example.com",
+              }),
+            },
+          ],
+        },
+      },
+      state({
+        transcript: [
+          { role: "user", text: "My email is a@example.com." },
+          { role: "user", text: spokenAddress },
+        ],
+      }),
+    );
+
+    expect(result.state.captured.email).toBe("");
+    expect(result.commands[0]).toMatchObject({
+      output: { ok: false, error: "ungrounded_identity_capture", key: "email" },
+    });
+  });
+
+  it.each([
+    "a at proton mail dot com.",
+    "a at red panda dot com.",
+    "a at my company dot com.",
+    "a at the edge dot io.",
+    "a at our team dot org.",
+  ])("recognises a naturally spoken multiword domain when superseding: %s", (spokenAddress) => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_older_email_after_multiword_domain",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "a@example.com",
+                evidence: "a@example.com",
+              }),
+            },
+          ],
+        },
+      },
+      state({
+        transcript: [
+          { role: "user", text: "My email is a@example.com." },
+          { role: "user", text: spokenAddress },
+        ],
+      }),
+    );
+
+    expect(result.state.captured.email).toBe("");
+    expect(result.commands[0]).toMatchObject({
+      output: { ok: false, error: "ungrounded_identity_capture", key: "email" },
+    });
+  });
+
+  it("keeps prior email grounding across an unrelated at-point phrase", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_email_before_launch_point",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "a@x.com",
+                evidence: "a@x.com",
+              }),
+            },
+          ],
+        },
+      },
+      state({
+        transcript: [
+          { role: "user", text: "My email is a@x.com." },
+          { role: "user", text: "We are at the launch point now." },
+        ],
+      }),
+    );
+
+    expect(result.state.captured.email).toBe("a@x.com");
+    expect(result.state.emailVerification).toMatchObject({ status: "confirmed", confidence: "high" });
+  });
+
+  it.each([
+    "Meet me at the red dot on the map.",
+    "Look at the blue dot near the entrance.",
+  ])("keeps prior email grounding across ordinary dot-location language: %s", (backgroundTranscript) => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_email_before_dot_location",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "old@example.com",
+                evidence: "old@example.com",
+              }),
+            },
+          ],
+        },
+      },
+      state({
+        transcript: [
+          { role: "user", text: "My email is old@example.com." },
+          { role: "user", text: backgroundTranscript },
+        ],
+      }),
+    );
+
+    expect(result.state.captured.email).toBe("old@example.com");
+    expect(result.state.emailVerification).toMatchObject({ status: "confirmed", confidence: "high" });
+  });
+
+  it("treats a different address after forget as a replacement", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_email_after_forget",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "old@example.com",
+                evidence: "old@example.com",
+              }),
+            },
+          ],
+        },
+      },
+      state({
+        transcript: [
+          { role: "user", text: "My email is old@example.com." },
+          { role: "user", text: "Forget old@example.com; use new@example.com." },
+        ],
+      }),
+    );
+
+    expect(result.state.captured.email).toBe("");
+    expect(result.commands[0]).toMatchObject({
+      output: { ok: false, error: "ungrounded_identity_capture", key: "email" },
+    });
+  });
+
+  it("does not accept an address explicitly rejected after the replacement", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_explicitly_rejected_email",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "old@example.com",
+                evidence: "old@example.com",
+              }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "Use new@example.com, not old@example.com." }] }),
+    );
+
+    expect(result.state.captured.email).toBe("");
+    expect(result.commands[0]).toMatchObject({
+      output: { ok: false, error: "ungrounded_identity_capture", key: "email" },
+    });
+  });
+
+  it("does not accept the trailing address rejected by instead of", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_email_after_instead_of",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "old@example.com",
+                evidence: "old@example.com",
+              }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "Use new@example.com instead of old@example.com." }] }),
+    );
+
+    expect(result.state.captured.email).toBe("");
+    expect(result.commands[0]).toMatchObject({
+      output: { ok: false, error: "ungrounded_identity_capture", key: "email" },
+    });
+  });
+
+  it.each([
+    "Use new@example.com rather than old@example.com.",
+    "Use new at example dot com rather than old at example dot com.",
+  ])("does not accept the trailing address rejected by rather than: %s", (transcript) => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_email_after_rather_than",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "old@example.com",
+                evidence: "old@example.com",
+              }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: transcript }] }),
+    );
+
+    expect(result.state.captured.email).toBe("");
+    expect(result.commands[0]).toMatchObject({
+      output: { ok: false, error: "ungrounded_identity_capture", key: "email" },
+    });
+  });
+
+  it("recognises a contracted rejection after an address", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_email_isnt_correct",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "old@example.com",
+                evidence: "old@example.com",
+              }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "old@example.com isn't correct." }] }),
+    );
+
+    expect(result.state.captured.email).toBe("");
+    expect(result.commands[0]).toMatchObject({
+      output: { ok: false, error: "ungrounded_identity_capture", key: "email" },
+    });
+  });
+
+  it("rejects a spoken address when its repeated mention retracts it", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_repeated_spoken_retraction",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "old@example.com",
+                evidence: "old at example dot com",
+              }),
+            },
+          ],
+        },
+      },
+      state({
+        transcript: [
+          {
+            role: "user",
+            text: "old at example dot com — no, not old at example dot com.",
+          },
+        ],
+      }),
+    );
+
+    expect(result.state.captured.email).toBe("");
+    expect(result.commands[0]).toMatchObject({
+      output: { ok: false, error: "ungrounded_identity_capture", key: "email" },
+    });
+  });
+
+  it.each([
+    "Actually, old@example.com, yes, old@example.com.",
+    "Actually, old at example dot com, yes, old at example dot com.",
+  ])("accepts a repeated address that the visitor affirms: %s", (transcript) => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_repeated_email_affirmation",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "old@example.com",
+                evidence: "old@example.com",
+              }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: transcript }] }),
+    );
+
+    expect(result.state.captured.email).toBe("old@example.com");
+    expect(result.state.emailVerification).toMatchObject({ status: "confirmed", confidence: "high" });
+  });
+
+  it("orders fully spoken replacement addresses correctly", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_spoken_email_replacement_order",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "old@example.com",
+                evidence: "old at example dot com",
+              }),
+            },
+          ],
+        },
+      },
+      state({
+        transcript: [
+          {
+            role: "user",
+            text: "Actually, old at example dot com should be new at example dot com.",
+          },
+        ],
+      }),
+    );
+
+    expect(result.state.captured.email).toBe("");
+    expect(result.commands[0]).toMatchObject({
+      output: { ok: false, error: "ungrounded_identity_capture", key: "email" },
+    });
+  });
+
+  it.each([
+    "Sorry, I meant new.",
+    "No, I said new.",
+  ])("does not reuse an older address after the fragment correction %s", (correction) => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_email_after_short_fragment",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "old@example.com",
+                evidence: "old@example.com",
+              }),
+            },
+          ],
+        },
+      },
+      state({
+        transcript: [
+          { role: "user", text: "My email is old@example.com." },
+          { role: "user", text: correction },
+        ],
+      }),
+    );
+
+    expect(result.state.captured.email).toBe("");
+    expect(result.commands[0]).toMatchObject({
+      output: { ok: false, error: "ungrounded_identity_capture", key: "email" },
+    });
+  });
+
+  it("keeps email grounding across an explicitly meeting-related I meant turn", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_email_before_meeting_correction",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "old@example.com",
+                evidence: "old@example.com",
+              }),
+            },
+          ],
+        },
+      },
+      state({
+        transcript: [
+          { role: "user", text: "My email is old@example.com." },
+          { role: "user", text: "Sorry, I meant Tuesday for the meeting." },
+        ],
+      }),
+    );
+
+    expect(result.state.captured.email).toBe("old@example.com");
+    expect(result.state.emailVerification).toMatchObject({ status: "confirmed", confidence: "high" });
+  });
+
+  it("accepts either explicitly offered address without extra confirmation", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_alternative_email",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "first@example.com",
+                evidence: "first@example.com",
+              }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "Either first@example.com or second@example.com works." }] }),
+    );
+
+    expect(result.state.captured.email).toBe("first@example.com");
+    expect(result.state.emailVerification).toMatchObject({ status: "confirmed", confidence: "high" });
+  });
+
+  it("accepts a plain or choice when either offered address works", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_plain_alternative_email",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "first@example.com",
+                evidence: "first@example.com",
+              }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "Actually, first@example.com or second@example.com works." }] }),
+    );
+
+    expect(result.state.captured.email).toBe("first@example.com");
+    expect(result.state.emailVerification).toMatchObject({ status: "confirmed", confidence: "high" });
+  });
+
   it("accepts an organisation when ASR spelling drifts from what the model heard", () => {
     const result = reduceRealtimeServerEvent(
       {
