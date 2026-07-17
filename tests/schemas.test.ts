@@ -271,6 +271,16 @@ describe("voice review latency schema", () => {
             version: 1,
             activation: { tapToArmCueScheduledMs: 4, tapToLiveMs: 480 },
             turns: [turn],
+            toolCalls: [
+              {
+                sequence: 1,
+                name: "lookup_oriental",
+                outcome: "success",
+                executionMs: 12,
+                responseCreatedToCallMs: 140,
+                responseCreatedToResultMs: 152,
+              },
+            ],
           },
         },
       }).success,
@@ -311,6 +321,19 @@ describe("voice review latency schema", () => {
         snapshot: {
           ...request.snapshot,
           latency: { version: 1, turns: [{ ...turn, toolDurationMs: 120_001 }] },
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      voiceReviewSnapshotSchema.safeParse({
+        ...request,
+        snapshot: {
+          ...request.snapshot,
+          latency: {
+            version: 1,
+            turns: [turn],
+            toolCalls: [{ name: "lookup_oriental", outcome: "success", executionMs: 120_001 }],
+          },
         },
       }).success,
     ).toBe(false);

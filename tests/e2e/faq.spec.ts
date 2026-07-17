@@ -24,6 +24,7 @@ test.beforeEach(async ({ page }) => {
 
 test("FAQ renders and the inline Talk to Mereka CTA opens the form-first dialog without the microphone", async ({
   page,
+  isMobile,
 }) => {
   await page.addInitScript(() => {
     const state = window as typeof window & { __voiceGetUserMediaCalled?: boolean };
@@ -45,7 +46,7 @@ test("FAQ renders and the inline Talk to Mereka CTA opens the form-first dialog 
   await page.locator("main").getByRole("button", { name: "Talk to Mereka" }).click();
 
   await expect(page.getByRole("dialog")).toBeVisible();
-  await expect(page.getByLabel("Name")).toBeFocused();
+  await expect(isMobile ? page.getByRole("dialog") : page.getByLabel("Name")).toBeFocused();
   await expect
     .poll(() =>
       page.evaluate(

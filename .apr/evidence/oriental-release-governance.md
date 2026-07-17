@@ -75,6 +75,7 @@ export const CONTROL_VOICE_CELL = {
   runtimeProfile: "baseline",
   modelCell: "control",
   reasoningCell: "low",
+  emailCaptureMode: "adaptive",
 } as const;
 
 export const RELEASE_TARGETS = {
@@ -99,6 +100,10 @@ export function validateHealthPayload(payload: unknown, expectedSha: string): st
   if (health.ok !== true) failures.push("health response ok must be true");
   if (health.version !== expectedSha) failures.push(`health response version must equal ${expectedSha}`);
   if (health.convex !== true) failures.push("health response convex must be true");
+  const voice = health.voice && typeof health.voice === "object" ? (health.voice as Record<string, unknown>) : null;
+  if (!voice) failures.push("health response voice must be an object");
+  // The implementation checks runtime_profile/model_cell/reasoning_cell/
+  // email_capture_mode and variant_picker against CONTROL_VOICE_CELL.
   return failures;
 }
 
@@ -109,7 +114,9 @@ export function hasCloudflareEdgeHeaders(headers: Headers): boolean {
 ```
 
 `validateManagedVoiceCell` additionally requires exact
-`baseline/control/low` and rejects `VOICE_VARIANT_PICKER=true`.
+`baseline/control/low/adaptive` and rejects `VOICE_VARIANT_PICKER=true`.
+`validateHealthPayload` independently reads back those same public health
+fields, so a materialized Infisical/Coolify drift cannot pass on SHA alone.
 
 ## Preflight
 

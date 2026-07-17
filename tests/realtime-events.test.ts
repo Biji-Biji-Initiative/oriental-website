@@ -87,6 +87,172 @@ describe("reduceRealtimeServerEvent", () => {
     });
   });
 
+  it("routes a grounded speech email without a confirmation turn in adaptive mode", () => {
+    const capture = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_adaptive_email",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "asha@example.com",
+                evidence: "asha at example dot com",
+              }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "My email is asha at example dot com." }] }),
+    );
+
+    expect(capture.state.emailCaptureMode).toBe("adaptive");
+    expect(capture.state.emailVerification).toEqual({
+      value: "asha@example.com",
+      source: "speech",
+      status: "confirmed",
+      confidence: "high",
+    });
+    expect(capture.commands[0]).toMatchObject({
+      output: {
+        ok: true,
+        emailConfirmationRequired: false,
+        emailCaptureMode: "adaptive",
+        emailConfidence: "high",
+        nextAction: expect.stringContaining("without asking for a separate confirmation"),
+      },
+    });
+
+    const routed = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "route_to_team",
+              call_id: "call_adaptive_route",
+              arguments: JSON.stringify({ segment: "technology" }),
+            },
+          ],
+        },
+      },
+      capture.state,
+    );
+    expect(routed.commands).toEqual([{ type: "submit_voice", callId: "call_adaptive_route", segment: "technology" }]);
+  });
+
+  it("keeps bounded ASR drift smooth but reports medium confidence", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_adaptive_drift",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "asha.lim@example.my",
+                evidence: "asha dot lim at example dot my",
+              }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "My email is asia.lim@example.my." }] }),
+    );
+
+    expect(result.state.emailVerification).toMatchObject({
+      status: "confirmed",
+      source: "speech",
+      confidence: "medium",
+    });
+    expect(result.commands[0]).toMatchObject({ output: { emailConfirmationRequired: false } });
+  });
+
+  it("re-evaluates a corrected adaptive email and still blocks an invented replacement", () => {
+    const initial = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_initial_adaptive_email",
+              arguments: JSON.stringify({ key: "email", value: "asha@example.com", evidence: "asha@example.com" }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "My email is asha@example.com." }] }),
+    );
+    const corrected = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_corrected_adaptive_email",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "asha.lim@example.com",
+                evidence: "actually asha dot lim at example dot com",
+              }),
+            },
+          ],
+        },
+      },
+      {
+        ...initial.state,
+        transcript: [
+          ...initial.state.transcript,
+          { role: "user", text: "Actually, it is asha dot lim at example dot com." },
+        ],
+      },
+    );
+    expect(corrected.state.captured.email).toBe("asha.lim@example.com");
+    expect(corrected.state.emailVerification).toMatchObject({ status: "confirmed", confidence: "high" });
+
+    const invented = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_invented_replacement",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "sales@example.com",
+                evidence: "sales at example dot com",
+              }),
+            },
+          ],
+        },
+      },
+      corrected.state,
+    );
+    expect(invented.state.captured.email).toBe("asha.lim@example.com");
+    expect(invented.commands[0]).toMatchObject({
+      output: { ok: false, error: "ungrounded_identity_capture", key: "email" },
+    });
+  });
+
   it("rejects a one-character email drift instead of changing the visitor's address", () => {
     const result = reduceRealtimeServerEvent(
       {
@@ -112,6 +278,67 @@ describe("reduceRealtimeServerEvent", () => {
     expect(result.state.errors).toContainEqual(
       expect.objectContaining({ code: "voice_capture_rejected", message: expect.stringContaining("email") }),
     );
+  });
+
+  it("keeps a native-audio email as a pending draft when ASR spelling drifts", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_email_asr_drift",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "asha.lim@example.my",
+                evidence: "asha dot lim at example dot my",
+              }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "My email is asia.lim@example.my." }] }),
+    );
+
+    expect(result.state.captured.email).toBe("asha.lim@example.my");
+    expect(result.state.emailVerification).toEqual({
+      value: "asha.lim@example.my",
+      source: "speech",
+      status: "pending",
+    });
+    expect(result.commands[0]).toMatchObject({
+      output: { ok: true, emailConfirmationRequired: true, emailReadback: "asha dot lim at example dot my" },
+    });
+  });
+
+  it("still rejects a self-consistent email invention when the user gave no contact detail", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_email_invented",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "invented@example.com",
+                evidence: "invented at example dot com",
+              }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "We want to run a robotics workshop." }] }),
+    );
+
+    expect(result.state.captured.email).toBe("");
+    expect(result.commands[0]).toMatchObject({
+      output: { ok: false, error: "ungrounded_identity_capture", key: "email" },
+    });
   });
 
   it("requires an exact read-back confirmation before routing a speech email", () => {
@@ -272,7 +499,7 @@ describe("reduceRealtimeServerEvent", () => {
     });
   });
 
-  it("rejects the whole capture batch when one identity field is ungrounded", () => {
+  it("retains valid fields when one identity field in a batch is ungrounded", () => {
     const result = reduceRealtimeServerEvent(
       {
         type: "response.done",
@@ -295,14 +522,16 @@ describe("reduceRealtimeServerEvent", () => {
       state({ transcript: [{ role: "user", text: "We want to run a robotics workshop." }] }),
     );
 
-    expect(result.state.captured).toEqual(emptyCapturedLead);
+    expect(result.state.captured).toEqual({ ...emptyCapturedLead, message: "A robotics workshop." });
     expect(result.commands[0]).toMatchObject({
       type: "function_result",
       output: {
         ok: false,
-        error: "atomic_capture_rejected",
-        failedIndex: 1,
+        error: "partial_capture",
+        fields: [{ key: "message", mode: "replace" }],
+        rejectedFields: [{ index: 1 }],
         detail: { error: "ungrounded_identity_capture", key: "email" },
+        retry: expect.stringContaining("only the rejected fields"),
       },
     });
   });
@@ -332,7 +561,7 @@ describe("reduceRealtimeServerEvent", () => {
 
     expect(result.state.captured.message).toBe("");
     expect(result.commands[0]).toMatchObject({
-      output: { ok: false, error: "atomic_capture_rejected", detail: { error: "duplicate_field" } },
+      output: { ok: false, error: "invalid_field_batch", detail: { error: "duplicate_field" } },
     });
   });
 
@@ -905,6 +1134,51 @@ describe("reduceRealtimeServerEvent", () => {
     );
 
     expect(result.state.captured.name).toBe("Gurpreet Singh");
+  });
+
+  it("accepts a phonetically rough name draft only behind an explicit name cue", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_name_rough_asr",
+              arguments: JSON.stringify({ key: "name", value: "Gurpreet", evidence: "Gurpreet" }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "My name is Goodbreed." }] }),
+    );
+
+    expect(result.state.captured.name).toBe("Gurpreet");
+  });
+
+  it("rejects an unrelated same-initial name despite an explicit name cue", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_name_unrelated_asr",
+              arguments: JSON.stringify({ key: "name", value: "Gurpreet", evidence: "Gurpreet" }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "My name is Gareth." }] }),
+    );
+
+    expect(result.state.captured.name).toBe("");
+    expect(result.commands[0]).toMatchObject({
+      output: { ok: false, error: "ungrounded_identity_capture", key: "name" },
+    });
   });
 
   it("appends brief updates when the model marks the message capture as additive", () => {

@@ -25,9 +25,11 @@ test.beforeEach(async ({ page }) => {
 test("renders the Oriental microsite and opens the collaborative intake workspace", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /Reimagining/i })).toBeVisible();
+  await expect(page.locator('header [data-mereka-mark="true"]')).toBeVisible();
   await page.waitForTimeout(900);
   await page.getByRole("button", { name: /Tell us why/i }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.locator(".mereka-nebula")).toBeVisible();
   await expect(page.getByText("Handoff details", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Name")).toBeVisible();
   await page.getByRole("button", { name: "The spaces" }).click();
@@ -90,7 +92,9 @@ test("faq page nav links point home and the talk CTA opens the form workspace", 
     await page.getByRole("button", { name: "Talk to Mereka" }).last().click();
   }
   await expect(page.getByRole("dialog")).toBeVisible();
-  await expect(page.getByLabel("Name")).toBeFocused();
+  await expect(isMobile ? page.getByRole("dialog") : page.getByLabel("Name")).toBeFocused();
+  await expect(page.getByText(/every-visit option to remember the mic/i)).toBeVisible();
+  await expect(page.getByText(/One-time access will ask again later/i)).toBeVisible();
 });
 
 test("facilities use the current supplied space images and aligned labels", async ({ page }) => {
@@ -292,7 +296,7 @@ test("voice prewarms on page load for returning microphone permission without Tu
   expect(JSON.stringify(voiceSessionBodies[0])).not.toContain("turnstile");
 });
 
-test("talk CTA opens the partner dialog without requesting the microphone", async ({ page }) => {
+test("talk CTA opens the partner dialog without requesting the microphone", async ({ page, isMobile }) => {
   await page.addInitScript(() => {
     const state = window as typeof window & { __voiceGetUserMediaCalled?: boolean };
     state.__voiceGetUserMediaCalled = false;
@@ -318,7 +322,7 @@ test("talk CTA opens the partner dialog without requesting the microphone", asyn
   await page.locator('header button[aria-label="Talk to Mereka"]').click();
 
   await expect(page.getByRole("dialog")).toBeVisible();
-  await expect(page.getByLabel("Name")).toBeFocused();
+  await expect(isMobile ? page.getByRole("dialog") : page.getByLabel("Name")).toBeFocused();
   await expect
     .poll(() =>
       page.evaluate(
@@ -336,4 +340,215 @@ test("talk CTA opens the partner dialog without requesting the microphone", asyn
     )
     .toBe(true);
   await expect(page.getByText(/Microphone access is blocked/i)).toBeVisible();
+});
+
+test("voice intake stays contained and resets scroll across short responsive viewports", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.goto("/");
+  await page.locator('header button[aria-label="Talk to Mereka"]').click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+
+  const viewports = [
+    { width: 320, height: 568 },
+    { width: 360, height: 800 },
+    { width: 390, height: 844 },
+    { width: 844, height: 390 },
+    { width: 1024, height: 390 },
+    { width: 1024, height: 600 },
+    { width: 1024, height: 651 },
+    { width: 1024, height: 675 },
+    { width: 1024, height: 700 },
+    { width: 1280, height: 651 },
+    { width: 1280, height: 675 },
+    { width: 1280, height: 720 },
+    { width: 1440, height: 651 },
+    { width: 1440, height: 690 },
+    { width: 1440, height: 900 },
+  ];
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport);
+    await expect
+      .poll(() =>
+        page.locator('[data-slot="dialog-content"]').evaluate((dialog) => {
+          const rect = dialog.getBoundingClientRect();
+          const close = dialog.querySelector<HTMLElement>('[data-slot="dialog-close"]')?.getBoundingClientRect();
+          const layout = dialog.querySelector<HTMLElement>("[data-voice-dialog-layout]");
+          const primaryAction = dialog.querySelector<HTMLElement>("[data-voice-primary-action]");
+          const primaryRect = primaryAction?.getBoundingClientRect();
+          const primaryScrollHost = window.innerWidth >= 1024 ? primaryAction?.closest<HTMLElement>("main") : layout;
+          const primaryRegion = primaryScrollHost?.getBoundingClientRect();
+          const compactThreePane =
+            window.innerWidth < 1024 ||
+            Boolean(
+              layout &&
+                layout.scrollHeight <= layout.clientHeight + 1 &&
+                getComputedStyle(layout).gridTemplateColumns.split(" ").length === 3 &&
+                [...layout.children].every(
+                  (region) =>
+                    getComputedStyle(region).overflowY === "auto" && region.clientHeight === layout.clientHeight,
+                ),
+            );
+          return {
+            dialogFits:
+              rect.left >= -1 &&
+              rect.top >= -1 &&
+              rect.right <= window.innerWidth + 1 &&
+              rect.bottom <= window.innerHeight + 1,
+            closeFits: Boolean(
+              close &&
+                close.left >= rect.left &&
+                close.top >= rect.top &&
+                close.right <= rect.right &&
+                close.bottom <= rect.bottom,
+            ),
+            compactThreePane,
+            paneTopsAlign:
+              window.innerWidth < 1024 ||
+              Boolean(
+                layout &&
+                  [...layout.children].every(
+                    (region) => Math.abs(region.getBoundingClientRect().top - layout.getBoundingClientRect().top) <= 1,
+                  ),
+              ),
+            primaryActionInitiallyVisible: Boolean(
+              primaryRect &&
+                primaryRegion &&
+                primaryScrollHost &&
+                primaryScrollHost.scrollTop <= 1 &&
+                primaryRect.top >= Math.max(rect.top, primaryRegion.top) - 1 &&
+                primaryRect.bottom <= Math.min(rect.bottom, primaryRegion.bottom) + 1,
+            ),
+            noPageOverflow: document.documentElement.scrollWidth <= window.innerWidth,
+          };
+        }),
+      )
+      .toEqual({
+        dialogFits: true,
+        closeFits: true,
+        compactThreePane: true,
+        paneTopsAlign: true,
+        primaryActionInitiallyVisible: true,
+        noPageOverflow: true,
+      });
+    await expect(page.getByRole("button", { name: "Start voice with Reka" })).toBeInViewport({ ratio: 1 });
+  }
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator("[data-voice-dialog-layout]").evaluate((layout) => {
+    layout.scrollTop = layout.scrollHeight;
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect.poll(() => page.locator("[data-voice-dialog-layout]").evaluate((layout) => layout.scrollTop)).toBe(0);
+});
+
+test("a maximum-length live caption keeps the voice action in the initial short viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.goto("/");
+  await page.locator('header button[aria-label="Talk to Mereka"]').click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+
+  // Stage the exact live-caption/composer DOM shape without opening a real
+  // microphone or WebRTC session; this test owns only the responsive contract.
+  await page.locator("[data-voice-session-stage]").evaluate((stage) => {
+    const headline = stage.querySelector<HTMLElement>("[data-voice-stage-headline]");
+    const guidance = stage.querySelector<HTMLElement>("[data-voice-mic-guidance]");
+    const topics = stage.querySelector<HTMLElement>("[data-voice-stage-topics]");
+    if (!headline || !guidance || !topics) throw new Error("Voice stage fixture is incomplete");
+
+    headline.removeAttribute("data-voice-stage-headline");
+    headline.setAttribute("data-voice-stage-caption", "");
+    headline.textContent =
+      "Here is a deliberately long live answer that exercises the full caption budget while Reka is speaking, so the visitor can still end the call immediately without scrolling through a transcript-sized block of text. This final sentence fills the remaining space.";
+
+    const composer = document.createElement("form");
+    composer.setAttribute("data-voice-stage-composer", "");
+    composer.className = "mt-6 flex h-11 w-full max-w-xl gap-2";
+    topics.before(composer);
+  });
+
+  for (const viewport of [
+    { width: 320, height: 568 },
+    { width: 844, height: 390 },
+    { width: 1024, height: 390 },
+    { width: 1024, height: 600 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expect
+      .poll(() =>
+        page.locator('[data-slot="dialog-content"]').evaluate((dialog) => {
+          const layout = dialog.querySelector<HTMLElement>("[data-voice-dialog-layout]");
+          const action = dialog.querySelector<HTMLElement>("[data-voice-primary-action]");
+          const caption = dialog.querySelector<HTMLElement>("[data-voice-stage-caption]");
+          const scrollHost = window.innerWidth >= 1024 ? action?.closest<HTMLElement>("main") : layout;
+          if (!action || !caption || !scrollHost) return null;
+          const dialogRect = dialog.getBoundingClientRect();
+          const hostRect = scrollHost.getBoundingClientRect();
+          const actionRect = action.getBoundingClientRect();
+          const captionStyle = getComputedStyle(caption);
+          return {
+            actionFits:
+              actionRect.top >= Math.max(dialogRect.top, hostRect.top) - 1 &&
+              actionRect.bottom <= Math.min(dialogRect.bottom, hostRect.bottom) + 1,
+            captionClamp: captionStyle.getPropertyValue("-webkit-line-clamp"),
+            initialScroll: scrollHost.scrollTop,
+          };
+        }),
+      )
+      .toEqual({ actionFits: true, captionClamp: "2", initialScroll: 0 });
+    await expect(page.locator("[data-voice-primary-action]")).toBeInViewport({ ratio: 1 });
+  }
+});
+
+test("mobile dialog source order, first focus, and tuner contrast stay voice-first", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 568 });
+  await page.goto("/");
+  await page.locator('header button[aria-label="Talk to Mereka"]').click();
+  const dialog = page.getByRole("dialog");
+  const layout = page.locator("[data-voice-dialog-layout]");
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toBeFocused();
+
+  await expect
+    .poll(() =>
+      layout.evaluate((element) =>
+        [...element.children].map((child) => {
+          if (child.matches("[data-voice-primary-region]")) return "voice";
+          if (child.matches("[data-voice-partner-region]")) return "partner";
+          return child.tagName.toLowerCase();
+        }),
+      ),
+    )
+    .toEqual(["voice", "partner", "aside"]);
+
+  await page.waitForTimeout(150);
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("button", { name: "Switch Reka voice to Reka · Polished" })).toBeFocused();
+  await expect.poll(() => layout.evaluate((element) => element.scrollTop)).toBe(0);
+
+  const tunerContrast = await page.locator("[data-voice-tuner-label]").evaluate((label) => {
+    const parse = (value: string) => {
+      const channels = value.match(/[\d.]+/g)?.map(Number) ?? [];
+      return { r: channels[0] ?? 0, g: channels[1] ?? 0, b: channels[2] ?? 0, a: channels[3] ?? 1 };
+    };
+    const background = parse(
+      getComputedStyle(label.closest('[data-slot="dialog-content"]') as Element).backgroundColor,
+    );
+    const foreground = parse(getComputedStyle(label).color);
+    const composite = {
+      r: foreground.r * foreground.a + background.r * (1 - foreground.a),
+      g: foreground.g * foreground.a + background.g * (1 - foreground.a),
+      b: foreground.b * foreground.a + background.b * (1 - foreground.a),
+    };
+    const luminance = ({ r, g, b }: { r: number; g: number; b: number }) => {
+      const linear = [r, g, b].map((channel) => {
+        const value = channel / 255;
+        return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+      });
+      return (linear[0] ?? 0) * 0.2126 + (linear[1] ?? 0) * 0.7152 + (linear[2] ?? 0) * 0.0722;
+    };
+    const lighter = Math.max(luminance(composite), luminance(background));
+    const darker = Math.min(luminance(composite), luminance(background));
+    return (lighter + 0.05) / (darker + 0.05);
+  });
+  expect(tunerContrast).toBeGreaterThanOrEqual(4.5);
 });

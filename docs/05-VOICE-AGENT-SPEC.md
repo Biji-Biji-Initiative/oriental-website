@@ -56,7 +56,7 @@ constant matching the prototype's `voice-agent.jsx`.
 2. Segment pick    → tool_call: set_partner_type(segment)
 3. Opener          → voiceOpener for the picked segment
 4. Discovery       → free dialogue, agent batches grounded reversible fields with capture_fields()
-5. Verify email    → read a speech-captured address back exactly; wait for explicit confirmation
+5. Verify email    → accept only grounded adaptive capture; clarify rejected/invalid evidence
 6. Send or recap   → route immediately when the user says "send"; recap only when helpful
 7. Routing         → tool_call: route_to_team(segment)
 8. Close           → tool_call: end_call() when the user says bye/stop/end voice
@@ -65,12 +65,14 @@ constant matching the prototype's `voice-agent.jsx`.
 The agent can revisit any step. If the user changes partner type mid-call, the
 agent re-routes.
 
-Speech-captured email is a pending draft, not a sendable contact. Reka MUST
-read its exact spoken form back and receive an explicit confirmation in the
-following visitor turn. A correction invalidates the earlier confirmation.
-Email supplied through the hero prefill or edited directly in the handoff form
-is confirmed by that typed action. Both the client runtime and `/api/leads`
-reject a voice handoff while email remains unconfirmed.
+In governed `adaptive` mode, a speech email is sendable only after syntax,
+model-evidence, and latest-turn grounding pass; exact evidence is high
+confidence and bounded ASR drift with an explicit email cue is medium. It stays
+visible/editable and does not require a blanket confirmation turn. A correction
+replaces and re-evaluates the earlier evidence. `strict` restores exact
+readback plus explicit confirmation. Email supplied through the hero prefill or
+edited directly in the handoff form is confirmed by that typed action. Both the
+client runtime and `/api/leads` reject invalid, stale, or pending email state.
 
 Typed messages always send `response.cancel` and
 `output_audio_buffer.clear` before the text turn, even when the browser has not
@@ -86,7 +88,7 @@ JSON-schema source of truth.
 | Tool | Contract |
 |---|---|
 | `set_partner_type` | Reversible segment selection. |
-| `capture_fields` | Atomically applies 1–6 reversible fields. One invalid, duplicate, or ungrounded item rejects the whole batch. |
+| `capture_fields` | Applies 1–6 reversible fields in one reducer transaction. Valid fields are retained; invalid or ungrounded items are returned in `rejectedFields` for focused retry. Duplicate keys invalidate the batch. |
 | `lookup_oriental` | Read-only, bounded lookup over published Oriental facts and FAQs. It has no network or write side effects. |
 | `clear_field` | Reverses one captured field after a visitor correction. |
 | `summarise_lead` | Reads the current draft and validation state. |
@@ -126,9 +128,10 @@ claim a handoff succeeded before `route_to_team` returns success.
 | Model | `gpt-realtime-2` by default via `OPENAI_REALTIME_MODEL` |
 | Voice | Source fallback is `marin`; production is currently `coral` via `OPENAI_REALTIME_VOICE` |
 | Speech speed | Source fallback is `1.18`; production is currently `1.28` via `OPENAI_REALTIME_SPEED`; clamped to OpenAI's supported `0.25` to `1.5` range |
-| Input audio | Browser-default mic; page load imports the voice bundle and preconnects, but Realtime token minting happens only for returning visitors with granted mic permission or after a first-time visitor grants mic access |
+| Input audio | Browser-default mic; page load imports the voice bundle and preconnects, but Realtime token minting happens only while permission is currently granted or after the visitor grants a first/expired one-time prompt. The app releases tracks on close. |
 | Session length cap | **10 minutes** by default from the typed policy in `lib/voice/session-policy.ts`; bounded override `VOICE_MAX_DURATION_MS` accepts 1–30 minutes. `/api/voice/session` returns the resolved value to the client. |
 | Turn detection | `baseline` uses semantic VAD `auto`. `instant-v1` uses `high` for normal turns, switches deterministically to `low` after Reka asks for an email, then returns to `high` on the next response. `VOICE_RUNTIME_PROFILE=baseline` is the rollback. |
+| Email capture | `adaptive` accepts only syntactically valid, independently grounded speech email evidence and keeps it visible/editable without a blanket confirmation turn. `strict` restores exact readback plus explicit confirmation. |
 | Input transcription | `gpt-4o-transcribe` by default via `OPENAI_REALTIME_TRANSCRIPTION_MODEL`, with a multilingual domain `prompt` covering Malaysian English, Bahasa Melayu, Mandarin, and Tamil plus spoken-email patterns and brand terms. Transcription feeds the visible transcript, review snapshots, and capture grounding; the model itself hears audio natively |
 | Noise reduction | `near_field` for mobile user agents, `far_field` for desktops, chosen at mint time in `/api/voice/session` |
 | Idle behaviour | Reka speaks a one-sentence goodbye in a grace window (`idleGoodbyeGraceMs`, 6 s) before the 20 s idle cutoff; the goodbye cannot extend the session and the visitor speaking cancels the close |
@@ -138,9 +141,10 @@ claim a handoff succeeded before `route_to_team` returns success.
 ## 7. Auth & token mint
 
 The browser **never** holds the long-lived `OPENAI_API_KEY`. The connect flow
-is permission-aware via the Permissions API: a returning visitor with a
+is permission-aware via the Permissions API: a visitor with a currently
 granted microphone runs mic acquisition and token minting in parallel; a
-first-time visitor sees the browser prompt immediately on click (with a
+visitor in `prompt` state (first use or an expired one-time grant) sees the
+browser prompt immediately on click (with a
 dedicated `requesting_mic` stage state) and the daily voice quota is only
 spent after the mic is granted; a known denial fails fast with guidance and
 mints nothing. Browsers without microphone permission queries (Firefox) fall

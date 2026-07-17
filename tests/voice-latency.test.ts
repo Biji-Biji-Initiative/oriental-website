@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   createVoiceLatencyState,
   MAX_VOICE_LATENCY_TURNS,
+  MAX_VOICE_TOOL_SAMPLES,
   RAPID_RESUME_WINDOW_MS,
   reduceVoiceLatency,
+  shouldEmitVoiceLatencyMetadata,
   type VoiceLatencySignal,
   type VoiceLatencyState,
 } from "@/lib/voice/latency";
@@ -95,7 +97,7 @@ describe("voice latency telemetry", () => {
         { type: "local_speech_ended", at: 420 },
         { type: "speech_stopped", at: 500 },
         { type: "response_created", at: 620 },
-        { type: "tool_completed", durationMs: 37.4 },
+        { type: "tool_completed", at: 667.4, durationMs: 37.4, name: "lookup_oriental", outcome: "success" },
         { type: "first_output", at: 760 },
         { type: "remote_audio_started", at: 820 },
         { type: "response_done", at: 1_200 },
@@ -111,6 +113,16 @@ describe("voice latency telemetry", () => {
       firstOutputEventToRemoteAudioMs: 60,
       toolDurationMs: 37,
     });
+    expect(state.telemetry.toolCalls).toEqual([
+      {
+        sequence: 1,
+        name: "lookup_oriental",
+        outcome: "success",
+        executionMs: 37,
+        responseCreatedToCallMs: 10,
+        responseCreatedToResultMs: 47,
+      },
+    ]);
   });
 
   it("records opener audio as tap-to-audible before the visitor speaks", () => {
@@ -132,12 +144,64 @@ describe("voice latency telemetry", () => {
       { type: "speech_started", at: 100 },
       { type: "speech_stopped", at: 200 },
       { type: "response_created", at: 300 },
-      { type: "tool_completed", durationMs: 40.4 },
-      { type: "tool_completed", durationMs: 130_000 },
+      { type: "tool_completed", at: 350.4, durationMs: 40.4, name: "capture_fields", outcome: "success" },
+      { type: "tool_completed", at: 480, durationMs: 130_000, name: "route_to_team", outcome: "failed" },
       { type: "response_done", at: 500 },
     ]);
 
     expect(state.telemetry.turns[0]?.toolDurationMs).toBe(120_000);
+    expect(state.telemetry.toolCalls).toHaveLength(2);
+    expect(state.telemetry.toolCalls?.[1]).toMatchObject({
+      name: "route_to_team",
+      outcome: "failed",
+      executionMs: 120_000,
+    });
+  });
+
+  it("emits review metadata immediately when a tool sample is added", () => {
+    const previous = reduce([
+      { type: "speech_started", at: 100 },
+      { type: "speech_stopped", at: 200 },
+      { type: "response_created", at: 300 },
+    ]);
+    const signal = {
+      type: "tool_completed" as const,
+      at: 345,
+      durationMs: 15,
+      name: "wait_for_user" as const,
+      outcome: "success" as const,
+    };
+    const next = reduceVoiceLatency(previous, signal);
+
+    expect(shouldEmitVoiceLatencyMetadata(previous, next, signal)).toBe(true);
+    expect(next.telemetry.toolCalls).toHaveLength(1);
+  });
+
+  it("emits the newest tool sample when the bounded buffer is already full", () => {
+    let previous = createVoiceLatencyState();
+    for (let index = 0; index < MAX_VOICE_TOOL_SAMPLES; index += 1) {
+      previous = reduceVoiceLatency(previous, {
+        type: "tool_completed",
+        at: index + 1,
+        durationMs: 1,
+        name: "wait_for_user",
+        outcome: "success",
+      });
+    }
+    const signal = {
+      type: "tool_completed" as const,
+      at: MAX_VOICE_TOOL_SAMPLES + 1,
+      durationMs: 1,
+      name: "end_call" as const,
+      outcome: "success" as const,
+    };
+    const next = reduceVoiceLatency(previous, signal);
+
+    expect(previous.telemetry.toolCalls).toHaveLength(MAX_VOICE_TOOL_SAMPLES);
+    expect(next.telemetry.toolCalls).toHaveLength(MAX_VOICE_TOOL_SAMPLES);
+    expect(next.telemetry.toolCalls).not.toBe(previous.telemetry.toolCalls);
+    expect(next.telemetry.toolCalls?.at(-1)?.name).toBe("end_call");
+    expect(shouldEmitVoiceLatencyMetadata(previous, next, signal)).toBe(true);
   });
 
   it("measures interruption clearing without losing the new user turn", () => {
@@ -149,9 +213,12 @@ describe("voice latency telemetry", () => {
       { type: "speech_started", at: 650 },
     ]);
     expect(state.current?.sequence).toBe(2);
-    state = reduceVoiceLatency(state, { type: "interruption_cleared", at: 820 });
+    const previous = state;
+    const signal = { type: "interruption_cleared" as const, at: 820 };
+    state = reduceVoiceLatency(state, signal);
     expect(state.telemetry.turns[0]).toMatchObject({ interrupted: true, bargeInToResponseDoneMs: 170 });
     expect(state.current?.sequence).toBe(2);
+    expect(shouldEmitVoiceLatencyMetadata(previous, state, signal)).toBe(true);
   });
 
   it("applies input-policy changes only to subsequent turns", () => {

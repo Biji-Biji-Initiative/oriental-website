@@ -112,4 +112,51 @@ describe("voice review snapshots", () => {
     const snapshot = buildVoiceReviewSnapshot({ ...review, conversationId: "" }, state(), "idle");
     expect(snapshot).not.toHaveProperty("conversationId");
   });
+
+  it("records PII-free pending speech verification provenance", () => {
+    const snapshot = buildVoiceReviewSnapshot(
+      review,
+      state({
+        captured: { ...emptyCapturedLead, email: "asha@example.com" },
+        emailVerification: {
+          value: "asha@example.com",
+          source: "speech",
+          status: "pending",
+        },
+      }),
+      "listening",
+    );
+
+    expect(snapshot.emailVerification).toEqual({
+      source: "speech",
+      status: "pending",
+      matchesCaptured: true,
+    });
+  });
+
+  it("records adaptive confidence without persisting the address in provenance", () => {
+    const snapshot = buildVoiceReviewSnapshot(
+      review,
+      state({
+        captured: { ...emptyCapturedLead, email: "asha@example.com" },
+        emailCaptureMode: "adaptive",
+        emailVerification: {
+          value: "asha@example.com",
+          source: "speech",
+          status: "confirmed",
+          confidence: "medium",
+        },
+      }),
+      "listening",
+    );
+
+    expect(snapshot.emailCaptureMode).toBe("adaptive");
+    expect(snapshot.emailVerification).toEqual({
+      source: "speech",
+      status: "confirmed",
+      confidence: "medium",
+      matchesCaptured: true,
+    });
+    expect(JSON.stringify(snapshot.emailVerification)).not.toContain("asha@example.com");
+  });
 });

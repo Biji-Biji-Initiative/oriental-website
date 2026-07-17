@@ -1,9 +1,11 @@
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   CONTROL_VOICE_CELL,
   hasCloudflareEdgeHeaders,
   RELEASE_TARGETS,
+  STAGING_CANDIDATE_VOICE_CELL,
   validateHealthPayload,
   validateManagedVoiceCell,
   validateReleaseSha,
@@ -13,6 +15,7 @@ import {
 const sha = "bb8e2673e5f129f342fba78f3eb653a54de8763b";
 const releasePreflight = readFileSync("scripts/release-preflight.ts", "utf8");
 const releaseVerifier = readFileSync("scripts/release-verify.ts", "utf8");
+const stagingVoiceSmoke = readFileSync("scripts/smoke-staging-voice.ts", "utf8");
 
 describe("release governance", () => {
   it("pins canonical and compatibility-only hostnames", () => {
@@ -41,7 +44,9 @@ describe("release governance", () => {
       validateManagedVoiceCell({
         VOICE_RUNTIME_PROFILE: CONTROL_VOICE_CELL.runtimeProfile,
         VOICE_MODEL_CELL: CONTROL_VOICE_CELL.modelCell,
+        OPENAI_REALTIME_MODEL: CONTROL_VOICE_CELL.model,
         VOICE_REASONING_CELL: CONTROL_VOICE_CELL.reasoningCell,
+        VOICE_EMAIL_CAPTURE_MODE: CONTROL_VOICE_CELL.emailCaptureMode,
         VOICE_VARIANT_PICKER: "false",
       }),
     ).toEqual([]);
@@ -49,24 +54,129 @@ describe("release governance", () => {
       validateManagedVoiceCell({
         VOICE_RUNTIME_PROFILE: "instant-v1",
         VOICE_MODEL_CELL: "candidate",
+        OPENAI_REALTIME_MODEL: "wrong-model",
         VOICE_REASONING_CELL: "minimal",
+        VOICE_EMAIL_CAPTURE_MODE: "strict",
         VOICE_VARIANT_PICKER: "true",
       }),
-    ).toHaveLength(4);
+    ).toHaveLength(6);
+    expect(
+      validateManagedVoiceCell({
+        VOICE_RUNTIME_PROFILE: CONTROL_VOICE_CELL.runtimeProfile,
+        VOICE_MODEL_CELL: CONTROL_VOICE_CELL.modelCell,
+        OPENAI_REALTIME_MODEL: CONTROL_VOICE_CELL.model,
+        VOICE_REASONING_CELL: CONTROL_VOICE_CELL.reasoningCell,
+        VOICE_EMAIL_CAPTURE_MODE: CONTROL_VOICE_CELL.emailCaptureMode,
+      }),
+    ).toEqual(["VOICE_VARIANT_PICKER must be explicitly false for a governed release"]);
   });
 
   it("makes managed cell checks the preflight default", () => {
-    expect(releasePreflight).toContain("const args: Args = { managedEnv: true }");
+    expect(releasePreflight).toContain(
+      'const args: Args = { managedEnv: true, modelCell: "control", voiceCellOnly: false }',
+    );
     expect(releasePreflight).toContain('--allow-unmanaged"');
+  });
+
+  it("provides a fast executable Infisical voice-cell parity check", () => {
+    const command = ["exec", "tsx", "scripts/release-preflight.ts", "--voice-cell-only"];
+    const valid = spawnSync("pnpm", command, {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        VOICE_RUNTIME_PROFILE: "baseline",
+        VOICE_MODEL_CELL: "control",
+        OPENAI_REALTIME_MODEL: "gpt-realtime-2",
+        VOICE_REASONING_CELL: "low",
+        VOICE_EMAIL_CAPTURE_MODE: "adaptive",
+        VOICE_VARIANT_PICKER: "false",
+      },
+    });
+    expect(valid.status, valid.stderr).toBe(0);
+
+    const missingPicker = spawnSync("pnpm", command, {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        VOICE_RUNTIME_PROFILE: "baseline",
+        VOICE_MODEL_CELL: "control",
+        OPENAI_REALTIME_MODEL: "gpt-realtime-2",
+        VOICE_REASONING_CELL: "low",
+        VOICE_EMAIL_CAPTURE_MODE: "adaptive",
+        VOICE_VARIANT_PICKER: "",
+      },
+    });
+    expect(missingPicker.status).toBe(1);
+    expect(missingPicker.stderr).toContain("VOICE_VARIANT_PICKER must be explicitly false");
+
+    const candidate = spawnSync("pnpm", [...command, "--model-cell", "candidate"], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        VOICE_RUNTIME_PROFILE: "baseline",
+        VOICE_MODEL_CELL: "candidate",
+        OPENAI_REALTIME_MODEL_CANDIDATE: "gpt-realtime-2.1",
+        VOICE_REASONING_CELL: "low",
+        VOICE_EMAIL_CAPTURE_MODE: "adaptive",
+        VOICE_VARIANT_PICKER: "false",
+      },
+    });
+    expect(candidate.status, candidate.stderr).toBe(0);
   });
 
   it("expands the both alias before target lookup", () => {
     expect(releaseVerifier).toContain('args.target === "both" ? ["staging", "production"] : [args.target]');
+    expect(releaseVerifier).toContain('name === "staging" ? governedVoiceCell(stagingModelCell) : CONTROL_VOICE_CELL');
+  });
+
+  it("pins the staging voice smoke to the governed candidate instead of public health", () => {
+    expect(stagingVoiceSmoke).toContain("process.env.EXPECTED_REALTIME_MODEL ?? STAGING_CANDIDATE_VOICE_CELL.model");
+    expect(stagingVoiceSmoke).toContain(
+      "process.env.EXPECTED_REALTIME_MODEL_CELL ?? STAGING_CANDIDATE_VOICE_CELL.modelCell",
+    );
+    expect(stagingVoiceSmoke).not.toContain("?? health.voice.model");
+    expect(stagingVoiceSmoke).not.toContain("?? health.voice.model_cell");
   });
 
   it("requires exact-SHA healthy Convex responses", () => {
-    expect(validateHealthPayload({ ok: true, version: sha, convex: true }, sha)).toEqual([]);
-    expect(validateHealthPayload({ ok: true, version: "wrong", convex: false }, sha)).toHaveLength(2);
+    expect(
+      validateHealthPayload(
+        {
+          ok: true,
+          version: sha,
+          convex: true,
+          voice: {
+            runtime_profile: "baseline",
+            model_cell: "control",
+            model: "gpt-realtime-2",
+            reasoning_cell: "low",
+            email_capture_mode: "adaptive",
+            variant_picker: false,
+          },
+        },
+        sha,
+      ),
+    ).toEqual([]);
+    expect(
+      validateHealthPayload(
+        {
+          ok: true,
+          version: sha,
+          convex: true,
+          voice: {
+            runtime_profile: "baseline",
+            model_cell: "candidate",
+            model: "gpt-realtime-2.1",
+            reasoning_cell: "low",
+            email_capture_mode: "adaptive",
+            variant_picker: false,
+          },
+        },
+        sha,
+        STAGING_CANDIDATE_VOICE_CELL,
+      ),
+    ).toEqual([]);
+    expect(validateHealthPayload({ ok: true, version: "wrong", convex: false }, sha)).toHaveLength(3);
   });
 
   it("rejects Cloudflare edge response markers", () => {

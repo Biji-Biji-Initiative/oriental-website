@@ -1,4 +1,9 @@
 import { SEGMENT_IDS, type SegmentId } from "@/lib/segments";
+import {
+  resolveVoiceEmailCaptureMode,
+  type VoiceEmailCaptureConfidence,
+  type VoiceEmailCaptureMode,
+} from "@/lib/voice/email-capture-policy";
 import { lookupOrientalKnowledge } from "@/lib/voice/knowledge";
 import { extractExplicitVisitorEmail } from "@/lib/voice/tentative-extraction";
 
@@ -34,6 +39,7 @@ export type VoiceEmailVerification = {
   value: string;
   source: "prefill" | "speech" | "typed";
   status: "confirmed" | "pending";
+  confidence?: VoiceEmailCaptureConfidence;
 };
 
 export type VoiceRuntimeState = {
@@ -46,6 +52,7 @@ export type VoiceRuntimeState = {
   rateLimits?: Array<Record<string, unknown>>;
   errors?: VoiceRuntimeError[];
   emailVerification?: VoiceEmailVerification;
+  emailCaptureMode?: VoiceEmailCaptureMode;
   pendingUserTranscripts?: number;
   activeResponse?: boolean;
   /** Streaming caption of what the assistant is saying right now. */
@@ -95,6 +102,8 @@ export type RealtimeServerEvent = {
   usage?: RealtimeUsage;
   item?: RealtimeOutputItem;
   response?: { output?: RealtimeOutputItem[]; usage?: RealtimeUsage };
+  /** Server-resolved policy copied onto data-channel events by the client. */
+  email_capture_mode?: VoiceEmailCaptureMode;
 };
 
 export function responseHasFunctionCall(event: RealtimeServerEvent): boolean {
@@ -171,7 +180,9 @@ export function reduceRealtimeServerEvent(
   current: VoiceRuntimeState,
 ): { state: VoiceRuntimeState; commands: RealtimeClientCommand[] } {
   const commands: RealtimeClientCommand[] = [];
-  let state = current;
+  let state = event.email_capture_mode
+    ? { ...current, emailCaptureMode: resolveVoiceEmailCaptureMode(event.email_capture_mode) }
+    : current;
   const eventTranscript = asString(event.transcript);
 
   if (event.type === "response.output_audio_transcript.delta") {
@@ -289,12 +300,14 @@ function applyFunctionCall(
       const seen = new Set<keyof CapturedLead>();
       let captured = next.captured;
       const applied: Array<{ key: keyof CapturedLead; mode: "append" | "replace" }> = [];
-      let failure: { index: number; output: Record<string, unknown> } | null = null;
+      let emailConfidence: VoiceEmailCaptureConfidence | undefined;
+      const rejected: Array<{ index: number; output: Record<string, unknown> }> = [];
+      let duplicateFailure: { index: number; output: Record<string, unknown> } | null = null;
       for (const [index, field] of fields.entries()) {
         const fieldArgs = field && typeof field === "object" && !Array.isArray(field) ? field : {};
         const key = toCapturedKey((fieldArgs as Record<string, unknown>).key);
         if (key && seen.has(key)) {
-          failure = { index, output: { ok: false, error: "duplicate_field", key } };
+          duplicateFailure = { index, output: { ok: false, error: "duplicate_field", key } };
           break;
         }
         if (key) seen.add(key);
@@ -305,14 +318,20 @@ function applyFunctionCall(
           (next.pendingUserTranscripts ?? 0) > 0,
         );
         if (!capture.ok) {
-          failure = { index, output: capture.output };
-          break;
+          rejected.push({ index, output: capture.output });
+          continue;
         }
         captured = capture.captured;
+        if (capture.key === "email") emailConfidence = capture.emailConfidence;
         applied.push({ key: capture.key, mode: capture.mode });
       }
-      if (failure) {
-        output = { ok: false, error: "atomic_capture_rejected", failedIndex: failure.index, detail: failure.output };
+      if (duplicateFailure) {
+        output = {
+          ok: false,
+          error: "invalid_field_batch",
+          failedIndex: duplicateFailure.index,
+          detail: duplicateFailure.output,
+        };
         break;
       }
       const emailApplied = applied.some((field) => field.key === "email");
@@ -320,15 +339,34 @@ function applyFunctionCall(
         ...next,
         captured,
         ...(emailApplied
-          ? { emailVerification: pendingSpokenEmailVerification(captured.email, next.emailVerification) }
+          ? {
+              emailVerification: spokenEmailVerification(
+                captured.email,
+                next.emailVerification,
+                next.emailCaptureMode,
+                emailConfidence,
+              ),
+            }
           : {}),
       };
-      output = {
-        ok: true,
-        fields: applied,
-        captured,
-        ...(emailApplied ? emailConfirmationInstructions(next) : {}),
-      };
+      output =
+        rejected.length > 0
+          ? {
+              ok: false,
+              error: "partial_capture",
+              fields: applied,
+              rejectedFields: rejected,
+              detail: rejected[0]?.output,
+              captured,
+              retry: "Keep the accepted fields. Retry or clarify only the rejected fields.",
+              ...(emailApplied ? emailConfirmationInstructions(next) : {}),
+            }
+          : {
+              ok: true,
+              fields: applied,
+              captured,
+              ...(emailApplied ? emailConfirmationInstructions(next) : {}),
+            };
       break;
     }
     case "confirm_email": {
@@ -475,11 +513,19 @@ function applyTentativeEmail(state: VoiceRuntimeState, text: string, source: "sp
   if (state.captured.email.trim()) return state;
   const email = extractExplicitVisitorEmail(text);
   if (!email) return state;
+  const adaptiveSpeech = source === "speech" && state.emailCaptureMode === "adaptive";
   return {
     ...state,
     captured: { ...state.captured, email },
     emailVerification:
-      source === "typed" ? { value: email, source, status: "confirmed" } : { value: email, source, status: "pending" },
+      source === "typed"
+        ? { value: email, source, status: "confirmed" }
+        : {
+            value: email,
+            source,
+            status: adaptiveSpeech ? "confirmed" : "pending",
+            ...(adaptiveSpeech ? { confidence: "high" as const } : {}),
+          },
   };
 }
 
@@ -562,6 +608,7 @@ type AppliedCapture = {
   key: keyof CapturedLead;
   mode: "append" | "replace";
   captured: CapturedLead;
+  emailConfidence?: VoiceEmailCaptureConfidence;
 };
 
 function applyCaptureResult(state: VoiceRuntimeState, capture: AppliedCapture): VoiceRuntimeState {
@@ -569,7 +616,12 @@ function applyCaptureResult(state: VoiceRuntimeState, capture: AppliedCapture): 
   return {
     ...state,
     captured: capture.captured,
-    emailVerification: pendingSpokenEmailVerification(capture.captured.email, state.emailVerification),
+    emailVerification: spokenEmailVerification(
+      capture.captured.email,
+      state.emailVerification,
+      state.emailCaptureMode,
+      capture.emailConfidence,
+    ),
   };
 }
 
@@ -584,9 +636,19 @@ function captureOutput(capture: AppliedCapture, state: VoiceRuntimeState): Recor
 }
 
 function emailConfirmationInstructions(
-  state: Pick<VoiceRuntimeState, "captured" | "emailVerification">,
+  state: Pick<VoiceRuntimeState, "captured" | "emailVerification" | "emailCaptureMode">,
 ): Record<string, unknown> {
-  if (isVoiceEmailConfirmed(state)) return { emailConfirmationRequired: false };
+  if (isVoiceEmailConfirmed(state)) {
+    if (state.emailCaptureMode !== "adaptive" || state.emailVerification?.source !== "speech")
+      return { emailConfirmationRequired: false };
+    return {
+      emailConfirmationRequired: false,
+      emailCaptureMode: "adaptive",
+      emailConfidence: state.emailVerification.confidence ?? "medium",
+      nextAction:
+        "The address is visible and editable. Briefly acknowledge it and continue without asking for a separate confirmation.",
+    };
+  }
   return {
     emailConfirmationRequired: true,
     emailReadback: spokenEmailForm(state.captured.email),
@@ -594,16 +656,21 @@ function emailConfirmationInstructions(
   };
 }
 
-function pendingSpokenEmailVerification(
+function spokenEmailVerification(
   email: string,
   existing: VoiceEmailVerification | undefined,
+  mode: VoiceEmailCaptureMode | undefined,
+  confidence: VoiceEmailCaptureConfidence | undefined,
 ): VoiceEmailVerification {
   if (
     existing?.status === "confirmed" &&
-    existing.source !== "speech" &&
+    (existing.source !== "speech" || mode === "adaptive") &&
     existing.value.trim().toLowerCase() === email.trim().toLowerCase()
   ) {
     return existing;
+  }
+  if (mode === "adaptive") {
+    return { value: email.trim(), source: "speech", status: "confirmed", confidence: confidence ?? "medium" };
   }
   return { value: email.trim(), source: "speech", status: "pending" };
 }
@@ -642,7 +709,13 @@ function applyCaptureField(
   }
 
   const nextValue = key === "message" && mode === "append" ? appendBrief(existing, normalizedValue) : normalizedValue;
-  return { ok: true, key, mode, captured: { ...captured, [key]: nextValue } };
+  return {
+    ok: true,
+    key,
+    mode,
+    captured: { ...captured, [key]: nextValue },
+    ...(key === "email" ? { emailConfidence: grounding.emailConfidence ?? "medium" } : {}),
+  };
 }
 
 /** Fields the model captures verbatim without identity grounding. */
@@ -670,7 +743,7 @@ function validateCaptureGrounding(
   evidence: string,
   transcript: VoiceTranscriptEntry[],
   transcriptionPending: boolean,
-): { ok: true } | { ok: false; error: string } {
+): { ok: true; emailConfidence?: VoiceEmailCaptureConfidence } | { ok: false; error: string } {
   if (key === "message" || key === "phone" || key === "website") return { ok: true };
   if (!evidence) return { ok: false, error: "ungrounded_identity_capture" };
   if (key === "email") return validateEmailCaptureGrounding(value, evidence, transcript, transcriptionPending);
@@ -687,38 +760,42 @@ function validateCaptureGrounding(
     return { ok: false, error: "ungrounded_identity_capture" };
   }
 
-  // Whisper transcription can land after the model's function call; while a user
-  // turn is still transcribing, trust evidence that is consistent with the value.
+  const valueForms = normalizedValueForms(key, value);
+  // The Realtime model hears native audio while the independent transcript can
+  // land later or spell proper nouns differently. A self-consistent model value
+  // may be drafted during that window; the visible form remains editable.
   const evidenceGrounded = approxIncludes(normalizedUserText, normalizedEvidence, tolerance);
-  if (!evidenceGrounded && !transcriptionPending) {
-    return { ok: false, error: "ungrounded_identity_capture" };
-  }
 
   if (key === "org" && normalizeEvidence(value) === "individual") {
     // "Individual" is our label for "no organisation"; the user never says the word itself.
-    return { ok: true };
-  }
-
-  const valueForms = normalizedValueForms(key, value);
-  if (!evidenceGrounded) {
-    return valueForms.some((form) => approxIncludes(normalizedEvidence, form, tolerance))
+    const evidenceDeclinesOrganisation = /(?:noorganisation|noorganization|justme|individual)/.test(normalizedEvidence);
+    return evidenceDeclinesOrganisation && (evidenceGrounded || transcriptionPending)
       ? { ok: true }
       : { ok: false, error: "ungrounded_identity_capture" };
-  }
-
-  if (
-    valueForms.some(
-      (form) =>
-        approxIncludes(normalizedEvidence, form, tolerance) || approxIncludes(normalizedUserText, form, tolerance),
-    )
-  ) {
-    return { ok: true };
   }
 
   if (
     key === "org" &&
     userAskedAssistantToWriteIt(transcript) &&
     valueForms.some((form) => hasRecentOrganisationEvidence(form, transcript))
+  ) {
+    return { ok: true };
+  }
+
+  const evidenceSupportsValue = valueForms.some((form) => approxIncludes(normalizedEvidence, form, tolerance));
+  if (!evidenceSupportsValue) return { ok: false, error: "ungrounded_identity_capture" };
+  if (transcriptionPending) return { ok: true };
+
+  if (evidenceGrounded || valueForms.some((form) => approxIncludes(normalizedUserText, form, tolerance)))
+    return { ok: true };
+
+  // Names are especially vulnerable to ASR phonetic spelling. Only widen the
+  // tolerance when the transcript explicitly says a name and still resembles
+  // what the native-audio model heard; an unrelated invented name stays blocked.
+  if (
+    key === "name" &&
+    hasExplicitNameCue(recentUserText) &&
+    valueForms.some((form) => resemblesExplicitName(recentUserText, form))
   ) {
     return { ok: true };
   }
@@ -731,20 +808,77 @@ function validateEmailCaptureGrounding(
   evidence: string,
   transcript: VoiceTranscriptEntry[],
   transcriptionPending: boolean,
-): { ok: true } | { ok: false; error: string } {
+): { ok: true; emailConfidence: VoiceEmailCaptureConfidence } | { ok: false; error: string } {
   const email = value.trim().toLowerCase();
   const canonicalEvidence = canonicalizeEmailSpeech(evidence);
   if (!canonicalEvidence.includes(email)) return { ok: false, error: "ungrounded_identity_capture" };
-  if (transcriptionPending) return { ok: true };
+  if (transcriptionPending) return { ok: true, emailConfidence: "medium" };
 
-  const recentUserText = transcript
-    .filter((entry) => entry.role === "user")
-    .slice(-6)
-    .map((entry) => entry.text)
-    .join(" ");
-  return canonicalizeEmailSpeech(recentUserText).includes(email)
-    ? { ok: true }
+  // Email replacement must be supported by the latest visitor turn. Searching
+  // older turns lets a previous address accidentally ground a new local-part
+  // on the same domain, which is exactly the kind of silent typo we must avoid.
+  const recentUserText = transcript.findLast((entry) => entry.role === "user")?.text ?? "";
+  const canonicalUserText = canonicalizeEmailSpeech(recentUserText);
+  if (canonicalUserText.includes(email)) return { ok: true, emailConfidence: "high" };
+
+  // Allow a small ASR spelling disagreement only when the latest turn clearly
+  // contains email structure. Adaptive mode records this as medium confidence;
+  // strict mode still keeps it pending behind the read-back gate.
+  const hasEmailCue = /@|\b(?:e-?mail|email address)\b|\b(?:at|dot|point|underscore|dash|hyphen|plus)\b/i.test(
+    recentUserText,
+  );
+  const maxAsrEdits = Math.min(3, Math.max(1, Math.floor(email.length * 0.18)));
+  return hasEmailCue && approxSubstringDistance(canonicalUserText, email) <= maxAsrEdits
+    ? { ok: true, emailConfidence: "medium" }
     : { ok: false, error: "ungrounded_identity_capture" };
+}
+
+function hasExplicitNameCue(value: string) {
+  return /\b(?:my name is|i am|i'm|this is|call me)\b/i.test(value);
+}
+
+function resemblesExplicitName(value: string, expected: string) {
+  const match = /\b(?:my name is|i am|i'm|this is|call me)\s+([^,.!?;]+)/i.exec(value);
+  if (!match?.[1]) return false;
+  const heard = normalizeEvidence(match[1].split(/\b(?:and|from|with|email|e-?mail)\b/i)[0] ?? "");
+  if (!heard || heard[0] !== expected[0]) return false;
+
+  // This is a narrow phonetic escape hatch for native-audio/ASR disagreement,
+  // not permission to accept any similarly sized name. Collapse vowels and
+  // common voiced/unvoiced consonant pairs, then require the two skeletons to
+  // be within one edit. For example, "Goodbreed" and "Gurpreet" pass while
+  // an unrelated same-initial name such as "Gareth" does not.
+  const heardSkeleton = phoneticNameSkeleton(heard);
+  const expectedSkeleton = phoneticNameSkeleton(expected);
+  return (
+    heardSkeleton.length >= 3 && expectedSkeleton.length >= 3 && fullEditDistance(heardSkeleton, expectedSkeleton) <= 1
+  );
+}
+
+function phoneticNameSkeleton(value: string) {
+  return normalizeEvidence(value)
+    .replace(/[aeiouy]/gu, "")
+    .replace(/[b]/gu, "p")
+    .replace(/[d]/gu, "t")
+    .replace(/[ckq]/gu, "g")
+    .replace(/[fv]/gu, "f")
+    .replace(/[sz]/gu, "s")
+    .replace(/[hw]/gu, "")
+    .replace(/(.)\1+/gu, "$1");
+}
+
+function fullEditDistance(left: string, right: string) {
+  let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  let current = new Array<number>(right.length + 1).fill(0);
+  for (let i = 1; i <= left.length; i += 1) {
+    current[0] = i;
+    for (let j = 1; j <= right.length; j += 1) {
+      const substitution = (previous[j - 1] ?? 0) + (left[i - 1] === right[j - 1] ? 0 : 1);
+      current[j] = Math.min((previous[j] ?? 0) + 1, (current[j - 1] ?? 0) + 1, substitution);
+    }
+    [previous, current] = [current, previous];
+  }
+  return previous[right.length] ?? Math.max(left.length, right.length);
 }
 
 function canonicalizeEmailSpeech(value: string): string {
@@ -925,7 +1059,6 @@ function normalizeEvidence(value: string) {
 }
 
 const OBSERVABLE_TOOL_FAILURES = new Set([
-  "atomic_capture_rejected",
   "email_confirmation_not_explicit",
   "email_confirmation_not_pending",
   "email_readback_missing",

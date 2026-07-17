@@ -25,7 +25,7 @@ Runtime truth for the production build:
 | Observability | Sentry + structured logs + Slack ops alerts | Admin review at `/admin/session-review`; route logs stay in Coolify. |
 
 There is no React Three Fiber runtime in the current app. The public orb is the
-SVG `MiniOrb`.
+SVG `MerekaMiniMark`.
 
 ## 2. Repository Layout
 
@@ -46,7 +46,7 @@ components/
   site/                   # homepage sections, grids, nav, timeline, rail
   voice-agent/            # dialog, WebRTC hook, state, hero email capture
   security/               # Turnstile hook
-  orb/                    # MiniOrb SVG
+  orb/                    # MerekaMiniMark SVG
   ui/                     # shadcn primitives
 convex/
   schema.ts
@@ -140,6 +140,7 @@ OPENAI_REALTIME_MODEL=gpt-realtime-2
 OPENAI_REALTIME_MODEL_CANDIDATE=gpt-realtime-2.1
 VOICE_MODEL_CELL=control
 VOICE_REASONING_CELL=low
+VOICE_EMAIL_CAPTURE_MODE=adaptive
 OPENAI_REALTIME_VOICE=coral
 OPENAI_REALTIME_SPEED=1.28
 VOICE_RUNTIME_PROFILE=baseline
@@ -211,7 +212,7 @@ Defaults:
 - production speed: `1.28` via Infisical/Coolify
 - idle timeout: `20s` client timer
 - max session: `600s` typed server-resolved policy by default
-- tools: `set_partner_type`, atomic `capture_fields`, read-only
+- tools: `set_partner_type`, partial-safe batched `capture_fields`, read-only
   `lookup_oriental`, `clear_field`, `summarise_lead`, `route_to_team`,
   `wait_for_user`, `end_call`
 - review snapshots: `/api/voice/session` returns signed review credentials;

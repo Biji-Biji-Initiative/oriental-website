@@ -114,6 +114,14 @@ export default defineSchema({
       website: v.optional(v.string()),
       message: v.string(),
     }),
+    emailVerification: v.optional(
+      v.object({
+        source: v.union(v.literal("prefill"), v.literal("speech"), v.literal("typed")),
+        status: v.union(v.literal("confirmed"), v.literal("pending")),
+        matchesCaptured: v.boolean(),
+      }),
+    ),
+    emailCaptureMode: v.optional(v.union(v.literal("strict"), v.literal("adaptive"))),
     transcript: v.array(
       v.object({
         role: v.string(),
@@ -168,6 +176,35 @@ export default defineSchema({
             interrupted: v.boolean(),
             rapidResume: v.boolean(),
           }),
+        ),
+        toolCalls: v.optional(
+          v.array(
+            v.object({
+              sequence: v.optional(v.number()),
+              name: v.union(
+                v.literal("set_partner_type"),
+                v.literal("capture_field"),
+                v.literal("capture_fields"),
+                v.literal("confirm_email"),
+                v.literal("lookup_oriental"),
+                v.literal("clear_field"),
+                v.literal("summarise_lead"),
+                v.literal("route_to_team"),
+                v.literal("wait_for_user"),
+                v.literal("end_call"),
+                v.literal("unknown"),
+              ),
+              outcome: v.union(
+                v.literal("success"),
+                v.literal("rejected"),
+                v.literal("failed"),
+                v.literal("dispatch_failed"),
+              ),
+              executionMs: v.number(),
+              responseCreatedToCallMs: v.optional(v.number()),
+              responseCreatedToResultMs: v.optional(v.number()),
+            }),
+          ),
         ),
       }),
     ),

@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowUpRight, Cpu, FlaskConical, Sparkles, UsersRound } from "lucide-react";
-import { MiniOrb } from "@/components/orb/MiniOrb";
+import { MerekaMiniMark } from "@/components/orb/MerekaMiniMark";
 import { useVoice } from "@/components/voice-agent/voice-state";
 import { ecosystemCells } from "@/lib/content";
 
@@ -42,7 +42,7 @@ export function EcosystemGrid() {
           type="button"
         >
           <span className="voice-cta__orb">
-            <MiniOrb size={32} />
+            <MerekaMiniMark size={32} />
           </span>
           <span>Discuss a partnership</span>
         </button>

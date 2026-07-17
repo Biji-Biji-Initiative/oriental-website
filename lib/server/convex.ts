@@ -72,10 +72,11 @@ export async function recordLeadNotificationStatus(
 export async function persistVoiceReviewSnapshot(input: VoiceReviewSnapshotRequest["snapshot"] & { reviewId: string }) {
   const client = createConvexClient();
   if (!client) return { ok: false as const, reason: "convex_unconfigured" };
+  const convexInput = input;
   try {
     const result = await client.client.mutation(api.leads.recordVoiceSession, {
       ingestSecret: client.ingestSecret,
-      snapshot: input,
+      snapshot: convexInput,
     });
     return { ok: result.ok, id: result.id };
   } catch (error) {
@@ -83,15 +84,17 @@ export async function persistVoiceReviewSnapshot(input: VoiceReviewSnapshotReque
     // telemetry fields rejects them as unknown arguments. Retry once without
     // telemetry so review persistence never regresses on deploy ordering.
     if (
-      input.transport ||
-      input.latency ||
-      input.runtimeProfile ||
-      input.inputPolicy ||
-      input.modelCell ||
-      input.reasoningCell ||
-      input.deviceProfile ||
-      input.deploymentEnvironment ||
-      typeof input.activationAttempted === "boolean"
+      convexInput.transport ||
+      convexInput.latency ||
+      convexInput.runtimeProfile ||
+      convexInput.inputPolicy ||
+      convexInput.modelCell ||
+      convexInput.reasoningCell ||
+      convexInput.deviceProfile ||
+      convexInput.deploymentEnvironment ||
+      convexInput.emailVerification ||
+      convexInput.emailCaptureMode ||
+      typeof convexInput.activationAttempted === "boolean"
     ) {
       const {
         transport: _transport,
@@ -102,9 +105,11 @@ export async function persistVoiceReviewSnapshot(input: VoiceReviewSnapshotReque
         reasoningCell: _reasoningCell,
         deviceProfile: _deviceProfile,
         deploymentEnvironment: _deploymentEnvironment,
+        emailVerification: _emailVerification,
+        emailCaptureMode: _emailCaptureMode,
         activationAttempted: _activationAttempted,
         ...rest
-      } = input;
+      } = convexInput;
       const result = await client.client.mutation(api.leads.recordVoiceSession, {
         ingestSecret: client.ingestSecret,
         snapshot: rest,

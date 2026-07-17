@@ -51,6 +51,7 @@ type Args = {
   maxDropped?: number;
   maxQuota: number;
   maxAvailability?: number;
+  maxCaptureFailures?: number;
 };
 
 const JUDGE_CONCURRENCY = 4;
@@ -87,6 +88,9 @@ function parseArgs(argv: string[]): Args {
       i += 1;
     } else if (flag === "--max-availability") {
       args.maxAvailability = Number(value);
+      i += 1;
+    } else if (flag === "--max-capture-failures") {
+      args.maxCaptureFailures = Number(value);
       i += 1;
     }
   }
@@ -229,6 +233,7 @@ async function main() {
     maxDroppedMidTurn: args.maxDropped,
     maxQuotaFailures: args.maxQuota,
     maxAvailabilityFailures: args.maxAvailability,
+    maxCaptureIntegrityFailures: args.maxCaptureFailures,
   };
   const thresholdGate = meetsThreshold(aggregate, thresholds);
   const gate = {
@@ -283,6 +288,11 @@ function printSummary(
   console.log(
     `availability failures: ${aggregate.availability.totalFailures}  ` +
       `(quota ${aggregate.availability.quotaFailures}, capacity ${aggregate.availability.capacityFailures}, transport ${aggregate.availability.transportFailures})`,
+  );
+  console.log(
+    `capture integrity:     ${aggregate.captureIntegrity.totalFailures} failures across ` +
+      `${aggregate.captureIntegrity.failedSessions} sessions ` +
+      `(rejected ${aggregate.captureIntegrity.rejectedCaptures}, unconfirmed email ${aggregate.captureIntegrity.unconfirmedEmailFailures})`,
   );
   console.log(`submit rate:         ${(aggregate.submitRate * 100).toFixed(0)}%`);
   console.log(
