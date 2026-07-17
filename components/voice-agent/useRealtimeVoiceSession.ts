@@ -183,6 +183,11 @@ export function useRealtimeVoiceSession({
   const statusRef = useRef<VoiceConnectionStatus>("idle");
   const onIdleWarningRef = useRef(onIdleWarning);
   onIdleWarningRef.current = onIdleWarning;
+  // Session metadata is an event sink, not connection configuration. Keep the
+  // latest consumer without rebuilding prewarm/connect callbacks every time
+  // the dialog rerenders; otherwise returning to idle can mint an unused token.
+  const onSessionReadyRef = useRef(onSessionReady);
+  onSessionReadyRef.current = onSessionReady;
   // Read at mint time (not a mint dep) so changing the variant never rebuilds
   // the connect machinery; the prewarm cache is invalidated on mismatch instead.
   const variantRef = useRef(variant);
@@ -383,7 +388,7 @@ export function useRealtimeVoiceSession({
   const emitSessionReady = useCallback(
     (session: MintedSession, extras: Omit<Partial<VoiceReviewMetadata>, "id" | "token" | "sessionId"> = {}) => {
       if (!session.review?.id || !session.review?.token) return;
-      onSessionReady?.({
+      onSessionReadyRef.current?.({
         id: session.review.id,
         token: session.review.token,
         sessionId: session.session_id ?? session.review.id,
@@ -401,7 +406,7 @@ export function useRealtimeVoiceSession({
         ...extras,
       });
     },
-    [onSessionReady],
+    [],
   );
 
   const takePrewarmedSession = useCallback((): MintedSession | null => {
