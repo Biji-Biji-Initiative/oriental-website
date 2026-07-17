@@ -38,8 +38,8 @@ describe("admin auth helpers", () => {
     expect(verifyAdminRequest(request)).toMatchObject({ ok: true });
   });
 
-  it("accepts the shared admin password alias", () => {
-    expect(verifyAdminToken("Cr3ativity")).toMatchObject({ ok: true });
+  it("rejects historical shared-password aliases", () => {
+    expect(verifyAdminToken("legacy-alias")).toEqual({ ok: false, reason: "invalid" });
   });
 
   it("marks session cookies secure only in production", () => {
