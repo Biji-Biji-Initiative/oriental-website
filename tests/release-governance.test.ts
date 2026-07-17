@@ -16,6 +16,7 @@ import { releaseTestEnv } from "../scripts/lib/release-test-env";
 const sha = "bb8e2673e5f129f342fba78f3eb653a54de8763b";
 const releasePreflight = readFileSync("scripts/release-preflight.ts", "utf8");
 const releaseVerifier = readFileSync("scripts/release-verify.ts", "utf8");
+const productionDeployer = readFileSync("scripts/deploy-coolify-production.ts", "utf8");
 const stagingVoiceSmoke = readFileSync("scripts/smoke-staging-voice.ts", "utf8");
 const packageScripts = JSON.parse(readFileSync("package.json", "utf8")) as { scripts: Record<string, string> };
 
@@ -143,6 +144,17 @@ describe("release governance", () => {
   it("expands the both alias before target lookup", () => {
     expect(releaseVerifier).toContain('args.target === "both" ? ["staging", "production"] : [args.target]');
     expect(releaseVerifier).toContain('name === "staging" ? governedVoiceCell(stagingModelCell) : CONTROL_VOICE_CELL');
+  });
+
+  it("validates the staging promotion boundary against the candidate voice cell", () => {
+    expect(productionDeployer).toContain(
+      'readPublicHealth(RELEASE_TARGETS.staging.origin, args.sha, "staging candidate", STAGING_CANDIDATE_VOICE_CELL)',
+    );
+    expect(productionDeployer).toContain('"current production",\n    CONTROL_VOICE_CELL');
+    expect(productionDeployer).toContain(
+      'readPublicHealth(RELEASE_TARGETS.production.origin, args.sha, "new production", CONTROL_VOICE_CELL)',
+    );
+    expect(productionDeployer).toContain("validateHealthPayload(payload, expectedSha, expectedVoiceCell)");
   });
 
   it("pins the staging voice smoke to the governed candidate instead of public health", () => {
