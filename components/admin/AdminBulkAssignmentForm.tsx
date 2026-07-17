@@ -74,43 +74,43 @@ export function AdminBulkAssignmentForm({ leads }: { leads: BulkLead[] }) {
   if (leads.length === 0) return null;
 
   return (
-    <details className="rounded-xl border border-mk-blue/15 bg-mk-blue/[0.035] shadow-sm" data-bulk-assignment>
+    <details className="rounded-xl border border-sky-400/20 bg-sky-400/[0.05]" data-bulk-assignment>
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 marker:hidden sm:px-5">
-        <span className="flex items-center gap-2 text-sm font-semibold text-mk-blue">
+        <span className="flex items-center gap-2 text-sm font-semibold text-sky-300">
           <UsersRoundIcon className="size-4" /> Assign multiple enquiries
         </span>
-        <span className="text-xs font-medium text-mk-ash">{selected.length} selected</span>
+        <span className="text-xs font-medium text-slate-400">{selected.length} selected</span>
       </summary>
-      <form className="grid gap-4 border-t border-mk-blue/10 p-4 sm:p-5" onSubmit={submit}>
+      <form className="grid gap-4 border-t border-sky-400/15 p-4 sm:p-5" onSubmit={submit}>
         <fieldset>
-          <legend className="text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
+          <legend className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
             Choose active enquiries
           </legend>
-          <div className="mt-2 grid max-h-56 gap-1 overflow-y-auto rounded-lg border border-mk-ash/15 bg-white p-2 sm:grid-cols-2">
+          <div className="mt-2 grid max-h-56 gap-1 overflow-y-auto rounded-lg border border-white/10 bg-white/[0.04] p-2 sm:grid-cols-2">
             {leads.map((lead) => (
               <label
-                className="flex cursor-pointer items-start gap-3 rounded-lg px-3 py-2 transition hover:bg-mk-paper"
+                className="flex cursor-pointer items-start gap-3 rounded-lg px-3 py-2 transition hover:bg-white/[0.04]"
                 key={lead.leadId}
               >
                 <input
                   checked={selected.includes(lead.leadId)}
-                  className="mt-1 size-4 accent-mk-blue"
+                  className="mt-1 size-4 accent-sky-400"
                   onChange={() => toggle(lead.leadId)}
                   type="checkbox"
                 />
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-semibold">{lead.label}</span>
-                  <span className="block truncate text-xs text-mk-ash">{lead.meta}</span>
+                  <span className="block truncate text-xs text-slate-400">{lead.meta}</span>
                 </span>
               </label>
             ))}
           </div>
         </fieldset>
         <div className="grid gap-3 lg:grid-cols-3">
-          <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
+          <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
             Owner
             <select
-              className="h-10 rounded-lg border border-mk-ash/20 bg-white px-3 text-sm font-medium normal-case tracking-normal outline-none focus:border-mk-blue"
+              className="h-10 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-sm font-medium normal-case tracking-normal outline-none focus:border-sky-400"
               onChange={(event) => setOwner(event.target.value)}
               required
               value={owner}
@@ -123,10 +123,10 @@ export function AdminBulkAssignmentForm({ leads }: { leads: BulkLead[] }) {
               ))}
             </select>
           </label>
-          <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
+          <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
             Shared next action
             <input
-              className="h-10 rounded-lg border border-mk-ash/20 bg-white px-3 text-sm font-medium normal-case tracking-normal outline-none focus:border-mk-blue"
+              className="h-10 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-sm font-medium normal-case tracking-normal outline-none focus:border-sky-400"
               maxLength={500}
               onChange={(event) => setNextActionNote(event.target.value)}
               placeholder="Review and send tailored introduction"
@@ -134,10 +134,10 @@ export function AdminBulkAssignmentForm({ leads }: { leads: BulkLead[] }) {
               value={nextActionNote}
             />
           </label>
-          <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
+          <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
             Due
             <input
-              className="h-10 rounded-lg border border-mk-ash/20 bg-white px-3 text-sm font-medium normal-case tracking-normal outline-none focus:border-mk-blue"
+              className="h-10 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-sm font-medium normal-case tracking-normal outline-none focus:border-sky-400"
               onChange={(event) => setNextActionAt(event.target.value)}
               required
               type="datetime-local"
@@ -145,10 +145,10 @@ export function AdminBulkAssignmentForm({ leads }: { leads: BulkLead[] }) {
             />
           </label>
         </div>
-        <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
+        <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
           Reason for assignment
           <input
-            className="h-10 rounded-lg border border-mk-ash/20 bg-white px-3 text-sm font-medium normal-case tracking-normal outline-none focus:border-mk-blue"
+            className="h-10 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-sm font-medium normal-case tracking-normal outline-none focus:border-sky-400"
             maxLength={300}
             minLength={3}
             onChange={(event) => setReason(event.target.value)}
@@ -158,7 +158,7 @@ export function AdminBulkAssignmentForm({ leads }: { leads: BulkLead[] }) {
           />
         </label>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-xs leading-5 text-mk-ash">
+          <p className="text-xs leading-5 text-slate-400">
             The batch is atomic: if any selected record is stale or invalid, none are changed.
           </p>
           <Button disabled={selected.length === 0 || isPending} type="submit">

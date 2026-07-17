@@ -103,6 +103,8 @@ docs/                     # handover specs — reference, not auto-synced to cod
 | Voice orb look & motion | `components/voice-agent/VoiceSessionStage.tsx`, `.voice-orb*` in `app/globals.css`, level source in `useVoiceAudioLevel.ts` |
 | Session token + server session config | `app/api/voice/session/route.ts`, `lib/server/openai-realtime.ts` |
 | Admin session review | `app/admin/session-review/page.tsx`, `app/api/admin/*`, `components/admin/*` |
+| Admin dark theme / login / command palette | `app/admin/layout.tsx`, `app/admin/theme.css`, `components/admin/AdminLoginForm.tsx`, `components/admin/AdminCommandPalette.tsx` |
+| On-demand voice evals (admin) | `app/api/admin/evals/route.ts`, `lib/server/voice-evals.ts`, `components/admin/AdminRunEvalsButton.tsx`; judge model via `EVAL_JUDGE_MODEL` |
 | Sentry setup | `sentry.*.config.ts`, `instrumentation.ts`, `instrumentation-client.ts`, `next.config.ts` |
 | Ops Slack alerts | `lib/server/ops-alerts.ts`; production target is `OPS_ALERT_SLACK_CHANNEL_ID` |
 | Lead payload validation | `lib/schemas.ts` |
