@@ -1,5 +1,5 @@
 import { adminVoiceFollowUpSchema } from "@/lib/schemas";
-import { verifyAdminRequest } from "@/lib/server/admin-auth";
+import { adminAuthFailureStatus, verifyAdminPermission } from "@/lib/server/admin-auth";
 import { getAdminVoiceSession, setAdminVoiceFollowUp } from "@/lib/server/convex";
 import { logInfo, logWarn } from "@/lib/server/logger";
 import { noStoreJson } from "@/lib/server/security";
@@ -8,10 +8,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request, context: RouteContext<"/api/admin/voice-sessions/[reviewId]">) {
-  const auth = verifyAdminRequest(request);
+  const auth = verifyAdminPermission(request, "voice.read");
   if (!auth.ok) {
-    const status = auth.reason === "unconfigured" ? 503 : 401;
-    return noStoreJson({ ok: false, error: auth.reason }, { status });
+    return noStoreJson({ ok: false, error: auth.reason }, { status: adminAuthFailureStatus(auth) });
   }
 
   const { reviewId } = await context.params;
@@ -29,10 +28,9 @@ export async function GET(request: Request, context: RouteContext<"/api/admin/vo
 }
 
 export async function PATCH(request: Request, context: RouteContext<"/api/admin/voice-sessions/[reviewId]">) {
-  const auth = verifyAdminRequest(request);
+  const auth = verifyAdminPermission(request, "voice.follow_up");
   if (!auth.ok) {
-    const status = auth.reason === "unconfigured" ? 503 : 401;
-    return noStoreJson({ ok: false, error: auth.reason }, { status });
+    return noStoreJson({ ok: false, error: auth.reason }, { status: adminAuthFailureStatus(auth) });
   }
 
   const raw = await request.json().catch(() => null);

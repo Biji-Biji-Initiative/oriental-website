@@ -1517,8 +1517,12 @@ function WorkflowLeadCard({ lead }: { lead: LeadRow }) {
         <div className="border-t border-mk-ash/15 px-3 pb-3">
           <AdminLeadWorkflowForm
             leadId={lead.leadId}
+            initialNextActionAt={lead.nextActionAt}
+            initialNextActionNote={lead.nextActionNote}
             initialOwner={lead.owner}
+            initialOutcomeReason={lead.outcomeReason}
             initialPriority={priority}
+            initialRevision={lead.workflowRevision}
             initialStatus={status}
           />
         </div>

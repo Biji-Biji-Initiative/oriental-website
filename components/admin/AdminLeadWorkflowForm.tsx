@@ -2,24 +2,31 @@
 
 import { CheckIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useState, useTransition } from "react";
+import { type FormEvent, useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  ADMIN_LEAD_OWNERS,
   ADMIN_LEAD_PRIORITIES,
   ADMIN_LEAD_STATUSES,
   type AdminLeadPriority,
   type AdminLeadStatus,
   adminLeadPriorityLabels,
   adminLeadStatusLabels,
+  isActiveAdminLeadStatus,
+  isTerminalAdminLeadStatus,
 } from "@/lib/admin-workflow";
 
 type AdminLeadWorkflowFormProps = {
   compact?: boolean;
   leadId: string;
   initialOwner?: string | null;
+  initialNextActionAt?: number | null;
+  initialNextActionNote?: string | null;
+  initialOutcomeReason?: string | null;
   initialPriority: AdminLeadPriority;
+  initialRevision?: number | null;
   initialStatus: AdminLeadStatus;
 };
 
@@ -27,7 +34,11 @@ export function AdminLeadWorkflowForm({
   compact = false,
   leadId,
   initialOwner,
+  initialNextActionAt,
+  initialNextActionNote,
+  initialOutcomeReason,
   initialPriority,
+  initialRevision,
   initialStatus,
 }: AdminLeadWorkflowFormProps) {
   const router = useRouter();
@@ -35,7 +46,33 @@ export function AdminLeadWorkflowForm({
   const [priority, setPriority] = useState(initialPriority);
   const [owner, setOwner] = useState(initialOwner ?? "");
   const [note, setNote] = useState("");
+  const [nextActionAt, setNextActionAt] = useState(toDateTimeLocal(initialNextActionAt));
+  const [nextActionNote, setNextActionNote] = useState(initialNextActionNote ?? "");
+  const [outcomeReason, setOutcomeReason] = useState(initialOutcomeReason ?? "");
+  const [reason, setReason] = useState("");
+  const [revision, setRevision] = useState(initialRevision ?? 0);
   const [isPending, startTransition] = useTransition();
+  const active = isActiveAdminLeadStatus(status);
+  const terminal = isTerminalAdminLeadStatus(status);
+  const historicalOwner = owner && !ADMIN_LEAD_OWNERS.includes(owner as (typeof ADMIN_LEAD_OWNERS)[number]);
+
+  useEffect(() => {
+    setStatus(initialStatus);
+    setPriority(initialPriority);
+    setOwner(initialOwner ?? "");
+    setNextActionAt(toDateTimeLocal(initialNextActionAt));
+    setNextActionNote(initialNextActionNote ?? "");
+    setOutcomeReason(initialOutcomeReason ?? "");
+    setRevision(initialRevision ?? 0);
+  }, [
+    initialNextActionAt,
+    initialNextActionNote,
+    initialOutcomeReason,
+    initialOwner,
+    initialPriority,
+    initialRevision,
+    initialStatus,
+  ]);
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -43,23 +80,49 @@ export function AdminLeadWorkflowForm({
       const response = await fetch(`/api/admin/leads/${encodeURIComponent(leadId)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status, priority, owner, note }),
+        body: JSON.stringify({
+          status,
+          priority,
+          owner,
+          note,
+          nextActionAt: nextActionAt ? new Date(nextActionAt).getTime() : null,
+          nextActionNote,
+          outcomeReason,
+          expectedRevision: revision,
+          reason,
+        }),
       });
       if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { error?: string; reason?: string } | null;
-        toast.error("Workflow update failed.", {
-          description: body?.reason ?? body?.error ?? `HTTP ${response.status}`,
+        const body = (await response.json().catch(() => null)) as {
+          currentRevision?: number;
+          error?: string;
+          fields?: Record<string, string>;
+        } | null;
+        const fieldMessage = body?.fields ? Object.values(body.fields)[0] : undefined;
+        toast.error(response.status === 409 ? "This enquiry changed in another session." : "Workflow update failed.", {
+          description:
+            response.status === 409
+              ? "The latest record is being loaded. Review it before saving again."
+              : (fieldMessage ?? body?.error ?? `HTTP ${response.status}`),
         });
+        if (response.status === 409) router.refresh();
         return;
       }
+      const body = (await response.json()) as { changed: boolean; revision: number };
+      setRevision(body.revision);
       setNote("");
-      toast.success("Workflow updated.");
+      setReason("");
+      toast.success(body.changed ? "Workflow updated." : "No workflow fields changed.");
       router.refresh();
     });
   }
 
   return (
-    <form className="mt-4 grid gap-3 rounded-lg border border-mk-ash/15 bg-white p-3" onSubmit={submit}>
+    <form
+      className="mt-4 grid gap-4 rounded-xl border border-mk-ash/15 bg-white p-4 shadow-sm"
+      data-admin-workflow-form
+      onSubmit={submit}
+    >
       <div className={compact ? "grid gap-3 2xl:grid-cols-3" : "grid gap-3 sm:grid-cols-3"}>
         <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
           Status
@@ -91,23 +154,81 @@ export function AdminLeadWorkflowForm({
         </label>
         <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
           Owner
-          <input
+          <select
             className="h-9 rounded-lg border border-mk-ash/20 bg-mk-paper px-2 text-sm font-medium normal-case tracking-normal text-mk-off-black outline-none focus:border-mk-blue"
-            maxLength={80}
-            placeholder="Unassigned"
+            required={active}
             value={owner}
             onChange={(event) => setOwner(event.target.value)}
+          >
+            <option value="">Unassigned</option>
+            {historicalOwner ? <option value={owner}>Historical · {owner}</option> : null}
+            {ADMIN_LEAD_OWNERS.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className={compact ? "grid gap-3" : "grid gap-3 sm:grid-cols-2"}>
+        <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
+          Next action
+          <input
+            className="h-10 rounded-lg border border-mk-ash/20 bg-mk-paper px-3 text-sm font-medium normal-case tracking-normal text-mk-off-black outline-none focus:border-mk-blue"
+            maxLength={500}
+            placeholder="Call to confirm programme scope"
+            required={active}
+            value={nextActionNote}
+            onChange={(event) => setNextActionNote(event.target.value)}
+          />
+        </label>
+        <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
+          Due
+          <input
+            className="h-10 rounded-lg border border-mk-ash/20 bg-mk-paper px-3 text-sm font-medium normal-case tracking-normal text-mk-off-black outline-none focus:border-mk-blue"
+            required={active}
+            type="datetime-local"
+            value={nextActionAt}
+            onChange={(event) => setNextActionAt(event.target.value)}
           />
         </label>
       </div>
+      {terminal ? (
+        <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
+          Outcome reason
+          <Textarea
+            className="min-h-16 bg-mk-paper text-sm normal-case tracking-normal"
+            maxLength={500}
+            placeholder="What was agreed, won, declined, duplicated, or disqualified?"
+            required
+            value={outcomeReason}
+            onChange={(event) => setOutcomeReason(event.target.value)}
+          />
+        </label>
+      ) : null}
       <Textarea
         className="min-h-20 bg-mk-paper text-sm"
         maxLength={600}
-        placeholder="Add a short handoff note or next action"
+        placeholder="Internal context for the next person who opens this record"
         value={note}
         onChange={(event) => setNote(event.target.value)}
       />
-      <div className="flex justify-end">
+      <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
+        Reason for this change
+        <input
+          className="h-10 rounded-lg border border-mk-ash/20 bg-mk-paper px-3 text-sm font-medium normal-case tracking-normal text-mk-off-black outline-none focus:border-mk-blue"
+          maxLength={300}
+          minLength={3}
+          placeholder="Assigned after morning intake review"
+          required
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+        />
+      </label>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs leading-5 text-mk-ash">
+          Revision {revision} · every saved change is attributed and added to the activity trail.
+        </p>
         <Button disabled={isPending} size="sm" type="submit">
           <CheckIcon className="size-4" />
           {isPending ? "Saving" : "Save workflow"}
@@ -115,4 +236,11 @@ export function AdminLeadWorkflowForm({
       </div>
     </form>
   );
+}
+
+function toDateTimeLocal(value: number | null | undefined) {
+  if (!value) return "";
+  const date = new Date(value);
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
 }

@@ -1,4 +1,5 @@
 import { ArrowUpRightIcon, Building2Icon, MailIcon, PhoneIcon, UserRoundIcon } from "lucide-react";
+import { AdminBulkAssignmentForm } from "@/components/admin/AdminBulkAssignmentForm";
 import { AdminLeadWorkflowForm } from "@/components/admin/AdminLeadWorkflowForm";
 import { Badge } from "@/components/admin/Badge";
 import {
@@ -10,6 +11,7 @@ import {
 } from "@/lib/admin-crm";
 import {
   adminLeadPriorityLabels,
+  adminLeadSlaState,
   adminLeadStatusLabels,
   normalizeAdminLeadPriority,
   normalizeAdminLeadStatus,
@@ -94,6 +96,18 @@ export function EnquiryCrmWorkspace({
       </section>
 
       <CrmIntelligencePanel filters={filters} generatedAt={generatedAt} intelligence={intelligence} view={view} />
+
+      <AdminBulkAssignmentForm
+        leads={ordered
+          .filter(isActiveLead)
+          .slice(0, 50)
+          .map((lead) => ({
+            leadId: lead.leadId,
+            label: lead.name?.trim() || lead.email,
+            meta: `${lead.org?.trim() || "No organisation"} · ${lead.owner?.trim() || "Unassigned"}`,
+            revision: lead.workflowRevision ?? 0,
+          }))}
+      />
 
       <section className="overflow-hidden rounded-2xl border border-mk-ash/20 bg-white shadow-sm" id="enquiry-table">
         <header className="flex flex-col gap-3 border-b border-mk-ash/15 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
@@ -571,6 +585,7 @@ function CrmRecord({
   const delivery = notificationStatus(lead);
   const website = safeWebsiteHref(lead.website);
   const orderedEvents = [...events].sort((left, right) => right.createdAt - left.createdAt);
+  const sla = adminLeadSlaState(status, lead.nextActionAt, generatedAt);
   return (
     <section
       className="scroll-mt-28 overflow-hidden rounded-2xl border border-mk-ash/20 bg-white shadow-sm"
@@ -587,6 +602,7 @@ function CrmRecord({
               <Badge tone={priorityTone(priority)}>{adminLeadPriorityLabels[priority]}</Badge>
               <Badge tone={lead.owner?.trim() ? "green" : "amber"}>{lead.owner?.trim() || "Unassigned"}</Badge>
               <Badge tone={delivery.tone}>{delivery.label}</Badge>
+              <Badge tone={slaTone(sla.state)}>{sla.label}</Badge>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -698,12 +714,23 @@ function CrmRecord({
         <aside className="grid content-start gap-5 bg-mk-paper/35 p-4 sm:p-6">
           <section>
             <SectionLabel>Next action</SectionLabel>
-            <p className="mt-2 text-sm leading-6 text-mk-off-black">{leadActionHint(lead)}</p>
+            <p className="mt-2 text-sm font-semibold leading-6 text-mk-off-black">
+              {lead.nextActionNote?.trim() || leadActionHint(lead)}
+            </p>
+            {lead.nextActionAt ? (
+              <p className="mt-1 text-xs leading-5 text-mk-ash">
+                Due {formatDate(lead.nextActionAt)} · {sla.label}
+              </p>
+            ) : null}
             <AdminLeadWorkflowForm
               compact
               leadId={lead.leadId}
+              initialNextActionAt={lead.nextActionAt}
+              initialNextActionNote={lead.nextActionNote}
               initialOwner={lead.owner}
+              initialOutcomeReason={lead.outcomeReason}
               initialPriority={priority}
+              initialRevision={lead.workflowRevision}
               initialStatus={status}
             />
           </section>
@@ -728,6 +755,22 @@ function CrmRecord({
                         {event.actor} · {formatDate(event.createdAt)}
                       </div>
                       {event.note ? <p className="mt-1 text-xs leading-5 text-mk-ash">{event.note}</p> : null}
+                      {event.reason && event.reason !== event.note ? (
+                        <p className="mt-1 text-xs leading-5 text-mk-ash">Reason: {event.reason}</p>
+                      ) : null}
+                      {event.changes?.length ? (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {event.changes.map((change: { field: string; before?: string; after?: string }) => (
+                            <span
+                              className="rounded-full bg-mk-paper px-2 py-1 text-[10px] font-semibold text-mk-ash"
+                              key={`${event.createdAt}:${change.field}`}
+                            >
+                              {auditFieldLabel(change.field)}: {auditValue(change.field, change.before)} →{" "}
+                              {auditValue(change.field, change.after)}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 ))
@@ -879,6 +922,13 @@ function priorityTone(priority: ReturnType<typeof normalizeAdminLeadPriority>) {
   return "blue" as const;
 }
 
+function slaTone(state: ReturnType<typeof adminLeadSlaState>["state"]): "neutral" | "green" | "red" | "amber" {
+  if (state === "overdue") return "red";
+  if (state === "due-soon" || state === "unscheduled") return "amber";
+  if (state === "scheduled") return "green";
+  return "neutral";
+}
+
 function notificationStatus(lead: LeadRow): { label: string; tone: "neutral" | "blue" | "green" | "red" | "amber" } {
   if (lead.notificationDelivered === false) return { label: "Failed", tone: "red" };
   const successes = [lead.notificationEmailOk, lead.notificationSlackOk, lead.notificationClickUpOk].filter(
@@ -945,6 +995,16 @@ function leadActionHint(lead: LeadRow) {
 
 function eventLabel(kind: string) {
   return kind.replace(/_/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function auditFieldLabel(value: string) {
+  return value.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function auditValue(field: string, value: string | undefined) {
+  if (!value) return "none";
+  if (/At$/.test(field) && Number.isFinite(Number(value))) return formatDate(Number(value));
+  return value;
 }
 
 function leadSourceLabel(source: LeadRow["source"]) {
