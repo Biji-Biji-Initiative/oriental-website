@@ -1,68 +1,98 @@
-# Implementation evidence — Mereka at Oriental staging voice perfection
+# Implementation evidence — PR68 corrective release integration
 
-## Exact candidate and live boundary
+## Exact implementation and live boundary
 
-- Candidate: `f315523c3ee4d8c8e510a5378c6c1424c7cec58d`.
-- Base: `c87c522374d711f5870e4b14ee108157e3561a03` (`origin/main`).
-- The candidate is one commit ahead and zero commits behind main.
-- `pnpm --silent ops:status --json` on 2026-07-17 reported both canonical
-  environments healthy on the unchanged base SHA. Production reported
-  `baseline/control/gpt-realtime-2/low`, strict email mode, picker false.
-  Staging reported `baseline/candidate/gpt-realtime-2.1/low/adaptive`, picker
-  false because this candidate has not been deployed.
-- No production or staging web deployment was performed while building or
-  reviewing this branch.
+- Corrective implementation: `24349a2207e450265aa02e3f77fb9a8d49d9c83c`.
+- Base: `b0b0d83c7499ea4ed470430e8e3cfa80ab7bd68e` (`origin/main` when
+  the isolated integration branch was created).
+- The implementation commit follows the two rebased PR68 commits
+  `63ef9cdc1a4abe747cca4bfdeeb008351e082c6c` and
+  `924823282f49e970b9821286300c806723c5a562`.
+- Read-only public health on 2026-07-17, after the operator reported the site
+  live, showed canonical staging healthy on
+  `b0b0d83c7499ea4ed470430e8e3cfa80ab7bd68e` with
+  `baseline/candidate/gpt-realtime-2.1/low/adaptive`, picker off. Production was
+  healthy on `0f5c07e60d956abadff2e9d1e346db585e41a9be` with
+  `baseline/control/gpt-realtime-2/low/adaptive`, picker off.
+- The corrective implementation SHA is not represented as deployed. No
+  staging, production, Infisical, Coolify, DNS, or Convex mutation was performed
+  from this isolated worktree.
+- The parent release owner will integrate this commit with the concurrent admin
+  and release work. That combined exact tree receives the authoritative APR and
+  live release evidence; the force-updated PR68 branch review is not evidence
+  for the combined tree.
 
-## Implementation map
+## Corrective implementation map
 
-- `components/brand-motion/NebulaM.tsx`, `lib/voice/audio-reactivity.ts`,
-  `components/voice-agent/useVoiceAudioLevel.ts`, and `app/globals.css` implement
-  bounded voice-reactive brand motion, fallback, and responsive geometry.
-- `app/api/client-config/route.ts`, `app/api/voice/session/route.ts`,
-  `scripts/lib/release-governance.ts`, `scripts/deploy-coolify-host.sh`, and
-  `scripts/release-verify.ts` enforce staging picker/model materialization and
-  production fail-closed behavior; `scripts/smoke-staging-voice.ts` proves the
-  effective variant, audio, and renderer. The verifier derives expected picker
-  visibility from the governed target voice cell, so staging candidate requires
-  picker-on while staging baseline and production require picker-off.
-- `lib/voice/realtime-events.ts` combines main's authoritative-email response
-  binding with exact/high auto-confirmation, approximate/medium readback,
-  literal mismatch rejection, bounded exact-readback parsing, explicit
-  replacement, full clear-all, and item-ID tombstones.
-- `lib/voice/profile.ts`, `components/voice-agent/voice-dialog-copy.ts`, and the
-  operator copy identify Mereka as the team and Oriental Building as the place,
-  and remove the repeated "quick one" phrase.
-- `lib/eval/voice-eval.ts`, `scripts/eval-voice.ts`, and `convex/leads.ts` add
-  PII-free integrity/style counters and fully attributed experiment grouping.
+- `components/brand-motion/NebulaM.tsx`,
+  `components/brand-motion/MerekaSiteLoader.tsx`, `app/layout.tsx`, and
+  `app/globals.css` make the approved Mereka M nebula and entrance treatment
+  normal staging-and-production visuals. The obsolete public build flag and
+  hostname gate were removed; reduced-motion and WebGL failure still use the
+  canonical SVG fallback.
+- `lib/voice/audio-reactivity.ts` raises the learnable floor, adds separate
+  open/close thresholds, and proves that sustained 0.12, 0.16, and 0.20 room
+  noise converges inactive after a long capture while quiet speech remains
+  visible.
+- `components/voice-agent/VoiceAgentDialog.tsx` and
+  `lib/voice/conversation.ts` keep an unfinished typed-only handoff when the
+  visitor closes and reopens the same intake. Form mode controls focus; an
+  external email prefill or completed submission still starts clean.
+- `scripts/lib/release-governance.ts`, `scripts/deploy-coolify-host.sh`,
+  `scripts/release-preflight.ts`, `scripts/release-verify.ts`, and
+  `scripts/smoke-staging-voice.ts` split clean candidate runs from human voice
+  auditions. Clean staging candidate is picker-off; audition is explicit,
+  staging-only, and invalid as model-promotion evidence. Production remains
+  control/picker-off and rejects audition mode.
+- `clear_fields` remains the canonical clear-all tool label in the runtime,
+  bounded schema, Convex validators/schema, persistence path, and aggregate
+  output. It is not rewritten to the distinct single-field `clear_field`
+  operation. This validator change requires the reviewed Convex functions to
+  deploy before the web image.
+- `lib/eval/voice-eval.ts` reports PII-free tool counts, outcomes, and p50/p95
+  execution/response latency overall and by canonical tool name.
+  `scripts/eval-voice.ts` enriches only missing historical voice profile fields
+  through the existing per-session query with bounded concurrency. Aggregate
+  mode remains zero-mutation, identifier-free, judge-free, and report-free.
+- `AGENTS.md`, infrastructure/runbook/spec documents, and APR workflows now
+  encode the same release contract. Production preflight explicitly runs with
+  `NODE_ENV=production`, and final dual-host verification explicitly expects
+  clean candidate staging rather than silently defaulting staging to control.
 
-## Executed evidence on the rebased candidate
+## Executed evidence on the corrective implementation
 
-- `pnpm test`: 59 files, 598 tests passed.
-- Focused reducer/session/fuzz proof: 3 files, 257 tests passed.
-- `pnpm lint`: 224 files clean.
-- `pnpm typecheck`: passed.
-- `pnpm build`: passed, including Next.js route generation.
-- `pnpm test:e2e`: 38 passed; 38 token-gated admin cases skipped as designed.
-- Managed Infisical contracts passed in both environments with production-mode
-  secret validation. Staging is candidate/picker-on; production is
-  control/picker-off. ClickUp token presence and staging/production token parity
-  were proven without exposing the credential.
-- Independent responsive audit: all 15 requested viewports passed; at 844x390
-  and 1024x390 the expanded picker stayed between top 20px and bottom 370px,
-  with all five options and Hide reachable and no overflow or console errors.
-- Independent email protocol review replayed medium substitutions, exact and
-  contaminated readbacks, stale correction races, clear-all out-of-order
-  completions, duplicates, unknown/reused IDs, and untagged events. All P1
-  findings were fixed. The final reserved-local-part P2 is covered by ten full
-  wrapper regressions and equality checks after every wrapper-removal step.
-- `git diff --check`: clean. The worktree was clean before this evidence file.
+- Focused corrective proof: 9 files, 117 tests passed.
+- `pnpm test`: 61 files, 616 tests passed.
+- `pnpm lint`: 233 files clean.
+- `pnpm typecheck`: route generation and TypeScript passed.
+- `pnpm build`: optimized Next.js production build and route generation passed.
+- `pnpm exec playwright test tests/e2e/home.spec.ts`: 38/38 desktop and mobile
+  cases passed. The first run exposed the typed-only close/reopen reset; after
+  fixing the open/reset boundary, the exact regression passed 2/2 and the full
+  matrix passed 38/38.
+- `git diff --check`: clean before the implementation commit.
+- Four unrelated zero-byte package/lock artifacts in `/home/gurpreet` broke
+  Node package-scope validation. After explicit parent authorization they were
+  preserved, not deleted, under
+  `/home/gurpreet/.quarantine/oriental-node-artifacts-20260717T153900+0800/`;
+  the clean validation above then ran without package-resolution warnings.
 
-## Remaining post-merge gates
+## Remaining integration and release gates
 
-After GitHub CI and merge, freeze the exact full main SHA. Run managed Infisical
-cell checks and release preflight, deploy any changed Convex function first,
-then deploy only that exact SHA to canonical staging with the live staging SHA
-as `--expected-current-sha`. Run deterministic release verification, real
-WebRTC/audio reactivity smoke, and synthetic no-submit intake smoke. Finally
-prove production SHA/model/picker remain unchanged. Historical candidate eval
-rows and picker-audition rows must not be presented as a clean model comparison.
+1. Apply the implementation and this evidence commit to the concurrent combined
+   release tree and resolve any overlaps there.
+2. Run the authoritative automated plan review against that exact combined tree,
+   then require green GitHub CI and freeze the final merged SHA.
+3. Run managed Infisical parity for clean staging candidate and production
+   control, plus production-mode release preflight.
+4. Deploy the reviewed Convex schema/functions first because the bounded tool
+   validator now accepts canonical `clear_fields`.
+5. Deploy and prove the exact final SHA on canonical staging in clean mode; run
+   deterministic verification, real WebRTC/audio smoke, and synthetic no-submit
+   intake smoke. Run human picker auditions only as a separately labelled mode.
+6. Promote that same proven web SHA through the Coolify production API while
+   retaining `baseline/control/gpt-realtime-2/low/adaptive`, picker off, then
+   verify both canonical hosts with the explicit clean staging candidate flags.
+7. Collect fresh aggregate-only evidence after release. Candidate promotion
+   remains `insufficient_data` until the defined sample and human-quality gates
+   pass; this code integration does not claim the product experiment is proven.
