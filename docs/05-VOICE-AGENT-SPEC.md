@@ -159,9 +159,10 @@ claim a handoff succeeded before `route_to_team` returns success.
 
 The voice-reactive Mereka M nebula is a staging-only visual preview. It needs
 both `NEXT_PUBLIC_BRAND_MOTION_PREVIEW=true` at build time and the exact
-staging/local hostname; production keeps the legacy orb. The Trace M entrance
-uses the same gate and is absent in production. WebGL failure and reduced
-motion retain the canonical static mark without affecting audio measurement.
+staging/local hostname; the reviewed production path keeps the legacy orb. The
+Trace M entrance uses the same gate and is absent from a production build of
+this source. WebGL failure and reduced motion retain the canonical static mark
+without affecting audio measurement.
 
 ## 7. Auth & token mint
 

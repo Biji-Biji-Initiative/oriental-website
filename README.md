@@ -44,8 +44,9 @@ still use shared upstream accounts; environment attribution and Redis key namesp
 collisions while dedicated staging services remain a separate infrastructure migration.
 
 The Mereka particle M and animated page-entrance loader are staging-only preview
-cells; production retains its legacy orb and no Trace entrance. Compact voice
-affordances still reuse the approved mark geometry.
+cells in this source. Its production path retains the legacy orb and no Trace
+entrance; deploying that fallback is outside the current staging-only release.
+Compact voice affordances still reuse the approved mark geometry.
 `scripts/deploy-coolify-host.sh --target staging --expected-current-sha <current-sha> <candidate-sha>`
 builds with `NEXT_PUBLIC_BRAND_MOTION_PREVIEW=true`; production builds force the
 flag to `false`. The UI also checks the staging hostname before enabling the

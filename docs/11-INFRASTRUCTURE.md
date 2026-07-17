@@ -179,8 +179,9 @@ on the same Coolify app host under
 while the approved Mereka M nebula and public entrance treatment are built only
 into the staging preview cell. Production builds force the public preview flag
 off, and the client additionally requires the exact staging/local hostname;
-production retains the legacy orb and no Trace entrance. The staging entrance
-treatment is
+a production build from this source retains the legacy orb and no Trace
+entrance. Deploying that fallback is outside the current staging-only release.
+The staging entrance treatment is
 non-interactive, never locks scrolling, runs once per tab for no more than 700
 ms, and is omitted on admin/API and reduced-motion loads. Staging is routed through the Coolify
 Traefik network with `coolify.managed=false`, so it is host-managed rather than

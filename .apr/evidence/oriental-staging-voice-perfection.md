@@ -82,4 +82,5 @@
    browser proof, and synthetic no-submit intake proof. Do not create/backfill a
    real lead because staging shares production data and notification planes.
 6. Prove production remained unchanged in SHA, runtime/model cell, picker, and
-   legacy visual surface. Do not run the production or Convex deployment paths.
+   current live visual surface. Do not run the production or Convex deployment
+   paths.
