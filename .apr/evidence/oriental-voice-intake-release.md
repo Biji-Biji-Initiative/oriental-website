@@ -130,19 +130,19 @@ candidate.
 
 ## Current clean candidate verification
 
-Runtime candidate `4ab21c192f91077cc3ae71874c84e67813d0efe5` was verified from a clean,
+Integrated candidate `b95a37cd448e1db03f31cd1f99f470cf0a649cbb` was verified from a clean,
 detached worktree so unrelated shared-checkout admin edits could not enter the
 release evidence.
 
-- `pnpm lint`: 198 files, no findings.
+- `pnpm lint`: 204 files, no findings.
 - `pnpm typecheck`: passed.
-- `pnpm test`: 52 files and 331 tests passed.
+- `pnpm test`: 54 files and 342 tests passed.
 - `pnpm check-secrets`: contract passed; local credentials intentionally absent.
 - `pnpm build`: production standalone build passed.
-- `pnpm test:performance`: LCP 504 ms, CLS 0, initial JavaScript 397,517
-  transferred / 1,368,464 decoded bytes, zero serious/critical axe findings.
+- `pnpm test:performance`: LCP 456 ms, CLS 0, initial JavaScript 397,667
+  transferred / 1,368,625 decoded bytes, zero serious/critical axe findings.
 - Full Playwright run: 34 public-site tests passed across Chromium desktop and
-  Pixel 7 projects; 12 admin tests were explicitly skipped because the local
+  Pixel 7 projects; 26 admin tests were explicitly skipped because the local
   admin credential was absent. The responsive, long-caption, Mereka-mark, and
   permission-focused checks passed across both projects. The live-caption
   component contract also passed independently.
@@ -154,6 +154,14 @@ Loading fallback, submitted success, compact controls, navigation, and CTAs all
 render the canonical path-and-dot geometry; the main live state renders the
 same geometry as the particle M. The entire gate above, including performance
 and full Playwright, ran on this exact SHA.
+
+The candidate is a clean merge of the reviewed voice boundary with current
+`origin/main` (`3c376ca`). The sole textual conflict was between two additive
+`/api/leads` tests: the existing private ClickUp-reference persistence proof and
+the new persistence/notification concurrency proof are both retained. The
+merged route preserves current-main response redaction and CRM durability while
+starting independent lead operations concurrently. Three focused route/schema
+files passed 31 tests before the full 342-test gate above.
 
 During integration review, quota classification was found to occur only after
 the retry loop. The hook now parses every failed response before calling
@@ -212,6 +220,17 @@ production mutation and ended `VERDICT: SHIP SAFE DEFAULTS`. APR saved the
 complete 3,589-byte review to
 `.apr/rounds/oriental-voice-intake-release/round_8.md`; the same known generic
 end-character heuristic warned after the complete mandated verdict.
+
+## APR round 9 integrated-main verdict
+
+Round 9 reviewed the clean `origin/main` merge at
+`b95a37cd448e1db03f31cd1f99f470cf0a649cbb`, including the retained CRM
+redaction test and concurrent routing proof. It found no unproven claim, PII
+leak, configuration circularity, production candidate promotion, or production
+mutation and ended `VERDICT: SHIP SAFE DEFAULTS`. The complete 4,436-byte
+review is saved at
+`.apr/rounds/oriental-voice-intake-release/round_9.md`; APR's known generic
+end-character heuristic emitted the same post-verdict warning.
 
 ## APR round 1 correction closure
 
