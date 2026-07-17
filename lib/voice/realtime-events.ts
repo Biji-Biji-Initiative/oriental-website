@@ -810,16 +810,42 @@ function validateEmailCaptureGrounding(
   transcriptionPending: boolean,
 ): { ok: true; emailConfidence: VoiceEmailCaptureConfidence } | { ok: false; error: string } {
   const email = value.trim().toLowerCase();
-  const canonicalEvidence = canonicalizeEmailSpeech(evidence);
-  if (!canonicalEvidence.includes(email)) return { ok: false, error: "ungrounded_identity_capture" };
+  if (!turnContainsExactEmail(evidence, email)) return { ok: false, error: "ungrounded_identity_capture" };
   if (transcriptionPending) return { ok: true, emailConfidence: "medium" };
 
-  // Email replacement must be supported by the latest visitor turn. Searching
-  // older turns lets a previous address accidentally ground a new local-part
-  // on the same domain, which is exactly the kind of silent typo we must avoid.
-  const recentUserText = transcript.findLast((entry) => entry.role === "user")?.text ?? "";
+  // A typed turn and a trailing microphone transcription can race each other.
+  // Accept an exact recent match unless a newer user turn carries another
+  // address or correction language; that keeps the race smooth without letting
+  // an old address override a genuine correction.
+  const recentUserTurns = transcript.filter((entry) => entry.role === "user").slice(-6);
+  const recentUserText = recentUserTurns.at(-1)?.text ?? "";
   const canonicalUserText = canonicalizeEmailSpeech(recentUserText);
-  if (canonicalUserText.includes(email)) return { ok: true, emailConfidence: "high" };
+  if (turnContainsExactEmail(recentUserText, email) && !supersedesRecentEmailGrounding(recentUserText, email)) {
+    return { ok: true, emailConfidence: "high" };
+  }
+  const matchingTurnIndex = recentUserTurns.findLastIndex(
+    (entry) => turnContainsExactEmail(entry.text, email) && !supersedesRecentEmailGrounding(entry.text, email),
+  );
+  if (
+    matchingTurnIndex >= 0 &&
+    recentUserTurns.slice(matchingTurnIndex + 1).every((entry) => !supersedesRecentEmailGrounding(entry.text, email))
+  ) {
+    return { ok: true, emailConfidence: "high" };
+  }
+  const latestTurnSupersedes = supersedesRecentEmailGrounding(recentUserText, email);
+  if (
+    latestTurnSupersedes &&
+    (matchingTurnIndex >= 0 ||
+      turnContainsExactEmail(recentUserText, email) ||
+      hasContextualEmailCorrection(recentUserText, email))
+  ) {
+    return { ok: false, error: "ungrounded_identity_capture" };
+  }
+  if (!turnContainsExactEmail(recentUserText, email) && hasEmbeddedEmailCollision(recentUserText, email)) {
+    // Do not treat an address embedded in another address as ASR drift:
+    // a@example.com and qa@example.com are different (including spoken forms).
+    return { ok: false, error: "ungrounded_identity_capture" };
+  }
 
   // Allow a small ASR spelling disagreement only when the latest turn clearly
   // contains email structure. Adaptive mode records this as medium confidence;
@@ -831,6 +857,222 @@ function validateEmailCaptureGrounding(
   return hasEmailCue && approxSubstringDistance(canonicalUserText, email) <= maxAsrEdits
     ? { ok: true, emailConfidence: "medium" }
     : { ok: false, error: "ungrounded_identity_capture" };
+}
+
+function supersedesRecentEmailGrounding(text: string, groundedEmail: string) {
+  const target = groundedEmail.trim().toLowerCase();
+  const mentionsTarget = turnContainsExactEmail(text, target);
+  const literalMentions = getLiteralEmailMentions(text);
+  const suppliesAnotherAddress = literalMentions.some((mention) => mention.email !== target);
+
+  if (!mentionsTarget) {
+    return suppliesAnotherAddress || containsSpokenEmailShape(text) || hasContextualEmailCorrection(text, target);
+  }
+  if (emailTurnRejectsTarget(text, target)) return true;
+  if (emailTurnOffersAlternatives(text)) return false;
+
+  // Use token spans for ordering so fully spoken addresses receive the same
+  // treatment as literal ones. A later rejected address ("not old at …") does
+  // not invalidate the selected address before it.
+  const followingAddress = getFollowingEmailDisposition(text, target);
+  return followingAddress === "supersedes";
+}
+
+function hasEmailCorrectionLanguage(text: string) {
+  return /\b(?:actually|instead|rather|correction|correct that|change|update|wrong|incorrect|not correct|i meant|should be|forget|replace)\b/i.test(
+    text,
+  );
+}
+
+function hasContextualEmailCorrection(text: string, groundedEmail: string) {
+  const stronglyAnaphoricCorrection =
+    /\b(?:i meant|i said)\b/i.test(text) &&
+    !/\b(?:meeting|schedule|appointment|venue|call|time|date|today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(
+      text,
+    );
+  const hasEmailContext =
+    turnContainsExactEmail(text, groundedEmail) ||
+    getLiteralEmailMentions(text).length > 0 ||
+    /\b(?:e-?mail(?:\s+address)?|local\s+part|domain|inbox|at\s+sign)\b/i.test(text) ||
+    /\b(?:at)\b[^.!?]{0,80}\b(?:dot|point)\b/i.test(text);
+  return stronglyAnaphoricCorrection || (hasEmailContext && hasEmailCorrectionLanguage(text));
+}
+
+function containsSpokenEmailShape(text: string) {
+  const tokens = getEmailSpeechTokens(text).map((token) => token.toLowerCase());
+  const hasEmailContext = /\b(?:e-?mail(?:\s+address)?|local\s+part|domain|inbox|at\s+sign)\b/i.test(text);
+  const nonDomainSuffixes = new Set([
+    "a",
+    "an",
+    "at",
+    "by",
+    "for",
+    "from",
+    "here",
+    "in",
+    "near",
+    "now",
+    "on",
+    "the",
+    "there",
+    "to",
+    "with",
+  ]);
+  return tokens.some((token, atIndex) => {
+    if (token !== "at") return false;
+    const afterAt = tokens.slice(atIndex + 1, atIndex + 10);
+    const markerOffset = afterAt.findIndex((candidate) => {
+      if (candidate === "dot") return true;
+      return candidate === "point" && hasEmailContext;
+    });
+    if (markerOffset < 0) return false;
+    const domainTokens = afterAt.slice(0, markerOffset);
+    const plausibleDomain =
+      domainTokens.length > 0 &&
+      domainTokens.length <= 4 &&
+      domainTokens.every((candidate) => /^[\p{Letter}\p{Number}-]+$/u.test(candidate));
+    const suffixTokens = tokens.slice(atIndex + markerOffset + 2, atIndex + markerOffset + 12);
+    const spelledSuffixEnd = suffixTokens.findIndex((candidate) => !/^[\p{Letter}]$/u.test(candidate));
+    const suffix =
+      suffixTokens[0] && /^[\p{Letter}]{2,63}$/u.test(suffixTokens[0])
+        ? suffixTokens[0]
+        : suffixTokens.slice(0, spelledSuffixEnd < 0 ? suffixTokens.length : spelledSuffixEnd).join("");
+    return (
+      plausibleDomain && suffix !== undefined && /^[\p{Letter}]{2,63}$/u.test(suffix) && !nonDomainSuffixes.has(suffix)
+    );
+  });
+}
+
+function emailTurnRejectsTarget(text: string, groundedEmail: string) {
+  const escapedEmail = groundedEmail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const normalizedText = text
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/\p{Mark}/gu, "");
+  if (
+    new RegExp(
+      `(?:forget\\s+|instead\\s+of\\s+|rather\\s+than\\s+|(?:do\\s+not|don't|dont|not)\\s+(?:use\\s+)?)${escapedEmail}|${escapedEmail}\\s+(?:(?:was|is|looks?)\\s+)?(?:wrong|incorrect|not\\s+(?:right|correct)|a\\s+typo)|${escapedEmail}\\s+isn['’]?t\\s+(?:right|correct)|(?:change|replace|update)\\s+${escapedEmail}\\s+(?:to|with)`,
+      "iu",
+    ).test(normalizedText)
+  ) {
+    return true;
+  }
+
+  // Spoken addresses do not exist as a literal substring in the raw turn, so
+  // retain a narrow canonical check after exact token-window matching proves
+  // that this address—not a suffix address—was actually said.
+  const canonical = canonicalizeEmailSpeech(text);
+  const groundedIndex = canonical.indexOf(groundedEmail);
+  if (groundedIndex < 0) return false;
+  const beforeGrounded = canonical.slice(Math.max(0, groundedIndex - 48), groundedIndex);
+  const afterGrounded = canonical.slice(
+    groundedIndex + groundedEmail.length,
+    groundedIndex + groundedEmail.length + 48,
+  );
+  return (
+    /(?:forget|insteadof|ratherthan|donotuse|dontuse|not)$/.test(beforeGrounded) ||
+    /^(?:(?:was|is|looks?)?(?:wrong|incorrect|notright|notcorrect|atypo)|isnt(?:right|correct))/.test(afterGrounded) ||
+    (/(?:change|replace|update)$/.test(beforeGrounded) && /^(?:to|with)/.test(afterGrounded))
+  );
+}
+
+function emailTurnOffersAlternatives(text: string) {
+  return (
+    /\beither\b.{0,120}\bor\b/i.test(text) ||
+    /\bor\b.{0,80}\bworks?\b/i.test(text) ||
+    /\bboth\b.{0,120}\b(?:work|works|are fine|are okay|are ok)\b/i.test(text)
+  );
+}
+
+function getLiteralEmailMentions(text: string) {
+  const normalizedText = text
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/\p{Mark}/gu, "");
+  const pattern =
+    /[\p{Letter}\p{Number}][\p{Letter}\p{Number}._+-]*@[\p{Letter}\p{Number}-]+(?:\.[\p{Letter}\p{Number}-]+)+/gu;
+  return Array.from(normalizedText.matchAll(pattern), (match) => ({
+    email: match[0],
+    start: match.index,
+  }));
+}
+
+function turnContainsExactEmail(text: string, groundedEmail: string) {
+  const target = groundedEmail.trim().toLowerCase();
+  if (getLiteralEmailMentions(text).some((mention) => mention.email === target)) return true;
+  return findExactEmailTokenWindow(text, target) !== undefined;
+}
+
+function getEmailSpeechTokens(text: string) {
+  return (
+    text
+      .match(/[\p{Letter}\p{Number}@._+-]+/gu)
+      ?.map((token) => token.replace(/^[._+-]+|[._+-]+$/gu, ""))
+      .filter((token) => /[\p{Letter}\p{Number}@]/u.test(token)) ?? []
+  );
+}
+
+function hasEmbeddedEmailCollision(text: string, groundedEmail: string) {
+  const tokens = getEmailSpeechTokens(text);
+  for (let start = 0; start < tokens.length; start += 1) {
+    for (let end = start + 1; end <= Math.min(tokens.length, start + 18); end += 1) {
+      const candidate = canonicalizeEmailSpeech(tokens.slice(start, end).join(" "));
+      if (
+        candidate !== groundedEmail &&
+        isLikelyEmail(candidate) &&
+        (candidate.includes(groundedEmail) || groundedEmail.includes(candidate))
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function findExactEmailTokenWindow(text: string, groundedEmail: string, minimumStart = 0) {
+  // Canonicalize bounded token windows rather than the whole sentence. This
+  // accepts "q a dot nebula at example dot test" while preventing
+  // a@example.com from matching inside qa@example.com.
+  const tokens = getEmailSpeechTokens(text);
+  for (let start = minimumStart; start < tokens.length; start += 1) {
+    for (let end = start + 1; end <= Math.min(tokens.length, start + 18); end += 1) {
+      if (canonicalizeEmailSpeech(tokens.slice(start, end).join(" ")) !== groundedEmail) continue;
+      const previousToken = tokens[start - 1]?.toLowerCase();
+      const startsInsideSpelledLocalPart =
+        previousToken !== undefined &&
+        (/^[\p{Letter}\p{Number}]$/u.test(previousToken) ||
+          /^(?:dot|point|underscore|dash|hyphen|plus)$/.test(previousToken));
+      if (!startsInsideSpelledLocalPart) return { start, end, tokens };
+    }
+  }
+  return undefined;
+}
+
+function getFollowingEmailDisposition(text: string, groundedEmail: string): "none" | "rejected" | "supersedes" {
+  const targetWindow = findExactEmailTokenWindow(text, groundedEmail);
+  if (!targetWindow) return "none";
+  const following = targetWindow.tokens.slice(targetWindow.end);
+  const nextAddressMarker = following.findIndex(
+    (token, index) =>
+      token.includes("@") ||
+      (token.toLowerCase() === "at" &&
+        following.slice(index + 1, index + 10).some((candidate) => /^(?:dot|point)$/i.test(candidate))),
+  );
+  if (nextAddressMarker < 0) return "none";
+  const markerTokenIndex = targetWindow.end + nextAddressMarker;
+  const repeatedTarget = findExactEmailTokenWindow(text, groundedEmail, targetWindow.end);
+  if (repeatedTarget && repeatedTarget.start <= markerTokenIndex) {
+    const repeatIntroduction = targetWindow.tokens.slice(targetWindow.end, repeatedTarget.start);
+    return emailIntroductionRejectsAddress(repeatIntroduction) ? "supersedes" : "none";
+  }
+  const introduction = following.slice(0, nextAddressMarker).map((token) => token.toLowerCase());
+  return emailIntroductionRejectsAddress(introduction) ? "rejected" : "supersedes";
+}
+
+function emailIntroductionRejectsAddress(tokens: string[]) {
+  const words = tokens.map((token) => token.toLowerCase());
+  const compact = words.join("");
+  return words.includes("no") || words.includes("not") || /(?:donotuse|dontuse|insteadof|ratherthan)/.test(compact);
 }
 
 function hasExplicitNameCue(value: string) {
