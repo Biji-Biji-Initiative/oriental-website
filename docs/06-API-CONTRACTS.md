@@ -553,8 +553,9 @@ cannot fan out unbounded model spend.
 ```ts
 type AdminEvalsRequest = {
   model?: string; // judge model id; defaults to EVAL_JUDGE_MODEL (fallback gpt-4o-mini)
-  limit?: number; // 1–50, default 25
-  reviewIds?: string[]; // target specific sessions (max 20)
+  limit?: number; // 1–50 conversations to judge, default 25 (fetch window is always wide)
+  reviewIds?: string[]; // target specific sessions (max 20); targeted runs re-judge
+  force?: boolean; // re-judge already-evaluated conversations in untargeted runs
 };
 
 type AdminEvalsResponse = {
@@ -562,10 +563,18 @@ type AdminEvalsResponse = {
   model: string;
   fetched: number; // customer sessions in the window
   conversations: number; // after stitching call segments
+  alreadyEvaluated: number; // judgeable conversations skipped because they have scores
   judged: number;
   persisted: number;
   failures: number; // judged but unscorable (judge error/parse failure)
+  failureSamples: string[]; // first few judge error messages, for diagnosis
 };
+
+Sessions are also scored automatically when a call closes with transcript
+turns (`EVAL_AUTO_ON_CLOSE`, default on): the voice debug route schedules a
+targeted run after responding, so resumed/cut-off conversations re-score as a
+whole thread. Non-ok outcomes log `admin_evals.not_run` /
+`voice_review.auto_eval_skipped`.
 ```
 
 Errors:

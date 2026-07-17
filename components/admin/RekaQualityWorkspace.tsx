@@ -24,7 +24,32 @@ type VoiceSession = {
   leadId?: string | null;
   reviewId: string;
   segment: string;
+  conversationId?: string | null;
+  closeReason?: string | null;
+  transcriptTurnCount?: number;
+  updatedAt?: number;
 };
+
+/** Clean endings; anything else is a cutoff worth surfacing. */
+const CLEAN_CLOSE_REASONS = new Set(["manual", "idle_timeout", "max_duration"]);
+
+type ConversationContinuity = { calls: number; cutoffs: number };
+
+function buildContinuity(sessions: VoiceSession[]) {
+  const map = new Map<string, ConversationContinuity>();
+  for (const session of sessions) {
+    const key = session.conversationId ?? session.reviewId;
+    const entry = map.get(key) ?? { calls: 0, cutoffs: 0 };
+    entry.calls += 1;
+    if (session.closeReason && !CLEAN_CLOSE_REASONS.has(session.closeReason)) entry.cutoffs += 1;
+    map.set(key, entry);
+  }
+  return map;
+}
+
+function continuityFor(map: Map<string, ConversationContinuity>, session: VoiceSession) {
+  return map.get(session.conversationId ?? session.reviewId) ?? { calls: 1, cutoffs: 0 };
+}
 
 type LeadReference = {
   email: string;
@@ -55,6 +80,20 @@ export function RekaQualityWorkspace({
     .filter((session): session is VoiceSession & { eval: EvalScore } => Boolean(session.eval))
     .sort((left, right) => right.eval.evaluatedAt - left.eval.evaluatedAt);
   const flagged = sessions.filter(needsReview);
+  const continuity = buildContinuity(voiceSessions);
+  // One entry per conversation awaiting a score: real turns, no eval on any call.
+  const evaluatedConversations = new Set(sessions.map((s) => s.conversationId ?? s.reviewId));
+  const awaitingByConversation = new Map<string, VoiceSession>();
+  for (const session of voiceSessions) {
+    const key = session.conversationId ?? session.reviewId;
+    if (evaluatedConversations.has(key)) continue;
+    if ((session.transcriptTurnCount ?? 0) === 0) continue;
+    const current = awaitingByConversation.get(key);
+    if (!current || (session.updatedAt ?? 0) > (current.updatedAt ?? 0)) awaitingByConversation.set(key, session);
+  }
+  const awaiting = [...awaitingByConversation.values()]
+    .sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0))
+    .slice(0, 8);
   const coverage = voiceSessions.length > 0 ? Math.round((evaluated / voiceSessions.length) * 100) : 0;
   const dimensions = [
     {
@@ -134,6 +173,55 @@ export function RekaQualityWorkspace({
         ))}
       </div>
 
+      {awaiting.length > 0 ? (
+        <section className="overflow-hidden rounded-2xl border border-amber-400/20 bg-amber-400/[0.04]">
+          <div className="flex flex-col gap-2 border-b border-white/10 p-5 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-[0.13em] text-amber-300">
+                Awaiting evaluation
+              </div>
+              <h3 className="mt-1 text-xl font-semibold tracking-tight">
+                {awaiting.length === 8 ? "8+" : awaiting.length} conversation{awaiting.length === 1 ? "" : "s"} not yet
+                scored
+              </h3>
+              <p className="mt-1 text-sm text-slate-400">
+                New conversations are scored automatically as calls close; anything left here can be scored on the spot.
+              </p>
+            </div>
+            <AdminRunEvalsButton compact>Score all pending</AdminRunEvalsButton>
+          </div>
+          <div className="divide-y divide-white/5">
+            {awaiting.map((session) => {
+              const flow = continuityFor(continuity, session);
+              return (
+                <div className="flex flex-wrap items-center gap-3 px-5 py-3" key={session.reviewId}>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-slate-100">
+                      {session.captured.name?.trim() || session.captured.email?.trim() || "Uncaptured visitor"}
+                    </span>
+                    <span className="mt-0.5 block text-xs text-slate-400">
+                      {session.segment || "other"} · {session.transcriptTurnCount ?? 0} turns
+                      {flow.calls > 1 ? ` · ${flow.calls} calls` : ""}
+                    </span>
+                  </span>
+                  {flow.cutoffs > 0 ? (
+                    <Badge tone="red">
+                      {flow.cutoffs} cutoff{flow.cutoffs === 1 ? "" : "s"}
+                    </Badge>
+                  ) : null}
+                  {session.closeReason && !CLEAN_CLOSE_REASONS.has(session.closeReason) ? (
+                    <Badge tone="amber">{session.closeReason}</Badge>
+                  ) : null}
+                  <AdminRunEvalsButton compact reviewIds={[session.reviewId]}>
+                    Evaluate
+                  </AdminRunEvalsButton>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
+
       <section className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04]">
         <div className="flex flex-col gap-2 border-b border-white/10 p-5 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -174,7 +262,12 @@ export function RekaQualityWorkspace({
                 </thead>
                 <tbody className="divide-y divide-white/5">
                   {sessions.map((session) => (
-                    <EvaluationTableRow key={session.reviewId} leads={leads} session={session} />
+                    <EvaluationTableRow
+                      flow={continuityFor(continuity, session)}
+                      key={session.reviewId}
+                      leads={leads}
+                      session={session}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -201,9 +294,11 @@ export function RekaQualityWorkspace({
 function EvaluationTableRow({
   session,
   leads,
+  flow,
 }: {
   session: VoiceSession & { eval: EvalScore };
   leads: LeadReference[];
+  flow: ConversationContinuity;
 }) {
   const lead = matchingLead(session, leads);
   const flagged = needsReview(session);
@@ -213,6 +308,16 @@ function EvaluationTableRow({
         <div className="font-semibold text-slate-100">{session.captured.name?.trim() || "Uncaptured visitor"}</div>
         <div className="mt-1 text-xs text-slate-400">{session.captured.email?.trim() || "Email not captured"}</div>
         <div className="mt-1 text-xs text-slate-400">{session.captured.org?.trim() || "Organisation not captured"}</div>
+        {flow.calls > 1 || flow.cutoffs > 0 ? (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {flow.calls > 1 ? <Badge tone="blue">{flow.calls} calls</Badge> : null}
+            {flow.cutoffs > 0 ? (
+              <Badge tone="red">
+                {flow.cutoffs} cutoff{flow.cutoffs === 1 ? "" : "s"}
+              </Badge>
+            ) : null}
+          </div>
+        ) : null}
       </td>
       <ScoreCell invert={false} value={session.eval.routingCorrect} />
       <ScoreCell invert={false} value={session.eval.captureCompleteness} />

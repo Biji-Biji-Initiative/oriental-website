@@ -1,9 +1,11 @@
+import { after } from "next/server";
 import { isProductionEnv } from "@/lib/env";
 import { type VoiceReviewSnapshotRequest, voiceReviewSnapshotSchema } from "@/lib/schemas";
 import { persistVoiceReviewSnapshot } from "@/lib/server/convex";
 import { logInfo, logWarn } from "@/lib/server/logger";
 import { sendOpsAlert } from "@/lib/server/ops-alerts";
 import { noStoreJson } from "@/lib/server/security";
+import { runAdminVoiceEvals } from "@/lib/server/voice-evals";
 import { verifyVoiceReviewCredentials } from "@/lib/server/voice-review-token";
 import { isVoiceAvailabilityFailure } from "@/lib/voice/realtime-call-failure";
 import { isBenignVoiceError } from "@/lib/voice/realtime-events";
@@ -43,6 +45,26 @@ export async function POST(request: Request) {
   logVoiceSessionHealth(parsed.data.review.id, parsed.data.snapshot);
   await reportVoiceAvailabilityFailure(parsed.data.review.id, parsed.data.snapshot);
   const persistence = verified ? await persistVoiceReviewSnapshot(snapshot).catch(() => null) : null;
+  // Evaluate the conversation the moment a call closes with real turns, so
+  // scores exist before anyone opens the console. Targeted runs re-judge the
+  // stitched conversation, keeping resumed/cut-off threads scored as a whole.
+  if (
+    verified &&
+    persistence?.ok === true &&
+    parsed.data.snapshot.closeReason &&
+    (parsed.data.snapshot.transcript?.length ?? 0) > 0 &&
+    process.env.EVAL_AUTO_ON_CLOSE !== "false"
+  ) {
+    const reviewId = parsed.data.review.id;
+    scheduleAfterResponse(async () => {
+      const result = await runAdminVoiceEvals({ reviewIds: [reviewId] }).catch(() => null);
+      if (result?.ok) {
+        logInfo("voice_review.auto_eval", { reviewId, model: result.model, persisted: result.persisted });
+      } else {
+        logWarn("voice_review.auto_eval_skipped", { reviewId, reason: result ? result.reason : "run_failed" });
+      }
+    });
+  }
   if (verified && persistence?.ok !== true) {
     const reason = persistence?.reason ?? "unknown";
     logWarn("voice_review.persistence_failed", {
@@ -349,4 +371,16 @@ function countTranscriptRoles(snapshot: VoiceReviewSnapshotRequest["snapshot"]["
     },
     { user: 0, assistant: 0, system: 0 },
   );
+}
+
+/**
+ * `after()` defers work until the response is sent, but throws outside a
+ * request scope (unit tests, scripts). Fall back to fire-and-forget there.
+ */
+function scheduleAfterResponse(task: () => Promise<void>) {
+  try {
+    after(task);
+  } catch {
+    void task();
+  }
 }
