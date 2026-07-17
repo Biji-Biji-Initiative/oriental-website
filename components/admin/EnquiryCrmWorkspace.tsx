@@ -220,7 +220,7 @@ function CrmIntelligencePanel({
           ) : (
             <div className="mt-4 overflow-x-auto rounded-xl border border-white/10">
               <table className="w-full min-w-[660px] border-collapse text-left text-sm" data-account-table>
-                <caption className="sr-only">Oriental organization account portfolio</caption>
+                <caption className="sr-only">Mereka at Oriental account portfolio</caption>
                 <thead className="bg-[#0a0f1c]/85 text-[10px] font-semibold uppercase tracking-[0.11em] text-slate-500">
                   <tr>
                     <th className="px-3 py-2.5" scope="col">
