@@ -6,6 +6,7 @@ import {
   deploymentFailed,
   deploymentFinished,
   deploymentStatus,
+  deploymentUuidFromDeployResponse,
 } from "./lib/coolify-release";
 import {
   CONTROL_VOICE_CELL,
@@ -218,20 +219,17 @@ async function main() {
   assertOrientalApplication(updated, applicationUuid);
   if (updated.git_commit_sha !== args.sha) throw new Error("Coolify did not persist the frozen git_commit_sha");
 
-  const started = await coolifyRequest<{ deployment_uuid?: unknown }>(
+  const started = await coolifyRequest<unknown>(
     baseUrl,
     token,
-    `applications/${applicationUuid}/start?force=false&instant_deploy=false`,
-    { method: "POST" },
+    `deploy?uuid=${encodeURIComponent(applicationUuid)}&force=false`,
   );
-  if (typeof started.deployment_uuid !== "string" || started.deployment_uuid.length === 0) {
-    throw new Error("Coolify did not return a deployment UUID");
-  }
+  const deploymentUuid = deploymentUuidFromDeployResponse(started, applicationUuid);
 
   const deployment = await waitForDeployment(
     baseUrl,
     token,
-    started.deployment_uuid,
+    deploymentUuid,
     args.sha,
     args.pollIntervalMs,
     args.timeoutMs,
@@ -244,7 +242,7 @@ async function main() {
         sha: args.sha,
         previousSha: args.expectedCurrentSha,
         applicationUuid,
-        deploymentUuid: started.deployment_uuid,
+        deploymentUuid,
         status: deploymentStatus(deployment),
       },
       null,

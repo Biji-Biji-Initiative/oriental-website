@@ -159,6 +159,14 @@ describe("release governance", () => {
     );
   });
 
+  it("uses the documented Coolify deployment trigger and validates its response identity", () => {
+    expect(productionDeployer).toMatch(
+      /const started = await coolifyRequest<unknown>\(\s*baseUrl,\s*token,\s*`deploy\?uuid=\$\{encodeURIComponent\(applicationUuid\)\}&force=false`,\s*\);/,
+    );
+    expect(productionDeployer).toContain("deploymentUuidFromDeployResponse(started, applicationUuid)");
+    expect(productionDeployer).not.toContain("/start?");
+  });
+
   it("pins the staging voice smoke to the governed candidate instead of public health", () => {
     expect(stagingVoiceSmoke).toContain("process.env.EXPECTED_REALTIME_MODEL ?? STAGING_CANDIDATE_VOICE_CELL.model");
     expect(stagingVoiceSmoke).toContain(
