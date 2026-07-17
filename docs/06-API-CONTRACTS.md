@@ -547,16 +547,20 @@ rubric from `lib/eval/voice-eval.ts` and persists the results via the
 `recordVoiceEvals` Convex mutation — the on-demand equivalent of
 `pnpm eval:voice -- --persist`. Synthetic smoke rows are excluded and
 dropped-and-resumed calls are stitched into one conversation before judging.
-The batch is hard-capped at 50 conversations per request, judge models are
+The synchronous batch is hard-capped at 12 conversations per request. Every run
+scans the latest bounded 200-row Convex window before selecting unscored work,
+so recently evaluated rows cannot starve older sessions. Judge models are
 allowlisted, provider calls use a 30-second timeout with at most one retry, and
-the Redis-backed production limiter permits one run per five-minute window.
+all calls share a 60-second judge budget inside a 90-second whole-run deadline.
+The Redis-backed production limiter leases the run slot for five minutes, which
+is longer than the hard deadline and therefore prevents overlapping spend.
 Untargeted batches skip sessions already scored by the selected model; explicit
 `reviewIds` remain the deliberate rescore path.
 
 ```ts
 type AdminEvalsRequest = {
   model?: string; // judge model id; defaults to EVAL_JUDGE_MODEL (fallback gpt-4o-mini)
-  limit?: number; // 1–50, default 25
+  limit?: number; // 1–12, default 6
   reviewIds?: string[]; // target specific sessions (max 20)
 };
 
@@ -581,6 +585,7 @@ Errors:
 | 401/403 | `missing` / `invalid` / `forbidden` | Auth failed or the role lacks `evals.run`. |
 | 404 | `no_sessions` | No judgeable customer sessions in the window (or targets not found). |
 | 502 | `convex_failed` | Convex query/mutation failed mid-run. |
+| 504 | `deadline_exceeded` | The bounded whole-run deadline elapsed. |
 | 503 | `unconfigured` / `invalid_model` | Required env is missing or `EVAL_JUDGE_MODEL` is not allowlisted. |
 
 ## `GET /api/health`

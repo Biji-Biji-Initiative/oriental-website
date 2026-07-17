@@ -3,12 +3,10 @@ import { isAllowedAdminEvalModel } from "@/lib/eval/admin-models";
 import { adminAuthFailureStatus, verifyAdminPermission } from "@/lib/server/admin-auth";
 import { logInfo, logWarn } from "@/lib/server/logger";
 import { checkRateLimit, noStoreJson, rateLimitResponseHeaders } from "@/lib/server/security";
-import { MAX_ADMIN_EVAL_SESSIONS, runAdminVoiceEvals } from "@/lib/server/voice-evals";
+import { ADMIN_EVAL_RUN_LEASE_MS, MAX_ADMIN_EVAL_SESSIONS, runAdminVoiceEvals } from "@/lib/server/voice-evals";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const evalRunWindowMs = 5 * 60 * 1000;
 
 const requestSchema = z.object({
   model: z.string().trim().min(1).max(64).optional(),
@@ -33,7 +31,7 @@ export async function POST(request: Request) {
 
   // One global run per environment at a time/window. Production's Redis-backed
   // limiter makes this atomic across app workers; local memory is a safe fallback.
-  const limit = await checkRateLimit("admin-evals:run", 1, evalRunWindowMs);
+  const limit = await checkRateLimit("admin-evals:run", 1, ADMIN_EVAL_RUN_LEASE_MS);
   if (!limit.ok) {
     logWarn("admin_evals.rate_limited", { actor: auth.actor, rateLimitStore: limit.store });
     return noStoreJson(
@@ -51,9 +49,11 @@ export async function POST(request: Request) {
     const status =
       result.reason === "unconfigured" || result.reason === "invalid_model"
         ? 503
-        : result.reason === "no_sessions"
-          ? 404
-          : 502;
+        : result.reason === "deadline_exceeded"
+          ? 504
+          : result.reason === "no_sessions"
+            ? 404
+            : 502;
     return noStoreJson({ ok: false, error: result.reason }, { status });
   }
 

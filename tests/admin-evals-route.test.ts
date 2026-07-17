@@ -33,6 +33,7 @@ describe("admin evals route", () => {
       persisted: 3,
       failures: 0,
       failureCategories: {
+        run_deadline: 0,
         provider_timeout: 0,
         provider_rate_limited: 0,
         provider_auth: 0,
@@ -99,7 +100,7 @@ describe("admin evals route", () => {
   });
 
   it("rejects oversized batches", async () => {
-    const response = await POST(evalsRequest({ limit: 500 }));
+    const response = await POST(evalsRequest({ limit: 13 }));
 
     expect(response.status).toBe(400);
     expect(runMock).not.toHaveBeenCalled();
@@ -120,6 +121,15 @@ describe("admin evals route", () => {
     const response = await POST(evalsRequest({}));
 
     expect(response.status).toBe(404);
+  });
+
+  it("maps a whole-run deadline to 504 without leaking internals", async () => {
+    runMock.mockResolvedValue({ ok: false, reason: "deadline_exceeded" });
+
+    const response = await POST(evalsRequest({}));
+
+    expect(response.status).toBe(504);
+    await expect(response.json()).resolves.toEqual({ ok: false, error: "deadline_exceeded" });
   });
 
   it("does not spend tokens rescoring the same model unless a session is explicitly targeted", () => {
