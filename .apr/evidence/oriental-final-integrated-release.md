@@ -3,10 +3,10 @@
 ## Exact implementation boundary
 
 - Review base: `b0b0d83c7499ea4ed470430e8e3cfa80ab7bd68e`
-- Integrated implementation head before this evidence-only commit:
-  `3c70f34bf031bca30607eadcbe3b59481a4e77d4`
-- Integrated implementation tree: `c1de44d01edaaecde1c9ccc86eb308efcf6bfeda`
-- Scope: 102 files, 5,179 insertions and 794 deletions spanning the admin
+- Integrated implementation head before this evidence update:
+  `374365d96cbf03fa415a8f6862b85ffa8f4e6385`
+- Integrated implementation tree: `25d8a7a41be828e1f2e08287204e0575e4f24f85`
+- Scope: 106 files, 5,688 insertions and 854 deletions spanning the admin
   console, safe evaluation, consented analytics, Google release wiring,
   responsive voice UI, reactive brand motion, capture correctness, PII-free
   tool telemetry, managed-environment convergence, and release verification.
@@ -24,10 +24,14 @@
   model, caps each synchronous batch at 12, uses a Redis-backed five-minute
   lease with memory fallback, bounds provider retries, and enforces shared
   judge and whole-run deadlines. Only normalized scores and model metadata are
-  persisted; errors are returned and logged as aggregate categories.
+  persisted; provider prose is discarded at the persistence boundary and the
+  displayed summary is deterministically reconstructed from numeric scores, so
+  an echoed name, email, organisation, captured value, or transcript excerpt
+  cannot reach Convex. Errors are returned and logged as aggregate categories.
 - GA validates its public identifier and loads only after Allow analytics.
   Denial remains fail-closed; withdrawal denies future collection and attempts
-  `_ga`/`_ga_*` cleanup. Page locations omit query/fragment data, public
+  `_ga`/`_ga_*` cleanup, and a later regrant explicitly restores
+  `analytics_storage: granted`. Page locations omit query/fragment data, public
   tracking excludes admin/API paths, and the bilingual privacy page provides a
   persistent consent-revision path.
 - Docker, direct-host staging, and Coolify production all receive the validated
@@ -40,6 +44,10 @@
 - The approved Mereka M is a bounded point-cloud/WebGL surface with deterministic
   reduced-motion fallback, adaptive audio floor and hysteresis, and a normal
   production visual rather than an environment experiment.
+- The public entrance trace is pointer-transparent, never locks scrolling,
+  lasts at most 690 ms once per tab, and is absent on admin/API and
+  reduced-motion loads. Admin command navigation uses the Next router and does
+  not force document reloads.
 - Deterministic Playwright screenshots and geometry checks passed at 390x844,
   768x1024, 1440x900, and 844x390. The dialog had zero body/root horizontal
   overflow. The M remained centered and legible, the initial voice action stayed
@@ -67,12 +75,17 @@
   through encrypted stdin, and atomically reconciles managed keys under a
   deployment lock. A mode-0600 sidecar records managed keys so retired values
   are removed without deleting compose-owned settings.
-- Production reads the complete approved application scope and the separate
-  Coolify operator scope, excludes deploy-only values, reconciles exactly one
+- Production fails closed on the control voice cell before reading credentials
+  or making a Git, health, or Coolify request. It reads the complete approved
+  application scope and the separate Coolify operator scope, excludes
+  deploy-only values, reconciles exactly one
   entry per runtime key with only public `NEXT_PUBLIC_*` values build-enabled,
   reads back value/scope parity without logging secrets, changes the frozen SHA,
-  and re-fetches the app to require the exact commit, `running:healthy`, enabled
-  health checking, and host `127.0.0.1`.
+  explicitly clears any formerly managed value retired from Infisical, and
+  verifies empty/absent parity. It re-reads the expected-current Coolify SHA,
+  `running:healthy` state, enabled health checking, and host `127.0.0.1`
+  immediately before the first environment mutation and again before changing
+  the frozen SHA; the same state is re-fetched after deployment.
 - The release verifier supports separate staging clean/audition expectations,
   rejects audition for production, proves both cells and picker states, and
   adds browser Google/canonical-host/DNS-only/legacy-host assertions.
@@ -84,14 +97,15 @@
 
 - Biome: 241 files checked, no findings.
 - TypeScript: passed with strict project configuration.
-- Vitest: 64 files, 643 tests passed, zero failures.
-- Focused integration suites: 137 tests passed, zero failures.
+- Vitest: 64 files, 648 tests passed, zero failures.
+- Final blocker-closure suites: 71 tests passed, zero failures.
 - Next.js 16.2.10 production build: passed; 9 static pages generated.
 - Admin Chromium matrix: 43 passed, one intentional mobile mutation skip,
   zero unexpected and zero flaky results.
-- Responsive homepage/voice Chromium matrix: 38 passed, zero failures.
-- Performance/a11y: mobile LCP 460 ms, CLS 0, 411,086 transferred JavaScript
-  bytes, 1,411,896 decoded bytes, 14 requests, and zero serious/critical Axe
+- Responsive homepage/voice Chromium matrix: 40 passed, zero failures,
+  including immediate interaction through the non-blocking entrance treatment.
+- Performance/a11y: mobile LCP 468 ms, CLS 0, 411,212 transferred JavaScript
+  bytes, 1,412,100 decoded bytes, 14 requests, and zero serious/critical Axe
   violations.
 - Working tree was clean after the combined implementation validation.
 
