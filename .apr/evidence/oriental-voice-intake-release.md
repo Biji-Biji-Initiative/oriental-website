@@ -130,19 +130,19 @@ candidate.
 
 ## Current clean candidate verification
 
-Integrated candidate `b95a37cd448e1db03f31cd1f99f470cf0a649cbb` was verified from a clean,
+Integrated candidate `90b3fcc52f80f816c6c4f4c610359dedce0d0321` was verified from a clean,
 detached worktree so unrelated shared-checkout admin edits could not enter the
 release evidence.
 
-- `pnpm lint`: 204 files, no findings.
+- `pnpm lint`: 209 files, no findings.
 - `pnpm typecheck`: passed.
-- `pnpm test`: 54 files and 342 tests passed.
+- `pnpm test`: 55 files and 353 tests passed.
 - `pnpm check-secrets`: contract passed; local credentials intentionally absent.
 - `pnpm build`: production standalone build passed.
-- `pnpm test:performance`: LCP 456 ms, CLS 0, initial JavaScript 397,667
-  transferred / 1,368,625 decoded bytes, zero serious/critical axe findings.
+- `pnpm test:performance`: LCP 448 ms, CLS 0, initial JavaScript 398,306
+  transferred / 1,370,713 decoded bytes, zero serious/critical axe findings.
 - Full Playwright run: 34 public-site tests passed across Chromium desktop and
-  Pixel 7 projects; 26 admin tests were explicitly skipped because the local
+  Pixel 7 projects; 30 admin tests were explicitly skipped because the local
   admin credential was absent. The responsive, long-caption, Mereka-mark, and
   permission-focused checks passed across both projects. The live-caption
   component contract also passed independently.
@@ -156,12 +156,14 @@ same geometry as the particle M. The entire gate above, including performance
 and full Playwright, ran on this exact SHA.
 
 The candidate is a clean merge of the reviewed voice boundary with current
-`origin/main` (`3c376ca`). The sole textual conflict was between two additive
-`/api/leads` tests: the existing private ClickUp-reference persistence proof and
-the new persistence/notification concurrency proof are both retained. The
-merged route preserves current-main response redaction and CRM durability while
+`origin/main` (`5606a3e`). The sole earlier textual conflict was between two
+additive `/api/leads` tests: the existing private ClickUp-reference persistence
+proof and the new persistence/notification concurrency proof are both retained.
+The merged route preserves current-main response redaction and CRM durability while
 starting independent lead operations concurrently. Three focused route/schema
-files passed 31 tests before the full 342-test gate above.
+files passed 31 tests before the earlier full gate. The subsequent accountable-
+workflow main merge was automatic, and the exact combined SHA passed the full
+353-test gate above.
 
 During integration review, quota classification was found to occur only after
 the retry loop. The hook now parses every failed response before calling
