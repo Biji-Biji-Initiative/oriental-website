@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  bulkAssignAdminLeads,
   getAdminReviewDashboard,
   getAdminVoiceSession,
   persistLead,
@@ -30,6 +31,7 @@ vi.mock("@/convex/_generated/api", () => ({
   api: {
     leads: {
       createLead: "createLead",
+      bulkAssignLeads: "bulkAssignLeads",
       recordLeadNotification: "recordLeadNotification",
       voiceSessionByReviewId: "voiceSessionByReviewId",
       updateLeadWorkflow: "updateLeadWorkflow",
@@ -110,16 +112,28 @@ describe("persistLead", () => {
   });
 
   it("applies admin workflow mutations through Convex", async () => {
-    mocks.mutation.mockResolvedValue({ ok: true });
+    mocks.mutation.mockResolvedValue({ ok: true, changed: true, revision: 4 });
 
     await expect(
-      updateAdminLeadWorkflow("lead_123", {
-        status: "qualified",
-        priority: "urgent",
-        owner: "Gurpreet",
-        note: "Ready for direct follow-up.",
-      }),
-    ).resolves.toEqual({ ok: true });
+      updateAdminLeadWorkflow(
+        "lead_123",
+        {
+          status: "qualified",
+          priority: "urgent",
+          owner: "Gurpreet",
+          note: "Ready for direct follow-up.",
+          nextActionAt: null,
+          nextActionNote: "",
+          outcomeReason: "Qualified for a scoped partnership call.",
+          expectedRevision: 3,
+          reason: "Qualification review complete.",
+        },
+        {
+          actor: "Gurpreet",
+          requestId: "request_123",
+        },
+      ),
+    ).resolves.toEqual({ ok: true, changed: true, revision: 4 });
 
     expect(mocks.mutation).toHaveBeenCalledWith("updateLeadWorkflow", {
       ingestSecret: "ingest-secret",
@@ -128,6 +142,47 @@ describe("persistLead", () => {
       priority: "urgent",
       owner: "Gurpreet",
       note: "Ready for direct follow-up.",
+      nextActionAt: null,
+      nextActionNote: "",
+      outcomeReason: "Qualified for a scoped partnership call.",
+      expectedRevision: 3,
+      reason: "Qualification review complete.",
+      actor: "Gurpreet",
+      requestId: "request_123",
+    });
+  });
+
+  it("applies atomic bulk assignments through Convex", async () => {
+    mocks.mutation.mockResolvedValue({ ok: true, count: 2 });
+
+    await expect(
+      bulkAssignAdminLeads(
+        {
+          leads: [
+            { leadId: "lead_1", expectedRevision: 0 },
+            { leadId: "lead_2", expectedRevision: 2 },
+          ],
+          owner: "Nadia",
+          nextActionAt: 1_800_000_000_000,
+          nextActionNote: "Send tailored introductions",
+          reason: "Morning intake allocation",
+        },
+        { actor: "Gurpreet", requestId: "request_bulk_1" },
+      ),
+    ).resolves.toEqual({ ok: true, count: 2 });
+
+    expect(mocks.mutation).toHaveBeenCalledWith("bulkAssignLeads", {
+      ingestSecret: "ingest-secret",
+      leads: [
+        { leadId: "lead_1", expectedRevision: 0 },
+        { leadId: "lead_2", expectedRevision: 2 },
+      ],
+      owner: "Nadia",
+      nextActionAt: 1_800_000_000_000,
+      nextActionNote: "Send tailored introductions",
+      reason: "Morning intake allocation",
+      actor: "Gurpreet",
+      requestId: "request_bulk_1",
     });
   });
 });

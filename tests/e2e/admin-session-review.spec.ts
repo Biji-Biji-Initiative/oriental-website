@@ -140,6 +140,43 @@ test.describe("admin session review console", () => {
     if (testInfo.project.name !== "mobile") await expect(links.first()).toBeVisible();
   });
 
+  test("turns ownership and next actions into controlled, auditable workflow", async ({ page }) => {
+    await page.goto("/admin/session-review?view=leads&lead=lead-critical-1#crm-record");
+    const record = page.locator("#crm-record");
+    await expect(record.getByText("Next action missing", { exact: true })).toBeVisible();
+
+    const workflow = record.locator("[data-admin-workflow-form]");
+    await expect(workflow.getByLabel("Owner")).toHaveValue("");
+    await expect(workflow.getByLabel("Owner").locator("option")).toContainText([
+      "Unassigned",
+      "Chewi",
+      "Lala",
+      "Jey",
+      "Gurpreet",
+      "Ambika",
+      "Nadia",
+      "AVI",
+    ]);
+    await expect(workflow.getByLabel("Next action")).toBeVisible();
+    await expect(workflow.getByLabel("Due")).toBeVisible();
+    await expect(workflow.getByLabel("Reason for this change")).toBeVisible();
+    await expect(workflow.getByText(/Revision 0.*every saved change is attributed/i)).toBeVisible();
+  });
+
+  test("offers atomic bulk assignment for the visible active queue", async ({ page }) => {
+    await page.goto("/admin/session-review?view=leads");
+    const bulk = page.locator("[data-bulk-assignment]");
+    await bulk.locator(":scope > summary").click();
+
+    await expect(bulk.getByRole("checkbox")).toHaveCount(2);
+    await expect(bulk.getByLabel("Owner")).toBeVisible();
+    await expect(bulk.getByLabel("Shared next action")).toBeVisible();
+    await expect(bulk.getByLabel("Due")).toBeVisible();
+    await expect(bulk.getByLabel("Reason for assignment")).toBeVisible();
+    await expect(bulk.getByText(/batch is atomic/i)).toBeVisible();
+    await expect(bulk.getByRole("button", { name: "Assign selected" })).toBeDisabled();
+  });
+
   test("renders the operator queues without horizontal overflow", async ({ page }) => {
     await page.goto("/admin/session-review?view=all");
     await expect(page.getByRole("heading", { name: "Search enquiries" })).toBeVisible();
@@ -229,17 +266,25 @@ test.describe("admin session review console", () => {
     await page.route("**/api/admin/leads/lead-critical-1", async (route) => {
       expect(route.request().method()).toBe("PATCH");
       const payload = route.request().postDataJSON() as {
+        expectedRevision: number;
+        nextActionAt: number;
+        nextActionNote: string;
         note: string;
         owner: string;
         priority: string;
+        reason: string;
         status: string;
       };
       expect(payload.owner).toBe("Gurpreet");
       expect(payload.priority).toBe("urgent");
       expect(payload.status).toBe("reviewing");
       expect(payload.note).toContain("Called");
+      expect(payload.nextActionNote).toBe("Send the tailored programme brief.");
+      expect(payload.nextActionAt).toBeGreaterThan(Date.now());
+      expect(payload.expectedRevision).toBe(0);
+      expect(payload.reason).toBe("Assigned after the intake review.");
       sawWorkflowUpdate = true;
-      await route.fulfill({ contentType: "application/json", json: { ok: true } });
+      await route.fulfill({ contentType: "application/json", json: { ok: true, changed: true, revision: 1 } });
     });
 
     await page.goto("/admin/session-review?view=leads&lead=lead-critical-1#crm-record");
@@ -247,10 +292,15 @@ test.describe("admin session review console", () => {
     await page.waitForLoadState("networkidle");
     const form = card.locator("form").first();
     const owner = form.getByLabel("Owner");
-    await owner.fill("Gurpreet");
+    await owner.selectOption("Gurpreet");
     await expect(owner).toHaveValue("Gurpreet");
     await form.getByLabel("Status").selectOption("reviewing");
-    await form.getByPlaceholder("Add a short handoff note or next action").fill("Called and assigned follow-up.");
+    await form.getByLabel("Next action").fill("Send the tailored programme brief.");
+    await form.getByLabel("Due").fill(new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 16));
+    await form
+      .getByPlaceholder("Internal context for the next person who opens this record")
+      .fill("Called and assigned follow-up.");
+    await form.getByLabel("Reason for this change").fill("Assigned after the intake review.");
     await form.getByRole("button", { name: /save workflow/i }).click();
 
     await expect.poll(() => sawWorkflowUpdate).toBe(true);

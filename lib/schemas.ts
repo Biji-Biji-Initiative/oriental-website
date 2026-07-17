@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { ADMIN_LEAD_PRIORITIES, ADMIN_LEAD_STATUSES } from "@/lib/admin-workflow";
+import {
+  ADMIN_LEAD_OWNERS,
+  ADMIN_LEAD_PRIORITIES,
+  ADMIN_LEAD_STATUSES,
+  validateAdminLeadWorkflow,
+} from "@/lib/admin-workflow";
 import { SEGMENT_IDS } from "@/lib/segments";
 
 const segmentSchema = z.enum(SEGMENT_IDS);
@@ -66,12 +71,50 @@ export const adminLoginSchema = z.object({
   token: z.string().min(8).max(2000),
 });
 
-export const adminLeadWorkflowSchema = z.object({
-  status: z.enum(ADMIN_LEAD_STATUSES),
-  priority: z.enum(ADMIN_LEAD_PRIORITIES),
-  owner: z.string().trim().max(80).default(""),
-  note: z.string().trim().max(600).optional(),
-});
+export const adminLeadWorkflowSchema = z
+  .object({
+    status: z.enum(ADMIN_LEAD_STATUSES),
+    priority: z.enum(ADMIN_LEAD_PRIORITIES),
+    owner: z.string().trim().max(80),
+    note: z.string().trim().max(600).optional(),
+    nextActionAt: z.number().int().positive().nullable(),
+    nextActionNote: z.string().trim().max(500).optional(),
+    outcomeReason: z.string().trim().max(500).optional(),
+    expectedRevision: z.number().int().nonnegative(),
+    reason: z.string().trim().min(3).max(300),
+  })
+  .superRefine((workflow, context) => {
+    for (const issue of validateAdminLeadWorkflow(workflow)) {
+      context.addIssue({ code: "custom", message: issue.message, path: [issue.field] });
+    }
+  });
+
+export const adminLeadBulkAssignmentSchema = z
+  .object({
+    leads: z
+      .array(
+        z.object({
+          leadId: z.string().trim().min(1).max(160),
+          expectedRevision: z.number().int().nonnegative(),
+        }),
+      )
+      .min(1)
+      .max(50)
+      .refine((leads) => new Set(leads.map((lead) => lead.leadId)).size === leads.length, "Duplicate lead IDs"),
+    owner: z.enum(ADMIN_LEAD_OWNERS),
+    nextActionAt: z.number().int().positive(),
+    nextActionNote: z.string().trim().min(3).max(500),
+    reason: z.string().trim().min(3).max(300),
+  })
+  .superRefine((workflow, context) => {
+    if (workflow.nextActionAt < Date.now() - 60_000) {
+      context.addIssue({
+        code: "custom",
+        message: "The next action cannot be scheduled in the past.",
+        path: ["nextActionAt"],
+      });
+    }
+  });
 
 export const adminVoiceFollowUpSchema = z.object({
   followedUp: z.boolean(),
@@ -224,4 +267,5 @@ export type LeadRequest = z.infer<typeof leadRequestSchema>;
 export type NewsletterRequest = z.infer<typeof newsletterRequestSchema>;
 export type VoiceSessionRequest = z.infer<typeof voiceSessionRequestSchema>;
 export type AdminLeadWorkflowRequest = z.infer<typeof adminLeadWorkflowSchema>;
+export type AdminLeadBulkAssignmentRequest = z.infer<typeof adminLeadBulkAssignmentSchema>;
 export type VoiceReviewSnapshotRequest = z.infer<typeof voiceReviewSnapshotSchema>;

@@ -4,6 +4,7 @@ import {
   adminCookieName,
   clearAdminCookieHeader,
   createAdminSessionCookie,
+  verifyAdminPermission,
   verifyAdminRequest,
   verifyAdminSessionCookie,
   verifyAdminToken,
@@ -52,5 +53,19 @@ describe("admin auth helpers", () => {
     expect(productionHeader).toContain(" Secure;");
     expect(clearAdminCookieHeader()).toContain("Path=/;");
     expect(clearAdminCookieHeader()).toContain("Max-Age=0");
+  });
+
+  it("enforces the central role permission registry", () => {
+    process.env = { ...process.env, ADMIN_REVIEW_ROLE: "viewer", ADMIN_REVIEW_ACTOR: "Read only reviewer" };
+    const request = new Request("http://localhost/api/admin/review", {
+      headers: { authorization: "Bearer admin-review-token-123456789" },
+    });
+
+    expect(verifyAdminPermission(request, "dashboard.read")).toMatchObject({
+      ok: true,
+      actor: "Read only reviewer",
+      role: "viewer",
+    });
+    expect(verifyAdminPermission(request, "leads.update")).toEqual({ ok: false, reason: "forbidden" });
   });
 });

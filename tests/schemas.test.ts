@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { adminLeadWorkflowSchema, adminLoginSchema, leadRequestSchema, voiceReviewSnapshotSchema } from "@/lib/schemas";
+import {
+  adminLeadBulkAssignmentSchema,
+  adminLeadWorkflowSchema,
+  adminLoginSchema,
+  leadRequestSchema,
+  voiceReviewSnapshotSchema,
+} from "@/lib/schemas";
 
 describe("lead request schema", () => {
   it("accepts a complete form lead", () => {
@@ -107,19 +113,106 @@ describe("admin lead workflow schema", () => {
       priority: "high",
       owner: "  Gurpreet  ",
       note: "  WhatsApp intro sent.  ",
+      nextActionAt: Date.now() + 60 * 60 * 1000,
+      nextActionNote: "  Confirm the programme brief.  ",
+      expectedRevision: 0,
+      reason: "  Assigned during intake review.  ",
     });
 
     expect(parsed.success).toBe(true);
     if (parsed.success) {
       expect(parsed.data.owner).toBe("Gurpreet");
       expect(parsed.data.note).toBe("WhatsApp intro sent.");
+      expect(parsed.data.nextActionNote).toBe("Confirm the programme brief.");
+      expect(parsed.data.reason).toBe("Assigned during intake review.");
     }
   });
 
   it("rejects unknown workflow states", () => {
-    expect(adminLeadWorkflowSchema.safeParse({ status: "done", priority: "normal", owner: "", note: "" }).success).toBe(
-      false,
-    );
+    expect(
+      adminLeadWorkflowSchema.safeParse({
+        status: "done",
+        priority: "normal",
+        owner: "Gurpreet",
+        nextActionAt: Date.now() + 60_000,
+        nextActionNote: "Call back",
+        expectedRevision: 0,
+        reason: "Pipeline update",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("requires ownership and a concrete dated action for active enquiries", () => {
+    const parsed = adminLeadWorkflowSchema.safeParse({
+      status: "reviewing",
+      priority: "normal",
+      owner: "",
+      nextActionAt: null,
+      nextActionNote: "",
+      expectedRevision: 0,
+      reason: "Intake review",
+    });
+
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.flatten().fieldErrors.owner).toContain("Active enquiries need one accountable owner.");
+      expect(parsed.error.flatten().fieldErrors.nextActionAt).toContain("Active enquiries need a dated next action.");
+      expect(parsed.error.flatten().fieldErrors.nextActionNote).toContain(
+        "Describe the next action so the owner knows what to do.",
+      );
+    }
+  });
+
+  it("requires an outcome reason when closing an enquiry", () => {
+    const parsed = adminLeadWorkflowSchema.safeParse({
+      status: "archived",
+      priority: "normal",
+      owner: "Gurpreet",
+      nextActionAt: null,
+      nextActionNote: "",
+      outcomeReason: "",
+      expectedRevision: 2,
+      reason: "Close duplicate",
+    });
+
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.flatten().fieldErrors.outcomeReason).toContain(
+        "Qualified and archived enquiries need an outcome reason.",
+      );
+    }
+  });
+});
+
+describe("admin bulk assignment schema", () => {
+  it("accepts a bounded, deduplicated assignment batch", () => {
+    expect(
+      adminLeadBulkAssignmentSchema.safeParse({
+        leads: [
+          { leadId: "lead_1", expectedRevision: 0 },
+          { leadId: "lead_2", expectedRevision: 2 },
+        ],
+        owner: "Nadia",
+        nextActionAt: Date.now() + 60 * 60 * 1000,
+        nextActionNote: "Send tailored introductions",
+        reason: "Morning intake allocation",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects duplicate records and unknown owners", () => {
+    expect(
+      adminLeadBulkAssignmentSchema.safeParse({
+        leads: [
+          { leadId: "lead_1", expectedRevision: 0 },
+          { leadId: "lead_1", expectedRevision: 0 },
+        ],
+        owner: "Anyone",
+        nextActionAt: Date.now() + 60 * 60 * 1000,
+        nextActionNote: "Send tailored introductions",
+        reason: "Morning intake allocation",
+      }).success,
+    ).toBe(false);
   });
 });
 

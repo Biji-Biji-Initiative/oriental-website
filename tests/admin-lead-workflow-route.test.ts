@@ -15,8 +15,9 @@ describe("admin lead workflow route", () => {
       ...originalEnv,
       NODE_ENV: "test",
       ADMIN_REVIEW_TOKEN: "admin-review-token-123456789",
+      ADMIN_REVIEW_ROLE: "operator",
     };
-    updateWorkflowMock.mockResolvedValue({ ok: true });
+    updateWorkflowMock.mockResolvedValue({ ok: true, changed: true, revision: 1 });
   });
 
   afterEach(() => {
@@ -35,11 +36,42 @@ describe("admin lead workflow route", () => {
     const response = await PATCH(workflowRequest({}), { params: Promise.resolve({ leadId: "lead_123" }) });
 
     expect(response.status).toBe(200);
-    expect(updateWorkflowMock).toHaveBeenCalledWith("lead_123", {
-      status: "reviewing",
-      priority: "high",
-      owner: "Gurpreet",
-      note: "Call back after site walk.",
+    expect(updateWorkflowMock).toHaveBeenCalledWith(
+      "lead_123",
+      {
+        status: "reviewing",
+        priority: "high",
+        owner: "Gurpreet",
+        note: "Call back after site walk.",
+        nextActionAt: expect.any(Number),
+        nextActionNote: "Confirm the participant brief.",
+        outcomeReason: "",
+        expectedRevision: 0,
+        reason: "Assigned during intake review.",
+      },
+      { actor: "Oriental admin", requestId: expect.any(String) },
+    );
+  });
+
+  it("forbids workflow changes for read-only reviewers", async () => {
+    process.env = { ...process.env, ADMIN_REVIEW_ROLE: "viewer" };
+
+    const response = await PATCH(workflowRequest({}), { params: Promise.resolve({ leadId: "lead_123" }) });
+
+    expect(response.status).toBe(403);
+    expect(updateWorkflowMock).not.toHaveBeenCalled();
+  });
+
+  it("returns a conflict instead of overwriting a newer revision", async () => {
+    updateWorkflowMock.mockResolvedValue({ ok: false, reason: "conflict", currentRevision: 4 });
+
+    const response = await PATCH(workflowRequest({}), { params: Promise.resolve({ leadId: "lead_123" }) });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      error: "conflict",
+      currentRevision: 4,
     });
   });
 
@@ -64,6 +96,11 @@ function workflowRequest({ token = "admin-review-token-123456789" }: { token?: s
       priority: "high",
       owner: "Gurpreet",
       note: "Call back after site walk.",
+      nextActionAt: Date.now() + 60 * 60 * 1000,
+      nextActionNote: "Confirm the participant brief.",
+      outcomeReason: "",
+      expectedRevision: 0,
+      reason: "Assigned during intake review.",
     }),
   });
 }

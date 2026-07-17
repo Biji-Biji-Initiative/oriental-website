@@ -1,7 +1,11 @@
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import { readEnv } from "@/lib/env";
-import type { AdminLeadWorkflowRequest, VoiceReviewSnapshotRequest } from "@/lib/schemas";
+import type {
+  AdminLeadBulkAssignmentRequest,
+  AdminLeadWorkflowRequest,
+  VoiceReviewSnapshotRequest,
+} from "@/lib/schemas";
 import type { NotificationResult, StoredLead } from "@/lib/server/notifications";
 import { isVoiceAvailabilityFailure } from "@/lib/voice/realtime-call-failure";
 
@@ -134,16 +138,39 @@ export async function getAdminVoiceSession(reviewId: string) {
   return { ok: true as const, session };
 }
 
-export async function updateAdminLeadWorkflow(leadId: string, workflow: AdminLeadWorkflowRequest) {
+export async function updateAdminLeadWorkflow(
+  leadId: string,
+  workflow: AdminLeadWorkflowRequest,
+  audit: { actor: string; requestId: string },
+) {
   const client = createConvexClient();
   if (!client) return { ok: false as const, reason: "convex_unconfigured" };
   const result = await client.client.mutation(api.leads.updateLeadWorkflow, {
     ingestSecret: client.ingestSecret,
     leadId,
     ...workflow,
+    ...audit,
   });
-  if (!result.ok) return { ok: false as const, reason: result.reason };
-  return { ok: true as const };
+  if (!result.ok) {
+    return result.reason === "conflict"
+      ? { ok: false as const, reason: result.reason, currentRevision: result.currentRevision }
+      : { ok: false as const, reason: result.reason };
+  }
+  return { ok: true as const, changed: result.changed, revision: result.revision };
+}
+
+export async function bulkAssignAdminLeads(
+  assignment: AdminLeadBulkAssignmentRequest,
+  audit: { actor: string; requestId: string },
+) {
+  const client = createConvexClient();
+  if (!client) return { ok: false as const, reason: "convex_unconfigured" };
+  const result = await client.client.mutation(api.leads.bulkAssignLeads, {
+    ingestSecret: client.ingestSecret,
+    ...assignment,
+    ...audit,
+  });
+  return result;
 }
 
 export async function setAdminVoiceFollowUp(reviewId: string, followedUp: boolean) {
