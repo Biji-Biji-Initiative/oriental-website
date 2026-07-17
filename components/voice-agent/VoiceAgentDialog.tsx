@@ -6,6 +6,7 @@ import { preconnect } from "react-dom";
 import { type UseFormReturn, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { trackEvent } from "@/lib/analytics";
 import { leadFormSchema } from "@/lib/schemas";
 import { getSegment, type SegmentId, segmentOptions } from "@/lib/segments";
 import { cn } from "@/lib/utils";
@@ -210,6 +211,10 @@ export function VoiceAgentDialog({
           }
         }
         setStatus("submitted");
+        trackEvent(source === "voice" ? "voice_lead_submitted" : "lead_submitted", {
+          segment: leadState.segment,
+          source,
+        });
         toast.success(`Sent to ${routedTo.name}.`, {
           description: notificationDelivered(responseBody)
             ? responseBody?.persisted
@@ -277,6 +282,17 @@ export function VoiceAgentDialog({
   teardownVoiceRef.current = teardownVoice;
   sendClientEventsRef.current = sendClientEvents;
   connectionStatusRef.current = connectionStatus;
+  const sessionStartTrackedRef = useRef(false);
+  useEffect(() => {
+    if (connectionStatus === "idle") {
+      sessionStartTrackedRef.current = false;
+      return;
+    }
+    if (connectionStatus === "listening" && !sessionStartTrackedRef.current) {
+      sessionStartTrackedRef.current = true;
+      trackEvent("voice_session_started", { segment, voice_variant: voiceVariant ?? "default" });
+    }
+  }, [connectionStatus, segment, voiceVariant]);
   recordToolDurationRef.current = recordToolDuration;
 
   // Team voice tuning: switch Reka's register from inside the dialog. A switch

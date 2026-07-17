@@ -578,6 +578,27 @@ Errors:
 | 502 | `convex_failed` | Convex query/mutation failed mid-run. |
 | 503 | `unconfigured` | `OPENAI_API_KEY` or Convex env is missing. |
 
+### `POST /api/admin/sla-check`
+
+Bearer-token or admin-cookie protected sweep (permission `dashboard.read`)
+meant for an hourly cron (`.github/workflows/analytics-ops.yml`). Finds active
+leads that have been unowned longer than the window (default 4h) plus failed
+notifications, and posts one throttled ops Slack alert when breached.
+
+```ts
+type AdminSlaCheckRequest = { maxUnownedHours?: number }; // 1-72, default 4
+
+type AdminSlaCheckResponse = {
+  ok: true;
+  unownedBreaches: number;
+  failedNotifications: number;
+  activeLeads: number;
+  alerted: boolean; // false when clear, throttled, or Slack unconfigured
+};
+```
+
+Errors mirror the other admin routes (`400 invalid_request`, `401/403`, `503 convex_failed`).
+
 ## `GET /api/health`
 
 Purpose: Coolify/container health check.
