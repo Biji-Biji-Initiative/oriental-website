@@ -59,6 +59,7 @@ export function useVoiceRuntime({
     transcript,
     handledCallIds: [],
     emailVerification,
+    emailVerificationUserTurnSequence: 0,
   });
   const callbacksRef = useRef({ submitLead, onEndVoice, onToolDuration, onCaptureNeedsAttention });
   callbacksRef.current = { submitLead, onEndVoice, onToolDuration, onCaptureNeedsAttention };
@@ -86,6 +87,7 @@ export function useVoiceRuntime({
       transcript: [],
       handledCallIds: [],
       emailVerification: nextEmailVerification,
+      emailVerificationUserTurnSequence: 0,
     };
   }, []);
 
@@ -93,7 +95,22 @@ export function useVoiceRuntime({
     const nextCaptured = { ...stateRef.current.captured, [key]: value };
     const nextEmailVerification =
       key === "email" ? confirmedEmailVerification(value, "typed") : stateRef.current.emailVerification;
-    stateRef.current = { ...stateRef.current, captured: nextCaptured, emailVerification: nextEmailVerification };
+    stateRef.current = {
+      ...stateRef.current,
+      captured: nextCaptured,
+      emailVerification: nextEmailVerification,
+      ...(key === "email"
+        ? {
+            emailVerificationUserTurnSequence: stateRef.current.transcript.filter((entry) => entry.role === "user")
+              .length,
+            emailVerificationIgnoredTranscriptIds: [...(stateRef.current.pendingUserTranscriptIds ?? [])],
+            activeResponseStaleForEmail: stateRef.current.activeResponse
+              ? true
+              : stateRef.current.activeResponseStaleForEmail,
+            emailGroundingAwaitingTranscript: undefined,
+          }
+        : {}),
+    };
     setCaptured(nextCaptured);
     if (key === "email") setEmailVerification(nextEmailVerification);
   }, []);

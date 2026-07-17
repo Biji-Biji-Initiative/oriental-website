@@ -69,7 +69,16 @@ In governed `adaptive` mode, a speech email is sendable only after syntax,
 model-evidence, and latest-turn grounding pass; exact evidence is high
 confidence and bounded ASR drift with an explicit email cue is medium. It stays
 visible/editable and does not require a blanket confirmation turn. A correction
-replaces and re-evaluates the earlier evidence. `strict` restores exact
+invalidates the earlier verification before any route can submit it, then the
+replacement is grounded from scratch. Duplicate email tool calls pass through
+the same grounding rule. A pending transcription may relax fresh native-audio
+capture to medium confidence only when no completed turn already contradicts
+the proposed value. Non-PII turn sequence and Realtime item identity preserve
+that decision across form edits and out-of-order transcription completion. A
+typed form edit versions any already-active response stale for email capture,
+confirmation, clearing, and routing, so older tool output cannot overwrite or
+submit the typed value.
+`strict` restores exact
 readback plus explicit confirmation. Email supplied through the hero prefill or
 edited directly in the handoff form is confirmed by that typed action. Both the
 client runtime and `/api/leads` reject invalid, stale, or pending email state.

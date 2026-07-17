@@ -52,8 +52,14 @@ export type VoiceRuntimeState = {
   rateLimits?: Array<Record<string, unknown>>;
   errors?: VoiceRuntimeError[];
   emailVerification?: VoiceEmailVerification;
+  emailVerificationUserTurnSequence?: number;
+  emailVerificationIgnoredTranscriptIds?: string[];
   emailCaptureMode?: VoiceEmailCaptureMode;
   pendingUserTranscripts?: number;
+  pendingUserTranscriptIds?: string[];
+  activeResponseTranscriptBinding?: { pending: boolean; itemId?: string };
+  activeResponseStaleForEmail?: boolean;
+  emailGroundingAwaitingTranscript?: { value: string; userTurnCount: number; itemId?: string };
   activeResponse?: boolean;
   /** Streaming caption of what the assistant is saying right now. */
   assistantDraft?: string;
@@ -97,6 +103,7 @@ export type RealtimeServerEvent = {
   delta?: string;
   transcript?: string;
   event_id?: string;
+  item_id?: string;
   error?: { message?: string; code?: string; event_id?: string };
   rate_limits?: Array<Record<string, unknown>>;
   usage?: RealtimeUsage;
@@ -183,6 +190,7 @@ export function reduceRealtimeServerEvent(
   let state = event.email_capture_mode
     ? { ...current, emailCaptureMode: resolveVoiceEmailCaptureMode(event.email_capture_mode) }
     : current;
+  state = invalidateSupersededEmailVerification(state);
   const eventTranscript = asString(event.transcript);
 
   if (event.type === "response.output_audio_transcript.delta") {
@@ -197,24 +205,63 @@ export function reduceRealtimeServerEvent(
   }
 
   if (event.type === "input_audio_buffer.committed") {
-    state = { ...state, pendingUserTranscripts: (state.pendingUserTranscripts ?? 0) + 1 };
+    state = {
+      ...state,
+      pendingUserTranscripts: (state.pendingUserTranscripts ?? 0) + 1,
+      ...(event.item_id
+        ? { pendingUserTranscriptIds: [...(state.pendingUserTranscriptIds ?? []), event.item_id] }
+        : {}),
+    };
   }
 
   if (
     event.type === "conversation.item.input_audio_transcription.completed" ||
     event.type === "conversation.item.input_audio_transcription.failed"
   ) {
-    state = { ...state, pendingUserTranscripts: Math.max(0, (state.pendingUserTranscripts ?? 0) - 1) };
+    state = {
+      ...state,
+      pendingUserTranscripts: Math.max(0, (state.pendingUserTranscripts ?? 0) - 1),
+      ...(event.item_id
+        ? { pendingUserTranscriptIds: (state.pendingUserTranscriptIds ?? []).filter((id) => id !== event.item_id) }
+        : {}),
+    };
   }
 
   if (event.type === "conversation.item.input_audio_transcription.completed" && eventTranscript) {
+    const completionPredatesVerification = Boolean(
+      event.item_id && state.emailVerificationIgnoredTranscriptIds?.includes(event.item_id),
+    );
     state = appendTranscript(state, "user", eventTranscript);
-    state = applyTentativeEmail(state, eventTranscript, "speech");
+    state = completionPredatesVerification
+      ? {
+          ...state,
+          emailVerificationUserTurnSequence: countUserTurns(state.transcript),
+          emailVerificationIgnoredTranscriptIds: state.emailVerificationIgnoredTranscriptIds?.filter(
+            (id) => id !== event.item_id,
+          ),
+        }
+      : reconcileCompletedEmailTranscription(state, eventTranscript, event.item_id);
     state = accumulateUsage(state, "transcription", event.usage);
+  }
+  if (
+    event.type === "conversation.item.input_audio_transcription.failed" &&
+    ((state.emailGroundingAwaitingTranscript?.itemId &&
+      event.item_id === state.emailGroundingAwaitingTranscript.itemId) ||
+      (!state.emailGroundingAwaitingTranscript?.itemId && (state.pendingUserTranscripts ?? 0) === 0))
+  ) {
+    state = { ...state, emailGroundingAwaitingTranscript: undefined };
   }
 
   if (event.type === "response.created") {
-    state = { ...state, activeResponse: true };
+    state = {
+      ...state,
+      activeResponse: true,
+      activeResponseStaleForEmail: false,
+      activeResponseTranscriptBinding: {
+        pending: (state.pendingUserTranscripts ?? 0) > 0,
+        itemId: state.pendingUserTranscriptIds?.at(-1),
+      },
+    };
   }
 
   if (event.type === "response.done") {
@@ -242,7 +289,14 @@ export function reduceRealtimeServerEvent(
   }
 
   const items = event.type === "response.done" && Array.isArray(event.response?.output) ? event.response.output : [];
-  for (const item of items) {
+  if (responseContainsAuthoritativeEmailConflict(items, state)) {
+    state = { ...state, activeResponseStaleForEmail: true };
+  }
+  const orderedItems = [
+    ...items.filter((item) => item?.name !== "route_to_team"),
+    ...items.filter((item) => item?.name === "route_to_team"),
+  ];
+  for (const item of orderedItems) {
     if (!item || typeof item !== "object") continue;
     const text = getOutputText(item);
     if (text) state = appendTranscript(state, "assistant", text);
@@ -251,6 +305,10 @@ export function reduceRealtimeServerEvent(
       state = reduced.state;
       commands.push(...reduced.commands);
     }
+  }
+
+  if (event.type === "response.done") {
+    state = { ...state, activeResponseTranscriptBinding: undefined, activeResponseStaleForEmail: undefined };
   }
 
   return { state, commands };
@@ -273,6 +331,7 @@ function applyFunctionCall(
   let output: Record<string, unknown> = { ok: true };
   let createResponse = true;
   const commands: RealtimeClientCommand[] = [];
+  const staleForEmail = responsePredatesEmailVerification(next);
 
   switch (item.name) {
     case "set_partner_type": {
@@ -282,7 +341,16 @@ function applyFunctionCall(
       break;
     }
     case "capture_field": {
-      const capture = applyCaptureField(args, next.captured, next.transcript, (next.pendingUserTranscripts ?? 0) > 0);
+      if (
+        toCapturedKey(args.key) === "email" &&
+        (staleForEmail || captureWouldReplaceAuthoritativeEmail(next, args.value))
+      ) {
+        next = { ...next, activeResponseStaleForEmail: true };
+        output = { ok: false, error: "stale_response", key: "email" };
+        createResponse = false;
+        break;
+      }
+      const capture = applyCaptureField(args, next.captured, next.transcript, transcriptionPendingForCapture(next));
       if (!capture.ok) {
         output = capture.output;
         break;
@@ -293,6 +361,21 @@ function applyFunctionCall(
     }
     case "capture_fields": {
       const fields = Array.isArray(args.fields) ? args.fields : [];
+      if (
+        fields.some(
+          (field) =>
+            field &&
+            typeof field === "object" &&
+            !Array.isArray(field) &&
+            toCapturedKey((field as Record<string, unknown>).key) === "email" &&
+            (staleForEmail || captureWouldReplaceAuthoritativeEmail(next, (field as Record<string, unknown>).value)),
+        )
+      ) {
+        next = { ...next, activeResponseStaleForEmail: true };
+        output = { ok: false, error: "stale_response", key: "email" };
+        createResponse = false;
+        break;
+      }
       if (fields.length < 1 || fields.length > 6) {
         output = { ok: false, error: "invalid_field_batch" };
         break;
@@ -301,6 +384,7 @@ function applyFunctionCall(
       let captured = next.captured;
       const applied: Array<{ key: keyof CapturedLead; mode: "append" | "replace" }> = [];
       let emailConfidence: VoiceEmailCaptureConfidence | undefined;
+      let emailTranscriptionPending = false;
       const rejected: Array<{ index: number; output: Record<string, unknown> }> = [];
       let duplicateFailure: { index: number; output: Record<string, unknown> } | null = null;
       for (const [index, field] of fields.entries()) {
@@ -315,14 +399,17 @@ function applyFunctionCall(
           fieldArgs as Record<string, unknown>,
           captured,
           next.transcript,
-          (next.pendingUserTranscripts ?? 0) > 0,
+          transcriptionPendingForCapture(next),
         );
         if (!capture.ok) {
           rejected.push({ index, output: capture.output });
           continue;
         }
         captured = capture.captured;
-        if (capture.key === "email") emailConfidence = capture.emailConfidence;
+        if (capture.key === "email") {
+          emailConfidence = capture.emailConfidence;
+          emailTranscriptionPending = capture.emailTranscriptionPending ?? false;
+        }
         applied.push({ key: capture.key, mode: capture.mode });
       }
       if (duplicateFailure) {
@@ -346,6 +433,15 @@ function applyFunctionCall(
                 next.emailCaptureMode,
                 emailConfidence,
               ),
+              emailVerificationUserTurnSequence: countUserTurns(next.transcript),
+              emailVerificationIgnoredTranscriptIds: undefined,
+              emailGroundingAwaitingTranscript: emailTranscriptionPending
+                ? {
+                    value: captured.email,
+                    userTurnCount: countUserTurns(next.transcript),
+                    itemId: pendingTranscriptIdForCapture(next),
+                  }
+                : undefined,
             }
           : {}),
       };
@@ -370,12 +466,23 @@ function applyFunctionCall(
       break;
     }
     case "confirm_email": {
-      const confirmation = confirmCapturedEmail(args, next, (next.pendingUserTranscripts ?? 0) > 0);
+      if (staleForEmail) {
+        output = { ok: false, error: "stale_response", key: "email" };
+        createResponse = false;
+        break;
+      }
+      const confirmation = confirmCapturedEmail(args, next, transcriptionPendingForCapture(next));
       if (!confirmation.ok) {
         output = confirmation.output;
         break;
       }
-      next = { ...next, emailVerification: confirmation.verification };
+      next = {
+        ...next,
+        emailVerification: confirmation.verification,
+        emailVerificationUserTurnSequence: countUserTurns(next.transcript),
+        emailVerificationIgnoredTranscriptIds: undefined,
+        emailGroundingAwaitingTranscript: undefined,
+      };
       output = {
         ok: true,
         key: "email",
@@ -391,11 +498,23 @@ function applyFunctionCall(
     }
     case "clear_field": {
       const key = toCapturedKey(args.key);
+      if (staleForEmail && key === "email") {
+        output = { ok: false, error: "stale_response", key: "email" };
+        createResponse = false;
+        break;
+      }
       if (key) {
         next = {
           ...next,
           captured: { ...next.captured, [key]: "" },
-          ...(key === "email" ? { emailVerification: undefined } : {}),
+          ...(key === "email"
+            ? {
+                emailVerification: undefined,
+                emailVerificationUserTurnSequence: undefined,
+                emailVerificationIgnoredTranscriptIds: undefined,
+                emailGroundingAwaitingTranscript: undefined,
+              }
+            : {}),
         };
         output = { ok: true, key, captured: next.captured };
       } else {
@@ -423,6 +542,11 @@ function applyFunctionCall(
       break;
     }
     case "route_to_team": {
+      if (staleForEmail) {
+        output = { ok: false, error: "stale_response" };
+        createResponse = false;
+        break;
+      }
       const segment = toSegmentId(args.segment);
       if (!segment) {
         output = { ok: false, error: "invalid_segment" };
@@ -510,13 +634,26 @@ function appendTranscript(
 }
 
 function applyTentativeEmail(state: VoiceRuntimeState, text: string, source: "speech" | "typed"): VoiceRuntimeState {
-  if (state.captured.email.trim()) return state;
+  if (state.captured.email.trim()) {
+    return emailCorrectionInvalidates(text, state.captured.email)
+      ? {
+          ...state,
+          emailVerification: undefined,
+          emailVerificationUserTurnSequence: undefined,
+          emailVerificationIgnoredTranscriptIds: undefined,
+          emailGroundingAwaitingTranscript: undefined,
+        }
+      : state;
+  }
   const email = extractExplicitVisitorEmail(text);
   if (!email) return state;
   const adaptiveSpeech = source === "speech" && state.emailCaptureMode === "adaptive";
   return {
     ...state,
     captured: { ...state.captured, email },
+    emailVerificationUserTurnSequence: countUserTurns(state.transcript),
+    emailVerificationIgnoredTranscriptIds: source === "typed" ? [...(state.pendingUserTranscriptIds ?? [])] : undefined,
+    activeResponseStaleForEmail: source === "typed" && state.activeResponse ? true : state.activeResponseStaleForEmail,
     emailVerification:
       source === "typed"
         ? { value: email, source, status: "confirmed" }
@@ -527,6 +664,189 @@ function applyTentativeEmail(state: VoiceRuntimeState, text: string, source: "sp
             ...(adaptiveSpeech ? { confidence: "high" as const } : {}),
           },
   };
+}
+
+function reconcileCompletedEmailTranscription(
+  state: VoiceRuntimeState,
+  text: string,
+  completedItemId: string | undefined,
+): VoiceRuntimeState {
+  const awaiting = state.emailGroundingAwaitingTranscript;
+  const email = state.captured.email.trim().toLowerCase();
+  if (!awaiting || awaiting.value.trim().toLowerCase() !== email) {
+    if (
+      state.emailVerification?.status === "confirmed" &&
+      (state.emailVerification.source === "typed" || state.emailVerification.source === "prefill")
+    ) {
+      return state;
+    }
+    return applyTentativeEmail(state, text, "speech");
+  }
+  const matchesAwaitedTranscript = awaiting.itemId
+    ? completedItemId === awaiting.itemId
+    : countUserTurns(state.transcript) === awaiting.userTurnCount + 1;
+  if (!matchesAwaitedTranscript) return state;
+
+  const settled = {
+    ...state,
+    emailGroundingAwaitingTranscript: undefined,
+    emailVerificationUserTurnSequence: countUserTurns(state.transcript),
+  };
+  const canonicalText = canonicalizeEmailSpeech(text);
+  const hasEmailCue = /@|\b(?:e-?mail|email address)\b|\b(?:at|dot|point|underscore|dash|hyphen|plus)\b/i.test(text);
+  const maxAsrEdits = Math.min(3, Math.max(1, Math.floor(email.length * 0.18)));
+  const supportsPendingCapture =
+    turnContainsExactEmail(text, email) ||
+    (hasEmailCue && approxSubstringDistance(canonicalText, email) <= maxAsrEdits);
+  const explicitlySupersedesPendingCapture =
+    emailTurnRejectsTarget(text, email) ||
+    (hasContextualEmailCorrection(text, email) && hasEmailCorrectionLanguage(text)) ||
+    (hasOrderedEmailSelectionCue(text) && emailTurnSelectsDifferentAddress(text, email));
+  if (explicitlySupersedesPendingCapture && emailCorrectionInvalidates(text, email)) {
+    return {
+      ...settled,
+      emailVerification: undefined,
+      emailVerificationUserTurnSequence: undefined,
+      emailVerificationIgnoredTranscriptIds: undefined,
+    };
+  }
+  if (supportsPendingCapture) return settled;
+  return emailCorrectionInvalidates(text, email)
+    ? {
+        ...settled,
+        emailVerification: undefined,
+        emailVerificationUserTurnSequence: undefined,
+        emailVerificationIgnoredTranscriptIds: undefined,
+      }
+    : settled;
+}
+
+function countUserTurns(transcript: VoiceTranscriptEntry[]) {
+  return transcript.reduce((count, entry) => count + (entry.role === "user" ? 1 : 0), 0);
+}
+
+function invalidateSupersededEmailVerification(state: VoiceRuntimeState): VoiceRuntimeState {
+  const email = state.captured.email.trim();
+  const verification = state.emailVerification;
+  if (!email || verification?.status !== "confirmed") return state;
+  const userTurns = state.transcript.filter((entry) => entry.role === "user");
+  const verifiedAt = state.emailVerificationUserTurnSequence;
+  const newerUserTurns = verifiedAt === undefined ? userTurns.slice(-1) : userTurns.slice(verifiedAt);
+  const latestUserText = newerUserTurns.at(-1)?.text ?? "";
+  if (!latestUserText) return state;
+  if (!emailCorrectionInvalidates(latestUserText, email)) return state;
+  return {
+    ...state,
+    emailVerification: undefined,
+    emailVerificationUserTurnSequence: undefined,
+    emailVerificationIgnoredTranscriptIds: undefined,
+  };
+}
+
+function emailCorrectionInvalidates(text: string, email: string) {
+  let decision: "none" | "current" | "different" | "ambiguous" = "none";
+  for (const clause of getEmailDecisionClauses(text)) {
+    const clauseDecision = resolveEmailClauseSelection(clause, email);
+    if (clauseDecision !== "none") decision = clauseDecision;
+  }
+  return decision === "different" || decision === "ambiguous";
+}
+
+function resolveEmailClauseSelection(
+  clause: string,
+  currentEmail: string,
+): "none" | "current" | "different" | "ambiguous" {
+  const current = currentEmail.trim().toLowerCase();
+  const hasOwnership = hasExplicitEmailOwnershipContext(clause);
+  const hasPrimaryContactOwnership = hasPrimaryContactOwnershipContext(clause);
+  const hasSelectionCue = hasOrderedEmailSelectionCue(clause);
+  if (hasHistoricalEmailContext(clause) && !hasSelectionCue) return "none";
+  const webOnly = hasExplicitNonEmailWebContext(clause) && !hasOwnership && !hasSelectionCue;
+  if (webOnly) return "none";
+  if (hasSecondaryEmailContext(clause) && !hasPrimaryContactOwnership && !hasSelectionCue) return "none";
+
+  const literalMentions = getLiteralEmailMentions(clause);
+  const literalResolution = resolveLiteralEmailSelection(clause, current);
+  if (literalResolution === "current") {
+    return emailTurnSelectsTarget(clause, current) ||
+      hasPrimaryContactOwnership ||
+      literalClauseRejectsDifferentAddress(clause, current) ||
+      emailClauseAffirmsAddress(clause)
+      ? "current"
+      : "none";
+  }
+  if (literalResolution !== "none") return literalResolution;
+
+  if (emailTurnRejectsTarget(clause, current)) return "different";
+
+  const containsCurrent = turnContainsExactEmail(clause, current);
+  if (containsCurrent) {
+    if (emailTurnOffersAlternatives(clause) && !postAlternativeSelectionText(clause)) return "none";
+    const following = getFollowingEmailDisposition(clause, current);
+    if (following === "supersedes") return "different";
+    if (emailTurnSelectsTarget(clause, current)) return "current";
+    if (hasPrecedingSpokenEmailAddress(clause, current)) return "different";
+    if (hasSelectionCue) return "different";
+    if (hasPrimaryContactOwnership || emailClauseAffirmsAddress(clause)) return "current";
+    return "none";
+  }
+
+  const containsSpokenAddress = containsSpokenEmailShape(clause);
+  if (literalMentions.length === 0 && !containsSpokenAddress) {
+    return hasContextualEmailCorrection(clause, current) && hasEmailCorrectionLanguage(clause) ? "different" : "none";
+  }
+  if (!containsSpokenAddress) return "none";
+  if (emailTurnOffersAlternatives(clause) && !postAlternativeSelectionText(clause)) return "different";
+  if (emailClauseRejectsOnlyMention(clause) && !hasSelectionCue) return "none";
+  return "different";
+}
+
+function getEmailDecisionClauses(text: string) {
+  return text
+    .split(
+      /(?:[;.!?]+\s+|\s+[—–-]\s*(?=(?:actually|i\s+meant|correction|use|choose|select|prefer|keep|go\s+with|switch\s+to))|\s+\b(?:but|however|whereas|while)\b\s+|[,;]?\s+(?:and\s+)?(?:now|currently)\s+|,\s*then\s+|,\s*(?=[^,]{0,120}\b(?:is\s+(?:the\s+)?current|(?:my\s+)?new\s+(?:e-?mail|address)))|\s+and\s+(?=(?:my\s+)?new\s+(?:e-?mail|address))|,\s*(?:and\s+)?(?=(?:actually|i\s+meant|correction)\b|(?:use|choose|select|prefer|keep|go\s+with|switch\s+to|e-?mail\b|contact\b|reach\b))|\s+and\s+(?=(?:actually|i\s+meant|correction)\b|(?:use|choose|select|prefer|keep|go\s+with|switch\s+to|e-?mail\b|contact\b|reach\b)))/i,
+    )
+    .map((clause) => clause.trim())
+    .filter(Boolean);
+}
+
+function hasSecondaryEmailContext(text: string) {
+  return /\b(?:billing|invoice|invoices|accounts?|reference|sample|support|website|web\s*site|url|homepage|site|as\s+(?:an\s+)?example|for\s+example|old\s+e-?mail\s+was|old\s+address|previous\s+(?:e-?mail|address)|former\s+(?:e-?mail|address)|historical\s+(?:e-?mail|address)|used\s+to\s+be|was\s+the\s+(?:old|previous|former)\s+address)\b/i.test(
+    text,
+  );
+}
+
+function hasHistoricalEmailContext(text: string) {
+  return /\b(?:used\s+to\s+be|i\s+used|we\s+used|right\s+before|until\s+(?:today|yesterday|now|then)|back\s+then|archive|archived|old\s+e-?mail\s+was|old\s+address|previous\s+(?:e-?mail|address)|former\s+(?:e-?mail|address)|historical\s+(?:e-?mail|address)|was\s+the\s+(?:old|previous|former)\s+address)\b/i.test(
+    text,
+  );
+}
+
+function hasPrimaryContactOwnershipContext(text: string) {
+  return /\b(?:my\s+e-?mail|my\s+contact\s+address|contact\s+me|reach\s+me|for\s+my\s+(?:e-?mail|contact)|as\s+my\s+contact\s+address|as\s+(?:the\s+)?contact\s+e-?mail)\b/i.test(
+    text,
+  );
+}
+
+function emailClauseRejectsOnlyMention(text: string) {
+  return /\b(?:no|not|do\s+not\s+use|don't\s+use|dont\s+use|instead\s+of|rather\s+than|bukan)\b/i.test(text);
+}
+
+function literalClauseRejectsDifferentAddress(text: string, currentEmail: string) {
+  const current = currentEmail.trim().toLowerCase();
+  const normalizedText = text
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/\p{Mark}/gu, "");
+  return getLiteralEmailMentions(text).some(
+    (mention) =>
+      mention.email !== current &&
+      getLiteralEmailMentionDisposition(normalizedText, mention.start, mention.email.length) === "rejected",
+  );
+}
+
+function emailClauseAffirmsAddress(text: string) {
+  return /\b(?:yes|correct|right|that'?s\s+(?:correct|right)|it\s+is)\b/i.test(text);
 }
 
 function accumulateUsage(
@@ -609,6 +929,7 @@ type AppliedCapture = {
   mode: "append" | "replace";
   captured: CapturedLead;
   emailConfidence?: VoiceEmailCaptureConfidence;
+  emailTranscriptionPending?: boolean;
 };
 
 function applyCaptureResult(state: VoiceRuntimeState, capture: AppliedCapture): VoiceRuntimeState {
@@ -622,6 +943,15 @@ function applyCaptureResult(state: VoiceRuntimeState, capture: AppliedCapture): 
       state.emailCaptureMode,
       capture.emailConfidence,
     ),
+    emailVerificationUserTurnSequence: countUserTurns(state.transcript),
+    emailVerificationIgnoredTranscriptIds: undefined,
+    emailGroundingAwaitingTranscript: capture.emailTranscriptionPending
+      ? {
+          value: capture.captured.email,
+          userTurnCount: countUserTurns(state.transcript),
+          itemId: pendingTranscriptIdForCapture(state),
+        }
+      : undefined,
   };
 }
 
@@ -633,6 +963,64 @@ function captureOutput(capture: AppliedCapture, state: VoiceRuntimeState): Recor
     captured: capture.captured,
     ...(capture.key === "email" ? emailConfirmationInstructions(state) : {}),
   };
+}
+
+function pendingTranscriptIdForCapture(state: VoiceRuntimeState) {
+  const binding = state.activeResponseTranscriptBinding;
+  if (binding) {
+    return binding.pending && binding.itemId && state.pendingUserTranscriptIds?.includes(binding.itemId)
+      ? binding.itemId
+      : undefined;
+  }
+  return state.pendingUserTranscriptIds?.at(-1);
+}
+
+function transcriptionPendingForCapture(state: VoiceRuntimeState) {
+  const binding = state.activeResponseTranscriptBinding;
+  if (!binding) return (state.pendingUserTranscripts ?? 0) > 0;
+  if (!binding.pending) return false;
+  return binding.itemId
+    ? Boolean(state.pendingUserTranscriptIds?.includes(binding.itemId))
+    : (state.pendingUserTranscripts ?? 0) > 0;
+}
+
+function responsePredatesEmailVerification(state: VoiceRuntimeState) {
+  const itemId = state.activeResponseTranscriptBinding?.itemId;
+  return Boolean(
+    state.activeResponseStaleForEmail || (itemId && state.emailVerificationIgnoredTranscriptIds?.includes(itemId)),
+  );
+}
+
+function captureWouldReplaceAuthoritativeEmail(state: VoiceRuntimeState, value: unknown) {
+  const verification = state.emailVerification;
+  if (
+    verification?.status !== "confirmed" ||
+    (verification.source !== "typed" && verification.source !== "prefill") ||
+    typeof value !== "string"
+  ) {
+    return false;
+  }
+  return value.trim().toLowerCase() !== verification.value.trim().toLowerCase();
+}
+
+function responseContainsAuthoritativeEmailConflict(items: RealtimeOutputItem[], state: VoiceRuntimeState) {
+  return items.some((item) => {
+    if (item?.type !== "function_call") return false;
+    const args = parseArguments(item.arguments);
+    if (item.name === "clear_field") return toCapturedKey(args.key) === "email";
+    if (item.name === "capture_field") {
+      return toCapturedKey(args.key) === "email" && captureWouldReplaceAuthoritativeEmail(state, args.value);
+    }
+    if (item.name !== "capture_fields" || !Array.isArray(args.fields)) return false;
+    return args.fields.some(
+      (field) =>
+        field &&
+        typeof field === "object" &&
+        !Array.isArray(field) &&
+        toCapturedKey((field as Record<string, unknown>).key) === "email" &&
+        captureWouldReplaceAuthoritativeEmail(state, (field as Record<string, unknown>).value),
+    );
+  });
 }
 
 function emailConfirmationInstructions(
@@ -696,7 +1084,7 @@ function applyCaptureField(
     key === "email"
       ? existing.trim().toLowerCase() === normalizedValue.toLowerCase()
       : Boolean(existing.trim()) && normalizeEvidence(existing) === normalizeEvidence(normalizedValue);
-  if (!FREE_TEXT_CAPTURE_KEYS.has(key) && duplicateCapture) {
+  if (key !== "email" && !FREE_TEXT_CAPTURE_KEYS.has(key) && duplicateCapture) {
     return { ok: true, key, mode: "replace", captured };
   }
 
@@ -714,7 +1102,12 @@ function applyCaptureField(
     key,
     mode,
     captured: { ...captured, [key]: nextValue },
-    ...(key === "email" ? { emailConfidence: grounding.emailConfidence ?? "medium" } : {}),
+    ...(key === "email"
+      ? {
+          emailConfidence: grounding.emailConfidence ?? "medium",
+          emailTranscriptionPending: transcriptionPending,
+        }
+      : {}),
   };
 }
 
@@ -811,7 +1204,6 @@ function validateEmailCaptureGrounding(
 ): { ok: true; emailConfidence: VoiceEmailCaptureConfidence } | { ok: false; error: string } {
   const email = value.trim().toLowerCase();
   if (!turnContainsExactEmail(evidence, email)) return { ok: false, error: "ungrounded_identity_capture" };
-  if (transcriptionPending) return { ok: true, emailConfidence: "medium" };
 
   // A typed turn and a trailing microphone transcription can race each other.
   // Accept an exact recent match unless a newer user turn carries another
@@ -820,8 +1212,13 @@ function validateEmailCaptureGrounding(
   const recentUserTurns = transcript.filter((entry) => entry.role === "user").slice(-6);
   const recentUserText = recentUserTurns.at(-1)?.text ?? "";
   const canonicalUserText = canonicalizeEmailSpeech(recentUserText);
+  const hasEmailCue = /@|\b(?:e-?mail|email address)\b|\b(?:at|dot|point|underscore|dash|hyphen|plus)\b/i.test(
+    recentUserText,
+  );
+  const maxAsrEdits = Math.min(3, Math.max(1, Math.floor(email.length * 0.18)));
+  const boundedAsrSupport = hasEmailCue && approxSubstringDistance(canonicalUserText, email) <= maxAsrEdits;
   if (turnContainsExactEmail(recentUserText, email) && !supersedesRecentEmailGrounding(recentUserText, email)) {
-    return { ok: true, emailConfidence: "high" };
+    return { ok: true, emailConfidence: transcriptionPending ? "medium" : "high" };
   }
   const matchingTurnIndex = recentUserTurns.findLastIndex(
     (entry) => turnContainsExactEmail(entry.text, email) && !supersedesRecentEmailGrounding(entry.text, email),
@@ -830,14 +1227,19 @@ function validateEmailCaptureGrounding(
     matchingTurnIndex >= 0 &&
     recentUserTurns.slice(matchingTurnIndex + 1).every((entry) => !supersedesRecentEmailGrounding(entry.text, email))
   ) {
-    return { ok: true, emailConfidence: "high" };
+    return { ok: true, emailConfidence: transcriptionPending ? "medium" : "high" };
   }
   const latestTurnSupersedes = supersedesRecentEmailGrounding(recentUserText, email);
+  const explicitlyReplaces =
+    hasContextualEmailCorrection(recentUserText, email) ||
+    hasOrderedEmailSelectionCue(recentUserText) ||
+    emailTurnRejectsTarget(recentUserText, email);
   if (
     latestTurnSupersedes &&
     (matchingTurnIndex >= 0 ||
-      turnContainsExactEmail(recentUserText, email) ||
-      hasContextualEmailCorrection(recentUserText, email))
+      explicitlyReplaces ||
+      !boundedAsrSupport ||
+      turnContainsExactEmail(recentUserText, email))
   ) {
     return { ok: false, error: "ungrounded_identity_capture" };
   }
@@ -846,40 +1248,22 @@ function validateEmailCaptureGrounding(
     // a@example.com and qa@example.com are different (including spoken forms).
     return { ok: false, error: "ungrounded_identity_capture" };
   }
+  if (transcriptionPending) return { ok: true, emailConfidence: "medium" };
 
   // Allow a small ASR spelling disagreement only when the latest turn clearly
   // contains email structure. Adaptive mode records this as medium confidence;
   // strict mode still keeps it pending behind the read-back gate.
-  const hasEmailCue = /@|\b(?:e-?mail|email address)\b|\b(?:at|dot|point|underscore|dash|hyphen|plus)\b/i.test(
-    recentUserText,
-  );
-  const maxAsrEdits = Math.min(3, Math.max(1, Math.floor(email.length * 0.18)));
-  return hasEmailCue && approxSubstringDistance(canonicalUserText, email) <= maxAsrEdits
+  return boundedAsrSupport
     ? { ok: true, emailConfidence: "medium" }
     : { ok: false, error: "ungrounded_identity_capture" };
 }
 
 function supersedesRecentEmailGrounding(text: string, groundedEmail: string) {
-  const target = groundedEmail.trim().toLowerCase();
-  const mentionsTarget = turnContainsExactEmail(text, target);
-  const literalMentions = getLiteralEmailMentions(text);
-  const suppliesAnotherAddress = literalMentions.some((mention) => mention.email !== target);
-
-  if (!mentionsTarget) {
-    return suppliesAnotherAddress || containsSpokenEmailShape(text) || hasContextualEmailCorrection(text, target);
-  }
-  if (emailTurnRejectsTarget(text, target)) return true;
-  if (emailTurnOffersAlternatives(text)) return false;
-
-  // Use token spans for ordering so fully spoken addresses receive the same
-  // treatment as literal ones. A later rejected address ("not old at …") does
-  // not invalidate the selected address before it.
-  const followingAddress = getFollowingEmailDisposition(text, target);
-  return followingAddress === "supersedes";
+  return emailCorrectionInvalidates(text, groundedEmail);
 }
 
 function hasEmailCorrectionLanguage(text: string) {
-  return /\b(?:actually|instead|rather|correction|correct that|change|update|wrong|incorrect|not correct|i meant|should be|forget|replace)\b/i.test(
+  return /\b(?:actually|no|instead|rather|correction|correct that|change|update|wrong|incorrect|not correct|i meant|should be|forget|replace|switch|bukan)\b/i.test(
     text,
   );
 }
@@ -943,6 +1327,21 @@ function containsSpokenEmailShape(text: string) {
   });
 }
 
+function hasExplicitNonEmailWebContext(text: string) {
+  return /\b(?:website|web\s*site|web\s+address|url|homepage|site(?:\s+link)?|domain)\b/i.test(text);
+}
+
+function hasExplicitEmailOwnershipContext(text: string) {
+  return /\b(?:my\s+e-?mail|e-?mail\s+domain|e-?mail\s+(?:(?:address|domain)\s+)?(?:is|to\s+use)|correct\s+e-?mail|contact\s+(?:address|me)|reach\s+(?:me|us)|inbox|for\s+(?:my\s+)?e-?mail|as\s+(?:the\s+)?e-?mail)\b|\be-?mail\s*[:=]/i.test(
+    text,
+  );
+}
+
+function hasOrderedEmailSelectionCue(text: string) {
+  return /\b(?:use|choose|select|prefer|keep|go\s+with|switch\s+to|changed?\s+to|guna|contact\s+(?:me|us)\s+at|reach\s+(?:me|us)\s+at)\b/i.test(
+    text,
+  );
+}
 function emailTurnRejectsTarget(text: string, groundedEmail: string) {
   const escapedEmail = groundedEmail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const normalizedText = text
@@ -951,7 +1350,7 @@ function emailTurnRejectsTarget(text: string, groundedEmail: string) {
     .replace(/\p{Mark}/gu, "");
   if (
     new RegExp(
-      `(?:forget\\s+|instead\\s+of\\s+|rather\\s+than\\s+|(?:do\\s+not|don't|dont|not)\\s+(?:use\\s+)?)${escapedEmail}|${escapedEmail}\\s+(?:(?:was|is|looks?)\\s+)?(?:wrong|incorrect|not\\s+(?:right|correct)|a\\s+typo)|${escapedEmail}\\s+isn['’]?t\\s+(?:right|correct)|(?:change|replace|update)\\s+${escapedEmail}\\s+(?:to|with)`,
+      `(?:forget\\s+|instead\\s+of\\s+|rather\\s+than\\s+|in\\s+place\\s+of\\s+|replacement\\s+for\\s+|replace\\s+|over\\s+|versus\\s+|bukan\\s+|(?:do\\s+not|don't|dont|not)\\s+(?:use\\s+)?)${escapedEmail}|${escapedEmail}\\s+(?:(?:was|is|looks?)\\s+)?(?:wrong|incorrect|not\\s+(?:right|correct)|a\\s+typo)|${escapedEmail}\\s+isn['’]?t\\s+(?:right|correct)|(?:change|replace|update)\\s+${escapedEmail}\\s+(?:to|with)`,
       "iu",
     ).test(normalizedText)
   ) {
@@ -970,9 +1369,125 @@ function emailTurnRejectsTarget(text: string, groundedEmail: string) {
     groundedIndex + groundedEmail.length + 48,
   );
   return (
-    /(?:forget|insteadof|ratherthan|donotuse|dontuse|not)$/.test(beforeGrounded) ||
+    /(?:forget|insteadof|ratherthan|inplaceof|replacementfor|replace|over|versus|bukan|donotuse|dontuse|not)$/.test(
+      beforeGrounded,
+    ) ||
     /^(?:(?:was|is|looks?)?(?:wrong|incorrect|notright|notcorrect|atypo)|isnt(?:right|correct))/.test(afterGrounded) ||
     (/(?:change|replace|update)$/.test(beforeGrounded) && /^(?:to|with)/.test(afterGrounded))
+  );
+}
+
+function resolveLiteralEmailSelection(
+  text: string,
+  currentEmail: string,
+): "none" | "current" | "different" | "ambiguous" {
+  const current = currentEmail.trim().toLowerCase();
+  const mentions = getLiteralEmailMentions(text);
+  if (mentions.length === 0) return "none";
+  const offersAlternatives = emailTurnOffersAlternatives(text);
+  const alternativesIncludeCurrent = offersAlternatives && mentions.some((mention) => mention.email === current);
+
+  const normalizedText = text
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/\p{Mark}/gu, "");
+  let lastSelected: { email: string; index: number } | undefined;
+  let lastRejected: { email: string; index: number } | undefined;
+  for (const mention of mentions) {
+    const disposition = getLiteralEmailMentionDisposition(normalizedText, mention.start, mention.email.length);
+    if (disposition === "selected") lastSelected = { email: mention.email, index: mention.start };
+    if (disposition === "rejected") lastRejected = { email: mention.email, index: mention.start };
+  }
+
+  if (lastRejected && (!lastSelected || lastRejected.index > lastSelected.index)) {
+    if (lastRejected.email === current) return "different";
+    if (lastSelected) return lastSelected.email === current ? "current" : "different";
+    if (mentions.some((mention) => mention.email === current)) return "current";
+    return "none";
+  }
+  if (lastSelected) return lastSelected.email === current ? "current" : "different";
+  if (lastRejected?.email === current) return "different";
+  if (alternativesIncludeCurrent) return "current";
+  if (offersAlternatives) return "different";
+  const distinct = new Set(mentions.map((mention) => mention.email));
+  return distinct.size === 1 && distinct.has(current) ? "current" : "ambiguous";
+}
+
+function getLiteralEmailMentionDisposition(
+  normalizedText: string,
+  start: number,
+  length: number,
+): "selected" | "rejected" | "neutral" {
+  const before = normalizedText.slice(Math.max(0, start - 100), start);
+  const after = normalizedText.slice(start + length, start + length + 48);
+  if (
+    /(?:instead\s+of|rather\s+than|bukan|do\s+not\s+use|don't\s+use|dont\s+use|not)\s*$/i.test(before) ||
+    /^\s*(?:(?:was|is|looks?)\s+)?(?:wrong|incorrect|not\s+(?:right|correct)|isn['’]?t\s+(?:right|correct))/i.test(
+      after,
+    )
+  ) {
+    return "rejected";
+  }
+  if (
+    /(?:use|choose|select|prefer|keep|go\s+with|switch\s+to|contact\s+(?:me|us)\s+at|contact\s+address(?:\s+is)?|reach\s+(?:me|us)\s+at|send\s+it\s+to|(?:my\s+)?(?:correct\s+)?e-?mail(?:\s+address)?\s+is|changed?\s+to|guna)\s*$/i.test(
+      before,
+    ) ||
+    /(?:actually|no|i\s+meant|correction|sorry)\s*[,;:—–-]?\s*$/i.test(before)
+  ) {
+    return "selected";
+  }
+  return "neutral";
+}
+
+function emailTurnSelectsTarget(text: string, selectedEmail: string) {
+  const target = selectedEmail.trim().toLowerCase();
+  const escapedEmail = target.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const normalizedText = text
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/\p{Mark}/gu, "");
+  if (
+    new RegExp(
+      `(?:use|choose|select|prefer|keep|go\\s+with|switch\\s+to|contact\\s+(?:me|us)\\s+at|contact\\s+address(?:\\s+is)?|reach\\s+(?:me|us)\\s+at|send\\s+it\\s+to|(?:my\\s+)?(?:correct\\s+)?e-?mail(?:\\s+address)?\\s+is|changed?\\s+to|guna)\\s+${escapedEmail}`,
+      "iu",
+    ).test(normalizedText)
+  ) {
+    return true;
+  }
+
+  let targetWindow = findExactEmailTokenWindow(text, target);
+  while (targetWindow) {
+    const introduction = targetWindow.tokens
+      .slice(Math.max(0, targetWindow.start - 7), targetWindow.start)
+      .map((token) => token.toLowerCase())
+      .join("");
+    if (
+      /(?:use|choose|select|prefer|keep|gowith|switchto|contactmeat|contactusat|contactaddress|contactaddressis|reachmeat|reachusat|senditto|myemailis|correctemailis|changedto|guna)$/.test(
+        introduction,
+      )
+    ) {
+      return true;
+    }
+    targetWindow = findExactEmailTokenWindow(text, target, targetWindow.end);
+  }
+  return false;
+}
+
+function emailTurnSelectsDifferentAddress(text: string, currentEmail: string) {
+  const target = currentEmail.trim().toLowerCase();
+  if (
+    getLiteralEmailMentions(text).some(
+      (mention) => mention.email !== target && emailTurnSelectsTarget(text, mention.email),
+    )
+  ) {
+    return true;
+  }
+
+  return (
+    !turnContainsExactEmail(text, target) &&
+    /(?:\b(?:use|choose|select|prefer|keep|go\s+with|switch\s+to|contact\s+(?:me|us)\s+at|contact\s+address(?:\s+is)?|reach\s+(?:me|us)\s+at|send\s+it\s+to|(?:my\s+)?(?:correct\s+)?e-?mail(?:\s+address)?\s+is|changed?\s+to|guna)\b|\be-?mail\s*[:=])[^.!?]{0,100}\bat\b[^.!?]{0,80}\b(?:dot|point)\b/i.test(
+      text,
+    )
   );
 }
 
@@ -982,6 +1497,23 @@ function emailTurnOffersAlternatives(text: string) {
     /\bor\b.{0,80}\bworks?\b/i.test(text) ||
     /\bboth\b.{0,120}\b(?:work|works|are fine|are okay|are ok)\b/i.test(text)
   );
+}
+
+function postAlternativeSelectionText(text: string) {
+  const either = /\beither\b/i.exec(text);
+  const both = /\bboth\b/i.exec(text);
+  const firstAlternativeOr = /\bor\b/gi;
+  firstAlternativeOr.lastIndex = either?.index ?? 0;
+  const separator = either ? firstAlternativeOr.exec(text)?.index : both?.index;
+  if (separator === undefined) return undefined;
+
+  const cues = Array.from(
+    text.matchAll(
+      /\b(?:actually|i\s+meant|correction|use|choose|select|prefer|keep|go\s+with|switch\s+to|changed?\s+to|guna)\b/gi,
+    ),
+  ).filter((match) => (match.index ?? -1) > separator);
+  const cue = cues.at(-1);
+  return cue?.index === undefined ? undefined : text.slice(cue.index);
 }
 
 function getLiteralEmailMentions(text: string) {
@@ -1067,6 +1599,12 @@ function getFollowingEmailDisposition(text: string, groundedEmail: string): "non
   }
   const introduction = following.slice(0, nextAddressMarker).map((token) => token.toLowerCase());
   return emailIntroductionRejectsAddress(introduction) ? "rejected" : "supersedes";
+}
+
+function hasPrecedingSpokenEmailAddress(text: string, groundedEmail: string) {
+  const targetWindow = findExactEmailTokenWindow(text, groundedEmail);
+  if (!targetWindow || targetWindow.start === 0) return false;
+  return containsSpokenEmailShape(targetWindow.tokens.slice(0, targetWindow.start).join(" "));
 }
 
 function emailIntroductionRejectsAddress(tokens: string[]) {
@@ -1163,6 +1701,9 @@ function confirmCapturedEmail(
     return { ok: false, output: { ok: false, error: "email_readback_missing", key: "email" } };
   }
   const latestUser = state.transcript.at(latestUserIndex)?.text ?? "";
+  if (!isUnqualifiedEmailConfirmation(latestUser) || emailCorrectionInvalidates(latestUser, email)) {
+    return { ok: false, output: { ok: false, error: "email_confirmation_contradicted", key: "email" } };
+  }
   if (!transcriptionPending && !normalizeEvidence(latestUser).includes(normalizeEvidence(evidence))) {
     return { ok: false, output: { ok: false, error: "ungrounded_email_confirmation", key: "email" } };
   }
@@ -1175,6 +1716,7 @@ const EXPLICIT_EMAIL_CONFIRMATIONS = new Set([
   "yesitscorrect",
   "yesthatscorrect",
   "yesthatsright",
+  "yesthatsexactlyright",
   "yeah",
   "yeahcorrect",
   "yeahsendit",
@@ -1182,6 +1724,8 @@ const EXPLICIT_EMAIL_CONFIRMATIONS = new Set([
   "correct",
   "thatscorrect",
   "thatsright",
+  "thatsexactlyright",
+  "exactlyright",
   "right",
   "betul",
   "yabetul",
@@ -1195,15 +1739,13 @@ const EXPLICIT_EMAIL_CONFIRMATIONS = new Set([
 function isExplicitEmailConfirmation(value: string): boolean {
   const normalized = normalizeEvidence(value);
   if (EXPLICIT_EMAIL_CONFIRMATIONS.has(normalized)) return true;
-  const contradicted = ["notcorrect", "incorrect", "wrong", "salah", "takbetul", "tidakbetul"].some((phrase) =>
-    normalized.includes(phrase),
+  return /^(?:yes|yeah|yep|correct|right|thatscorrect|thatsright|yesthatscorrect|yesthatsright|betul|yabetul|benar|tepat)(?:please|thanks|thankyou|sendit|pleasesendit|donotsendityet|dontsendityet)?$/.test(
+    normalized,
   );
-  return (
-    !contradicted &&
-    ["yes", "yeah", "yep", "correct", "thatscorrect", "thatsright", "betul"].some((prefix) =>
-      normalized.startsWith(prefix),
-    )
-  );
+}
+
+function isUnqualifiedEmailConfirmation(value: string) {
+  return isExplicitEmailConfirmation(value);
 }
 
 /** Exact containment, falling back to tolerance-bounded approximate containment. */
@@ -1301,6 +1843,7 @@ function normalizeEvidence(value: string) {
 }
 
 const OBSERVABLE_TOOL_FAILURES = new Set([
+  "email_confirmation_contradicted",
   "email_confirmation_not_explicit",
   "email_confirmation_not_pending",
   "email_readback_missing",
