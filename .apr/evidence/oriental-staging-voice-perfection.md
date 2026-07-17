@@ -39,11 +39,14 @@
 - The current contract and repo guidance explicitly forbid production, Convex,
   and backfill mutation for this staging-only release and require Oracle/APR
   only through `ssh g` or `ssh mereka`.
+- The production hostname now overrides a stale candidate model-cell setting at
+  session mint time, and the host deployer rejects an omitted source SHA instead
+  of resolving a moving `origin/main`.
 
 ## Executed evidence so far
 
 - Post-rebase focused integration proof: 11 files, 549 tests passed.
-- Full release-test harness: 82 files, 960 tests passed.
+- Full release-test harness: 82 files, 962 tests passed.
 - `pnpm typecheck`: Next route generation and TypeScript passed.
 - `pnpm lint`, `pnpm build`, and `git diff --check`: passed.
 - Responsive Playwright home proof: 42 desktop/mobile cases passed, including

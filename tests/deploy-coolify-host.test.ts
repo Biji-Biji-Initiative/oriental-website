@@ -18,6 +18,15 @@ describe("Coolify host deploy image cells", () => {
     expect(deployScript).toContain('[[ "$sha" =~ ^[0-9a-f]{40}$ ]]');
   });
 
+  it("rejects an omitted reviewed source SHA instead of resolving moving main", () => {
+    const result = spawnSync("bash", [deployPath, "--target", "staging", "--expected-current-sha", "a".repeat(40)], {
+      encoding: "utf8",
+    });
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain("Host deploys require the full reviewed git SHA as a positional argument");
+    expect(deployScript).not.toContain('sha="$(git rev-parse origin/main)"');
+  });
+
   it("uses distinct immutable tags for staging and production builds of one SHA", () => {
     expect(deployScript).toMatch(/image="\$\{app_uuid\}:\$\{sha\}"/);
     expect(deployScript).toMatch(/image="\$\{app_uuid\}:staging-\$\{sha\}"/);

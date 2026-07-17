@@ -46,7 +46,7 @@ collisions while dedicated staging services remain a separate infrastructure mig
 The Mereka particle M and animated page-entrance loader are staging-only preview
 cells; production retains its legacy orb and no Trace entrance. Compact voice
 affordances still reuse the approved mark geometry.
-`scripts/deploy-coolify-host.sh --target staging --expected-current-sha <sha>`
+`scripts/deploy-coolify-host.sh --target staging --expected-current-sha <current-sha> <candidate-sha>`
 builds with `NEXT_PUBLIC_BRAND_MOTION_PREVIEW=true`; production builds force the
 flag to `false`. The UI also checks the staging hostname before enabling the
 loader. This prevents a staging-only entrance experiment from leaking into

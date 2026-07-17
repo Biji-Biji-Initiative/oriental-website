@@ -30,12 +30,12 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     -h|--help)
-      echo "Usage: $0 --target staging|production --expected-current-sha sha [--voice-model-cell control|candidate] [--voice-picker-mode clean|audition] [--allow-emergency-production] [git-sha]"
+      echo "Usage: $0 --target staging|production --expected-current-sha sha [--voice-model-cell control|candidate] [--voice-picker-mode clean|audition] [--allow-emergency-production] git-sha"
       exit 0
       ;;
     *)
       if [[ -n "$sha" ]]; then
-        echo "Usage: $0 --target staging|production --expected-current-sha sha [--voice-model-cell control|candidate] [--voice-picker-mode clean|audition] [--allow-emergency-production] [git-sha]" >&2
+        echo "Usage: $0 --target staging|production --expected-current-sha sha [--voice-model-cell control|candidate] [--voice-picker-mode clean|audition] [--allow-emergency-production] git-sha" >&2
         exit 2
       fi
       sha="$1"
@@ -45,17 +45,17 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ "$target" != "staging" && "$target" != "production" ]]; then
-  echo "Usage: $0 --target staging|production --expected-current-sha sha [--voice-model-cell control|candidate] [--voice-picker-mode clean|audition] [--allow-emergency-production] [git-sha]" >&2
+  echo "Usage: $0 --target staging|production --expected-current-sha sha [--voice-model-cell control|candidate] [--voice-picker-mode clean|audition] [--allow-emergency-production] git-sha" >&2
   exit 2
 fi
 
 if [[ -z "$sha" ]]; then
-  git fetch origin main --quiet
-  sha="$(git rev-parse origin/main)"
+  echo "Host deploys require the full reviewed git SHA as a positional argument." >&2
+  exit 2
 fi
 
 if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
-  echo "Usage: $0 --target staging|production --expected-current-sha sha [--voice-model-cell control|candidate] [--voice-picker-mode clean|audition] [--allow-emergency-production] [git-sha]" >&2
+  echo "Usage: $0 --target staging|production --expected-current-sha sha [--voice-model-cell control|candidate] [--voice-picker-mode clean|audition] [--allow-emergency-production] git-sha" >&2
   exit 2
 fi
 

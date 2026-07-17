@@ -11,12 +11,14 @@ import { resolveVoiceDurationPolicy } from "@/lib/voice/session-policy";
 import { getVoiceVariant } from "@/lib/voice/variants";
 
 export type RealtimeDeviceProfile = "mobile" | "desktop";
+export type RealtimeDeploymentEnvironment = "production" | "staging" | "local";
 
 export async function createRealtimeClientSecret(
   safetyIdentifier: string,
   initialSegment?: SegmentId,
   deviceProfile: RealtimeDeviceProfile = "desktop",
   variantId?: string,
+  deploymentEnvironment: RealtimeDeploymentEnvironment = "production",
 ) {
   const apiKey = readEnv("OPENAI_API_KEY");
   if (!apiKey) {
@@ -24,7 +26,9 @@ export async function createRealtimeClientSecret(
   }
 
   const experiments = resolveVoiceExperimentConfig({
-    modelCell: readEnv("VOICE_MODEL_CELL", "control"),
+    // The public production hostname is authoritative. A stale candidate cell
+    // in the managed environment must never select the preview model there.
+    modelCell: deploymentEnvironment === "production" ? "control" : readEnv("VOICE_MODEL_CELL", "control"),
     controlModel: readEnv("OPENAI_REALTIME_MODEL", "gpt-realtime-2") ?? "gpt-realtime-2",
     candidateModel: readEnv("OPENAI_REALTIME_MODEL_CANDIDATE", "gpt-realtime-2.1") ?? "gpt-realtime-2.1",
     reasoningCell: readEnv("VOICE_REASONING_CELL", "low"),

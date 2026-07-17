@@ -68,6 +68,7 @@ export async function POST(request: NextRequest) {
       parsed.data.intent,
       deviceProfile,
       variantId,
+      deploymentEnvironment,
     );
     timings.openai_mint = performance.now() - mintStartedAt;
     const review = createVoiceReviewCredentials();
