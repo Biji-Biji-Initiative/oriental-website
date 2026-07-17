@@ -1,0 +1,32 @@
+name: oriental-landscape-email-visibility
+description: Focused merge gate for the live short-landscape email action clipping fix
+
+documents:
+  readme: docs/12-CHAT-RELEASE-RUNBOOK.md
+  spec: .apr/specs/oriental-landscape-email-visibility.md
+  implementation: .apr/evidence/oriental-landscape-email-visibility.patch
+
+oracle:
+  model: "gemini-3.1-pro"
+
+rounds:
+  output_dir: .apr/rounds/oriental-landscape-email-visibility
+  impl_every_n: 1
+
+template: |
+  Perform an adversarial focused merge review of the live short-landscape email
+  action visibility fix. Verify the entire editor becomes visible on focus and
+  blur, the strict ratio-1 and 44x44 assertions remain meaningful, breakpoint
+  focus and validation behavior are preserved, and the patch cannot introduce
+  focus theft, scroll loops, or horizontal overflow. Give a substantive review
+  of at least 500 words before the verdict. End with exactly
+  `VERDICT: MERGE LANDSCAPE EMAIL FIX.` or `VERDICT: DO NOT MERGE.`.
+
+template_with_impl: |
+  Perform an adversarial focused merge review against the attached exact
+  one-file patch. Verify the entire editor becomes visible on focus and blur,
+  the strict ratio-1 and 44x44 assertions remain meaningful, breakpoint focus
+  and validation behavior are preserved, and the patch cannot introduce focus
+  theft, scroll loops, or horizontal overflow. Give a substantive review of at
+  least 500 words before the verdict. End with exactly
+  `VERDICT: MERGE LANDSCAPE EMAIL FIX.` or `VERDICT: DO NOT MERGE.`.
