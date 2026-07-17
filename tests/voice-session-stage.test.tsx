@@ -31,8 +31,12 @@ describe("VoiceSessionStage", () => {
     const caption = container.querySelector<HTMLElement>("[data-voice-stage-caption]");
     const action = container.querySelector<HTMLElement>("[data-voice-primary-action]");
     const composer = container.querySelector<HTMLElement>("[data-voice-stage-composer]");
-    if (!caption || !action || !composer) throw new Error("Listening stage is incomplete");
+    const orb = container.querySelector<HTMLElement>("[data-voice-stage-orb]");
+    if (!caption || !action || !composer || !orb) throw new Error("Listening stage is incomplete");
 
+    expect(orb).toHaveAttribute("data-renderer", "production-orb");
+    expect(orb.querySelector(".voice-orb__aurora")).toBeInTheDocument();
+    expect(orb.querySelector('[data-nebula-m="true"]')).not.toBeInTheDocument();
     expect(caption).toHaveTextContent("A live answer that remains visible while Reka is speaking.");
     expect(caption).toHaveAttribute("aria-hidden", "true");
     expect(caption.compareDocumentPosition(action) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

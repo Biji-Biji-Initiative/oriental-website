@@ -316,6 +316,297 @@ describe("reduceRealtimeServerEvent", () => {
     expect(result.emailVerification).toEqual({ value: "new@example.com", source: "typed", status: "confirmed" });
   });
 
+  it.each([
+    "Actually, old@example.com is not my email.",
+    "My email isn’t old@example.com.",
+    "My email isn't old@example.com.",
+    "old@example.com is not the right email.",
+    "old@example.com isn’t the one.",
+    "old@example.com is not my email.",
+    "No, old@example.com is not my email.",
+    "old@example.com, that’s someone else’s.",
+    "old@example.com, that’s outdated.",
+    "old@example.com, it doesn’t belong to me.",
+    "old@example.com, don’t use that one.",
+    "old@example.com, forget that.",
+    "old@example.com? no, wrong one.",
+    "old@example.com used to be mine.",
+    "old@example.com belongs to my colleague.",
+    "old@example.com is the project manager’s email.",
+    "old@example.com, that’s the support address.",
+    "old@example.com, that belongs to my company.",
+  ])("revokes every explicit direct, anaphoric, historical, or third-party reassignment: %s", (correction) => {
+    const result = appendTypedUserMessage(
+      state({
+        captured: { ...emptyCapturedLead, email: "old@example.com" },
+        emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+      }),
+      correction,
+    );
+
+    expect(result.captured.email).toBe("");
+    expect(result.emailVerification).toBeUndefined();
+  });
+
+  it.each([
+    "Actually, other@example.com is not my email.",
+    "Actually, other@example.com isn’t my email.",
+  ])("never selects a rejected different address and preserves unrelated authority: %s", (correction) => {
+    const result = appendTypedUserMessage(
+      state({
+        captured: { ...emptyCapturedLead, email: "seed@example.net" },
+        emailVerification: { value: "seed@example.net", source: "typed", status: "confirmed" },
+      }),
+      correction,
+    );
+
+    expect(result.captured.email).toBe("seed@example.net");
+    expect(result.emailVerification).toEqual({
+      value: "seed@example.net",
+      source: "typed",
+      status: "confirmed",
+    });
+  });
+
+  it.each([
+    "Both first@example.com and second@example.com are mine.",
+    "My emails are first@example.com and second@example.com.",
+  ])("clears stale authority when the visitor supplies competing owned addresses: %s", (correction) => {
+    const result = appendTypedUserMessage(
+      state({
+        captured: { ...emptyCapturedLead, email: "old@example.com" },
+        emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+      }),
+      correction,
+    );
+
+    expect(result.captured.email).toBe("");
+    expect(result.emailVerification).toBeUndefined();
+  });
+
+  it.each([
+    "The project manager email is other@example.com.",
+    "The client success manager email is other@example.com.",
+  ])("ignores a multiword role-owned address: %s", (correction) => {
+    const result = appendTypedUserMessage(
+      state({
+        captured: { ...emptyCapturedLead, email: "old@example.com" },
+        emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+      }),
+      correction,
+    );
+
+    expect(result.captured.email).toBe("old@example.com");
+    expect(result.emailVerification).toEqual({
+      value: "old@example.com",
+      source: "typed",
+      status: "confirmed",
+    });
+  });
+
+  it.each([
+    "Finance email is finance@example.com.",
+    "The finance team email is finance@example.com.",
+    "Support team email is support@example.com.",
+    "The support desk email is support@example.com.",
+    "Supplier contact email is supplier@example.com.",
+    "The vendor email is vendor@example.com.",
+    "The customer success email is cs@example.com.",
+    "The press email is press@example.com.",
+    "The accounts receivable email is ar@example.com.",
+    "The procurement email is procurement@example.com.",
+    "The operations team email is ops@example.com.",
+    "The events desk email is events@example.com.",
+    "The partnerships team email is partners@example.com.",
+    "The community department email is community@example.com.",
+    "The venue contact email is venue@example.com.",
+    "The general enquiries email is hello@example.com.",
+  ])("ignores a department, desk, or vendor-owned address: %s", (correction) => {
+    const result = appendTypedUserMessage(
+      state({
+        captured: { ...emptyCapturedLead, email: "old@example.com" },
+        emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+      }),
+      correction,
+    );
+
+    expect(result.captured.email).toBe("old@example.com");
+    expect(result.emailVerification).toEqual({ value: "old@example.com", source: "typed", status: "confirmed" });
+  });
+
+  it.each([
+    "My email is new@example.com; finance email is finance@example.com.",
+    "My email is new@example.com; the finance team email is finance@example.com.",
+    "My email is new@example.com; support team email is support@example.com.",
+    "My email is new@example.com; the support desk email is support@example.com.",
+    "My email is new@example.com; supplier contact email is supplier@example.com.",
+    "My email is new@example.com; the vendor email is vendor@example.com.",
+    "My email is new@example.com; the customer success email is cs@example.com.",
+    "My email is new@example.com; the press email is press@example.com.",
+    "My email is new@example.com; the accounts receivable email is ar@example.com.",
+    "My email is new@example.com; the procurement email is procurement@example.com.",
+    "My email is new@example.com; the operations team email is ops@example.com.",
+    "My email is new@example.com; the events desk email is events@example.com.",
+    "My email is new@example.com; the partnerships team email is partners@example.com.",
+    "My email is new@example.com; the community department email is community@example.com.",
+    "My email is new@example.com; the venue contact email is venue@example.com.",
+    "My email is new@example.com; the general enquiries email is hello@example.com.",
+  ])("selects the visitor address beside a department, desk, or vendor aside: %s", (correction) => {
+    const result = appendTypedUserMessage(
+      state({
+        captured: { ...emptyCapturedLead, email: "old@example.com" },
+        emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+      }),
+      correction,
+    );
+
+    expect(result.captured.email).toBe("new@example.com");
+    expect(result.emailVerification).toEqual({ value: "new@example.com", source: "typed", status: "confirmed" });
+  });
+
+  it.each([
+    "I used to use old2@example.com.",
+    "Previously, my email was old2@example.com.",
+  ])("keeps an explicitly historical different address irrelevant: %s", (correction) => {
+    const result = appendTypedUserMessage(
+      state({
+        captured: { ...emptyCapturedLead, email: "old@example.com" },
+        emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+      }),
+      correction,
+    );
+
+    expect(result.captured.email).toBe("old@example.com");
+    expect(result.emailVerification).toEqual({
+      value: "old@example.com",
+      source: "typed",
+      status: "confirmed",
+    });
+  });
+
+  it.each([
+    "new@example.com belongs to me.",
+    "This address is mine: new@example.com.",
+    "new@example.com is the one.",
+    "The email belonging to me is new@example.com.",
+    "The one to use is new@example.com.",
+    "It should be new@example.com.",
+    "Use my team email new@example.com.",
+    "Please use my team email new@example.com.",
+    "Use my operations team email new@example.com.",
+    "Use my department email new@example.com.",
+    "Please use this contact email new@example.com.",
+    "That is my department email new@example.com.",
+  ])("accepts an unambiguous direct ownership assertion: %s", (correction) => {
+    const result = appendTypedUserMessage(
+      state({
+        captured: { ...emptyCapturedLead, email: "old@example.com" },
+        emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+      }),
+      correction,
+    );
+
+    expect(result.captured.email).toBe("new@example.com");
+    expect(result.emailVerification).toEqual({ value: "new@example.com", source: "typed", status: "confirmed" });
+  });
+
+  it.each([
+    "old@example.com, that’s the email to use.",
+    "old@example.com, that’s the email I want.",
+    "old@example.com, that’s the email, yes.",
+    "old@example.com, that’s the contact email.",
+  ])("preserves an address followed by an affirmative anaphoric description: %s", (correction) => {
+    const result = appendTypedUserMessage(
+      state({
+        captured: { ...emptyCapturedLead, email: "old@example.com" },
+        emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+      }),
+      correction,
+    );
+
+    expect(result.captured.email).toBe("old@example.com");
+    expect(result.emailVerification).toEqual({ value: "old@example.com", source: "typed", status: "confirmed" });
+  });
+
+  it.each([
+    "Change the email from old@example.com to new@example.com.",
+    "Update my email from old@example.com to new@example.com.",
+    "new@example.com should replace old@example.com.",
+    "new@example.com replaces old@example.com.",
+    "Swap old@example.com for new@example.com.",
+    "old@example.com should become new@example.com.",
+    "Move from old@example.com to new@example.com.",
+    "Make it new@example.com instead of old@example.com.",
+  ])("accepts a unique replacement target across natural command syntax: %s", (correction) => {
+    const result = appendTypedUserMessage(
+      state({
+        captured: { ...emptyCapturedLead, email: "old@example.com" },
+        emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+      }),
+      correction,
+    );
+
+    expect(result.captured.email).toBe("new@example.com");
+    expect(result.emailVerification).toEqual({ value: "new@example.com", source: "typed", status: "confirmed" });
+  });
+
+  it.each([
+    "My email is new@example.com; other@example.com is the project manager’s email.",
+    "My email is new@example.com; the project manager email is other@example.com.",
+  ])("selects the visitor address beside a multiword role-owned address: %s", (correction) => {
+    const result = appendTypedUserMessage(
+      state({
+        captured: { ...emptyCapturedLead, email: "old@example.com" },
+        emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+      }),
+      correction,
+    );
+
+    expect(result.captured.email).toBe("new@example.com");
+    expect(result.emailVerification).toEqual({ value: "new@example.com", source: "typed", status: "confirmed" });
+  });
+
+  it.each([
+    "Use first@example.com or second@example.com; choose second@example.com.",
+    "Either first@example.com or second@example.com works; choose second@example.com.",
+    "Either first@example.com or second@example.com works; actually use second@example.com.",
+  ])("accepts one explicit final choice after alternatives: %s", (correction) => {
+    const result = appendTypedUserMessage(
+      state({
+        captured: { ...emptyCapturedLead, email: "old@example.com" },
+        emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+      }),
+      correction,
+    );
+
+    expect(result.captured.email).toBe("second@example.com");
+    expect(result.emailVerification).toEqual({
+      value: "second@example.com",
+      source: "typed",
+      status: "confirmed",
+    });
+  });
+
+  it.each([
+    "My email is other@example.com, but that’s my colleague’s email.",
+    "My email is other@example.com, but it is my old email.",
+    "My email is other@example.com; that’s just an example.",
+    "My email is other@example.com; that’s the website address.",
+    "My email is other@example.com, but that’s the support address.",
+    "My email is other@example.com; that belongs to finance.",
+  ])("fails closed when a visitor declaration is reclassified later in the same turn: %s", (correction) => {
+    const result = appendTypedUserMessage(
+      state({
+        captured: { ...emptyCapturedLead, email: "seed@example.net" },
+        emailVerification: { value: "seed@example.net", source: "typed", status: "confirmed" },
+      }),
+      correction,
+    );
+
+    expect(result.captured.email).toBe("");
+    expect(result.emailVerification).toBeUndefined();
+  });
+
   it("does not select the first address from an unresolved visitor declaration", () => {
     const result = appendTypedUserMessage(state(), "My email is first@example.com or second@example.com.");
     expect(result.captured.email).toBe("");

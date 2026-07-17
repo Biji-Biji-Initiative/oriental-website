@@ -24,3 +24,7 @@ export function isBrandMotionPreviewHost(hostname: string) {
     normalized === "::1"
   );
 }
+
+export function isBrandMotionPreviewEnabled(buildFlag: boolean, hostname: string) {
+  return buildFlag && isBrandMotionPreviewHost(hostname);
+}
