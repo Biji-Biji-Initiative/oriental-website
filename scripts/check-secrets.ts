@@ -59,6 +59,9 @@ const managedEnvironment = [
   "COOLIFY_ORIENTAL_APPLICATION_UUID",
   "CONVEX_DEPLOY_KEY",
   "SENTRY_AUTH_TOKEN",
+  "EVAL_JUDGE_MODEL",
+  "NEXT_PUBLIC_GA_MEASUREMENT_ID",
+  "NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION",
 ];
 
 const supportedRealtimeVoices = new Set([

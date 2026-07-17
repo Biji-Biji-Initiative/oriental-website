@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { VoiceVariantPicker } from "@/components/voice-agent/VoiceVariantPicker";
+import { GoogleAnalytics } from "./GoogleAnalytics";
 import { SiteNav } from "./SiteNav";
 import { VoiceRail } from "./VoiceRail";
 
@@ -11,6 +12,7 @@ export function PublicChrome() {
 
   return (
     <>
+      <GoogleAnalytics />
       <SiteNav />
       <VoiceRail />
       <VoiceVariantPicker />
