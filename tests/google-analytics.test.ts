@@ -3,6 +3,7 @@ import {
   analyticsPageLocation,
   isAnalyticsConsent,
   isGaMeasurementId,
+  isGoogleAnalyticsCookieName,
   shouldTrackPath,
 } from "@/components/site/GoogleAnalytics";
 
@@ -35,6 +36,12 @@ describe("GA4 path tracking guard", () => {
     expect(isGaMeasurementId("G-ABC123DEF4")).toBe(true);
     expect(isGaMeasurementId("UA-123")).toBe(false);
     expect(isGaMeasurementId("G-ABC';alert(1)//")).toBe(false);
+  });
+
+  it("recognizes only GA first-party cookies for consent withdrawal", () => {
+    expect(isGoogleAnalyticsCookieName("_ga")).toBe(true);
+    expect(isGoogleAnalyticsCookieName("_ga_ABC123")).toBe(true);
+    expect(isGoogleAnalyticsCookieName("oriental_voice_variant")).toBe(false);
   });
 
   it("never includes query strings or fragments in page locations", () => {

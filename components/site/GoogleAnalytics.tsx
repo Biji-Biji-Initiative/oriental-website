@@ -33,6 +33,10 @@ export function isGaMeasurementId(value: string) {
   return /^G-[A-Z0-9]{4,16}$/.test(value);
 }
 
+export function isGoogleAnalyticsCookieName(name: string) {
+  return name === "_ga" || name.startsWith("_ga_");
+}
+
 export function analyticsPageLocation(origin: string, pathname: string) {
   return `${origin}${pathname}`;
 }
@@ -50,6 +54,7 @@ export function GoogleAnalytics() {
   useEffect(() => {
     const stored = readStoredConsent();
     setConsent(isAnalyticsConsent(stored) ? stored : null);
+    if (stored === "denied") clearAnalyticsCookies();
 
     const syncConsent = (event: Event) => {
       const next = (event as CustomEvent<AnalyticsConsent>).detail;
@@ -119,6 +124,7 @@ gtag('config', '${measurementId}', {
 function AnalyticsConsentPrompt({ onConsent }: { onConsent: (consent: AnalyticsConsent) => void }) {
   function choose(consent: AnalyticsConsent) {
     writeStoredConsent(consent);
+    if (consent === "denied") clearAnalyticsCookies();
     onConsent(consent);
   }
 
@@ -171,6 +177,7 @@ export function AnalyticsConsentSettings() {
     if (next === "denied" && window.gtag) {
       window.gtag("consent", "update", { analytics_storage: "denied" });
     }
+    if (next === "denied") clearAnalyticsCookies();
   }
 
   return (
@@ -214,5 +221,21 @@ function writeStoredConsent(consent: AnalyticsConsent) {
   } catch {
     // Storage can be unavailable in hardened browsers. The in-memory choice
     // still applies for this page; the next visit fails closed and asks again.
+  }
+}
+
+function clearAnalyticsCookies() {
+  const names = document.cookie
+    .split(";")
+    .map((part) => part.trim().split("=")[0] ?? "")
+    .filter(isGoogleAnalyticsCookieName);
+  const registrableDomain = window.location.hostname.split(".").slice(-2).join(".");
+  for (const name of names) {
+    // biome-ignore lint/suspicious/noDocumentCookie: explicit consent withdrawal must expire GA's first-party cookies
+    document.cookie = `${name}=; Path=/; Max-Age=0; SameSite=Lax`;
+    if (registrableDomain.includes(".")) {
+      // biome-ignore lint/suspicious/noDocumentCookie: cover GA cookies scoped to the parent site domain
+      document.cookie = `${name}=; Path=/; Domain=.${registrableDomain}; Max-Age=0; SameSite=Lax`;
+    }
   }
 }
