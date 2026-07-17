@@ -4,12 +4,16 @@ import { CornerDownLeftIcon, SearchIcon } from "lucide-react";
 import { type KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Dialog, DialogClose, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 
+const GROUP_ORDER = ["Views", "Jump to", "Enquiries", "Voice sessions"] as const;
+
+export type AdminPaletteGroup = (typeof GROUP_ORDER)[number];
+
 export type AdminPaletteItem = {
   id: string;
   label: string;
   hint?: string;
   href: string;
-  group: string;
+  group: AdminPaletteGroup;
   keywords?: string;
 };
 
@@ -79,8 +83,6 @@ const VIEW_ITEMS: AdminPaletteItem[] = [
     keywords: "accounts organizations owners workload",
   },
 ];
-
-const GROUP_ORDER = ["Views", "Jump to", "Leads", "Voice sessions"];
 
 function scoreItem(item: AdminPaletteItem, query: string) {
   const q = query.trim().toLowerCase();

@@ -182,7 +182,7 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
 }
 
 function buildPaletteItems(data: DashboardData): AdminPaletteItem[] {
-  const leads = data.leads.slice(0, 40).map((lead) => ({
+  const leads = data.leads.slice(0, 40).map<AdminPaletteItem>((lead) => ({
     id: `lead-${lead.leadId}`,
     label: lead.name || lead.email || "Unnamed enquiry",
     hint: [lead.email, lead.org, normalizeAdminLeadStatus(lead.status)].filter(Boolean).join(" · "),
@@ -190,7 +190,7 @@ function buildPaletteItems(data: DashboardData): AdminPaletteItem[] {
     group: "Enquiries",
     keywords: [lead.owner, lead.routedTo, lead.segment, lead.source].filter(Boolean).join(" "),
   }));
-  const sessions = data.voiceSessions.slice(0, 25).map((session) => ({
+  const sessions = data.voiceSessions.slice(0, 25).map<AdminPaletteItem>((session) => ({
     id: `voice-${session.reviewId}`,
     label: session.captured.name || session.captured.email || `Session ${session.reviewId.slice(0, 8)}`,
     hint: [session.captured.email, session.segment, session.leadId ? "submitted" : session.status]

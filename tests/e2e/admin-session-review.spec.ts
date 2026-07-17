@@ -249,6 +249,21 @@ test.describe("admin session review console", () => {
     await expect(signOut).toBeFocused();
   });
 
+  test("finds a fixture enquiry in the command palette and opens its CRM record", async ({ page }) => {
+    await page.getByRole("button", { name: "Search the admin console" }).click();
+
+    const dialog = page.getByRole("dialog", { name: "Search the admin console" });
+    await dialog.getByRole("textbox", { name: "Search the admin console" }).fill("Aisha Rahman");
+    await expect(dialog.getByText("Enquiries", { exact: true })).toBeVisible();
+
+    const result = dialog.getByRole("button", { name: /Aisha Rahman.*Impact Robotics Lab/ });
+    await expect(result).toBeVisible();
+    await result.click();
+
+    await expect(page).toHaveURL(/view=leads.*lead=lead-critical-1.*#crm-record/);
+    await expect(page.locator("#crm-record").getByRole("heading", { name: "Aisha Rahman" })).toBeVisible();
+  });
+
   test("shows account portfolio and owner workload as CRM tables", async ({ page }, testInfo) => {
     await page.goto("/admin/session-review?view=leads");
     await expect(page.getByRole("heading", { name: "Account portfolio & ownership" })).toBeVisible();
