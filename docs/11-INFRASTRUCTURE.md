@@ -116,10 +116,13 @@ at build time as well, and reads back exact value/scope parity before it may
 change the release SHA. An absent injected value is never implicit retirement:
 the deployer stops before writes unless that key is already empty/absent or is
 listed in the code-reviewed `RETIRED_MANAGED_APPLICATION_ENVIRONMENT_KEYS` set.
+Add the tombstone in the same PR that removes the native Infisical value and
+retain it as durable ownership history; a later source value safely overrides
+the tombstone.
 Infisical exports are materialized as Coolify literal values, so `$...` inside a
-concrete secret cannot be expanded a second time. Its Coolify token needs scoped `read:sensitive`,
-`write`, and `deploy` permissions; values are never written to process arguments
-or logs.
+concrete secret cannot be expanded a second time. Its Coolify token needs scoped
+`read:sensitive`, `write`, and `deploy` permissions; values are never written to
+process arguments or logs.
 
 `pnpm release:verify:voice-cell` is the fast, non-secret parity check. Run it
 under `infisical run` with `--model-cell candidate` for native staging and

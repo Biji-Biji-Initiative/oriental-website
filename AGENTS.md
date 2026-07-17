@@ -178,6 +178,8 @@ before any deployment. For runtime work:
    Production never infers retirement from an absent process value: a removed
    managed key must be declared in the reviewed
    `RETIRED_MANAGED_APPLICATION_ENVIRONMENT_KEYS` set before it may be cleared.
+   Add that tombstone in the same PR that removes the Infisical value and retain
+   it as ownership history; a later reintroduced Infisical value safely wins.
 
 Do not force an application rebuild for a docs/operator-only commit with no
 runtime impact. Do not create late cleanup PRs after the final-SHA freeze; if a

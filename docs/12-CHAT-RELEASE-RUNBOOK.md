@@ -54,7 +54,10 @@ cannot affect the runtime image.
   `RETIRED_MANAGED_APPLICATION_ENVIRONMENT_KEYS`; missing injection never
   authorizes clearing a live value. Concrete Infisical values are written as
   Coolify literals and their effective value plus multiline/runtime/build scope
-  is read back exactly. `NEXT_PUBLIC_*` keys are also build-time values. The Coolify credential
+  is read back exactly. Add a retirement tombstone in the same reviewed PR that
+  removes the native Infisical value and retain it as ownership history; a
+  later reintroduced source value wins safely. `NEXT_PUBLIC_*` keys are also
+  build-time values. The Coolify credential
   therefore needs scoped `read:sensitive`, `write`, and `deploy` access; values
   are never written to process arguments or logs.
 - Production voice MUST remain `baseline/control/low/adaptive`. A staging-only
