@@ -17,7 +17,10 @@ const RELEASE_TEST_ENV_ALLOWLIST = [
  * while live notification and routing settings can bypass test fixtures.
  */
 export function releaseTestEnv(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { NODE_ENV: "test" };
+  const env: NodeJS.ProcessEnv = {
+    NODE_ENV: "test",
+    NODE_OPTIONS: "--no-experimental-webstorage",
+  };
   for (const key of RELEASE_TEST_ENV_ALLOWLIST) {
     const value = source[key];
     if (value !== undefined) env[key] = value;
