@@ -40,6 +40,7 @@ import {
 import {
   buildVoiceReviewSnapshot,
   postVoiceReviewSnapshot,
+  resolveVoiceReviewPageLifecycleAction,
   type VoiceReviewCredentials,
 } from "@/lib/voice/review-snapshot";
 import { DEFAULT_VOICE_VARIANT_ID, VOICE_VARIANTS } from "@/lib/voice/variants";
@@ -67,6 +68,8 @@ import { readTunerFlag } from "./voice-tuner";
 // How often a live call persists a full review snapshot, so state survives even
 // when the final close snapshot is lost to a tab close or network drop.
 const VOICE_HEARTBEAT_INTERVAL_MS = 12_000;
+type VoiceReviewSnapshotOverrides = NonNullable<Parameters<typeof buildVoiceReviewSnapshot>[3]>;
+type VoiceReviewCloseReason = NonNullable<VoiceReviewSnapshotOverrides["closeReason"]>;
 
 type VoiceAgentDialogProps = {
   open: boolean;
@@ -113,7 +116,8 @@ export function VoiceAgentDialog({
     null,
   );
   const connectionStatusRef = useRef<VoiceConnectionStatus>("idle");
-  const postCloseSnapshotRef = useRef<((reason: VoiceCloseReason) => void) | null>(null);
+  const postCloseSnapshotRef = useRef<((reason: VoiceReviewCloseReason) => void) | null>(null);
+  const terminalSnapshotReviewIdRef = useRef<string | null>(null);
   const recordToolDurationRef = useRef<
     ((sample: { at: number; durationMs: number; name: VoiceToolName; outcome: VoiceToolOutcome }) => void) | null
   >(null);
@@ -371,6 +375,7 @@ export function VoiceAgentDialog({
     reviewRef.current = null;
     setReviewMetadata(null);
     localReviewRef.current = null;
+    terminalSnapshotReviewIdRef.current = null;
     if (prefill?.mode === "form") {
       // Hero email capture opens in form intent: land the cursor on the name field.
       const timer = window.setTimeout(() => formRef.current?.setFocus("name"), 80);
@@ -468,7 +473,10 @@ export function VoiceAgentDialog({
   }, [captured, connectionStatus, emailVerification, segment, sendClientEvents]);
 
   const postReviewSnapshot = useCallback(
-    (overrides: Parameters<typeof buildVoiceReviewSnapshot>[3] = {}, options: { allowLocalReview?: boolean } = {}) => {
+    (
+      overrides: Parameters<typeof buildVoiceReviewSnapshot>[3] = {},
+      options: { allowLocalReview?: boolean; keepalive?: boolean } = {},
+    ) => {
       const review =
         options.allowLocalReview === false ? (reviewRef.current ?? localReviewRef.current) : currentReviewCredentials();
       if (!review) return;
@@ -480,13 +488,16 @@ export function VoiceAgentDialog({
           ...overrides,
           ...(leadId ? { leadId } : {}),
         }),
-        { keepalive: Boolean(overrides.closedAt) },
+        { keepalive: options.keepalive ?? Boolean(overrides.closedAt) },
       ).catch(() => null);
     },
     [captured, currentReviewCredentials, segment, stateRef, transcript],
   );
 
-  postCloseSnapshotRef.current = (reason: VoiceCloseReason) => {
+  postCloseSnapshotRef.current = (reason: VoiceReviewCloseReason) => {
+    const review = reviewRef.current ?? localReviewRef.current;
+    if (!review || terminalSnapshotReviewIdRef.current === review.id) return;
+    terminalSnapshotReviewIdRef.current = review.id;
     postReviewSnapshot({ status, closeReason: reason, closedAt: Date.now() }, { allowLocalReview: false });
   };
 
@@ -516,18 +527,41 @@ export function VoiceAgentDialog({
     return () => window.clearInterval(interval);
   }, [open, connectionStatus, postReviewSnapshot, status]);
 
-  // A page unload (tab close / navigation) never runs the normal teardown, so
-  // the close reason and final transport would be lost. Flush one keepalive
-  // snapshot on the way out whenever a call is still live.
+  // Hiding a tab is not a closed call: persist the latest state without
+  // triggering evaluation. A real page exit gets exactly one terminal
+  // snapshot, shared with normal teardown so pagehide + unmount cannot double
+  // score the same review. BFCache pagehide remains non-terminal because the
+  // browser can restore the still-live page.
   useEffect(() => {
     if (!open) return;
-    const flushOnExit = () => {
-      if (connectionStatusRef.current === "idle") return;
-      postReviewSnapshot({ status, closeReason: "page_hidden", closedAt: Date.now() }, { allowLocalReview: false });
+    const terminalSnapshotSent = () => {
+      const review = reviewRef.current ?? localReviewRef.current;
+      return Boolean(review && terminalSnapshotReviewIdRef.current === review.id);
     };
-    const onPageHide = () => flushOnExit();
+    const persistLifecycleSnapshot = (action: "heartbeat" | "terminal") => {
+      if (action === "heartbeat") {
+        postReviewSnapshot({ status }, { allowLocalReview: false, keepalive: true });
+        return;
+      }
+      postCloseSnapshotRef.current?.("page_hidden");
+    };
+    const onPageHide = (event: PageTransitionEvent) => {
+      const action = resolveVoiceReviewPageLifecycleAction({
+        event: "pagehide",
+        connectionStatus: connectionStatusRef.current,
+        pagePersisted: event.persisted,
+        terminalSnapshotSent: terminalSnapshotSent(),
+      });
+      if (action !== "none") persistLifecycleSnapshot(action);
+    };
     const onVisibility = () => {
-      if (document.visibilityState === "hidden") flushOnExit();
+      const action = resolveVoiceReviewPageLifecycleAction({
+        event: "visibilitychange",
+        connectionStatus: connectionStatusRef.current,
+        visibilityState: document.visibilityState,
+        terminalSnapshotSent: terminalSnapshotSent(),
+      });
+      if (action !== "none") persistLifecycleSnapshot(action);
     };
     window.addEventListener("pagehide", onPageHide);
     document.addEventListener("visibilitychange", onVisibility);

@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { emptyCapturedLead, type VoiceRuntimeState } from "@/lib/voice/realtime-events";
-import { buildVoiceReviewSnapshot, postVoiceReviewSnapshot } from "@/lib/voice/review-snapshot";
+import {
+  buildVoiceReviewSnapshot,
+  postVoiceReviewSnapshot,
+  resolveVoiceReviewPageLifecycleAction,
+} from "@/lib/voice/review-snapshot";
 
 const review = {
   id: "5a8c25b1-cd50-4e47-89bf-84947c805add",
@@ -49,6 +53,49 @@ function state(overrides: Partial<VoiceRuntimeState> = {}): VoiceRuntimeState {
 }
 
 describe("voice review snapshots", () => {
+  it("keeps tab hiding non-terminal and makes a real page exit one-shot", () => {
+    expect(
+      resolveVoiceReviewPageLifecycleAction({
+        event: "visibilitychange",
+        connectionStatus: "listening",
+        visibilityState: "hidden",
+        terminalSnapshotSent: false,
+      }),
+    ).toBe("heartbeat");
+    expect(
+      resolveVoiceReviewPageLifecycleAction({
+        event: "pagehide",
+        connectionStatus: "listening",
+        pagePersisted: true,
+        terminalSnapshotSent: false,
+      }),
+    ).toBe("heartbeat");
+    expect(
+      resolveVoiceReviewPageLifecycleAction({
+        event: "pagehide",
+        connectionStatus: "listening",
+        pagePersisted: false,
+        terminalSnapshotSent: false,
+      }),
+    ).toBe("terminal");
+    expect(
+      resolveVoiceReviewPageLifecycleAction({
+        event: "pagehide",
+        connectionStatus: "listening",
+        pagePersisted: false,
+        terminalSnapshotSent: true,
+      }),
+    ).toBe("none");
+    expect(
+      resolveVoiceReviewPageLifecycleAction({
+        event: "visibilitychange",
+        connectionStatus: "idle",
+        visibilityState: "hidden",
+        terminalSnapshotSent: false,
+      }),
+    ).toBe("none");
+  });
+
   it("builds a persisted review snapshot from runtime state", () => {
     expect(
       buildVoiceReviewSnapshot(review, state({ routeRequested: true }), "listening", {

@@ -9,6 +9,20 @@ import type { VoiceTransportTelemetry } from "@/lib/voice/transport-telemetry";
 type VoiceReviewConnectionStatus = VoiceReviewSnapshotRequest["snapshot"]["connectionStatus"];
 type VoiceReviewStatus = VoiceReviewSnapshotRequest["snapshot"]["status"];
 
+export type VoiceReviewPageLifecycleAction = "none" | "heartbeat" | "terminal";
+
+export function resolveVoiceReviewPageLifecycleAction(input: {
+  event: "pagehide" | "visibilitychange";
+  connectionStatus: VoiceReviewConnectionStatus;
+  visibilityState?: DocumentVisibilityState;
+  pagePersisted?: boolean;
+  terminalSnapshotSent: boolean;
+}): VoiceReviewPageLifecycleAction {
+  if (input.connectionStatus === "idle" || input.terminalSnapshotSent) return "none";
+  if (input.event === "visibilitychange") return input.visibilityState === "hidden" ? "heartbeat" : "none";
+  return input.pagePersisted ? "heartbeat" : "terminal";
+}
+
 export type VoiceReviewCredentials = VoiceReviewSnapshotRequest["review"] & {
   sessionId?: string;
   model?: string;
