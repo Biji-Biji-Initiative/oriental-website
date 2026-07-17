@@ -2,9 +2,9 @@
 
 ## Exact candidate and live boundary
 
-- Candidate implementation: `d8e18b7c88a6c398b1541bdec0f8aed2b4e77f08`.
-- Base: `b0b0d83c7499ea4ed470430e8e3cfa80ab7bd68e` (`origin/main`).
-- The candidate implementation is eight commits ahead and zero commits behind
+- Candidate implementation: `b9ed899442eef01a19104b918b3534a73f1d795e`.
+- Base: `82b95bf97cd53dbb68687f557dd06c064947415b` (`origin/main`).
+- The candidate implementation is eleven commits ahead and zero commits behind
   main; the following evidence-only commit does not alter runtime code.
 - `pnpm --silent ops:status --json` on 2026-07-17 reported both canonical
   environments healthy on the unchanged base SHA. Production reported
@@ -28,19 +28,22 @@
   picker-on while staging baseline and production require picker-off.
 - `lib/voice/realtime-events.ts` combines main's authoritative-email response
   binding with exact/high auto-confirmation, approximate/medium readback,
-  literal mismatch rejection, bounded exact-readback parsing, explicit
-  replacement, full clear-all, and item-ID tombstones.
+  literal mismatch rejection, unique authorized correction selection,
+  whole-turn exact-readback parsing, explicit replacement, full clear-all, and
+  bounded fail-closed item-ID tombstones.
 - `lib/voice/profile.ts`, `components/voice-agent/voice-dialog-copy.ts`, and the
   operator copy identify Mereka as the team and Oriental Building as the place,
   and remove the repeated "quick one" phrase.
 - `lib/eval/voice-eval.ts` and `scripts/eval-voice.ts` add PII-free
   integrity/style counters and fully attributed experiment grouping. The
-  harness enriches only missing bulk-query attribution through the already
-  deployed read-only `voiceSessionByReviewId` function with bounded
-  concurrency; no shared Convex function deploy is required. Missing, invalid,
-  or unavailable attribution now fails the evaluator closed. Experiment proof
-  requires one complete control voice-profile baseline, rejects voice/speed
-  drift even when `variant` is null, and preserves mixed-profile reconnects.
+  harness enriches missing render attribution through the already deployed
+  read-only `voiceSessionByReviewId` query and compares corrections to the
+  immutable routed lead through the existing bounded `adminLeadTable` query;
+  no shared Convex function deploy is required. Missing, invalid, ambiguous, or
+  unavailable attribution fails closed at the default zero-tolerance capture
+  gate. Experiment proof requires one complete control voice-profile baseline
+  and rejects reconnect drift across environment, runtime, input policy, model,
+  reasoning, variant, voice, or speed before aggregation.
 - `lib/server/convex.ts` preserves the complete staging snapshot against the
   deployed legacy validator. The API logs canonical `clear_fields` before
   persistence, while the durable wire sample uses the compatible
@@ -50,13 +53,14 @@
 
 ## Executed evidence on the rebased candidate
 
-- `pnpm test`: 61 files, 626 tests passed.
-- Focused reducer/session/fuzz proof: 3 files, 257 tests passed.
-- `pnpm lint`: 233 files clean.
+- `pnpm test`: 63 files, 670 tests passed.
+- Focused realtime/fuzz/notification proof: 289 tests passed.
+- Focused evaluator matrix: 5 files, 99 tests passed.
+- `pnpm lint`: 237 files clean.
 - `pnpm typecheck`: passed.
 - `pnpm build`: passed, including Next.js route generation.
 - `pnpm test:e2e`: 38 passed; 38 token-gated admin cases skipped as designed.
-- `pnpm test:performance`: mobile performance budget passed with 516 ms LCP,
+- `pnpm test:performance`: mobile performance budget passed with 368 ms LCP,
   zero CLS, and zero serious/critical accessibility violations.
 - Managed Infisical contracts passed in both environments with production-mode
   secret validation. Staging is candidate/picker-on; production is
@@ -91,6 +95,21 @@
   rejection event; and attribution/confound validation fails closed. The
   post-fix focused matrix passed 78 tests, including query failure, missing
   profile, candidate-only baseline, voice/speed drift, and mixed reconnects.
+- APR round 2 ran hermetically on canonical host `g` against exact PR head
+  `0562883b9c06bf1917d9e56959fa6421c2b09058`, base
+  `b0b0d83c7499ea4ed470430e8e3cfa80ab7bd68e`, and complete patch SHA-256
+  `fcdb7e50073a8fade4235b618eedb9caac0c51e263166375dab6eaee4e9bbe63`.
+  Its authoritative saved result has SHA-256
+  `98331c926352ad8ef0bc296af5925bb3efd4c8b8daed94c316688d4ccb80310a`
+  and `VERDICT: DO NOT MERGE`. The candidate closes all seven findings:
+  contradicted and competing literals fail closed; contaminated readbacks
+  cannot confirm; immutable routed-email attribution recognizes spoken
+  corrections; every full reconnect experiment profile is fenced; settled and
+  evicted transcript IDs stay retired; the audio envelope learns the complete
+  bounded signal range while recovering quiet speech after environment changes;
+  and email, Slack, and ClickUp operator copy consistently says Mereka at
+  Oriental. Independent adversarial replays plus the full matrix above are
+  green after integrating current `origin/main`.
 
 ## Remaining post-merge gates
 
