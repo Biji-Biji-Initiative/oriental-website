@@ -56,6 +56,19 @@ Start every new operator or agent session with:
 pnpm --silent ops:status --json
 ```
 
+When fresh Convex evidence is needed without creating a local transcript-bearing
+artifact or writing judge results, run:
+
+```bash
+pnpm eval:voice -- --aggregate-only --limit 100
+```
+
+This mode performs only the Convex evaluation query, excludes synthetic smoke
+rows, disables the LLM judge and Convex mutations, writes no report, and emits a
+single aggregate/gate JSON document. It omits transcripts, contact data, session
+identifiers, and identifier-bearing attention lists. `--persist` and `--out` are
+rejected in this mode.
+
 The command fetches and computes local/main Git state, both public health SHAs,
 the non-secret live voice cells, branches and PRs containing deployed SHAs,
 open PRs/issues, manual gates with owners, the latest checked-in APR verdict,
