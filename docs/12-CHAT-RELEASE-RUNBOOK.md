@@ -53,13 +53,15 @@ cannot affect the runtime image.
   mutation boundary. Retirement requires a code-reviewed entry in
   `RETIRED_MANAGED_APPLICATION_ENVIRONMENT_KEYS`; missing injection never
   authorizes clearing a live value. Concrete Infisical values are written as
-  Coolify literals and their effective value plus multiline/runtime/build scope
-  is read back exactly. Add a retirement tombstone in the same reviewed PR that
+  Coolify literals. The bulk API must acknowledge every exact write and its
+  multiline/runtime/build scope; values are compared when the token may read
+  them, while locked values remain hidden and are verified in the running
+  container after release. Add a retirement tombstone in the same reviewed PR that
   removes the native Infisical value and retain it as ownership history; a
   later reintroduced source value wins safely. `NEXT_PUBLIC_*` keys are also
-  build-time values. The Coolify credential
-  therefore needs scoped `read:sensitive`, `write`, and `deploy` access; values
-  are never written to process arguments or logs.
+  build-time values. The Coolify credential needs scoped `read`, `write`, and
+  `deploy` access; `read:sensitive` is deliberately unnecessary and values are
+  never written to process arguments or logs.
 - Production voice MUST remain `baseline/control/low/adaptive`. A staging-only
   model trial MUST be explicit, hold runtime/reasoning/capture constant, and
   never imply production promotion.
@@ -278,11 +280,24 @@ OpenAI, Redis, and notification accounts.
    starts the application, and refuses success unless the deployment record and
    public production health both resolve to the full frozen SHA. Before changing
    the SHA, it creates or updates every approved runtime key supplied by the
-   application scope and reads back exact value/scope parity. Public browser
+   application scope, requires an exact bulk-write acknowledgement, and reads
+   back scope parity. Locked values remain hidden from the least-privilege
+   token; inspect the running container against Infisical after the release.
+   Public browser
    keys are enabled at build time as well as runtime. After deployment it also
    requires Coolify `running:healthy`, an enabled health check, and loopback
-   health ownership at `127.0.0.1`. The deploy token must include
-   `read:sensitive`; otherwise parity fails closed without printing values.
+   health ownership at `127.0.0.1`. A terminal deployment may briefly precede
+   application-status/public-health convergence, so the deployer waits up to 90
+   seconds before treating it as a candidate failure.
+   Once the candidate pin is attempted, every later failure automatically
+   cancels a known candidate deployment, re-pins the previous SHA, redeploys
+   it, and proves both Coolify health ownership and the exact public SHA. Lost
+   PATCH or deploy-trigger responses are treated as ambiguous mutations:
+   rollback reads back the pin and safely converges the same previous SHA. If
+   Coolify briefly resolves a stale commit after re-pinning, that rollback
+   deployment is cancelled and retried up to three times. A
+   successfully restored rollback still exits non-zero because the candidate
+   release did not succeed.
 3. Require terminal `finished`; do not infer success from a queued build.
 4. Verify both environments together:
 
@@ -314,8 +329,9 @@ OpenAI, Redis, and notification accounts.
 | Symptom | Required response |
 |---|---|
 | CI fails | Fix in the same PR; do not deploy. |
-| Staging health fails | Diagnose the image/container contract; production remains unchanged. |
-| Coolify candidate health fails | Keep the old container serving; inspect binding, probe host, logs, and runtime env. |
+| Staging health fails | The host deployer restores the timestamped Compose/`.env` pair, recreates the previous image, and proves its public SHA before exiting non-zero. Diagnose the candidate; production remains unchanged. |
+| Coolify candidate health fails | The API deployer re-pins, redeploys, and publicly proves the prior SHA before exiting non-zero. Inspect binding, probe host, logs, and runtime env. |
+| Automatic rollback reports unknown state | Stop. Do not retry. Preserve the printed backup paths and reconcile control-plane, host files, container, and public health ownership manually. |
 | Public SHA differs | Stop. Determine whether the wrong source or image was deployed. |
 | Staging moved before deploy | Stop. Another workflow owns the shared environment; coordinate instead of overwriting it. |
 | Coolify deployment record resolves another commit | Cancel the candidate; production remains on the prior healthy SHA. |
@@ -348,7 +364,10 @@ early convergence and fail-closed checks, not repeated manual verification.
 - Email capture: restore `VOICE_EMAIL_CAPTURE_MODE=strict` to require exact
   readback and explicit confirmation without rolling back the web image.
 - Staging: restore the timestamped Compose/`.env` backup or previous
-  `staging-<sha>` image.
+  `staging-<sha>` image. The host helper performs this automatically for every
+  failure after file mutation and refuses to call it restored until the old
+  image is recreated and the canonical health endpoint reports `ok: true` with
+  the exact previous SHA.
 - Convex: use backward-compatible schema/function changes; never assume an app
   image rollback also rolls back Convex. Additive persisted fields remain
   optional until every supported old web image is retired. Keep compatibility

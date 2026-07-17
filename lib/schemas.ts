@@ -5,6 +5,7 @@ import {
   ADMIN_WORKFLOW_LEAD_STATUSES,
   validateAdminLeadWorkflow,
 } from "@/lib/admin-workflow";
+import { boundTranscript, normalizeStoredEmail } from "@/lib/data-payload";
 import { SEGMENT_IDS } from "@/lib/segments";
 import { SUBMISSION_METHODS, VOICE_ENTRY_METHODS, VOICE_ENTRY_POINTS } from "@/lib/voice/interaction-attribution";
 
@@ -43,7 +44,7 @@ export const transcriptEntrySchema = z.object({
 export const leadFormSchema = z.object({
   // Only a valid email is enforced so the team can follow up; every other field
   // may be left empty to keep the handoff low-friction.
-  email: z.string().trim().email("Use a valid email").max(180),
+  email: z.string().trim().email("Use a valid email").max(180).transform(normalizeStoredEmail),
   name: z.string().trim().max(120),
   org: z.string().trim().max(180),
   phone: z.string().trim().max(60),
@@ -60,7 +61,7 @@ export const leadRequestSchema = z
     fieldProvenance: fieldProvenanceSummarySchema.optional(),
     segment: segmentSchema.default("other"),
     form: leadFormSchema,
-    transcript: z.array(transcriptEntrySchema).max(200).default([]),
+    transcript: z.array(transcriptEntrySchema).max(200).default([]).transform(boundTranscript),
     turnstileToken: z.string().optional(),
     voiceReviewId: z.string().uuid().optional(),
     voiceReviewToken: z.string().min(20).max(500).optional(),
@@ -78,29 +79,49 @@ export const leadRequestSchema = z
     utm: utmSchema,
   })
   .superRefine((lead, context) => {
-    if (!lead.submissionMethod) return;
-    const validPair =
-      (lead.source === "form" && lead.submissionMethod === "handoff_button") ||
-      (lead.source === "voice" &&
-        (lead.submissionMethod === "handoff_button" || lead.submissionMethod === "voice_command"));
-    if (!validPair) {
+    if (lead.submissionMethod) {
+      const validPair =
+        (lead.source === "form" && lead.submissionMethod === "handoff_button") ||
+        (lead.source === "voice" &&
+          (lead.submissionMethod === "handoff_button" || lead.submissionMethod === "voice_command"));
+      if (!validPair) {
+        context.addIssue({
+          code: "custom",
+          message: "Submission method does not match the lead source",
+          path: ["submissionMethod"],
+        });
+      }
+    }
+
+    const claimsVoiceProvenance =
+      lead.fieldProvenance &&
+      Object.values(lead.fieldProvenance).some(
+        (field) =>
+          field.method === "voice" ||
+          field.method === "chat" ||
+          field.method === "mixed" ||
+          field.lastInput === "voice" ||
+          field.lastInput === "chat",
+      );
+    if (claimsVoiceProvenance && lead.source !== "voice") {
       context.addIssue({
         code: "custom",
-        message: "Submission method does not match the lead source",
-        path: ["submissionMethod"],
+        message: "Voice or chat provenance requires a voice-attributed lead",
+        path: ["fieldProvenance"],
       });
     }
-    if (lead.submissionMethod === "voice_command" && (!lead.voiceReviewId || !lead.voiceReviewToken)) {
+
+    if ((lead.source === "voice" || claimsVoiceProvenance) && (!lead.voiceReviewId || !lead.voiceReviewToken)) {
       context.addIssue({
         code: "custom",
-        message: "Voice-command submission requires signed voice review linkage",
+        message: "Voice attribution requires signed voice review linkage",
         path: [!lead.voiceReviewId ? "voiceReviewId" : "voiceReviewToken"],
       });
     }
   });
 
 export const newsletterRequestSchema = z.object({
-  email: z.string().trim().email().max(180),
+  email: z.string().trim().email().max(180).transform(normalizeStoredEmail),
   turnstileToken: z.string().optional(),
   utm: utmSchema,
 });
@@ -189,6 +210,7 @@ export const voiceReviewSnapshotSchema = z.object({
   }),
   snapshot: z.object({
     sessionId: z.string().min(1).max(160),
+    snapshotSequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
     conversationId: z.string().uuid().optional(),
     leadId: z.string().max(160).nullable().optional(),
     segment: segmentSchema,
@@ -232,7 +254,7 @@ export const voiceReviewSnapshotSchema = z.object({
     inputPolicy: z.enum(["baseline", "fast", "patient"]).optional(),
     captured: z.object({
       name: z.string().max(120).default(""),
-      email: z.string().max(180).default(""),
+      email: z.string().trim().max(180).default("").transform(normalizeStoredEmail),
       org: z.string().max(180).default(""),
       phone: z.string().max(60).default(""),
       website: z.string().max(300).default(""),
@@ -247,7 +269,7 @@ export const voiceReviewSnapshotSchema = z.object({
       })
       .optional(),
     emailCaptureMode: z.enum(["strict", "adaptive"]).optional(),
-    transcript: z.array(transcriptEntrySchema).max(120).default([]),
+    transcript: z.array(transcriptEntrySchema).max(120).default([]).transform(boundTranscript),
     usage: z
       .object({
         responseCount: z.number().int().nonnegative(),
@@ -271,7 +293,17 @@ export const voiceReviewSnapshotSchema = z.object({
       )
       .max(20)
       .default([]),
-    rateLimits: z.array(z.record(z.string(), z.unknown())).max(20).default([]),
+    rateLimits: z
+      .array(
+        z.object({
+          name: z.string().max(80),
+          limit: z.number().nonnegative().max(1_000_000),
+          remaining: z.number().nonnegative().max(1_000_000),
+          reset_seconds: z.number().nonnegative().max(86_400),
+        }),
+      )
+      .max(20)
+      .default([]),
     routeRequested: z.boolean().default(false),
     submittedAt: z.number().optional(),
     latency: z

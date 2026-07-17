@@ -36,6 +36,13 @@ export type VoiceRuntimeUsage = {
 
 export type VoiceRuntimeError = { eventId?: string; message: string; code?: string };
 
+export type VoiceRuntimeRateLimit = {
+  name: string;
+  limit: number;
+  remaining: number;
+  reset_seconds: number;
+};
+
 export type VoiceEmailVerification = {
   value: string;
   source: "prefill" | "speech" | "typed";
@@ -50,7 +57,7 @@ export type VoiceRuntimeState = {
   handledCallIds?: string[];
   routeRequested?: boolean;
   usage?: VoiceRuntimeUsage;
-  rateLimits?: Array<Record<string, unknown>>;
+  rateLimits?: VoiceRuntimeRateLimit[];
   errors?: VoiceRuntimeError[];
   emailVerification?: VoiceEmailVerification;
   /** PII-free source/correction counters for each captured field. */
@@ -114,7 +121,7 @@ export type RealtimeServerEvent = {
   item_id?: string;
   event_id?: string;
   error?: { message?: string; code?: string; event_id?: string };
-  rate_limits?: Array<Record<string, unknown>>;
+  rate_limits?: unknown[];
   usage?: RealtimeUsage;
   item?: RealtimeOutputItem;
   response?: { output?: RealtimeOutputItem[]; usage?: RealtimeUsage };
@@ -164,7 +171,11 @@ export function isBenignVoiceError(error: VoiceRuntimeError) {
 }
 
 export function isVoiceCaptureIntegrityIssue(error: VoiceRuntimeError): boolean {
-  return error.code === "voice_capture_rejected" || error.code === "voice_email_unconfirmed";
+  return (
+    error.code === "voice_capture_rejected" ||
+    error.code === "voice_capture_rejected_email" ||
+    error.code === "voice_email_unconfirmed"
+  );
 }
 
 /** Record a message the visitor typed into the live chat as a user transcript turn. */
@@ -325,7 +336,7 @@ export function reduceRealtimeServerEvent(
   }
 
   if (event.type === "rate_limits.updated" && Array.isArray(event.rate_limits)) {
-    state = { ...state, rateLimits: event.rate_limits };
+    state = { ...state, rateLimits: event.rate_limits.flatMap(normalizeRealtimeRateLimit).slice(0, 20) };
   }
 
   if (event.type === "error") {
@@ -1016,6 +1027,21 @@ function accumulateUsage(
 
 function numberValue(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function normalizeRealtimeRateLimit(value: unknown): VoiceRuntimeRateLimit[] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+  const record = value as Record<string, unknown>;
+  const name = asString(record.name)?.trim();
+  const limit = boundedNonnegativeNumber(record.limit, 1_000_000);
+  const remaining = boundedNonnegativeNumber(record.remaining, 1_000_000);
+  const resetSeconds = boundedNonnegativeNumber(record.reset_seconds, 86_400);
+  if (!name || name.length > 80 || limit === null || remaining === null || resetSeconds === null) return [];
+  return [{ name, limit, remaining, reset_seconds: resetSeconds }];
+}
+
+function boundedNonnegativeNumber(value: unknown, maximum: number) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= maximum ? value : null;
 }
 
 function asString(value: unknown): string | undefined {
@@ -2186,10 +2212,16 @@ function recordObservableToolFailure(
       typeof detail.error === "string" ? detail.error : typeof output.error === "string" ? output.error : "";
     if (!OBSERVABLE_TOOL_FAILURES.has(error)) return [];
     const key = typeof detail.key === "string" ? detail.key : typeof output.key === "string" ? output.key : undefined;
+    const code =
+      error === "unconfirmed_required_fields"
+        ? "voice_email_unconfirmed"
+        : key === "email"
+          ? "voice_capture_rejected_email"
+          : "voice_capture_rejected";
     return [
       {
         eventId: item.call_id,
-        code: error === "unconfirmed_required_fields" ? "voice_email_unconfirmed" : "voice_capture_rejected",
+        code,
         message: [item.name ?? "unknown_tool", error, key].filter(Boolean).join(":"),
       },
     ];

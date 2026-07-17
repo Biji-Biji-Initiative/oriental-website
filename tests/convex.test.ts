@@ -1,12 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createLead } from "@/convex/leads";
+import { createLead, recordVoiceSession } from "@/convex/leads";
 import { summarizeIntakeAttribution } from "@/lib/intake-attribution-analytics";
 import {
   archiveAdminLeads,
   bulkAssignAdminLeads,
+  deletePersonalData,
+  getAdminLeadSlaSnapshot,
   getAdminLeadTable,
   getAdminReviewDashboard,
   getAdminVoiceSession,
+  getPrivacyDeletionPlan,
   persistLead,
   persistVoiceReviewSnapshot,
   recordLeadNotificationStatus,
@@ -35,11 +38,15 @@ vi.mock("@/convex/_generated/api", () => ({
   api: {
     leads: {
       adminLeadCounts: "adminLeadCounts",
+      adminLeadSlaSnapshot: "adminLeadSlaSnapshot",
       adminLeadTable: "adminLeadTable",
       archiveLeads: "archiveLeads",
       createLead: "createLead",
+      deletePersonalData: "deletePersonalData",
       bulkAssignLeads: "bulkAssignLeads",
       recordLeadNotification: "recordLeadNotification",
+      normalizeLegacyPrivacyEmails: "normalizeLegacyPrivacyEmails",
+      privacyDeletionPlanByEmail: "privacyDeletionPlanByEmail",
       voiceSessionByReviewId: "voiceSessionByReviewId",
       updateLeadWorkflow: "updateLeadWorkflow",
       recordVoiceSession: "recordVoiceSession",
@@ -369,6 +376,154 @@ describe("createLead idempotency", () => {
       else process.env.CONVEX_INGEST_SECRET = previousSecret;
     }
   });
+
+  it("normalizes new lead identity and bounds the duplicated lead transcript", async () => {
+    const first = vi.fn().mockResolvedValue(null);
+    const withIndex = vi.fn().mockReturnValue({ first });
+    const query = vi.fn().mockReturnValue({ withIndex });
+    const insert = vi.fn().mockResolvedValue("row_1");
+    const handler = (
+      createLead as unknown as {
+        _handler: (ctx: unknown, args: { lead: StoredLead; ingestSecret: string }) => Promise<{ id: string }>;
+      }
+    )._handler;
+    const previousSecret = process.env.CONVEX_INGEST_SECRET;
+    process.env.CONVEX_INGEST_SECRET = "ingest-secret";
+
+    try {
+      await handler(
+        { db: { query, insert } },
+        {
+          lead: {
+            ...lead(),
+            form: { ...lead().form, email: " Visitor@Example.COM " },
+            transcript: [
+              { role: "user", text: "a".repeat(4_000) },
+              { role: "assistant", text: "b".repeat(4_000) },
+              { role: "user", text: "c".repeat(4_000) },
+            ],
+          },
+          ingestSecret: "ingest-secret",
+        },
+      );
+
+      expect(insert).toHaveBeenNthCalledWith(
+        1,
+        "leads",
+        expect.objectContaining({
+          email: "visitor@example.com",
+          emailNormalized: "visitor@example.com",
+          payloadSafe: true,
+          hasRetainedTranscript: true,
+          transcript: [
+            { role: "assistant", text: "b".repeat(4_000) },
+            { role: "user", text: "c".repeat(4_000) },
+          ],
+        }),
+      );
+    } finally {
+      if (previousSecret === undefined) delete process.env.CONVEX_INGEST_SECRET;
+      else process.env.CONVEX_INGEST_SECRET = previousSecret;
+    }
+  });
+});
+
+describe("recordVoiceSession monotonic persistence", () => {
+  const incoming = {
+    reviewId: "review_1",
+    sessionId: "session_1",
+    snapshotSequence: 6,
+    segment: "technology",
+    status: "idle",
+    connectionStatus: "idle",
+    closeReason: "manual",
+    closedAt: 10_000,
+    captured: { name: "", email: " Visitor@Example.COM ", org: "", phone: "", website: "", message: "" },
+    transcript: [{ role: "user", text: "x".repeat(9_000) }],
+    errors: [],
+    rateLimits: [],
+    routeRequested: false,
+  };
+  const handler = (
+    recordVoiceSession as unknown as {
+      _handler: (
+        ctx: unknown,
+        args: { snapshot: typeof incoming; ingestSecret: string },
+      ) => Promise<{
+        ok: boolean;
+        id: string;
+        applied: boolean;
+        autoEvalQueued: boolean;
+      }>;
+    }
+  )._handler;
+
+  it("ignores stale or replayed sequences before they can erase submission linkage", async () => {
+    const existing = {
+      _id: "voice_1",
+      reviewId: "review_1",
+      snapshotSequence: 6,
+      leadId: "lead_123",
+      status: "submitted",
+    };
+    const unique = vi.fn().mockResolvedValue(existing);
+    const patch = vi.fn();
+    const previousSecret = process.env.CONVEX_INGEST_SECRET;
+    process.env.CONVEX_INGEST_SECRET = "ingest-secret";
+    try {
+      await expect(
+        handler(
+          { db: { query: () => ({ withIndex: () => ({ unique }) }), patch } },
+          { ingestSecret: "ingest-secret", snapshot: incoming },
+        ),
+      ).resolves.toEqual({ ok: true, id: "review_1", applied: false, autoEvalQueued: false });
+      expect(patch).not.toHaveBeenCalled();
+    } finally {
+      if (previousSecret === undefined) delete process.env.CONVEX_INGEST_SECRET;
+      else process.env.CONVEX_INGEST_SECRET = previousSecret;
+    }
+  });
+
+  it("keeps submitted fields monotonic and atomically queues only the first close evaluation", async () => {
+    const existing = {
+      _id: "voice_1",
+      reviewId: "review_1",
+      sessionId: "session_1",
+      snapshotSequence: 5,
+      leadId: "lead_123",
+      status: "submitted",
+      submittedAt: 9_000,
+      createdAt: 1_000,
+    };
+    const unique = vi.fn().mockResolvedValue(existing);
+    const patch = vi.fn();
+    const previousSecret = process.env.CONVEX_INGEST_SECRET;
+    process.env.CONVEX_INGEST_SECRET = "ingest-secret";
+    try {
+      await expect(
+        handler(
+          { db: { query: () => ({ withIndex: () => ({ unique }) }), patch } },
+          { ingestSecret: "ingest-secret", snapshot: incoming },
+        ),
+      ).resolves.toMatchObject({ ok: true, id: "review_1", applied: true, autoEvalQueued: true });
+      expect(patch).toHaveBeenCalledWith(
+        "voice_1",
+        expect.objectContaining({
+          snapshotSequence: 6,
+          leadId: "lead_123",
+          status: "submitted",
+          submittedAt: 9_000,
+          autoEvalQueuedAt: expect.any(Number),
+          payloadSafe: true,
+          capturedEmailNormalized: "visitor@example.com",
+          transcript: [{ role: "user", text: "x".repeat(8_000) }],
+        }),
+      );
+    } finally {
+      if (previousSecret === undefined) delete process.env.CONVEX_INGEST_SECRET;
+      else process.env.CONVEX_INGEST_SECRET = previousSecret;
+    }
+  });
 });
 
 describe("getAdminLeadTable", () => {
@@ -385,7 +540,7 @@ describe("getAdminLeadTable", () => {
     vi.clearAllMocks();
   });
 
-  it("keeps canonical totals exact when the corpus is larger than the bounded row window", async () => {
+  it("keeps the separately bounded count summary independent of the visible row window", async () => {
     const rows = [{ leadId: "lead_1" }, { leadId: "lead_2" }];
     const counts = {
       total: 720,
@@ -396,6 +551,7 @@ describe("getAdminLeadTable", () => {
       highPriorityActive: 27,
       clickUpGaps: 14,
       newToday: 9,
+      truncated: false,
     };
     mocks.query.mockImplementation((query) => Promise.resolve(query === "adminLeadTable" ? rows : counts));
 
@@ -409,18 +565,50 @@ describe("getAdminLeadTable", () => {
     });
   });
 
-  it("caps oversized lead table requests without capping the count query", async () => {
+  it("caps oversized lead table requests without changing the count-query contract", async () => {
     mocks.query.mockImplementation((query) => Promise.resolve(query === "adminLeadTable" ? [] : { total: 2_400 }));
 
     await getAdminLeadTable(10_000);
 
     expect(mocks.query).toHaveBeenCalledWith("adminLeadTable", {
       ingestSecret: "ingest-secret",
-      limit: 1000,
+      limit: 500,
     });
     expect(mocks.query).toHaveBeenCalledWith("adminLeadCounts", {
       ingestSecret: "ingest-secret",
     });
+  });
+});
+
+describe("getAdminLeadSlaSnapshot", () => {
+  beforeEach(() => {
+    process.env = {
+      ...originalEnv,
+      CONVEX_URL: "https://convex.example",
+      CONVEX_INGEST_SECRET: "ingest-secret",
+    };
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+    vi.clearAllMocks();
+  });
+
+  it("uses the dedicated PII-free SLA aggregate instead of a recent dashboard window", async () => {
+    const data = {
+      generatedAt: 1_800_000_000_000,
+      activeLeads: { count: 420, truncated: true },
+      unownedBreaches: { count: 17, truncated: false, oldestCreatedAt: 1_799_900_000_000 },
+      failedNotifications: { count: 2, truncated: false },
+    };
+    mocks.query.mockResolvedValue(data);
+
+    await expect(getAdminLeadSlaSnapshot(4 * 60 * 60 * 1000)).resolves.toEqual({ ok: true, data });
+    expect(mocks.query).toHaveBeenCalledWith("adminLeadSlaSnapshot", {
+      ingestSecret: "ingest-secret",
+      maxUnownedMs: 4 * 60 * 60 * 1000,
+    });
+    expect(mocks.query).not.toHaveBeenCalledWith("reviewDashboard", expect.anything());
   });
 });
 
@@ -515,7 +703,7 @@ describe("recordLeadNotificationStatus", () => {
         "lead_123",
         {
           email: { ok: false, error: "smtp_down" },
-          slack: { ok: true, transport: "slack" },
+          slack: { ok: true, transport: "slack", externalId: "C123:1712345.678" },
           clickup: {
             ok: true,
             transport: "clickup",
@@ -534,6 +722,7 @@ describe("recordLeadNotificationStatus", () => {
       notificationDelivered: true,
       emailOk: false,
       slackOk: true,
+      slackMessageId: "C123:1712345.678",
       clickupOk: true,
       clickupTaskId: "task_123",
       clickupTaskUrl: "https://app.clickup.com/t/task_123",
@@ -547,6 +736,7 @@ describe("persistVoiceReviewSnapshot", () => {
   const snapshot = {
     reviewId: "review_1",
     sessionId: "session_1",
+    snapshotSequence: 1,
     segment: "technology" as const,
     status: "idle" as const,
     connectionStatus: "listening" as const,
@@ -609,7 +799,12 @@ describe("persistVoiceReviewSnapshot", () => {
   it("persists transport and latency telemetry when Convex accepts them", async () => {
     mocks.mutation.mockResolvedValue({ ok: true, id: "review_1" });
 
-    await expect(persistVoiceReviewSnapshot(snapshot)).resolves.toEqual({ ok: true, id: "review_1" });
+    await expect(persistVoiceReviewSnapshot(snapshot)).resolves.toEqual({
+      ok: true,
+      id: "review_1",
+      applied: true,
+      autoEvalQueued: false,
+    });
     expect(mocks.mutation).toHaveBeenCalledTimes(1);
     expect(mocks.mutation).toHaveBeenCalledWith(
       "recordVoiceSession",
@@ -648,7 +843,12 @@ describe("persistVoiceReviewSnapshot", () => {
       },
     };
 
-    await expect(persistVoiceReviewSnapshot(clearAllSnapshot)).resolves.toEqual({ ok: true, id: "review_1" });
+    await expect(persistVoiceReviewSnapshot(clearAllSnapshot)).resolves.toEqual({
+      ok: true,
+      id: "review_1",
+      applied: true,
+      autoEvalQueued: false,
+    });
     const mutationSnapshot = mocks.mutation.mock.calls[0]?.[1]?.snapshot;
     expect(mutationSnapshot.latency.toolCalls).toEqual(clearAllSnapshot.latency.toolCalls);
     expect(mutationSnapshot.latency.toolCalls[0]?.name).toBe("clear_fields");
@@ -659,7 +859,12 @@ describe("persistVoiceReviewSnapshot", () => {
       .mockRejectedValueOnce(new Error("ArgumentValidationError: unexpected field `transport`"))
       .mockResolvedValueOnce({ ok: true, id: "review_1" });
 
-    await expect(persistVoiceReviewSnapshot(snapshot)).resolves.toEqual({ ok: true, id: "review_1" });
+    await expect(persistVoiceReviewSnapshot(snapshot)).resolves.toEqual({
+      ok: true,
+      id: "review_1",
+      applied: true,
+      autoEvalQueued: false,
+    });
     expect(mocks.mutation).toHaveBeenCalledTimes(2);
     const retryArgs = mocks.mutation.mock.calls[1]?.[1] as { snapshot: Record<string, unknown> };
     expect(retryArgs.snapshot).not.toHaveProperty("transport");
@@ -676,6 +881,7 @@ describe("persistVoiceReviewSnapshot", () => {
     expect(retryArgs.snapshot).not.toHaveProperty("entryPoint");
     expect(retryArgs.snapshot).not.toHaveProperty("entryMethod");
     expect(retryArgs.snapshot).not.toHaveProperty("submissionMethod");
+    expect(retryArgs.snapshot).not.toHaveProperty("snapshotSequence");
     expect(retryArgs.snapshot).toMatchObject({ reviewId: "review_1" });
   });
 
@@ -684,5 +890,84 @@ describe("persistVoiceReviewSnapshot", () => {
 
     await expect(persistVoiceReviewSnapshot(snapshot)).rejects.toThrow("convex transport unavailable");
     expect(mocks.mutation).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns the atomic apply and auto-eval transition from Convex", async () => {
+    mocks.mutation.mockResolvedValue({
+      ok: true,
+      id: "review_1",
+      applied: true,
+      autoEvalQueued: true,
+    });
+
+    await expect(persistVoiceReviewSnapshot(snapshot)).resolves.toEqual({
+      ok: true,
+      id: "review_1",
+      applied: true,
+      autoEvalQueued: true,
+    });
+  });
+});
+
+describe("privacy deletion data plane", () => {
+  beforeEach(() => {
+    process.env = {
+      ...originalEnv,
+      CONVEX_URL: "https://convex.example",
+      CONVEX_INGEST_SECRET: "ingest-secret",
+    };
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+    vi.clearAllMocks();
+  });
+
+  it("advances legacy normalization before returning a PII-free downstream plan", async () => {
+    const plan = {
+      leads: [
+        {
+          leadId: "lead_123",
+          notificationEmailOk: true,
+          notificationConfirmationOk: false,
+          notificationSlackOk: true,
+          notificationSlackMessageId: "C123:1712345.678",
+          notificationClickUpOk: true,
+          notificationClickUpTaskId: "task_123",
+        },
+      ],
+      complete: true,
+    };
+    mocks.mutation.mockResolvedValue({ complete: true });
+    mocks.query.mockResolvedValue(plan);
+
+    await expect(getPrivacyDeletionPlan("visitor@example.com")).resolves.toEqual({ ok: true, ...plan });
+    expect(mocks.mutation).toHaveBeenCalledWith("normalizeLegacyPrivacyEmails", {
+      ingestSecret: "ingest-secret",
+    });
+    expect(mocks.query).toHaveBeenCalledWith("privacyDeletionPlanByEmail", {
+      ingestSecret: "ingest-secret",
+      email: "visitor@example.com",
+    });
+    expect(JSON.stringify(plan)).not.toContain("visitor@example.com");
+  });
+
+  it("fails closed unless downstream cleanup is explicitly complete", async () => {
+    mocks.mutation.mockResolvedValue({
+      deleted: { leads: 0, leadEvents: 0, voiceSessions: 0 },
+      complete: false,
+    });
+
+    await deletePersonalData({
+      email: "visitor@example.com",
+      reason: "data_subject_request",
+      requestId: "78584c0d-406a-41b5-ae9f-f2eb23650a0a",
+      actor: "Oriental admin",
+    });
+
+    expect(mocks.mutation).toHaveBeenCalledWith(
+      "deletePersonalData",
+      expect.objectContaining({ downstreamCleanupComplete: false }),
+    );
   });
 });

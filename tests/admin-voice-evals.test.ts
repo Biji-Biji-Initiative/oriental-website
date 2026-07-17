@@ -100,6 +100,25 @@ describe("admin voice evaluation runner", () => {
     expect(mocks.mutation).not.toHaveBeenCalled();
   });
 
+  it("keeps an internally targeted auto-eval idempotent when the session is already scored", async () => {
+    mocks.query.mockResolvedValue([judgeableSession({ eval: { model: "gpt-4o-mini", evaluatedAt: Date.now() } })]);
+
+    const result = await runAdminVoiceEvals({
+      limit: 1,
+      model: "gpt-4o-mini",
+      reviewIds: ["review-1"],
+      rescoreTargeted: false,
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "no_sessions",
+      window: { fetched: 1, conversations: 1, alreadyEvaluated: 1 },
+    });
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(mocks.mutation).not.toHaveBeenCalled();
+  });
+
   it("scans past 25 already-evaluated rows to progress an older unscored session", async () => {
     mocks.query.mockResolvedValue([
       ...Array.from({ length: 26 }, (_, index) =>

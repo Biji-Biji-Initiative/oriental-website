@@ -25,6 +25,22 @@ describe("lead request schema", () => {
     expect(parsed.success).toBe(true);
   });
 
+  it("normalizes new lead emails and caps aggregate transcript characters", () => {
+    const parsed = leadRequestSchema.parse({
+      source: "form",
+      form: { name: "", email: " Visitor@Example.COM ", org: "", phone: "", website: "", message: "" },
+      transcript: [
+        { role: "user", text: "a".repeat(4_000) },
+        { role: "assistant", text: "b".repeat(4_000) },
+        { role: "user", text: "c".repeat(4_000) },
+      ],
+    });
+
+    expect(parsed.form.email).toBe("visitor@example.com");
+    expect(parsed.transcript.reduce((total, turn) => total + turn.text.length, 0)).toBe(8_000);
+    expect(parsed.transcript.at(-1)?.text).toBe("c".repeat(4_000));
+  });
+
   it("accepts voice review linkage metadata on submitted voice leads", () => {
     const parsed = leadRequestSchema.safeParse({
       source: "voice",
@@ -125,7 +141,7 @@ describe("lead request schema", () => {
     ).toBe(true);
   });
 
-  it("rejects a voice command without both review credentials", () => {
+  it("rejects every voice-attributed lead without both review credentials", () => {
     const base = {
       source: "voice",
       submissionMethod: "voice_command",
@@ -146,6 +162,35 @@ describe("lead request schema", () => {
         voiceReviewId: "5a8c25b1-cd50-4e47-89bf-84947c805add",
       }).success,
     ).toBe(false);
+    expect(
+      leadRequestSchema.safeParse({
+        ...base,
+        submissionMethod: "handoff_button",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects voice or chat field provenance on an unsigned form lead", () => {
+    const provenance = Object.fromEntries(
+      ["name", "email", "org", "phone", "website", "message"].map((field) => [
+        field,
+        {
+          method: field === "email" ? "voice" : "unknown",
+          lastInput: field === "email" ? "voice" : undefined,
+          editCount: field === "email" ? 1 : 0,
+          correctionCount: 0,
+          clearCount: 0,
+        },
+      ]),
+    );
+    const parsed = leadRequestSchema.safeParse({
+      source: "form",
+      submissionMethod: "handoff_button",
+      fieldProvenance: provenance,
+      form: { name: "", email: "asha@example.com", org: "", phone: "", website: "", message: "" },
+    });
+
+    expect(parsed.success).toBe(false);
   });
 
   it("rejects transcripts beyond the 200-entry cap", () => {
@@ -386,6 +431,20 @@ describe("voice review latency schema", () => {
     interrupted: false,
     rapidResume: false,
   };
+
+  it("accepts a monotonic snapshot sequence and normalizes captured email", () => {
+    const parsed = voiceReviewSnapshotSchema.parse({
+      ...request,
+      snapshot: {
+        ...request.snapshot,
+        snapshotSequence: 7,
+        captured: { ...request.snapshot.captured, email: " Visitor@Example.COM " },
+      },
+    });
+
+    expect(parsed.snapshot.snapshotSequence).toBe(7);
+    expect(parsed.snapshot.captured.email).toBe("visitor@example.com");
+  });
 
   it("accepts a distinct exhausted-quota close reason", () => {
     expect(

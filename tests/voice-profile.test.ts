@@ -51,6 +51,8 @@ describe("voice profile", () => {
     expect(adaptive).toContain("without asking for a separate yes");
     expect(adaptive).toContain("ask the visitor to type it there");
     expect(adaptive).not.toContain("read it back and use confirm_email");
+    expect(JSON.stringify(VOICE_PROFILE)).not.toContain("Always confirm a speech-captured email");
+    expect(JSON.stringify(VOICE_PROFILE)).not.toContain("read it back once and confirm it before routing");
   });
 
   it("keeps the Realtime tool surface narrow and explicit", () => {

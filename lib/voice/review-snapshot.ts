@@ -42,6 +42,7 @@ export function buildVoiceReviewSnapshot(
   state: VoiceRuntimeState,
   connectionStatus: VoiceReviewConnectionStatus,
   overrides: {
+    snapshotSequence?: number;
     leadId?: string | null;
     status?: VoiceReviewStatus;
     submittedAt?: number;
@@ -54,6 +55,7 @@ export function buildVoiceReviewSnapshot(
 ): VoiceReviewSnapshotRequest["snapshot"] {
   return {
     sessionId: review.sessionId ?? review.id,
+    snapshotSequence: overrides.snapshotSequence,
     ...(isConversationId(review.conversationId) ? { conversationId: review.conversationId } : {}),
     leadId: overrides.leadId,
     segment: state.segment,

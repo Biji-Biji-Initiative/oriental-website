@@ -67,14 +67,20 @@ VOICE_EMAIL_CAPTURE_MODE=adaptive # strict restores exact readback + explicit co
 OPENAI_REALTIME_VOICE=coral
 OPENAI_REALTIME_SPEED=1.28
 VOICE_RUNTIME_PROFILE=baseline # rollback-safe default; instant-v1 enables adaptive semantic VAD
+VOICE_SESSION_DAILY_LIMIT=80 # governed integer from 1 to 10000
 VOICE_MAX_DURATION_MS=600000
 VOICE_IDLE_TIMEOUT_MS=20000
 VOICE_IDLE_GOODBYE_GRACE_MS=6000
 REDIS_URL=
+TURNSTILE_ENFORCEMENT=relaxed # required only with a deliberately enabled client challenge
 TURNSTILE_SITE_KEY=
 TURNSTILE_SECRET_KEY=
 IP_HASH_SECRET=
 ADMIN_REVIEW_TOKEN=
+ADMIN_REVIEW_ROLE=operator
+ADMIN_REVIEW_ACTOR=Oriental intake operator
+OPS_AUTOMATION_TOKEN=
+PRIVACY_ADMIN_TOKEN=
 COOLIFY_ORIENTAL_APPLICATION_UUID=mtrl2z6a7zvoyevxvufpntij
 SENTRY_DSN=
 NEXT_PUBLIC_SENTRY_DSN=
@@ -107,8 +113,6 @@ OWNER_TENANCY=
 OWNER_EDUCATION=
 OWNER_PROGRAMME=
 OWNER_TECHNOLOGY=
-OWNER_AI=
-OWNER_CULTURAL=
 OWNER_COMMUNITY=
 OWNER_OTHER=
 ```
@@ -152,7 +156,22 @@ per-field voice/form/chat/prefill/mixed provenance plus correction counters.
 Those records contain no contact values. Consent-gated GA events cover opens,
 voice starts, and submit outcomes for directional funnel analysis; Convex lead
 and signed voice-session records remain the authoritative accepted-submission
-evidence.
+evidence. The admin view labels two different cohorts: accepted leads and all
+engaged logical voice conversations. The latter deduplicates reconnects and
+surfaces pending/rejected email, corrections, clears, typed fallbacks, and
+abandonment so unsuccessful capture is not hidden by survivorship bias.
+
+The nightly retention job deletes unsubmitted voice diagnostics after 30 days,
+submitted voice diagnostics and copied lead transcript content after 90 days,
+and archived lead records plus workflow events after 730 days. Verified visitor
+deletion requests use the dedicated privacy principal and bounded
+`DELETE /api/admin/privacy` path. Addressable Slack/ClickUp mirrors are removed
+first, unaddressable email/legacy copies require explicit operator confirmation,
+and the API never echoes the subject email into responses, logs, or audit rows.
+
+Capture-method provenance is a bounded client report protected by signed voice
+session linkage; it is diagnostic evidence, not an independent server
+observation and never qualifies a model/runtime promotion by itself.
 
 Production currently resolves the control cell to `gpt-realtime-2`. The first
 quality candidate is [`gpt-realtime-2.1`](https://developers.openai.com/api/docs/models/gpt-realtime-2.1),
@@ -189,7 +208,8 @@ During local testing, run `pnpm voice:debug` after a call to inspect the latest 
 ## Admin Review & Observability
 
 The internal review surface lives at `/admin/session-review`. It is protected by
-`ADMIN_REVIEW_TOKEN`, sets a signed HTTP-only admin cookie, and reads recent
+the configured `ADMIN_REVIEW_TOKEN` / `ADMIN_REVIEW_ROLE` principal, sets a
+principal-bound signed HTTP-only admin cookie, and reads recent
 Convex `leads` plus `voiceSessions` snapshots. Its default Overview is the
 executive command layer: full-dataset enquiry, assignment, SLA, delivery, and
 qualification KPIs; a ranked next-action queue; stage and data-readiness health;
@@ -197,6 +217,12 @@ account, repeat-contact, source, routing, and Reka quality intelligence. Open
 Enquiries for the complete Tailwind CRM table, organization portfolio, owner
 workload, exact ClickUp task, and workflow updates. Reka and Voice QA retain the
 evaluation register, recovery queue, transcripts, timing, and runtime evidence.
+
+Scheduled eval, SLA, and retention jobs use the separate bearer-only
+`OPS_AUTOMATION_TOKEN`; privacy deletion uses the bearer-only
+`PRIVACY_ADMIN_TOKEN`. These machine credentials cannot open the dashboard or
+mutate leads. Cookie-authenticated admin mutations require same-origin JSON
+requests.
 
 The command layer is read-only and derived at request time. It does not merge,
 delete, or rewrite enquiry documents, and it renders unavailable denominators as

@@ -4,6 +4,7 @@ export const VOICE_ENTRY_POINTS = [
   "hero_primary",
   "hero_updates",
   "hero_updates_followup",
+  // Compatibility id for the persistent header CTA at every breakpoint.
   "nav_desktop",
   "nav_mobile",
   "keyboard_shortcut",

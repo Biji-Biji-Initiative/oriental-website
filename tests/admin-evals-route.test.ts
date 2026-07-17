@@ -22,6 +22,7 @@ describe("admin evals route", () => {
       ADMIN_REVIEW_TOKEN: "admin-review-token-123456789",
       ADMIN_REVIEW_ROLE: "operator",
       ADMIN_REVIEW_ACTOR: "Gurpreet",
+      OPS_AUTOMATION_TOKEN: "ops-automation-token-123456789",
     };
     resetRateLimitBucketsForTest();
     runMock.mockResolvedValue({
@@ -73,6 +74,13 @@ describe("admin evals route", () => {
       persisted: 3,
       failures: 0,
     });
+  });
+
+  it("allows the least-privilege automation bearer to run the scheduled batch", async () => {
+    const response = await POST(evalsRequest({ limit: 6 }, "ops-automation-token-123456789"));
+
+    expect(response.status).toBe(200);
+    expect(runMock).toHaveBeenCalledWith({ limit: 6 });
   });
 
   it("passes a targeted review id and an explicit judge model through", async () => {
@@ -169,11 +177,11 @@ describe("admin evals route", () => {
   });
 });
 
-function evalsRequest(body: Record<string, unknown>) {
+function evalsRequest(body: Record<string, unknown>, token = "admin-review-token-123456789") {
   return new Request("http://localhost/api/admin/evals", {
     method: "POST",
     headers: {
-      authorization: "Bearer admin-review-token-123456789",
+      authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),

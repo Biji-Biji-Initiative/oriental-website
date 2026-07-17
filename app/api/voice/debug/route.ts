@@ -4,11 +4,12 @@ import { type VoiceReviewSnapshotRequest, voiceReviewSnapshotSchema } from "@/li
 import { persistVoiceReviewSnapshot } from "@/lib/server/convex";
 import { logInfo, logWarn } from "@/lib/server/logger";
 import { sendOpsAlert } from "@/lib/server/ops-alerts";
-import { noStoreJson } from "@/lib/server/security";
-import { runAdminVoiceEvals } from "@/lib/server/voice-evals";
+import { checkRateLimit, noStoreJson, rateLimitResponseHeaders } from "@/lib/server/security";
+import { ADMIN_EVAL_RUN_LEASE_MS, runAdminVoiceEvals } from "@/lib/server/voice-evals";
 import { verifyVoiceReviewCredentials } from "@/lib/server/voice-review-token";
 import { isVoiceAvailabilityFailure } from "@/lib/voice/realtime-call-failure";
 import { isBenignVoiceError } from "@/lib/voice/realtime-events";
+import { safeVoiceRuntimeErrorCode } from "@/lib/voice/runtime-error-code";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,7 +42,21 @@ export async function POST(request: Request) {
   }
   const verified = verifyVoiceReviewCredentials(parsed.data.review.id, parsed.data.review.token);
   if (!verified && isProductionEnv()) return noStoreJson({ ok: false, error: "unauthorized" }, { status: 401 });
-  const snapshot = { ...parsed.data.snapshot, reviewId: parsed.data.review.id };
+  const snapshotLimit = await checkRateLimit(`voice-review:${parsed.data.review.id}`, 420, 60 * 60 * 1000);
+  if (!snapshotLimit.ok) {
+    return noStoreJson(
+      { ok: false, error: "rate_limited" },
+      { status: 429, headers: rateLimitResponseHeaders(snapshotLimit.resetAt) },
+    );
+  }
+  const snapshot = {
+    ...parsed.data.snapshot,
+    // Provider/client prose is untrusted and can echo contact details. Keep a
+    // bounded category for diagnostics without turning Convex or logs into a
+    // second free-text store.
+    errors: parsed.data.snapshot.errors.map(sanitizeVoiceRuntimeError),
+    reviewId: parsed.data.review.id,
+  };
   logVoiceSessionHealth(parsed.data.review.id, parsed.data.snapshot);
   await reportVoiceAvailabilityFailure(parsed.data.review.id, parsed.data.snapshot);
   const persistence = verified ? await persistVoiceReviewSnapshot(snapshot).catch(() => null) : null;
@@ -51,13 +66,25 @@ export async function POST(request: Request) {
   if (
     verified &&
     persistence?.ok === true &&
-    parsed.data.snapshot.closeReason &&
-    (parsed.data.snapshot.transcript?.length ?? 0) > 0 &&
+    persistence.autoEvalQueued === true &&
     process.env.EVAL_AUTO_ON_CLOSE !== "false"
   ) {
     const reviewId = parsed.data.review.id;
     scheduleAfterResponse(async () => {
-      const result = await runAdminVoiceEvals({ reviewIds: [reviewId] }).catch(() => null);
+      // Share the same Redis-backed lease as the manual admin endpoint. A
+      // repeated close snapshot can therefore neither fan out concurrent
+      // judges nor bypass the global cost window.
+      const lease = await checkRateLimit("admin-evals:run", 1, ADMIN_EVAL_RUN_LEASE_MS);
+      if (!lease.ok) {
+        logInfo("voice_review.auto_eval_skipped", { reviewId, reason: "eval_lease_busy" });
+        return;
+      }
+      // Target the stitched conversation but retain idempotency. Persisted
+      // scores for the configured model are skipped; only an explicit admin
+      // force/targeted rescore may spend on them again.
+      const result = await runAdminVoiceEvals({ limit: 1, reviewIds: [reviewId], rescoreTargeted: false }).catch(
+        () => null,
+      );
       if (result?.ok) {
         logInfo("voice_review.auto_eval", { reviewId, model: result.model, persisted: result.persisted });
       } else {
@@ -114,15 +141,20 @@ async function reportVoiceAvailabilityFailure(reviewId: string, snapshot: VoiceR
   });
 
   if (reason === "realtime_quota_exhausted" && isProductionEnv()) {
+    // One client-held review credential cannot page the team by replaying a
+    // claimed close reason. Alert only after three distinct, rate-limited
+    // production signals in ten minutes; the persisted aggregate remains the
+    // investigation source of truth.
+    const signalWindowMs = 10 * 60 * 1000;
+    const distinctSignal = await checkRateLimit(`voice-availability:quota-exhausted:${reviewId}`, 1, signalWindowMs);
+    if (!distinctSignal.ok) return;
+    const threshold = await checkRateLimit("voice-availability:quota-exhausted", 3, signalWindowMs);
+    if (!threshold.ok || threshold.remaining !== 0) return;
     await sendOpsAlert({
       event: "voice_review.realtime_quota_exhausted",
       severity: "critical",
-      summary: "OpenAI Realtime rejected a funded voice connection because project quota is unavailable.",
-      meta: {
-        reviewId,
-        sessionId: snapshot.sessionId,
-        connectionStatus: snapshot.connectionStatus,
-      },
+      summary: "Three production voice sessions reported Realtime quota exhaustion within ten minutes.",
+      meta: { signalCount: 3, windowMinutes: 10 },
       fingerprint: reason,
     });
   }
@@ -168,7 +200,7 @@ function logVoiceSessionHealth(reviewId: string, snapshot: VoiceReviewSnapshotRe
       capturedFieldCount: Object.values(capturedFields).filter(Boolean).length,
       capturedMessageChars: snapshot.captured.message.length,
       emailCaptureMode: snapshot.emailCaptureMode ?? null,
-      emailVerification: snapshot.emailVerification ?? null,
+      emailVerification: summarizeEmailVerification(snapshot.emailVerification),
       routeRequested: snapshot.routeRequested,
       errorCount: actionableErrors.length,
       benignErrorCount,
@@ -210,7 +242,7 @@ function logVoiceSessionHealth(reviewId: string, snapshot: VoiceReviewSnapshotRe
       connectionStatus: snapshot.connectionStatus,
       errorCount: actionableErrors.length,
       benignErrorCount,
-      errors: actionableErrors.map((entry) => ({ code: entry.code, message: entry.message })),
+      errors: actionableErrors.map((entry) => ({ code: entry.code ?? "realtime_error" })),
     });
   }
   if (snapshot.status === "submitted" && !loggedSubmissions.has(reviewId)) {
@@ -265,7 +297,7 @@ function buildHealthSnapshotSignature(snapshot: VoiceReviewSnapshotRequest["snap
     transcriptRoles: countTranscriptRoles(snapshot.transcript),
     capturedFields: buildCapturedFieldSummary(snapshot.captured),
     emailCaptureMode: snapshot.emailCaptureMode ?? null,
-    emailVerification: snapshot.emailVerification ?? null,
+    emailVerification: summarizeEmailVerification(snapshot.emailVerification),
     modelCell: snapshot.modelCell ?? null,
     reasoningCell: snapshot.reasoningCell ?? null,
     routeRequested: snapshot.routeRequested,
@@ -277,6 +309,24 @@ function buildHealthSnapshotSignature(snapshot: VoiceReviewSnapshotRequest["snap
     latency: summarizeLatency(snapshot.latency),
     transport: summarizeTransport(snapshot.transport),
   });
+}
+
+function summarizeEmailVerification(verification: VoiceReviewSnapshotRequest["snapshot"]["emailVerification"]) {
+  if (!verification) return null;
+  return {
+    source: verification.source,
+    status: verification.status,
+    matchesCaptured: verification.matchesCaptured,
+    confidence: verification.confidence ?? null,
+  };
+}
+
+function sanitizeVoiceRuntimeError(error: VoiceReviewSnapshotRequest["snapshot"]["errors"][number]) {
+  const safeCode = safeVoiceRuntimeErrorCode(error.code);
+  return {
+    code: safeCode,
+    message: `Realtime error (${safeCode})`,
+  };
 }
 
 // Compact, PII-free view of the WebRTC transport for structured logs.

@@ -260,6 +260,21 @@ describe("POST /api/leads", () => {
     expect(mocks.notifyOwner).not.toHaveBeenCalled();
   });
 
+  it("rejects a voice-attributed handoff button without signed review linkage", async () => {
+    const response = await POST(
+      request({
+        submissionMethod: "handoff_button",
+        voiceReviewId: undefined,
+        voiceReviewToken: undefined,
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ ok: false, error: "invalid_payload" });
+    expect(mocks.persistLead).not.toHaveBeenCalled();
+    expect(mocks.notifyOwner).not.toHaveBeenCalled();
+  });
+
   it("rejects invalid voice-review credentials even when Turnstile could otherwise pass", async () => {
     process.env.TURNSTILE_ENFORCEMENT = "required";
     process.env.TURNSTILE_SECRET_KEY = "turnstile-secret";

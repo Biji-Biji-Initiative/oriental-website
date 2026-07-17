@@ -2,9 +2,12 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+  MANAGED_APPLICATION_ENVIRONMENT_KEYS,
   type ManagedApplicationEnvironmentKey,
+  managedEnvironmentMutationFailures,
   managedEnvironmentParityFailures,
   managedEnvironmentReconciliationPlan,
+  RETIRED_MANAGED_APPLICATION_ENVIRONMENT_KEYS,
 } from "../scripts/lib/managed-app-environment";
 import {
   CONTROL_VOICE_CELL,
@@ -26,9 +29,23 @@ const releaseVerifier = readFileSync("scripts/release-verify.ts", "utf8");
 const productionDeployer = readFileSync("scripts/deploy-coolify-production.ts", "utf8");
 const stagingVoiceSmoke = readFileSync("scripts/smoke-staging-voice.ts", "utf8");
 const releaseRunbook = readFileSync("docs/12-CHAT-RELEASE-RUNBOOK.md", "utf8");
+const analyticsOpsWorkflow = readFileSync(".github/workflows/analytics-ops.yml", "utf8");
 const packageScripts = JSON.parse(readFileSync("package.json", "utf8")) as { scripts: Record<string, string> };
 
 describe("release governance", () => {
+  it("owns distinct least-privilege admin credentials and uses only the ops token in scheduled jobs", () => {
+    expect(MANAGED_APPLICATION_ENVIRONMENT_KEYS).toEqual(
+      expect.arrayContaining([
+        "ADMIN_REVIEW_ACTOR",
+        "ADMIN_REVIEW_ROLE",
+        "ADMIN_REVIEW_TOKEN",
+        "OPS_AUTOMATION_TOKEN",
+        "PRIVACY_ADMIN_TOKEN",
+      ]),
+    );
+    expect(analyticsOpsWorkflow).toContain("secrets.OPS_AUTOMATION_TOKEN");
+    expect(analyticsOpsWorkflow).not.toContain("secrets.ADMIN_REVIEW_TOKEN");
+  });
   it("pins canonical and compatibility-only hostnames", () => {
     expect(RELEASE_TARGETS.production).toEqual({
       origin: "https://oriental.mereka.io",
@@ -194,9 +211,8 @@ describe("release governance", () => {
       'readPublicHealth(RELEASE_TARGETS.staging.origin, args.sha, "staging candidate", STAGING_CANDIDATE_VOICE_CELL)',
     );
     expect(productionDeployer).toContain('"current production",\n    CONTROL_VOICE_CELL');
-    expect(productionDeployer).toContain(
-      'readPublicHealth(RELEASE_TARGETS.production.origin, args.sha, "new production", CONTROL_VOICE_CELL)',
-    );
+    expect(productionDeployer).toContain("await waitForHealthyProductionRelease(");
+    expect(productionDeployer).toContain('"new production"');
     expect(productionDeployer).toContain(
       "validateHealthPayload(payload, expectedSha, expectedVoiceCell, validationOptions)",
     );
@@ -240,11 +256,25 @@ describe("release governance", () => {
     expect(productionDeployer).not.toContain("/start?");
   });
 
+  it("restores the prior Coolify commit and healthy service after a post-pin production failure", () => {
+    expect(productionDeployer).toContain("async function restoreProductionRelease");
+    expect(productionDeployer).toContain("body: JSON.stringify({ git_commit_sha: previousSha })");
+    expect(productionDeployer).toContain("Coolify rollback did not converge after three deployments");
+    expect(productionDeployer).toContain("await waitForHealthyProductionRelease(");
+    expect(productionDeployer).toContain('"restored production"');
+    expect(productionDeployer).toContain("candidate failed; restored previous production");
+    expect(productionDeployer.indexOf("releaseMutationAttempted = true")).toBeLessThan(
+      productionDeployer.indexOf("body: JSON.stringify({ git_commit_sha: args.sha })"),
+    );
+  });
+
   it("reconciles and reads back the complete managed application environment before changing the release SHA", () => {
     expect(productionDeployer).toContain("googlePublicBuildConfigurationFromEnv(process.env)");
     expect(productionDeployer).toContain("managedEnvironmentReconciliationPlan(environment, current)");
-    expect(productionDeployer).toContain("managedEnvironmentParityFailures(environment, updated)");
-    expect(productionDeployer).toContain("coolifyGoogleEnvironmentFailures(updated, googleExpected)");
+    expect(productionDeployer).toContain("managedEnvironmentParityFailures(environment, updated, undefined");
+    expect(productionDeployer).toContain("coolifyGoogleEnvironmentFailures(updated, googleExpected,");
+    expect(productionDeployer).toContain("path}/bulk");
+    expect(productionDeployer).toContain("managedEnvironmentMutationFailures(mutations, acknowledged)");
     expect(productionDeployer.indexOf("await reconcileManagedApplicationEnvironment")).toBeLessThan(
       productionDeployer.indexOf("body: JSON.stringify({ git_commit_sha: args.sha })"),
     );
@@ -255,6 +285,62 @@ describe("release governance", () => {
     expect(finalCurrentAssertion).toBeLessThan(
       productionDeployer.indexOf("body: JSON.stringify({ git_commit_sha: args.sha })"),
     );
+  });
+
+  it("proves locked Coolify values through bulk acknowledgement and metadata-only list readback", () => {
+    const env = { ADMIN_REVIEW_TOKEN: "governed-secret" };
+    const hiddenRow = {
+      key: "ADMIN_REVIEW_TOKEN",
+      is_preview: false,
+      is_runtime: true,
+      is_buildtime: false,
+      is_literal: true,
+      is_multiline: false,
+    };
+    const plan = managedEnvironmentReconciliationPlan(env, [hiddenRow]);
+    expect(plan.mutations).toEqual([{ key: "ADMIN_REVIEW_TOKEN", value: "governed-secret" }]);
+    expect(
+      managedEnvironmentMutationFailures(plan.mutations, [
+        { ...hiddenRow, value: "governed-secret", real_value: "governed-secret" },
+      ]),
+    ).toEqual([]);
+    expect(managedEnvironmentMutationFailures(plan.mutations, [hiddenRow])).toEqual([]);
+    expect(
+      managedEnvironmentMutationFailures(plan.mutations, [
+        { ...hiddenRow, value: "wrong-visible-value", real_value: "wrong-visible-value" },
+      ]),
+    ).toContain("ADMIN_REVIEW_TOKEN bulk update did not acknowledge the governed write and scope");
+    expect(managedEnvironmentParityFailures(env, [hiddenRow], undefined, { allowHiddenValues: true })).toEqual([]);
+    expect(managedEnvironmentParityFailures(env, [hiddenRow])).toContain(
+      "ADMIN_REVIEW_TOKEN Coolify value or runtime/build scope does not match Infisical",
+    );
+  });
+
+  it("owns the explicit abuse-policy controls and tombstones superseded owner routes", () => {
+    expect(MANAGED_APPLICATION_ENVIRONMENT_KEYS).toContain("TURNSTILE_ENFORCEMENT");
+    expect(MANAGED_APPLICATION_ENVIRONMENT_KEYS).toContain("VOICE_SESSION_DAILY_LIMIT");
+    expect(RETIRED_MANAGED_APPLICATION_ENVIRONMENT_KEYS).toEqual(new Set(["OWNER_AI", "OWNER_CULTURAL"]));
+
+    const staleOwner = {
+      key: "OWNER_AI",
+      value: "stale@example.test",
+      real_value: "stale@example.test",
+      is_preview: false,
+      is_runtime: true,
+      is_buildtime: false,
+      is_literal: true,
+      is_multiline: false,
+    };
+    expect(managedEnvironmentReconciliationPlan({}, [staleOwner]).mutations).toContainEqual({
+      key: "OWNER_AI",
+      value: "",
+    });
+    expect(
+      managedEnvironmentReconciliationPlan({ OWNER_AI: "restored@example.test" }, [staleOwner]).mutations,
+    ).toContainEqual({
+      key: "OWNER_AI",
+      value: "restored@example.test",
+    });
   });
 
   it("clears a managed production value retired from Infisical and proves empty parity", () => {
@@ -332,7 +418,8 @@ describe("release governance", () => {
   it("proves Coolify runtime health and loopback health-check ownership after deployment", () => {
     expect(productionDeployer).toContain('application.status !== "running:healthy"');
     expect(productionDeployer).toContain('application.health_check_host !== "127.0.0.1"');
-    expect(productionDeployer).toContain("assertHealthyOrientalApplication(healthyApplication, args.sha)");
+    expect(productionDeployer).toContain("assertHealthyOrientalApplication(application, expectedSha)");
+    expect(productionDeployer).toContain("waitForHealthyProductionRelease");
   });
 
   it("proves Search Console metadata and consent-gated GA on public but never admin surfaces", () => {

@@ -1,4 +1,6 @@
 export const MANAGED_APPLICATION_ENVIRONMENT_KEYS = [
+  "ADMIN_REVIEW_ACTOR",
+  "ADMIN_REVIEW_ROLE",
   "ADMIN_REVIEW_TOKEN",
   "AWS_ACCESS_KEY_ID",
   "AWS_REGION",
@@ -25,6 +27,7 @@ export const MANAGED_APPLICATION_ENVIRONMENT_KEYS = [
   "OPENAI_REALTIME_SPEED",
   "OPENAI_REALTIME_TRANSCRIPTION_MODEL",
   "OPENAI_REALTIME_VOICE",
+  "OPS_AUTOMATION_TOKEN",
   "OPS_ALERT_SLACK_CHANNEL_ID",
   "OWNER_AI",
   "OWNER_COMMUNITY",
@@ -34,6 +37,7 @@ export const MANAGED_APPLICATION_ENVIRONMENT_KEYS = [
   "OWNER_PROGRAMME",
   "OWNER_TECHNOLOGY",
   "OWNER_TENANCY",
+  "PRIVACY_ADMIN_TOKEN",
   "REDIS_URL",
   "SENTRY_AUTH_TOKEN",
   "SENTRY_DSN",
@@ -50,6 +54,7 @@ export const MANAGED_APPLICATION_ENVIRONMENT_KEYS = [
   "SMTP_USER",
   "TEAM_NOTIFICATION_CC_EMAILS",
   "TEAM_NOTIFICATION_EMAIL",
+  "TURNSTILE_ENFORCEMENT",
   "TURNSTILE_SECRET_KEY",
   "TURNSTILE_SITE_KEY",
   "VOICE_EMAIL_CAPTURE_MODE",
@@ -59,6 +64,7 @@ export const MANAGED_APPLICATION_ENVIRONMENT_KEYS = [
   "VOICE_MODEL_CELL",
   "VOICE_REASONING_CELL",
   "VOICE_RUNTIME_PROFILE",
+  "VOICE_SESSION_DAILY_LIMIT",
   "VOICE_VARIANT_PICKER",
 ] as const;
 
@@ -80,7 +86,13 @@ export const MANAGED_RUNTIME_APPLICATION_ENVIRONMENT_KEYS = MANAGED_APPLICATION_
  * from the native Infisical application scope. Reintroducing a value always
  * wins over this declaration.
  */
-export const RETIRED_MANAGED_APPLICATION_ENVIRONMENT_KEYS = new Set<ManagedApplicationEnvironmentKey>();
+export const RETIRED_MANAGED_APPLICATION_ENVIRONMENT_KEYS = new Set<ManagedApplicationEnvironmentKey>([
+  // These historical routes were folded into the canonical technology and
+  // other segments. Keep the keys in the managed inventory as tombstones so
+  // a stale Coolify value is cleared after it is removed from Infisical.
+  "OWNER_AI",
+  "OWNER_CULTURAL",
+]);
 
 export type ManagedEnvironmentSnapshotRow = {
   key?: unknown;
@@ -117,11 +129,13 @@ function managedEnvironmentRowMatches(
   row: ManagedEnvironmentSnapshotRow,
   key: ManagedApplicationEnvironmentKey,
   value: string,
+  allowHiddenValue = false,
 ) {
   const buildTime = isManagedBuildTimeEnvironmentKey(key);
-  const effectiveValue = typeof row.real_value === "string" ? row.real_value : row.value;
+  const effectiveValue =
+    typeof row.real_value === "string" ? row.real_value : typeof row.value === "string" ? row.value : undefined;
   return (
-    effectiveValue === value &&
+    (effectiveValue === value || (allowHiddenValue && effectiveValue === undefined)) &&
     row.is_runtime === true &&
     (row.is_buildtime === true || row.is_build_time === true) === buildTime &&
     row.is_literal === true &&
@@ -172,6 +186,7 @@ export function managedEnvironmentParityFailures(
   env: Readonly<Record<string, string | undefined>>,
   rows: ManagedEnvironmentSnapshotRow[],
   retiredKeys: ReadonlySet<ManagedApplicationEnvironmentKey> = RETIRED_MANAGED_APPLICATION_ENVIRONMENT_KEYS,
+  options: { allowHiddenValues?: boolean } = {},
 ) {
   const expected = managedRuntimeEnvironmentFromEnv(env);
   const failures: string[] = [];
@@ -185,7 +200,10 @@ export function managedEnvironmentParityFailures(
       );
       continue;
     }
-    if (!matches[0] || !managedEnvironmentRowMatches(matches[0], key, value ?? "")) {
+    if (
+      !matches[0] ||
+      !managedEnvironmentRowMatches(matches[0], key, value ?? "", options.allowHiddenValues === true)
+    ) {
       failures.push(
         value === undefined
           ? retiredKeys.has(key)
@@ -193,6 +211,27 @@ export function managedEnvironmentParityFailures(
             : `${key} is live in Coolify but missing from the supplied scope; refusing implicit retirement`
           : `${key} Coolify value or runtime/build scope does not match Infisical`,
       );
+    }
+  }
+  return failures;
+}
+
+/**
+ * Coolify omits locked values unless the API token has `read:sensitive`,
+ * including from a successful bulk-update response. Because these rows come
+ * directly from the successful request carrying the exact governed payload,
+ * verify key/scope metadata and compare the value whenever the API is allowed
+ * to return it. This never requires making secrets visible in the Coolify UI.
+ */
+export function managedEnvironmentMutationFailures(
+  mutations: ManagedEnvironmentMutation[],
+  rows: ManagedEnvironmentSnapshotRow[],
+) {
+  const failures: string[] = [];
+  for (const { key, value } of mutations) {
+    const matches = rows.filter((row) => row.key === key && row.is_preview !== true);
+    if (matches.length !== 1 || !matches[0] || !managedEnvironmentRowMatches(matches[0], key, value, true)) {
+      failures.push(`${key} bulk update did not acknowledge the governed write and scope`);
     }
   }
   return failures;

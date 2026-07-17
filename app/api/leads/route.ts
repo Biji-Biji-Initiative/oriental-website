@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
   }
 
   const signedVoiceReview = voiceLeadHasSignedReview(parsed.data);
-  if (parsed.data.submissionMethod === "voice_command" && !signedVoiceReview) {
+  if (parsed.data.source === "voice" && !signedVoiceReview) {
     logWarn("lead.voice_review_invalid", {
       requestId,
       ipHash,

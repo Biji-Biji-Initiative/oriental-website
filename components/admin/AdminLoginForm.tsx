@@ -114,13 +114,7 @@ export function AdminLoginForm({ reason }: { reason?: string }) {
               </div>
             ) : null}
             <Form {...form}>
-              {/* method="post" keeps the token out of the URL if a submit fires before hydration */}
-              <form
-                action="/api/admin/login"
-                className="mt-6 grid gap-5"
-                method="post"
-                onSubmit={form.handleSubmit(onSubmit)}
-              >
+              <form className="mt-6 grid gap-5" onSubmit={form.handleSubmit(onSubmit)}>
                 <FormField
                   control={form.control}
                   name="token"

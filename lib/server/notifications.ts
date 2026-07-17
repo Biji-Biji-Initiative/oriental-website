@@ -230,11 +230,20 @@ async function sendSlackMessage(lead: StoredLead): Promise<NotificationResult> {
       body: JSON.stringify({ channel: slackChannel, text: payload.text, blocks: payload.blocks }),
       signal: AbortSignal.timeout(8_000),
     });
-    const body = (await response.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+    const body = (await response.json().catch(() => null)) as {
+      ok?: boolean;
+      error?: string;
+      channel?: string;
+      ts?: string;
+    } | null;
     if (!response.ok || body?.ok !== true) {
       return { ok: false, error: body?.error ?? "slack_api_error", status: response.status };
     }
-    return { ok: true, transport: "slack" };
+    return {
+      ok: true,
+      transport: "slack",
+      ...(body.channel && body.ts ? { externalId: `${body.channel}:${body.ts}` } : {}),
+    };
   }
 
   const slackWebhookUrl = readEnv("SLACK_WEBHOOK_URL");

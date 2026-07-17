@@ -145,11 +145,17 @@ OPENAI_REALTIME_VOICE=coral
 OPENAI_REALTIME_SPEED=1.28
 VOICE_RUNTIME_PROFILE=baseline
 VOICE_VARIANT_PICKER=false
+VOICE_SESSION_DAILY_LIMIT=80
 REDIS_URL=
+TURNSTILE_ENFORCEMENT=relaxed
 TURNSTILE_SITE_KEY=
 TURNSTILE_SECRET_KEY=
 IP_HASH_SECRET=
 ADMIN_REVIEW_TOKEN=
+ADMIN_REVIEW_ROLE=operator
+ADMIN_REVIEW_ACTOR=Oriental intake operator
+OPS_AUTOMATION_TOKEN=
+PRIVACY_ADMIN_TOKEN=
 COOLIFY_ORIENTAL_APPLICATION_UUID=mtrl2z6a7zvoyevxvufpntij
 SENTRY_DSN=
 NEXT_PUBLIC_SENTRY_DSN=
@@ -177,8 +183,6 @@ OWNER_TENANCY=
 OWNER_EDUCATION=
 OWNER_PROGRAMME=
 OWNER_TECHNOLOGY=
-OWNER_AI=
-OWNER_CULTURAL=
 OWNER_COMMUNITY=
 OWNER_OTHER=
 ```
@@ -244,7 +248,11 @@ No Drizzle migrations or `DATABASE_URL` are part of the launch runtime.
 
 Admin review and observability:
 
-- `/admin/session-review` is protected by `ADMIN_REVIEW_TOKEN`.
+- `/admin/session-review` is protected by the configured `ADMIN_REVIEW_TOKEN`
+  principal. Its signed cookie embeds that actor and role; role changes do not
+  silently elevate an existing session. Cookie mutations require same-origin
+  JSON requests. Scheduled maintenance uses the distinct bearer-only
+  `OPS_AUTOMATION_TOKEN`, while privacy deletion uses `PRIVACY_ADMIN_TOKEN`.
 - Sentry uses `@sentry/nextjs` config files and `withSentryConfig` in
   `next.config.ts`.
 - Production ops alerts use `OPS_ALERT_SLACK_CHANNEL_ID`; the current smoke

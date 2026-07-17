@@ -1,27 +1,40 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { POST } from "@/app/api/admin/sla-check/route";
-import { getAdminReviewDashboard } from "@/lib/server/convex";
+import { getAdminLeadSlaSnapshot } from "@/lib/server/convex";
 import { sendOpsAlert } from "@/lib/server/ops-alerts";
 
-vi.mock("@/lib/server/convex", () => ({ getAdminReviewDashboard: vi.fn() }));
+vi.mock("@/lib/server/convex", () => ({ getAdminLeadSlaSnapshot: vi.fn() }));
 vi.mock("@/lib/server/ops-alerts", () => ({ sendOpsAlert: vi.fn() }));
 
 const originalEnv = process.env;
-const dashboardMock = vi.mocked(getAdminReviewDashboard);
+const snapshotMock = vi.mocked(getAdminLeadSlaSnapshot);
 const alertMock = vi.mocked(sendOpsAlert);
 
 const HOUR = 60 * 60 * 1000;
 const now = 1_800_000_000_000;
 
-function dashboard(leads: Array<Record<string, unknown>>, failedNotifications = 0) {
+function snapshot(input?: {
+  active?: number;
+  activeTruncated?: boolean;
+  unowned?: number;
+  unownedTruncated?: boolean;
+  failed?: number;
+  failedTruncated?: boolean;
+  oldestCreatedAt?: number;
+}) {
   return {
     ok: true as const,
     data: {
       generatedAt: now,
-      leads,
-      queues: { failedNotifications: Array.from({ length: failedNotifications }, (_, i) => ({ leadId: `f${i}` })) },
+      activeLeads: { count: input?.active ?? 0, truncated: input?.activeTruncated ?? false },
+      unownedBreaches: {
+        count: input?.unowned ?? 0,
+        truncated: input?.unownedTruncated ?? false,
+        ...(input?.oldestCreatedAt === undefined ? {} : { oldestCreatedAt: input.oldestCreatedAt }),
+      },
+      failedNotifications: { count: input?.failed ?? 0, truncated: input?.failedTruncated ?? false },
     },
-  } as unknown as Awaited<ReturnType<typeof getAdminReviewDashboard>>;
+  } as Awaited<ReturnType<typeof getAdminLeadSlaSnapshot>>;
 }
 
 describe("admin SLA check route", () => {
@@ -30,7 +43,8 @@ describe("admin SLA check route", () => {
       ...originalEnv,
       NODE_ENV: "test",
       ADMIN_REVIEW_TOKEN: "admin-review-token-123456789",
-      ADMIN_REVIEW_ROLE: "viewer",
+      ADMIN_REVIEW_ROLE: "operator",
+      OPS_AUTOMATION_TOKEN: "ops-automation-token-123456789",
     };
     alertMock.mockResolvedValue({ ok: true, transport: "slack_bot" });
   });
@@ -41,55 +55,74 @@ describe("admin SLA check route", () => {
   });
 
   it("stays quiet when every active lead is owned within the window", async () => {
-    dashboardMock.mockResolvedValue(
-      dashboard([
-        { leadId: "a", status: "new", owner: "Chewi", createdAt: now - 30 * HOUR },
-        { leadId: "b", status: "new", owner: "", createdAt: now - 1 * HOUR },
-        { leadId: "c", status: "archived", owner: "", createdAt: now - 90 * HOUR },
-      ]),
-    );
+    snapshotMock.mockResolvedValue(snapshot({ active: 2 }));
 
     const response = await POST(slaRequest({}));
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({ ok: true, unownedBreaches: 0, alerted: false });
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      unownedBreaches: 0,
+      activeLeads: 2,
+      truncated: { activeLeads: false, unownedBreaches: false, failedNotifications: false },
+      alerted: false,
+    });
+    expect(snapshotMock).toHaveBeenCalledWith(4 * HOUR);
     expect(alertMock).not.toHaveBeenCalled();
   });
 
-  it("alerts on unowned leads beyond the window and failed notifications", async () => {
-    dashboardMock.mockResolvedValue(
-      dashboard(
-        [
-          { leadId: "a", status: "new", owner: "", createdAt: now - 6 * HOUR },
-          { leadId: "b", status: "reviewing", owner: " ", createdAt: now - 26 * HOUR },
-        ],
-        1,
-      ),
+  it("alerts on indexed SLA lower bounds without presenting truncated counts as exact", async () => {
+    snapshotMock.mockResolvedValue(
+      snapshot({
+        active: 250,
+        activeTruncated: true,
+        unowned: 250,
+        unownedTruncated: true,
+        failed: 1,
+        oldestCreatedAt: now - 26 * HOUR,
+      }),
     );
 
     const response = await POST(slaRequest({ maxUnownedHours: 4 }));
 
     await expect(response.json()).resolves.toMatchObject({
       ok: true,
-      unownedBreaches: 2,
+      unownedBreaches: 250,
       failedNotifications: 1,
+      truncated: { activeLeads: true, unownedBreaches: true, failedNotifications: false },
       alerted: true,
     });
-    expect(alertMock).toHaveBeenCalledWith(expect.objectContaining({ event: "lead_sla_breach", severity: "error" }));
+    expect(alertMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "lead_sla_breach",
+        severity: "error",
+        summary: expect.stringContaining("250+ lead(s) unowned"),
+        meta: expect.objectContaining({ unowned: 250, unownedCountIsLowerBound: true, oldestUnownedHours: 26 }),
+      }),
+    );
+  });
+
+  it("rejects interactive review credentials because the sweep can post to Slack", async () => {
+    const response = await POST(slaRequest({}, "admin-review-token-123456789"));
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({ ok: false, error: "forbidden" });
+    expect(snapshotMock).not.toHaveBeenCalled();
+    expect(alertMock).not.toHaveBeenCalled();
   });
 
   it("requires admin auth", async () => {
     const response = await POST(new Request("http://localhost/api/admin/sla-check", { method: "POST", body: "{}" }));
     expect(response.status).toBe(401);
-    expect(dashboardMock).not.toHaveBeenCalled();
+    expect(snapshotMock).not.toHaveBeenCalled();
   });
 });
 
-function slaRequest(body: Record<string, unknown>) {
+function slaRequest(body: Record<string, unknown>, token = "ops-automation-token-123456789") {
   return new Request("http://localhost/api/admin/sla-check", {
     method: "POST",
     headers: {
-      authorization: "Bearer admin-review-token-123456789",
+      authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),

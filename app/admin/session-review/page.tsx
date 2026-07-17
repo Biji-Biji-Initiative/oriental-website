@@ -7,6 +7,7 @@ import { AdminCommandPalette, type AdminPaletteItem } from "@/components/admin/A
 import { AdminHashOpenDetails } from "@/components/admin/AdminHashOpenDetails";
 import { AdminLeadWorkflowForm } from "@/components/admin/AdminLeadWorkflowForm";
 import { AdminLoginForm } from "@/components/admin/AdminLoginForm";
+import { AdminLogoutButton } from "@/components/admin/AdminLogoutButton";
 import { AdminVoiceFollowUpButton } from "@/components/admin/AdminVoiceFollowUpButton";
 import { AdminVoiceSessionTranscript } from "@/components/admin/AdminVoiceSessionTranscript";
 import { Badge } from "@/components/admin/Badge";
@@ -236,11 +237,7 @@ function AdminShell({
             <div className="flex items-center gap-2">
               <AdminCommandPalette items={palette} />
               <AdminAutoRefresh />
-              <form action="/api/admin/logout" method="post">
-                <Button type="submit" variant="outline">
-                  Sign out
-                </Button>
-              </form>
+              <AdminLogoutButton />
             </div>
             {generatedAt ? (
               <p className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] font-medium tabular-nums text-slate-400">
@@ -1478,6 +1475,15 @@ function AnalyticsPanel({ data }: { data: DashboardData }) {
           <CountList title="Priority" values={data.analytics.priorityCounts} />
           <CountList title="Segment" values={data.analytics.segmentCounts} />
         </div>
+        <div>
+          <div className="text-sm font-semibold text-slate-200">Submitted leads — conversion attribution</div>
+          <p className="mt-1 max-w-4xl text-xs leading-5 text-slate-400">
+            These counts use only saved lead rows in the recent dashboard window. They show which entrance, opening
+            method, and send action produced a submitted enquiry. Attribution is client-reported and schema-bounded;
+            voice claims require a signed session, but the individual method counters are not independent server
+            observations and must not be used alone for experiment promotion.
+          </p>
+        </div>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <CountList
             labelFor={intakeEntryPointLabel}
@@ -1510,7 +1516,7 @@ function AnalyticsPanel({ data }: { data: DashboardData }) {
         </div>
         <details className="rounded-lg border border-white/10 bg-white/[0.02]" suppressHydrationWarning>
           <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-slate-300 marker:hidden">
-            Field capture mix — privacy-safe provenance
+            Submitted leads — field capture mix (privacy-safe provenance)
           </summary>
           <div className="grid gap-4 border-t border-white/10 p-4 sm:grid-cols-2 xl:grid-cols-3">
             {Object.entries(data.analytics.fieldCompletionCounts).map(([field, values]) => (
@@ -1523,6 +1529,7 @@ function AnalyticsPanel({ data }: { data: DashboardData }) {
             ))}
           </div>
         </details>
+        <VoiceCaptureFunnelPanel funnel={data.analytics.voiceCaptureFunnel} />
         <details className="rounded-lg border border-white/10 bg-white/[0.02]" suppressHydrationWarning>
           <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-slate-300 marker:hidden">
             Engineering details — voice experiment cells
@@ -1587,6 +1594,119 @@ function AnalyticsPanel({ data }: { data: DashboardData }) {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+type VoiceCaptureFunnel = DashboardData["analytics"]["voiceCaptureFunnel"];
+
+function VoiceCaptureFunnelPanel({ funnel }: { funnel: VoiceCaptureFunnel }) {
+  const { cohort, outcome, email } = funnel;
+  const conversationCount = cohort.logicalConversations;
+  return (
+    <section className="rounded-lg border border-sky-400/20 bg-sky-400/[0.04] p-4" data-voice-capture-funnel>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-100">All engaged voice conversations — capture funnel</h3>
+          <p className="mt-1 max-w-4xl text-xs leading-5 text-slate-400">
+            PII-free aggregation over the loaded voice-session window. Explicit activation, connection or turn activity,
+            and typed or spoken field edits qualify; unused session prewarms do not. Capture-method and edit counters
+            are client-reported inside a signed session boundary, not independently observed by the server.
+          </p>
+        </div>
+        <Badge tone={outcome.closedUnsubmitted > 0 ? "amber" : "green"}>
+          {conversationCount} logical {conversationCount === 1 ? "conversation" : "conversations"}
+        </Badge>
+      </div>
+
+      <dl className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <VoiceCaptureStat label="Submitted" value={outcome.submitted} />
+        <VoiceCaptureStat label="Closed without sending" value={outcome.closedUnsubmitted} />
+        <VoiceCaptureStat label="Still open / no close signal" value={outcome.openUnsubmitted} />
+        <VoiceCaptureStat label="Recoverable confirmed email" value={email.signals.recoverableConfirmed} />
+      </dl>
+
+      <p className="mt-3 text-xs leading-5 text-slate-400">
+        {cohort.engagedSessionRows} engaged of {cohort.loadedSessionRows} loaded session rows became {conversationCount}{" "}
+        logical conversations. {cohort.foldedReconnectRows} reconnect rows were folded by conversation ID;{" "}
+        {cohort.unstitchedConversations} legacy conversations lacked a stitchable ID and remain separate.
+        {cohort.windowMayBeTruncated
+          ? ` This view reached its ${cohort.windowLimit}-row limit, so every count is a lower bound for the recent stored population.`
+          : " The loaded window was not truncated."}
+      </p>
+
+      <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <CountList labelFor={intakeEntryPointLabel} title="Voice entrance" values={funnel.entryPointCounts} />
+        <CountList
+          labelFor={intakeEntryMethodLabel}
+          title="Voice workspace opened with"
+          values={funnel.entryMethodCounts}
+        />
+        <CountList
+          labelFor={submissionMethodLabel}
+          title="Submitted conversations sent with"
+          values={funnel.submissionMethodCounts}
+        />
+        <CountList labelFor={voiceEmailOutcomeLabel} title="Final email state" values={email.outcomes} />
+      </div>
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-2">
+        <CountList
+          labelFor={voiceCaptureSignalLabel}
+          title="Email quality and recovery signals (may overlap)"
+          values={email.signals}
+        />
+        <CountList
+          labelFor={voiceCaptureOutcomeLabel}
+          title="Closed-conversation outcomes"
+          values={{
+            abandonedBeforeEmail: outcome.abandonedBeforeEmail,
+            closedWithEmailUnsent: outcome.closedWithEmailUnsent,
+          }}
+        />
+      </div>
+
+      <details className="mt-4 rounded-lg border border-white/10 bg-black/10" suppressHydrationWarning>
+        <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-slate-300 marker:hidden">
+          All engaged voice conversations — per-field completion and editing
+        </summary>
+        <div className="grid gap-4 border-t border-white/10 p-4 sm:grid-cols-2 xl:grid-cols-3">
+          {Object.entries(funnel.fields).map(([field, summary]) => (
+            <div className="rounded-lg border border-white/10 p-3" data-voice-capture-field={field} key={field}>
+              <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+                {intakeFieldLabel(field)}
+              </div>
+              <div className="mt-2 text-xl font-semibold tabular-nums text-slate-200">
+                {summary.completedConversations}/{conversationCount}
+              </div>
+              <p className="mt-1 text-xs text-slate-400">
+                conversations completed · {summary.missingConversations} missing
+              </p>
+              <div className="mt-3">
+                <CountList
+                  labelFor={fieldCompletionMethodLabel}
+                  title="Completion method"
+                  values={summary.methodCounts}
+                />
+              </div>
+              <p className="mt-3 text-xs leading-5 text-slate-400">
+                {summary.correctedConversations} conversations corrected ({summary.correctionActions} actions) ·{" "}
+                {summary.clearedConversations} cleared ({summary.clearActions} actions). Reconnect snapshots use the
+                highest reported counter per logical conversation, not a duplicate sum.
+              </p>
+            </div>
+          ))}
+        </div>
+      </details>
+    </section>
+  );
+}
+
+function VoiceCaptureStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-md border border-white/10 bg-white/[0.03] p-3">
+      <dt className="text-xs text-slate-400">{label}</dt>
+      <dd className="mt-1 text-xl font-semibold tabular-nums text-slate-200">{value}</dd>
+    </div>
   );
 }
 
@@ -1947,7 +2067,7 @@ function CountList({
   const total = entries.reduce((sum, [, count]) => sum + count, 0);
   return (
     <div className="rounded-lg border border-white/10 p-3">
-      <div className="mb-3 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{title}</div>
+      <div className="mb-3 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">{title}</div>
       <div className="grid gap-2">
         {entries.length === 0 ? <div className="text-xs text-slate-400">No data</div> : null}
         {entries.slice(0, 6).map(([label, count]) => (
@@ -2043,7 +2163,7 @@ const intakeEntryPointLabels: Record<string, string> = {
   hero_primary: "Hero primary call to action",
   hero_updates: "Hero updates capture",
   hero_updates_followup: "Hero updates follow-up",
-  nav_desktop: "Desktop navigation",
+  nav_desktop: "Persistent header navigation",
   nav_mobile: "Mobile navigation",
   keyboard_shortcut: "Keyboard shortcut",
   voice_rail: "Floating voice rail",
@@ -2079,6 +2199,25 @@ const fieldCompletionMethodLabels: Record<string, string> = {
   unknown: "Not captured / legacy",
 };
 
+const voiceEmailOutcomeLabels: Record<string, string> = {
+  confirmed: "Captured and confirmed",
+  pending: "Captured, confirmation pending",
+  unverified: "Captured, legacy / unverified",
+  missing: "No email captured",
+};
+
+const voiceCaptureSignalLabels: Record<string, string> = {
+  rejectedCapture: "Rejected email capture attempt",
+  submitBlockedUnconfirmed: "Send blocked: email unconfirmed",
+  recoverableConfirmed: "Closed unsent with confirmed email",
+  needsCheckBeforeFollowUp: "Closed unsent: email needs checking",
+};
+
+const voiceCaptureOutcomeLabels: Record<string, string> = {
+  abandonedBeforeEmail: "Closed before email capture",
+  closedWithEmailUnsent: "Closed with email but not sent",
+};
+
 const intakeFieldLabels: Record<string, string> = {
   name: "Name",
   email: "Email",
@@ -2102,6 +2241,18 @@ function submissionMethodLabel(value: string) {
 
 function fieldCompletionMethodLabel(value: string) {
   return fieldCompletionMethodLabels[value] ?? defaultCountLabel(value);
+}
+
+function voiceEmailOutcomeLabel(value: string) {
+  return voiceEmailOutcomeLabels[value] ?? defaultCountLabel(value);
+}
+
+function voiceCaptureSignalLabel(value: string) {
+  return voiceCaptureSignalLabels[value] ?? defaultCountLabel(value);
+}
+
+function voiceCaptureOutcomeLabel(value: string) {
+  return voiceCaptureOutcomeLabels[value] ?? defaultCountLabel(value);
 }
 
 function intakeFieldLabel(value: string) {

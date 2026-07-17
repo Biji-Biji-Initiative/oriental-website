@@ -135,6 +135,7 @@ export function VoiceAgentDialog({
     ((sample: { at: number; durationMs: number; name: VoiceToolName; outcome: VoiceToolOutcome }) => void) | null
   >(null);
   const prewarmSnapshotIdsRef = useRef<Set<string>>(new Set());
+  const snapshotSequencesRef = useRef<Map<string, number>>(new Map());
   const [reviewMetadata, setReviewMetadata] = useState<VoiceReviewMetadata | null>(null);
 
   const currentReviewCredentials = useCallback((): VoiceReviewCredentials | null => {
@@ -142,6 +143,12 @@ export function VoiceAgentDialog({
     if (process.env.NODE_ENV === "production") return null;
     localReviewRef.current ??= { id: crypto.randomUUID(), token: "local-development-review-token" };
     return localReviewRef.current;
+  }, []);
+
+  const nextSnapshotSequence = useCallback((reviewId: string) => {
+    const next = (snapshotSequencesRef.current.get(reviewId) ?? 0) + 1;
+    snapshotSequencesRef.current.set(reviewId, next);
+    return next;
   }, []);
 
   const handleVoiceClose = useCallback((reason: VoiceCloseReason) => {
@@ -281,13 +288,14 @@ export function VoiceAgentDialog({
             void postVoiceReviewSnapshot(
               review,
               buildVoiceReviewSnapshot(review, leadState, connectionStatusRef.current, {
+                snapshotSequence: nextSnapshotSequence(review.id),
                 leadId: responseBody?.id ?? null,
                 submittedAt: Date.now(),
                 entryPoint,
                 entryMethod,
                 submissionMethod,
               }),
-            );
+            ).catch(() => null);
           }
         }
         setStatus("submitted");
@@ -309,7 +317,7 @@ export function VoiceAgentDialog({
         setSubmitting(false);
       }
     },
-    [currentReviewCredentials, focusCapturedField],
+    [currentReviewCredentials, focusCapturedField, nextSnapshotSequence],
   );
 
   const runtime = useVoiceRuntime({
@@ -393,7 +401,7 @@ export function VoiceAgentDialog({
       window.clearTimeout(settleTimer);
       let attempts = 0;
       const settleFocus = () => {
-        if (generation !== transferGeneration) return;
+        if (generation !== transferGeneration || !emailEditorOwnedFocusRef.current) return;
         visibleEmailEditor()?.focus({ preventScroll: true });
         attempts += 1;
         // Base UI's focus scope also reacts when the old editor becomes
@@ -413,6 +421,8 @@ export function VoiceAgentDialog({
       }
       if (target.matches('input, textarea, select, button, a[href], [tabindex]:not([tabindex="-1"])')) {
         emailEditorOwnedFocusRef.current = false;
+        transferGeneration += 1;
+        window.clearTimeout(settleTimer);
       }
     };
     media.addEventListener("change", transferFocusedEmail);
@@ -673,6 +683,7 @@ export function VoiceAgentDialog({
       void postVoiceReviewSnapshot(
         review,
         buildVoiceReviewSnapshot(review, snapshotState, connectionStatusRef.current, {
+          snapshotSequence: nextSnapshotSequence(review.id),
           ...(options.includeEntry === false || !activeEntryPointRef.current
             ? {}
             : { entryPoint: activeEntryPointRef.current }),
@@ -685,7 +696,7 @@ export function VoiceAgentDialog({
         { keepalive: Boolean(overrides.closedAt) },
       ).catch(() => null);
     },
-    [captured, currentReviewCredentials, segment, stateRef, transcript],
+    [captured, currentReviewCredentials, nextSnapshotSequence, segment, stateRef, transcript],
   );
 
   postCloseSnapshotRef.current = (reason: VoiceCloseReason) => {
@@ -767,13 +778,11 @@ export function VoiceAgentDialog({
           region.scrollTop = 0;
           region.scrollLeft = 0;
         }
-        if (!desktopLayout.matches) dialogContentRef.current?.focus({ preventScroll: true });
       });
     };
     resetResponsiveScroll();
-    // Base UI finishes its focus-trap setup after the opening frame. Reassert
-    // the popup focus once that settles so a lower form field cannot scroll a
-    // short mobile viewport to the middle or summon its keyboard on open.
+    // Base UI finishes its layout after the opening frame. Reset scroll once
+    // that settles without moving focus away from a control the visitor chose.
     settledReset = window.setTimeout(resetResponsiveScroll, 120);
     desktopLayout.addEventListener("change", resetResponsiveScroll);
     return () => {
@@ -887,10 +896,20 @@ export function VoiceAgentDialog({
                   markEmailEditorFocused();
                   runtime.beginCapturedEdit("email");
                 }}
+                onEmailSubmit={() => {
+                  void submit("handoff_button", {
+                    ...stateRef.current,
+                    captured: form.getValues(),
+                    segment,
+                    transcript,
+                  });
+                }}
+                emailSubmitting={submitting}
               />
             </main>
 
             <aside
+              aria-label="Choose partner type"
               className="order-2 border-t border-white/10 p-5 lg:order-none lg:col-start-1 lg:row-start-1 lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:border-t-0 lg:border-r"
               data-voice-partner-region
             >

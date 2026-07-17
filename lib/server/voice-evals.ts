@@ -79,6 +79,8 @@ export async function runAdminVoiceEvals(options: {
   reviewIds?: string[];
   /** Re-judge sessions that already have a persisted evaluation. */
   force?: boolean;
+  /** Internal auto-eval calls target one conversation without forcing a replay. */
+  rescoreTargeted?: boolean;
 }): Promise<AdminEvalRunResult> {
   const convexUrl = readEnv("CONVEX_URL") ?? readEnv("NEXT_PUBLIC_CONVEX_URL");
   const ingestSecret = readEnv("CONVEX_INGEST_SECRET");
@@ -120,7 +122,7 @@ export async function runAdminVoiceEvals(options: {
       return (session.callReviewIds ?? []).some((id) => targetReviewIds.has(id));
     });
     const judgeableAll = conversations.filter(isJudgeable);
-    const deliberateRescore = Boolean(targetReviewIds) || options.force === true;
+    const deliberateRescore = options.force === true || (Boolean(targetReviewIds) && options.rescoreTargeted !== false);
     const pending = judgeableAll.filter((session) => needsAdminEvaluation(session, model, deliberateRescore));
     const alreadyEvaluated = judgeableAll.length - pending.length;
     const judgeable = pending.slice(0, limit);

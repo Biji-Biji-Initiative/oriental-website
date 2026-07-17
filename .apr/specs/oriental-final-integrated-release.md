@@ -11,6 +11,9 @@ deployment-governance patch as one exact-tree merge gate.
 - On-demand voice evaluations MUST keep the admin authorization boundary,
   explicit model allowlist, global cost lock, bounded batch/retries/timeouts,
   aggregate error categories, and transcript/captured-field privacy boundary.
+  Automatic close evaluation MUST share the same global lease, remain
+  idempotent for already-scored targeted sessions, and never treat a public
+  debug replay as permission for repeated provider spend.
 - GA4 MUST remain fail-closed before explicit local consent, omit query strings
   and fragments, stop future collection after withdrawal, attempt analytics
   cookie cleanup, and remain absent from admin/API traffic. Search Console and
@@ -37,6 +40,21 @@ deployment-governance patch as one exact-tree merge gate.
   event-specific type contract, bounded runtime allowlist, and post-withdrawal
   fail-closed behavior. Server persistence MUST reject impossible source and
   submission-method combinations.
+- Capture diagnostics MUST label submitted-lead attribution separately from all
+  engaged logical voice conversations. Reconnects MUST deduplicate by
+  `conversationId`; unused prewarms MUST be excluded; pending/rejected email,
+  correction, clear, typed-fallback, recoverable, and abandonment signals MUST
+  remain PII-free and disclose bounded-window/truncation limitations.
+- Any voice source or voice/chat/mixed field provenance MUST require a valid
+  signed review linkage. Public debug persistence MUST reduce provider errors
+  to bounded codes, enforce a per-review write limit, and require multiple
+  distinct corroborating sessions before a production quota alert.
+- Sentry server, edge, and browser configuration MUST disable contact-bearing
+  request collection and scrub bodies, query strings, credentials, users,
+  breadcrumbs, extras, and sensitive span attributes. Automated quality
+  judging MUST delimit untrusted transcripts, cap input, tokenize contact
+  values, ignore embedded instructions, and be disclosed in the bilingual
+  privacy notice.
 - Tool timing MUST remain PII-free and aggregate execution, response-to-call,
   and response-to-result latency overall and by canonical tool. It MUST NOT
   weaken durable routing or expose arguments, contact data, IDs, transcripts,
@@ -62,6 +80,17 @@ deployment-governance patch as one exact-tree merge gate.
   machine-checkable responses. Evaluation auto-on-close MUST be part of the
   managed environment contract, retain bounded cost/concurrency controls, and
   expose no transcript or captured-field content in workflow output or logs.
+- Published retention MUST be executable: delete abandoned voice diagnostics
+  after 30 days, submitted voice diagnostics after 90 days, and archived leads
+  plus workflow history after 730 days using bounded scheduled batches that
+  fail visibly on backlog. Verified subject deletion MUST be admin-only,
+  bounded, auditable without storing the subject email, and remove matching
+  leads, events, and linked/email-matching voice sessions.
+- Managed environment ownership MUST explicitly govern
+  `TURNSTILE_ENFORCEMENT=relaxed|required` and a bounded
+  `VOICE_SESSION_DAILY_LIMIT`; retired AI/Cultural owner keys MUST be removed
+  through reviewed tombstones rather than remaining as undocumented routing
+  segments.
 
 ## Review request
 

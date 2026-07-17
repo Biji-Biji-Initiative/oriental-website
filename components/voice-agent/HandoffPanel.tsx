@@ -66,7 +66,10 @@ export function HandoffPanel({
   }, [latestTranscriptKey]);
 
   return (
-    <aside className={cn("border-t border-white/10 p-5 lg:border-l xl:border-t-0", className)}>
+    <aside
+      aria-label="Enquiry handoff"
+      className={cn("border-t border-white/10 p-5 lg:border-l xl:border-t-0", className)}
+    >
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="text-xs uppercase tracking-[0.16em] text-white/48">Send your enquiry</div>
@@ -108,6 +111,7 @@ export function HandoffPanel({
                 <FormControl>
                   <Input
                     {...field}
+                    aria-required="true"
                     className={cn(emailNeedsConfirmation && "border-[#f2d38a]/65")}
                     disabled={locked}
                     onBlur={() => {
@@ -141,6 +145,14 @@ export function HandoffPanel({
               </FormItem>
             )}
           />
+          <Button
+            className="hidden h-12 rounded-full bg-mk-horizon px-5 text-sm font-semibold text-mk-off-black transition hover:bg-white disabled:opacity-55 lg:flex"
+            disabled={!ready || locked}
+            type="submit"
+          >
+            {submitted ? <CheckIcon data-icon="inline-start" /> : <SendIcon data-icon="inline-start" />}
+            {submitted ? `Sent to ${sentTo}` : submitting ? "Sending..." : ready ? "Send enquiry" : "Add email to send"}
+          </Button>
           <FormField
             control={form.control}
             name="name"
@@ -201,7 +213,7 @@ export function HandoffPanel({
             render={({ field }) => (
               <FormItem>
                 <FormLabel className="text-white/78">
-                  Phone <span className="text-white/40">· optional</span>
+                  Phone <span className="text-white/55">· optional</span>
                 </FormLabel>
                 <FormControl>
                   <Input
@@ -231,7 +243,7 @@ export function HandoffPanel({
             render={({ field }) => (
               <FormItem>
                 <FormLabel className="text-white/78">
-                  Website / Socials <span className="text-white/40">· optional</span>
+                  Website / Socials <span className="text-white/55">· optional</span>
                 </FormLabel>
                 <FormControl>
                   <Input
@@ -260,7 +272,7 @@ export function HandoffPanel({
             render={({ field }) => (
               <FormItem>
                 <FormLabel className="text-white/78">
-                  What would you build with Mereka? <span className="text-white/40">· optional</span>
+                  What would you build with Mereka? <span className="text-white/55">· optional</span>
                 </FormLabel>
                 <FormControl>
                   <Textarea
@@ -305,14 +317,6 @@ export function HandoffPanel({
               Sent to {sentTo}. The handoff is locked so it cannot be submitted twice.
             </div>
           ) : null}
-          <Button
-            className="h-12 rounded-full bg-mk-horizon px-5 text-sm font-semibold text-mk-off-black transition hover:bg-white disabled:opacity-55"
-            disabled={!ready || locked}
-            type="submit"
-          >
-            {submitted ? <CheckIcon data-icon="inline-start" /> : <SendIcon data-icon="inline-start" />}
-            {submitted ? `Sent to ${sentTo}` : submitting ? "Sending..." : ready ? "Send enquiry" : "Add email to send"}
-          </Button>
         </form>
       </Form>
 

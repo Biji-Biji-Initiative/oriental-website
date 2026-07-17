@@ -444,9 +444,11 @@ Production errors:
 
 ### `POST /api/admin/login`
 
-Validates `ADMIN_REVIEW_TOKEN` and sets the signed `oriental_admin` HTTP-only,
-SameSite=Lax cookie with `Path=/`, so the same session authenticates both the
-`/admin` UI and `/api/admin/*` routes. Production cookies also set `Secure`.
+Accepts only a same-origin JSON request, validates `ADMIN_REVIEW_TOKEN`, and
+sets the principal-bound signed `oriental_admin` HTTP-only, SameSite=Lax
+cookie with `Path=/`, so the same actor and configured role authenticate both
+the `/admin` UI and ordinary `/api/admin/*` routes. Production cookies also set
+`Secure`.
 
 ### `GET /api/admin/review`
 
@@ -456,7 +458,9 @@ slices for the internal operations console.
 
 ### `PATCH /api/admin/leads/[leadId]`
 
-Bearer-token or admin-cookie protected mutation for operator triage. Updates the
+Interactive bearer-token or admin-cookie protected mutation for operator
+triage. Cookie-authenticated state changes require `Content-Type:
+application/json` and an `Origin` exactly matching the request origin. Updates the
 Convex lead workflow fields and appends a `workflow_update` event to
 `leadEvents`.
 
@@ -487,7 +491,7 @@ Errors:
 | 400 | `invalid_payload` | Zod validation failed, including any request for `archived` status. |
 | 400 | `archive_boundary` | The canonical lead is archived; restore it through the archive endpoint before editing. |
 | 401 | `missing` / `invalid` | Missing or invalid admin bearer/cookie auth. |
-| 403 | `forbidden` | The authenticated admin role lacks update permission. |
+| 403 | `forbidden` / `csrf` | The principal lacks update permission, or a cookie mutation failed the same-origin JSON boundary. |
 | 404 | `not_found` | No Convex lead matched the route `leadId`. |
 | 409 | `conflict` | The submitted workflow revision is stale; no fields were overwritten. |
 | 503 | `unconfigured` | `ADMIN_REVIEW_TOKEN` is missing. |
@@ -539,7 +543,8 @@ Errors:
 
 ### `PATCH /api/admin/voice-sessions/[reviewId]`
 
-Bearer-token or admin-cookie protected mutation that marks a recoverable voice
+Interactive bearer-token or same-origin JSON admin-cookie protected mutation
+that marks a recoverable voice
 session as followed up (or moves it back to the queue). Sets or clears
 `followedUpAt` on the Convex `voiceSessions` row.
 
@@ -561,8 +566,8 @@ Errors:
 
 ### `POST /api/admin/evals`
 
-Bearer-token or admin-cookie protected action (permission `evals.run`,
-operator+) that scores persisted customer voice sessions with the LLM judge
+Interactive bearer/admin-cookie or `OPS_AUTOMATION_TOKEN` protected action
+(permission `evals.run`) that scores persisted customer voice sessions with the LLM judge
 rubric from `lib/eval/voice-eval.ts` and persists the results via the
 `recordVoiceEvals` Convex mutation — the on-demand equivalent of
 `pnpm eval:voice -- --persist`. Synthetic smoke rows are excluded and
@@ -619,10 +624,13 @@ Errors:
 
 ### `POST /api/admin/sla-check`
 
-Bearer-token or admin-cookie protected sweep (permission `dashboard.read`)
-meant for an hourly cron (`.github/workflows/analytics-ops.yml`). Finds active
-leads that have been unowned longer than the window (default 4h) plus failed
-notifications, and posts one throttled ops Slack alert when breached.
+Bearer-only sweep using the distinct `OPS_AUTOMATION_TOKEN` permission
+`ops.sla_check`, meant for an hourly cron (`.github/workflows/analytics-ops.yml`).
+The route can post to the ops Slack channel, so the read-only viewer role cannot
+run it. A dedicated Convex query reads oldest-first through active-status,
+unowned-owner, and failed-notification indexes rather than reusing the recent
+dashboard window. It returns aggregate counts only—no lead IDs, contact fields,
+or transcript content—and posts one throttled ops Slack alert when breached.
 
 ```ts
 type AdminSlaCheckRequest = { maxUnownedHours?: number }; // 1-72, default 4
@@ -632,11 +640,81 @@ type AdminSlaCheckResponse = {
   unownedBreaches: number;
   failedNotifications: number;
   activeLeads: number;
+  truncated: {
+    unownedBreaches: boolean;
+    failedNotifications: boolean;
+    activeLeads: boolean;
+  };
   alerted: boolean; // false when clear, throttled, or Slack unconfigured
 };
 ```
 
+Each indexed status/owner bucket is bounded to 250 rows plus one overflow
+sentinel. When a `truncated` flag is true, the corresponding numeric count is an
+explicit lower bound; Slack copy includes a `+` suffix and lower-bound metadata.
+Because breach reads are oldest-first, the oldest known breach is retained for
+age/severity reporting even when a bucket exceeds the safety cap.
+
 Errors mirror the other admin routes (`400 invalid_request`, `401/403`, `503 convex_failed`).
+
+### `POST /api/admin/retention`
+
+Bearer-only maintenance action using the distinct `OPS_AUTOMATION_TOKEN`
+permission `ops.retention`. It applies fixed code-owned windows—30 days for
+unsubmitted voice diagnostics, 90 days for submitted voice diagnostics, and
+90 days for transcript content copied onto submitted leads, then 730 days after
+archival for the remaining lead record plus workflow events. Callers cannot weaken
+or override these windows. Each call is write-bounded and returns PII-free
+aggregate counts.
+
+```ts
+type AdminRetentionResponse = {
+  ok: true;
+  deleted: { archivedLeads: number; leadEvents: number; voiceSessions: number };
+  redacted: { leadTranscripts: number };
+  hasMore: boolean;
+};
+```
+
+The nightly GitHub Actions job repeats up to ten batches. A remaining backlog
+fails the job rather than silently presenting an incomplete sweep as success.
+
+### `DELETE /api/admin/privacy`
+
+Bearer-only data-subject deletion using the distinct `PRIVACY_ADMIN_TOKEN`
+(`privacy.delete`). Interactive admin cookies and review tokens cannot cross
+this destructive boundary. The request must
+carry the exact destructive confirmation and a UUID supplied by the operator:
+
+```ts
+type AdminPrivacyDeletionRequest = {
+  email: string;
+  confirmation: "DELETE";
+  reason: "data_subject_request" | "consent_withdrawn" | "operator_correction";
+  requestId: string; // UUID retained only in the PII-free audit event
+  manualCopiesConfirmedDeleted?: boolean;
+};
+
+type AdminPrivacyDeletionResponse = {
+  ok: true;
+  deleted: { leads: number; leadEvents: number; voiceSessions: number };
+  complete: boolean;
+};
+```
+
+The route first completes bounded legacy-email normalization, then identifies
+addressable Slack and ClickUp mirrors and deletes them before Convex erasure.
+Previously delivered email and any unaddressable legacy mirror require the
+operator to remove the copy and explicitly set `manualCopiesConfirmedDeleted`.
+The API returns `409 normalization_in_progress` or `409 manual_cleanup_required`
+before destructive local work, and `502 downstream_cleanup_failed` if an
+addressable external deletion fails.
+
+The response and logs never echo the email. The audit table stores only the
+actor, reason code, request UUID, aggregate counts, and completion state. If
+`complete` is false, investigate remaining legacy or related records; batching
+prevents one subject with unusually large history from exhausting a Convex
+mutation.
 
 ## `GET /api/health`
 

@@ -49,6 +49,8 @@ type VoiceSessionStageProps = {
   onEmailBlur?: () => void;
   onEmailChange?: (value: string) => void;
   onEmailFocus?: () => void;
+  onEmailSubmit?: () => void;
+  emailSubmitting?: boolean;
   selectedSegment: ReturnType<typeof getSegment>;
   status: "idle" | "submitted";
   turnPhase: VoiceTurnPhase;
@@ -75,6 +77,8 @@ export function VoiceSessionStage({
   onEmailBlur,
   onEmailChange,
   onEmailFocus,
+  onEmailSubmit,
+  emailSubmitting = false,
   selectedSegment,
   status,
   turnPhase,
@@ -119,15 +123,14 @@ export function VoiceSessionStage({
   const handleEmailBlur = () => {
     onEmailBlur?.();
     window.requestAnimationFrame(() => {
-      const quickCapture = emailInputRef?.current?.closest<HTMLElement>("[data-email-quick-capture]");
-      if (!quickCapture || quickCapture.dataset.emailState === "ready") return;
-      const help = quickCapture.querySelector<HTMLElement>("#voice-quick-email-help");
-      const scrollHost = quickCapture.closest<HTMLElement>("[data-voice-dialog-layout]");
-      if (!help || !scrollHost) return;
-      const helpRect = help.getBoundingClientRect();
-      const hostRect = scrollHost.getBoundingClientRect();
-      if (helpRect.bottom > hostRect.bottom) scrollHost.scrollTop += helpRect.bottom - hostRect.bottom + 8;
-      if (helpRect.top < hostRect.top) scrollHost.scrollTop -= hostRect.top - helpRect.top + 8;
+      // Let the touched/verification state commit first, then reveal the whole
+      // compact editor. scrollIntoView accounts for every clipping ancestor;
+      // checking only the outer dialog can still leave the helper hidden in a
+      // short landscape viewport.
+      window.requestAnimationFrame(() => {
+        const quickCapture = emailInputRef?.current?.closest<HTMLElement>("[data-email-quick-capture]");
+        quickCapture?.scrollIntoView({ behavior: "instant", block: "nearest", inline: "nearest" });
+      });
     });
   };
 
@@ -231,19 +234,19 @@ export function VoiceSessionStage({
           data-email-quick-capture
           data-email-state={showEmailError ? "invalid" : emailAttention ? "attention" : "ready"}
         >
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <div className="flex shrink-0 items-center justify-between gap-3 sm:block">
-              <label className="text-xs font-semibold text-white/82" htmlFor="voice-quick-email">
-                Email to follow up
-              </label>
-              <span className="text-[11px] text-white/48 sm:ml-2">Only required</span>
-            </div>
+          <div className="flex items-center justify-between gap-3">
+            <label className="text-xs font-semibold text-white/82" htmlFor="voice-quick-email">
+              Email to follow up
+            </label>
+            <span className="text-[11px] text-white/48">Only required</span>
+          </div>
+          <div className="mt-2 flex items-center gap-2">
             <Input
               aria-describedby="voice-quick-email-help"
               aria-errormessage={showEmailError ? "voice-quick-email-help" : undefined}
               aria-invalid={showEmailError || undefined}
               aria-required="true"
-              className="sm:min-w-0 sm:flex-1"
+              className="min-w-0 flex-1"
               id="voice-quick-email"
               onBlur={handleEmailBlur}
               onChange={(event) => onEmailChange?.(event.target.value)}
@@ -255,6 +258,16 @@ export function VoiceSessionStage({
               value={captured.email}
               variant="glass"
             />
+            <Button
+              aria-label="Send enquiry"
+              className="size-11 shrink-0 rounded-full bg-mk-horizon px-3 text-xs font-semibold text-mk-off-black hover:bg-white disabled:opacity-55 sm:w-auto sm:px-4"
+              disabled={!emailValid || emailSubmitting}
+              onClick={onEmailSubmit}
+              type="button"
+            >
+              <SendIcon data-icon="inline-start" />
+              <span className="hidden sm:inline">{emailSubmitting ? "Sending" : "Send"}</span>
+            </Button>
           </div>
           <p
             aria-live="polite"

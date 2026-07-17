@@ -361,7 +361,7 @@ describe("reduceRealtimeServerEvent", () => {
       output: { ok: false, error: "ungrounded_identity_capture", key: "email" },
     });
     expect(result.state.errors).toContainEqual(
-      expect.objectContaining({ code: "voice_capture_rejected", message: expect.stringContaining("email") }),
+      expect.objectContaining({ code: "voice_capture_rejected_email", message: expect.stringContaining("email") }),
     );
   });
 
@@ -4407,5 +4407,22 @@ describe("reduceRealtimeServerEvent", () => {
     ]);
     expect(isBenignVoiceError(result.state.errors?.[0] ?? { message: "" })).toBe(true);
     expect(isBenignVoiceError({ message: "Server error while processing audio" })).toBe(false);
+  });
+
+  it("retains only the fixed bounded shape from realtime rate-limit updates", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "rate_limits.updated",
+        rate_limits: [
+          { name: "requests", limit: 100, remaining: 90, reset_seconds: 5, private: "visitor@example.com" },
+          { name: "bad", limit: -1, remaining: 2, reset_seconds: 5 },
+          null,
+        ],
+      },
+      state(),
+    );
+
+    expect(result.state.rateLimits).toEqual([{ name: "requests", limit: 100, remaining: 90, reset_seconds: 5 }]);
+    expect(JSON.stringify(result.state.rateLimits)).not.toContain("visitor@example.com");
   });
 });

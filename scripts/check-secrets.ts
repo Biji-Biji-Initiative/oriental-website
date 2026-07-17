@@ -1,3 +1,4 @@
+import { isValidAdminActor } from "../lib/admin-permissions";
 import { hasShellEscapedQuoteWrapper, unwrapEnvValue } from "../lib/env";
 import { isAllowedAdminEvalModel } from "../lib/eval/admin-models";
 import { activeVoiceExperimentDimensions } from "../lib/voice/experiments";
@@ -11,22 +12,28 @@ const required = [
   "CONVEX_INGEST_SECRET",
   "TURNSTILE_SITE_KEY",
   "TURNSTILE_SECRET_KEY",
+  "TURNSTILE_ENFORCEMENT",
   "IP_HASH_SECRET",
   "OWNER_TENANCY",
   "OWNER_EDUCATION",
   "OWNER_PROGRAMME",
   "OWNER_TECHNOLOGY",
-  "OWNER_AI",
-  "OWNER_CULTURAL",
   "OWNER_COMMUNITY",
   "OWNER_OTHER",
+  "VOICE_SESSION_DAILY_LIMIT",
 ];
 
 const smtpRequired = ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SES_FROM_ADDRESS"];
 const sesRequired = ["AWS_REGION", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "SES_FROM_ADDRESS"];
 const slackRequired = ["SLACK_BOT_TOKEN", "SLACK_CHANNEL_ID"];
 const sentryRequired = ["SENTRY_DSN", "NEXT_PUBLIC_SENTRY_DSN", "SENTRY_ORG", "SENTRY_PROJECT"];
-const adminRequired = ["ADMIN_REVIEW_TOKEN"];
+const adminRequired = [
+  "ADMIN_REVIEW_ACTOR",
+  "ADMIN_REVIEW_ROLE",
+  "ADMIN_REVIEW_TOKEN",
+  "OPS_AUTOMATION_TOKEN",
+  "PRIVACY_ADMIN_TOKEN",
+];
 const opsAlertRequired = ["OPS_ALERT_SLACK_CHANNEL_ID"];
 const clickUpRequired = ["CLICKUP_API_TOKEN", "CLICKUP_LIST_ID"];
 
@@ -86,6 +93,29 @@ if (process.env.NODE_ENV === "production") {
     process.exit(1);
   }
 
+  const adminRole = envValue("ADMIN_REVIEW_ROLE");
+  if (adminRole !== "viewer" && adminRole !== "operator" && adminRole !== "admin") {
+    console.error("ADMIN_REVIEW_ROLE must be explicitly viewer, operator, or admin.");
+    process.exit(1);
+  }
+
+  const adminActor = envValue("ADMIN_REVIEW_ACTOR");
+  if (!adminActor || !isValidAdminActor(adminActor)) {
+    console.error("ADMIN_REVIEW_ACTOR must be 1-80 printable characters.");
+    process.exit(1);
+  }
+
+  const credentialNames = ["ADMIN_REVIEW_TOKEN", "OPS_AUTOMATION_TOKEN", "PRIVACY_ADMIN_TOKEN"];
+  const credentials = credentialNames.map((name) => envValue(name) ?? "");
+  if (credentials.some((credential) => credential.length < 32)) {
+    console.error("Admin review, ops automation, and privacy admin tokens must each be at least 32 characters.");
+    process.exit(1);
+  }
+  if (new Set(credentials).size !== credentials.length) {
+    console.error("Admin review, ops automation, and privacy admin tokens must be distinct.");
+    process.exit(1);
+  }
+
   const missingOpsAlerts = opsAlertRequired.filter((name) => !envValue(name));
   if (missingOpsAlerts.length > 0) {
     console.error(`Missing ops alert variables: ${missingOpsAlerts.join(", ")}`);
@@ -141,6 +171,18 @@ if (evalJudgeModel && !isAllowedAdminEvalModel(evalJudgeModel)) {
 const emailCaptureMode = envValue("VOICE_EMAIL_CAPTURE_MODE");
 if (emailCaptureMode && emailCaptureMode !== "strict" && emailCaptureMode !== "adaptive") {
   console.error("VOICE_EMAIL_CAPTURE_MODE must be strict or adaptive.");
+  process.exit(1);
+}
+
+const turnstileEnforcement = envValue("TURNSTILE_ENFORCEMENT");
+if (turnstileEnforcement !== "relaxed" && turnstileEnforcement !== "required") {
+  console.error("TURNSTILE_ENFORCEMENT must be explicitly relaxed or required.");
+  process.exit(1);
+}
+
+const voiceSessionDailyLimit = Number(envValue("VOICE_SESSION_DAILY_LIMIT"));
+if (!Number.isSafeInteger(voiceSessionDailyLimit) || voiceSessionDailyLimit < 1 || voiceSessionDailyLimit > 10_000) {
+  console.error("VOICE_SESSION_DAILY_LIMIT must be an integer from 1 to 10000.");
   process.exit(1);
 }
 if (modelCell === "candidate" && !envValue("OPENAI_REALTIME_MODEL_CANDIDATE")) {

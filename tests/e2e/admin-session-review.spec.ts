@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import { adminCookieName, createAdminSessionCookie } from "../../lib/server/admin-auth";
 
 const adminPassword = process.env.E2E_ADMIN_SHARED_PASSWORD ?? process.env.ADMIN_REVIEW_TOKEN;
+const adminOrigin = new URL(process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3011").origin;
 
 test.describe("admin session review console", () => {
   test.beforeEach(async ({ context, page }) => {
@@ -28,6 +29,7 @@ test.describe("admin session review console", () => {
     await context.clearCookies();
     const login = await context.request.post("/api/admin/login", {
       data: { token: adminPassword },
+      headers: { origin: adminOrigin },
     });
     expect(login.status()).toBe(200);
 
@@ -38,6 +40,7 @@ test.describe("admin session review console", () => {
 
     const protectedMutation = await context.request.patch("/api/admin/leads/lead-cookie-proof", {
       data: { status: "archived" },
+      headers: { origin: adminOrigin },
     });
     expect(protectedMutation.status()).toBe(400);
     await expect(protectedMutation.json()).resolves.toMatchObject({
@@ -371,6 +374,36 @@ test.describe("admin session review console", () => {
     await expect(page.getByRole("heading", { name: "Enquiry pipeline" })).toBeVisible();
     await expect(page.getByText("CRM data")).toBeVisible();
     await expect(page.getByText("Aisha Rahman").filter({ visible: true }).first()).toBeVisible();
+
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow).toBeLessThanOrEqual(1);
+  });
+
+  test("separates submitted-lead attribution from the engaged voice capture funnel", async ({ page }) => {
+    await page.goto("/admin/session-review?view=audit");
+
+    await expect(page.getByText("Submitted leads — conversion attribution", { exact: true })).toBeVisible();
+    const funnel = page.locator("[data-voice-capture-funnel]");
+    await expect(funnel.getByText("All engaged voice conversations — capture funnel", { exact: true })).toBeVisible();
+    await expect(funnel.getByText("2 logical conversations", { exact: true })).toBeVisible();
+    await expect(funnel.getByText(/2 engaged of 2 loaded session rows became 2 logical conversations/i)).toBeVisible();
+    await expect(funnel.getByText("Closed without sending", { exact: true })).toBeVisible();
+    await expect(funnel.getByText("Submitted conversations sent with", { exact: true })).toBeVisible();
+    await expect(funnel.getByText("Final email state", { exact: true })).toBeVisible();
+    await expect(funnel.getByText("Persistent header navigation", { exact: true })).toBeVisible();
+
+    await funnel.getByText("All engaged voice conversations — per-field completion and editing").click();
+    const email = funnel.locator('[data-voice-capture-field="email"]');
+    await expect(email.getByText("2/2", { exact: true })).toBeVisible();
+    await expect(email.getByText("conversations completed · 0 missing", { exact: true })).toBeVisible();
+
+    const contrast = await new AxeBuilder({ page })
+      .include("[data-voice-capture-funnel]")
+      .withRules(["color-contrast"])
+      .analyze();
+    expect(contrast.violations).toHaveLength(0);
 
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,

@@ -268,7 +268,8 @@
       "hero-email": 1
     },
     "entryPointCounts": {
-      "unknown": 3
+      "nav_desktop": 1,
+      "unknown": 2
     },
     "entryMethodCounts": {
       "unknown": 3
@@ -277,8 +278,11 @@
       "unknown": 3
     },
     "entryPointSubmissionMatrix": {
+      "nav_desktop": {
+        "handoff_button": 1
+      },
       "unknown": {
-        "unknown": 3
+        "unknown": 2
       }
     },
     "entryMethodSubmissionMatrix": {
@@ -394,6 +398,93 @@
         "responseCreated": { "samples": 1, "p50Ms": 180, "p95Ms": 180 },
         "interruptedTurns": 0,
         "rapidResumeTurns": 0
+      }
+    },
+    "voiceCaptureFunnel": {
+      "cohort": {
+        "windowLimit": 75,
+        "windowMayBeTruncated": false,
+        "loadedSessionRows": 2,
+        "engagedSessionRows": 2,
+        "logicalConversations": 2,
+        "stitchedConversations": 0,
+        "unstitchedConversations": 2,
+        "foldedReconnectRows": 0
+      },
+      "entryPointCounts": { "nav_desktop": 1, "unknown": 1 },
+      "entryMethodCounts": { "unknown": 2 },
+      "submissionMethodCounts": { "unknown": 1 },
+      "outcome": {
+        "submitted": 1,
+        "closedUnsubmitted": 0,
+        "openUnsubmitted": 1,
+        "abandonedBeforeEmail": 0,
+        "closedWithEmailUnsent": 0
+      },
+      "email": {
+        "outcomes": { "confirmed": 0, "pending": 0, "unverified": 2, "missing": 0 },
+        "signals": {
+          "rejectedCapture": 0,
+          "submitBlockedUnconfirmed": 0,
+          "recoverableConfirmed": 0,
+          "needsCheckBeforeFollowUp": 0
+        }
+      },
+      "fields": {
+        "name": {
+          "completedConversations": 2,
+          "missingConversations": 0,
+          "methodCounts": { "unknown": 2 },
+          "correctedConversations": 0,
+          "correctionActions": 0,
+          "clearedConversations": 0,
+          "clearActions": 0
+        },
+        "email": {
+          "completedConversations": 2,
+          "missingConversations": 0,
+          "methodCounts": { "unknown": 2 },
+          "correctedConversations": 0,
+          "correctionActions": 0,
+          "clearedConversations": 0,
+          "clearActions": 0
+        },
+        "org": {
+          "completedConversations": 2,
+          "missingConversations": 0,
+          "methodCounts": { "unknown": 2 },
+          "correctedConversations": 0,
+          "correctionActions": 0,
+          "clearedConversations": 0,
+          "clearActions": 0
+        },
+        "phone": {
+          "completedConversations": 1,
+          "missingConversations": 1,
+          "methodCounts": { "unknown": 1 },
+          "correctedConversations": 0,
+          "correctionActions": 0,
+          "clearedConversations": 0,
+          "clearActions": 0
+        },
+        "website": {
+          "completedConversations": 1,
+          "missingConversations": 1,
+          "methodCounts": { "unknown": 1 },
+          "correctedConversations": 0,
+          "correctionActions": 0,
+          "clearedConversations": 0,
+          "clearActions": 0
+        },
+        "message": {
+          "completedConversations": 2,
+          "missingConversations": 0,
+          "methodCounts": { "unknown": 2 },
+          "correctedConversations": 0,
+          "correctionActions": 0,
+          "clearedConversations": 0,
+          "clearActions": 0
+        }
       }
     },
     "evals": {

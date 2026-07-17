@@ -1,4 +1,6 @@
 import { execFileSync } from "node:child_process";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import {
   type CoolifyDeployment,
   coolifyApiUrl,
@@ -17,6 +19,7 @@ import {
 import {
   isManagedBuildTimeEnvironmentKey,
   type ManagedApplicationEnvironmentKey,
+  managedEnvironmentMutationFailures,
   managedEnvironmentParityFailures,
   managedEnvironmentReconciliationPlan,
 } from "./lib/managed-app-environment";
@@ -136,6 +139,33 @@ async function readPublicHealth(
   if (failures.length > 0) throw new Error(`${label} health: ${failures.join("; ")}`);
 }
 
+export async function waitForHealthyProductionRelease(
+  baseUrl: string,
+  token: string,
+  applicationUuid: string,
+  expectedSha: string,
+  expectedVoiceCell: GovernedVoiceCell,
+  pollIntervalMs: number,
+  timeoutMs: number,
+  label: string,
+) {
+  const deadline = Date.now() + timeoutMs;
+  let lastError: unknown = new Error("health convergence was not attempted");
+  while (Date.now() < deadline) {
+    try {
+      const application = await coolifyRequest<CoolifyApplication>(baseUrl, token, `applications/${applicationUuid}`);
+      assertOrientalApplication(application, applicationUuid);
+      assertHealthyOrientalApplication(application, expectedSha);
+      await readPublicHealth(RELEASE_TARGETS.production.origin, expectedSha, label, expectedVoiceCell);
+      return;
+    } catch (error) {
+      lastError = error;
+    }
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, pollIntervalMs));
+  }
+  throw new Error(`${label} did not converge: ${errorMessage(lastError)}`);
+}
+
 async function coolifyRequest<T>(baseUrl: string, token: string, path: string, init?: RequestInit): Promise<T> {
   const url = coolifyApiUrl(baseUrl, path);
   const response = await fetchWithTimeout(url, {
@@ -183,18 +213,20 @@ async function reconcileManagedApplicationEnvironment(
     throw new Error(`Coolify managed application environment: ${planFailures.join("; ")}`);
   }
   if (mutations.length > 0) await assertCurrentProduction();
-  for (const { key, value } of mutations) {
-    const matches = current.filter((row) => row.key === key && row.is_preview !== true);
-    const payload = managedEnvironmentPayload(key, value);
-    await coolifyRequest(baseUrl, token, path, {
-      method: matches.length > 0 ? "PATCH" : "POST",
-      body: JSON.stringify(payload),
+  if (mutations.length > 0) {
+    const acknowledged = await coolifyRequest<CoolifyEnvironmentVariable[]>(baseUrl, token, `${path}/bulk`, {
+      method: "PATCH",
+      body: JSON.stringify({ data: mutations.map(({ key, value }) => managedEnvironmentPayload(key, value)) }),
     });
+    const acknowledgementFailures = managedEnvironmentMutationFailures(mutations, acknowledged);
+    if (acknowledgementFailures.length > 0) {
+      throw new Error(`Coolify managed application environment: ${acknowledgementFailures.join("; ")}`);
+    }
   }
 
   const updated = await coolifyRequest<CoolifyEnvironmentVariable[]>(baseUrl, token, path);
-  const failures = managedEnvironmentParityFailures(environment, updated);
-  failures.push(...coolifyGoogleEnvironmentFailures(updated, googleExpected));
+  const failures = managedEnvironmentParityFailures(environment, updated, undefined, { allowHiddenValues: true });
+  failures.push(...coolifyGoogleEnvironmentFailures(updated, googleExpected, { allowHiddenValues: true }));
   if (failures.length > 0) {
     throw new Error(`Coolify managed application environment: ${failures.join("; ")}`);
   }
@@ -304,41 +336,65 @@ async function main() {
     assertCurrentProduction,
   );
 
-  // Re-read the control plane immediately before changing the frozen SHA. The
-  // public health proof above cannot detect another operator moving Coolify in
-  // the interval between health verification and this mutation.
-  await assertCurrentProduction();
-  await coolifyRequest(baseUrl, token, `applications/${applicationUuid}`, {
-    method: "PATCH",
-    body: JSON.stringify({ git_commit_sha: args.sha }),
-  });
-  const updated = await coolifyRequest<CoolifyApplication>(baseUrl, token, `applications/${applicationUuid}`);
-  assertOrientalApplication(updated, applicationUuid);
-  if (updated.git_commit_sha !== args.sha) throw new Error("Coolify did not persist the frozen git_commit_sha");
+  let deploymentUuid = "";
+  let deployment: CoolifyDeployment;
+  let releaseMutationAttempted = false;
+  try {
+    // Re-read the control plane immediately before changing the frozen SHA. The
+    // public health proof above cannot detect another operator moving Coolify in
+    // the interval between health verification and this mutation.
+    await assertCurrentProduction();
+    // Set this before the request. A timed-out PATCH is ambiguous: Coolify may
+    // have persisted the candidate even though this process saw no response.
+    // Every failure after this point must therefore converge back to the prior
+    // SHA instead of assuming the mutation did not happen.
+    releaseMutationAttempted = true;
+    await coolifyRequest(baseUrl, token, `applications/${applicationUuid}`, {
+      method: "PATCH",
+      body: JSON.stringify({ git_commit_sha: args.sha }),
+    });
+    const updated = await coolifyRequest<CoolifyApplication>(baseUrl, token, `applications/${applicationUuid}`);
+    assertOrientalApplication(updated, applicationUuid);
+    if (updated.git_commit_sha !== args.sha) throw new Error("Coolify did not persist the frozen git_commit_sha");
 
-  const started = await coolifyRequest<unknown>(
-    baseUrl,
-    token,
-    `deploy?uuid=${encodeURIComponent(applicationUuid)}&force=false`,
-  );
-  const deploymentUuid = deploymentUuidFromDeployResponse(started, applicationUuid);
-
-  const deployment = await waitForDeployment(
-    baseUrl,
-    token,
-    deploymentUuid,
-    args.sha,
-    args.pollIntervalMs,
-    args.timeoutMs,
-  );
-  const healthyApplication = await coolifyRequest<CoolifyApplication>(
-    baseUrl,
-    token,
-    `applications/${applicationUuid}`,
-  );
-  assertOrientalApplication(healthyApplication, applicationUuid);
-  assertHealthyOrientalApplication(healthyApplication, args.sha);
-  await readPublicHealth(RELEASE_TARGETS.production.origin, args.sha, "new production", CONTROL_VOICE_CELL);
+    const started = await coolifyRequest<unknown>(
+      baseUrl,
+      token,
+      `deploy?uuid=${encodeURIComponent(applicationUuid)}&force=false`,
+    );
+    deploymentUuid = deploymentUuidFromDeployResponse(started, applicationUuid);
+    deployment = await waitForDeployment(baseUrl, token, deploymentUuid, args.sha, args.pollIntervalMs, args.timeoutMs);
+    await waitForHealthyProductionRelease(
+      baseUrl,
+      token,
+      applicationUuid,
+      args.sha,
+      CONTROL_VOICE_CELL,
+      args.pollIntervalMs,
+      Math.min(args.timeoutMs, 90_000),
+      "new production",
+    );
+  } catch (error) {
+    if (!releaseMutationAttempted) throw error;
+    if (deploymentUuid) await cancelDeployment(baseUrl, token, deploymentUuid);
+    try {
+      await restoreProductionRelease(
+        baseUrl,
+        token,
+        applicationUuid,
+        args.expectedCurrentSha,
+        args.pollIntervalMs,
+        args.timeoutMs,
+      );
+    } catch (rollbackError) {
+      throw new Error(
+        `candidate failed and automatic rollback failed: ${errorMessage(error)}; rollback: ${errorMessage(rollbackError)}`,
+      );
+    }
+    throw new Error(
+      `candidate failed; restored previous production ${args.expectedCurrentSha}: ${errorMessage(error)}`,
+    );
+  }
   process.stdout.write(
     `${JSON.stringify(
       {
@@ -360,7 +416,100 @@ async function main() {
   );
 }
 
-main().catch((error: unknown) => {
-  process.stderr.write(`release-deploy: ${error instanceof Error ? error.message : String(error)}\n`);
-  process.exitCode = 1;
-});
+async function restoreApplicationCommit(baseUrl: string, token: string, applicationUuid: string, previousSha: string) {
+  let lastError: unknown = new Error("Coolify rollback pin was not attempted");
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      await coolifyRequest(baseUrl, token, `applications/${applicationUuid}`, {
+        method: "PATCH",
+        body: JSON.stringify({ git_commit_sha: previousSha }),
+      });
+    } catch (error) {
+      // The PATCH may have committed before its response was lost. Always read
+      // the control plane before deciding whether another attempt is needed.
+      lastError = error;
+    }
+
+    try {
+      const restored = await coolifyRequest<CoolifyApplication>(baseUrl, token, `applications/${applicationUuid}`);
+      assertOrientalApplication(restored, applicationUuid);
+      if (restored.git_commit_sha === previousSha) return;
+      lastError = new Error(`Coolify rollback pin read back ${String(restored.git_commit_sha)}`);
+    } catch (error) {
+      lastError = error;
+    }
+
+    if (attempt < 3) await new Promise((resolveDelay) => setTimeout(resolveDelay, attempt * 250));
+  }
+  throw new Error(`Coolify did not restore the previous git_commit_sha: ${errorMessage(lastError)}`);
+}
+
+async function startRollbackDeployment(baseUrl: string, token: string, applicationUuid: string) {
+  let lastError: unknown = new Error("Coolify rollback deployment was not attempted");
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      const started = await coolifyRequest<unknown>(
+        baseUrl,
+        token,
+        `deploy?uuid=${encodeURIComponent(applicationUuid)}&force=false`,
+      );
+      return deploymentUuidFromDeployResponse(started, applicationUuid);
+    } catch (error) {
+      // Re-triggering the same restored SHA is safe. It also closes an
+      // ambiguous response where Coolify accepted the first request but the
+      // deployment UUID never reached this process.
+      lastError = error;
+    }
+  }
+  throw new Error(`Coolify did not start the rollback deployment: ${errorMessage(lastError)}`);
+}
+
+export async function restoreProductionRelease(
+  baseUrl: string,
+  token: string,
+  applicationUuid: string,
+  previousSha: string,
+  pollIntervalMs: number,
+  timeoutMs: number,
+) {
+  process.stderr.write(`release-deploy: restoring previous production ${previousSha}\n`);
+  await restoreApplicationCommit(baseUrl, token, applicationUuid, previousSha);
+  let lastError: unknown = new Error("rollback deployment was not attempted");
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const rollbackUuid = await startRollbackDeployment(baseUrl, token, applicationUuid);
+      await waitForDeployment(baseUrl, token, rollbackUuid, previousSha, pollIntervalMs, timeoutMs);
+      await waitForHealthyProductionRelease(
+        baseUrl,
+        token,
+        applicationUuid,
+        previousSha,
+        CONTROL_VOICE_CELL,
+        pollIntervalMs,
+        Math.min(timeoutMs, 90_000),
+        "restored production",
+      );
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt < 3) await new Promise((resolveDelay) => setTimeout(resolveDelay, attempt * pollIntervalMs));
+    }
+  }
+  throw new Error(`Coolify rollback did not converge after three deployments: ${errorMessage(lastError)}`);
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isDirectExecution() {
+  const entrypoint = process.argv[1];
+  return Boolean(entrypoint && import.meta.url === pathToFileURL(resolve(entrypoint)).href);
+}
+
+if (isDirectExecution()) {
+  main().catch((error: unknown) => {
+    process.stderr.write(`release-deploy: ${errorMessage(error)}\n`);
+    process.exitCode = 1;
+  });
+}

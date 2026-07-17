@@ -104,6 +104,12 @@ describe("Google release governance", () => {
     expect(coolifyGoogleEnvironmentFailures(rows, expected)).toEqual([]);
   });
 
+  it("accepts hidden values only after the deployer separately proves the bulk acknowledgement", () => {
+    const rows = coolifyGoogleEnvironmentPayloads(expected).map(({ value: _, ...row }) => row);
+    expect(coolifyGoogleEnvironmentFailures(rows, expected)).toHaveLength(2);
+    expect(coolifyGoogleEnvironmentFailures(rows, expected, { allowHiddenValues: true })).toEqual([]);
+  });
+
   it("reads the exact Search Console meta regardless of attribute order", () => {
     expect(
       readGoogleSiteVerification(

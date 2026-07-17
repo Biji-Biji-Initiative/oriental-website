@@ -168,7 +168,7 @@ describe("notifySlack", () => {
 
     const result = await notifySlack(lead());
 
-    expect(result).toEqual({ ok: true, transport: "slack" });
+    expect(result).toEqual({ ok: true, transport: "slack", externalId: "C01AVSGACFN:123.456" });
     expect(fetchMock).toHaveBeenCalledWith(
       "https://slack.com/api/chat.postMessage",
       expect.objectContaining({

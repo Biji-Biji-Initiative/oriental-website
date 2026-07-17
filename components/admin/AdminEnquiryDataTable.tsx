@@ -104,6 +104,7 @@ type AdminEnquiryDataTableProps = {
   initialStatusScope?: string;
   rows: AdminEnquiryRow[];
   totalRows: number;
+  totalRowsLowerBound?: boolean;
 };
 
 export function AdminEnquiryDataTable({
@@ -111,6 +112,7 @@ export function AdminEnquiryDataTable({
   initialStatusScope = "active",
   rows,
   totalRows,
+  totalRowsLowerBound = false,
 }: AdminEnquiryDataTableProps) {
   const router = useRouter();
   const [globalFilter, setGlobalFilter] = useState("");
@@ -428,11 +430,15 @@ export function AdminEnquiryDataTable({
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-xl font-semibold tracking-tight">Enquiry pipeline</h2>
               <Badge tone="blue">{filteredCount} visible</Badge>
-              <Badge tone="neutral">{totalRows} canonical</Badge>
+              <Badge tone="neutral">
+                {totalRowsLowerBound ? "≥" : ""}
+                {totalRows} canonical{totalRowsLowerBound ? " · lower bound" : ""}
+              </Badge>
             </div>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-400">
               Search every captured field, control the columns, sort the pipeline, edit workflow, and archive or restore
-              records without deleting customer evidence.
+              records without deleting customer evidence immediately. Archived records remain recoverable during the
+              published two-year retention window.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
@@ -722,7 +728,7 @@ export function AdminEnquiryDataTable({
           <DialogDescription>
             {archiveIntent?.action === "restore"
               ? "Restore the selected records to their prior pipeline state. The archive history remains visible."
-              : "Hide the selected records from the active pipeline. No customer, transcript, delivery, or audit data is deleted."}
+              : "Hide the selected records from the active pipeline. Archiving does not delete them now; the published two-year retention window and verified privacy requests still apply."}
           </DialogDescription>
           <form className="grid gap-4" onSubmit={submitArchive}>
             <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.11em] text-slate-500">

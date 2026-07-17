@@ -72,6 +72,7 @@ export function coolifyGoogleEnvironmentPayloads(
 export function coolifyGoogleEnvironmentFailures(
   rows: CoolifyEnvironmentVariable[],
   expected: GooglePublicBuildConfiguration,
+  options: { allowHiddenValues?: boolean } = {},
 ): string[] {
   const failures: string[] = [];
   for (const key of GOOGLE_PUBLIC_BUILD_KEYS) {
@@ -82,7 +83,12 @@ export function coolifyGoogleEnvironmentFailures(
     }
     const row = matches[0];
     if (!row) continue;
-    if (row.value !== expected[key] && row.real_value !== expected[key]) {
+    const valueHidden = typeof row.value !== "string" && typeof row.real_value !== "string";
+    if (
+      row.value !== expected[key] &&
+      row.real_value !== expected[key] &&
+      !(options.allowHiddenValues && valueHidden)
+    ) {
       failures.push(`${key} Coolify value does not match the managed release environment`);
     }
     if (row.is_buildtime !== true && row.is_build_time !== true) {

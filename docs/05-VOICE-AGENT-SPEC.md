@@ -31,7 +31,7 @@ exactly like speech.
 
 ## 2. Partner segments
 
-Eight segments. Each is a top-level intent that determines (a) which person at
+Six segments. Each is a top-level intent that determines (a) which person at
 Mereka the lead routes to, and (b) the voice agent's opener line.
 
 | `id` | Label | Blurb | Routed to | Role |
@@ -40,8 +40,6 @@ Mereka the lead routes to, and (b) the voice agent's opener line.
 | `education` | Education | Run learning programmes with us | **Lala** | Programmes Lead |
 | `programme` | Programme | Bring recurring workshops & trainings | **Jey** | Programmes Lead |
 | `technology` | Technology | Showcase tools & embed demos | **Gurpreet** | Innovation Lead |
-| `ai` | AI | AI labs, agents, literacy & applied research | **Gurpreet** | Innovation Lead |
-| `cultural` | Cultural | Exhibitions, residencies, performances | **AVI** | Culture Curator |
 | `community` | Community | NGO, social impact, community-driven | **Ambika** | Community Lead |
 | `other` | Other | Press, investor, or just exploring | **Nadia** | Partnerships |
 
@@ -244,8 +242,8 @@ right person follows up").
   stored in `voiceSessions` — including sessions that were never submitted.
 - Following up with visitors who shared contact details in voice but did not
   press send (the admin "Recoverable voice leads" queue) is sanctioned.
-- Privacy notice (PDPA) is linked from the voice modal footer — link target
-  TBD.
+- The English and Bahasa Melayu privacy notices are linked from the voice modal
+  footer at `/privacy`.
 
 ## 10. Submission
 
@@ -271,7 +269,10 @@ On `route_to_team` (voice) or "Send enquiry" (visible button), the client POSTs
 
 Server then:
 
-1. Verifies Turnstile.
+1. Verifies signed review credentials for every voice-origin submission. For
+   unsigned form submissions, Turnstile is checked only when
+   `TURNSTILE_ENFORCEMENT=required`; the governed `relaxed` cell relies on the
+   Redis-backed route limiter instead.
 2. Validates payload (zod) and rejects a voice-command email without a verified marker. A visible-button submission is itself the visitor's explicit check of the editable address.
 3. Inserts a row into `leads` through the Convex `leads.createLead` mutation.
 4. Inserts a row into `leadEvents` (`kind: "created"`).

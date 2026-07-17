@@ -1,7 +1,46 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 
 function visibleDialogEmail(page: Page) {
   return page.getByRole("dialog").locator('input[type="email"]:visible');
+}
+
+async function expectFullyVisibleWithinClippingAncestors(locator: Locator) {
+  await expect
+    .poll(() =>
+      locator.evaluate((element) => {
+        const target = element.getBoundingClientRect();
+        const clippedBy: string[] = [];
+        const axisClips = (value: string) => /^(auto|clip|hidden|scroll)$/.test(value);
+        let ancestor = element.parentElement;
+        while (ancestor) {
+          const style = getComputedStyle(ancestor);
+          const clipsX = axisClips(style.overflowX);
+          const clipsY = axisClips(style.overflowY);
+          if (clipsX || clipsY) {
+            const bounds = ancestor.getBoundingClientRect();
+            const clippedX = clipsX && (target.left < bounds.left - 1 || target.right > bounds.right + 1);
+            const clippedY = clipsY && (target.top < bounds.top - 1 || target.bottom > bounds.bottom + 1);
+            if (clippedX || clippedY) {
+              clippedBy.push(
+                ancestor.getAttribute("data-voice-dialog-layout") !== null
+                  ? "voice-dialog-layout"
+                  : (ancestor.getAttribute("data-slot") ?? ancestor.tagName.toLowerCase()),
+              );
+            }
+          }
+          ancestor = ancestor.parentElement;
+        }
+        return {
+          clippedBy,
+          viewportVisible:
+            target.left >= -1 &&
+            target.top >= -1 &&
+            target.right <= window.innerWidth + 1 &&
+            target.bottom <= window.innerHeight + 1,
+        };
+      }),
+    )
+    .toEqual({ clippedBy: [], viewportVisible: true });
 }
 
 test.beforeEach(async ({ page }) => {
@@ -577,7 +616,13 @@ test("email correction stays beside voice controls across the 1024px breakpoint"
 
     await expect(email).toBeFocused();
     await expect(page.locator("[data-voice-primary-action]")).toBeInViewport({ ratio: 1 });
-    await expect(page.getByRole("button", { name: "Send enquiry" })).toBeEnabled();
+    const send = page.getByRole("button", { name: "Send enquiry" });
+    await expect(send).toBeEnabled();
+    await expect(send).toBeInViewport({ ratio: 1 });
+    const sendTarget = await send.boundingBox();
+    expect(sendTarget, `${viewport.width}x${viewport.height} Send target`).not.toBeNull();
+    expect(sendTarget?.width ?? 0).toBeGreaterThanOrEqual(44);
+    expect(sendTarget?.height ?? 0).toBeGreaterThanOrEqual(44);
     await expect
       .poll(() =>
         dialog.locator("[data-voice-dialog-layout]").evaluate((layout) => ({
@@ -598,7 +643,15 @@ test("email correction stays beside voice controls across the 1024px breakpoint"
   const quickHelp = page.locator("#voice-quick-email-help");
   await expect(quickCapture).toHaveAttribute("data-email-state", "invalid");
   await expect(quickHelp).toHaveText(/Enter a valid email/i);
-  await expect(quickHelp).toBeInViewport({ ratio: 1 });
+  await expectFullyVisibleWithinClippingAncestors(quickCapture);
+  await expectFullyVisibleWithinClippingAncestors(quickHelp);
+
+  await quickEmail.fill("asha@example.com");
+  await quickEmail.blur();
+  await expect(quickCapture).toHaveAttribute("data-email-state", "ready");
+  await expect(quickHelp).toHaveText("Email added · ready to send.");
+  await expectFullyVisibleWithinClippingAncestors(quickCapture);
+  await expectFullyVisibleWithinClippingAncestors(quickHelp);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
@@ -617,6 +670,20 @@ test("email correction stays beside voice controls across the 1024px breakpoint"
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(mobileEmail).toBeVisible();
   await expect(mobileEmail).toBeFocused();
+
+  // A visitor choosing another field during the bounded breakpoint settle
+  // must keep that focus; neither email transfer nor scroll reset may steal it.
+  await page.setViewportSize({ width: 1024, height: 600 });
+  const name = dialog.getByLabel("Name", { exact: true });
+  await name.click();
+  await page.waitForTimeout(600);
+  await expect(name).toBeFocused();
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await name.click();
+  await page.setViewportSize({ width: 1024, height: 390 });
+  await page.waitForTimeout(180);
+  await expect(name).toBeFocused();
 
   expect(leadPosts).toBe(0);
 });

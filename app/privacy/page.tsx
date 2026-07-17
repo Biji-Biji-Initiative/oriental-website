@@ -27,7 +27,10 @@ export default function PrivacyPage() {
             <li>Contact and enquiry details you choose to provide, so the relevant partnership team can respond.</li>
             <li>
               Voice transcripts and technical session events when you choose voice, so the handoff works and quality can
-              be reviewed. Customer audio is not stored by this website.
+              be reviewed. After a voice session closes, OpenAI may score a bounded transcript extract to evaluate
+              capture, routing, conversation quality, and frustration. Captured contact values and recognisable email,
+              phone, and web addresses are replaced with tokens first; other words you spoke—including an uncaptured
+              name or organisation—can remain in that extract. Customer audio is not stored by this website.
             </li>
             <li>Security and delivery events needed to prevent abuse, route the enquiry, and diagnose failures.</li>
             <li>
@@ -62,10 +65,15 @@ export default function PrivacyPage() {
 
         <NoticeSection title="Retention, security, and your rights">
           <p>
-            We use access controls, signed review credentials, rate limits, and restricted operator tools. We retain
-            enquiry and operational records only for follow-up, service quality, security, and applicable legal needs,
-            then delete or anonymise them when they are no longer needed. You may ask to access, correct, limit, or
-            delete your personal data, or withdraw an optional choice.
+            We use access controls, signed review credentials, rate limits, and restricted operator tools. Voice-session
+            diagnostics that do not result in an enquiry are deleted after 30 days; submitted voice-session diagnostics
+            are deleted after 90 days. Enquiries remain available while the team follows up. Once archived, an enquiry
+            and its workflow history are deleted after two years. PII-free aggregate measurements may be retained to
+            understand service reliability and capture quality.
+          </p>
+          <p>
+            You may ask to access, correct, limit, or delete your personal data, or withdraw an optional choice. An
+            authorised administrator handles verified deletion requests with a restricted, audited deletion tool.
           </p>
           <p>
             Contact <a href={`mailto:${siteMeta.email}`}>{siteMeta.email}</a> with “Oriental privacy request” in the
@@ -85,7 +93,11 @@ export default function PrivacyPage() {
             <li>Maklumat hubungan dan pertanyaan digunakan supaya pasukan berkaitan boleh menghubungi anda.</li>
             <li>
               Jika anda memilih suara, transkrip dan peristiwa teknikal sesi digunakan untuk penyerahan dan semakan
-              kualiti. Laman ini tidak menyimpan audio pelanggan.
+              kualiti. Selepas sesi ditutup, petikan transkrip terhad boleh dinilai oleh OpenAI untuk menilai tangkapan
+              maklumat, penghalaan, kualiti perbualan dan kekecewaan. Nilai hubungan yang ditangkap serta alamat e-mel,
+              telefon dan web yang dapat dikenal pasti digantikan dengan token terlebih dahulu; perkataan lain yang anda
+              sebut—termasuk nama atau organisasi yang belum ditangkap—mungkin kekal dalam petikan tersebut. Laman ini
+              tidak menyimpan audio pelanggan.
             </li>
             <li>
               Peristiwa keselamatan dan penghantaran digunakan untuk mencegah penyalahgunaan serta mendiagnosis
@@ -108,10 +120,11 @@ export default function PrivacyPage() {
         <NoticeSection title="Pendedahan, penyimpanan dan hak anda">
           <p>
             Akses dihadkan kepada pasukan operasi Mereka/Biji-biji dan pasukan rakan yang ditugaskan. Penyedia
-            perkhidmatan yang dinyatakan dalam versi Bahasa Inggeris hanya memproses maklumat yang diperlukan. Rekod
-            disimpan untuk tindakan susulan, kualiti, keselamatan dan keperluan undang-undang, kemudian dipadam atau
-            dinyahnamakan apabila tidak lagi diperlukan. Anda boleh meminta akses, pembetulan, had pemprosesan atau
-            pemadaman melalui <a href={`mailto:${siteMeta.email}`}>{siteMeta.email}</a>.
+            perkhidmatan yang dinyatakan dalam versi Bahasa Inggeris hanya memproses maklumat yang diperlukan.
+            Diagnostik sesi suara tanpa pertanyaan dihantar dipadam selepas 30 hari; diagnostik sesi suara yang dihantar
+            dipadam selepas 90 hari. Pertanyaan yang telah diarkibkan bersama sejarah aliran kerjanya dipadam selepas
+            dua tahun. Ukuran agregat tanpa maklumat peribadi boleh disimpan. Anda boleh meminta akses, pembetulan, had
+            pemprosesan atau pemadaman melalui <a href={`mailto:${siteMeta.email}`}>{siteMeta.email}</a>.
           </p>
         </NoticeSection>
 

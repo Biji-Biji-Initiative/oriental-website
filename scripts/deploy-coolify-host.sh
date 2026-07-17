@@ -175,11 +175,18 @@ mirror="${remote_cache_dir}/repo.git"
 worktrees="${remote_cache_dir}/worktrees"
 workdir="${worktrees}/${short}-$(date -u +%Y%m%dT%H%M%SZ)"
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+backup_compose=""
+backup_env=""
+deployment_mutated=false
+compose_project=""
+health_payload=""
 
 if [[ "$target" == "staging" ]]; then
   target_dir="$staging_dir"
+  health_url="https://staging.oriental.mereka.io/api/health"
 else
   target_dir="$prod_dir"
+  health_url="https://oriental.mereka.io/api/health"
 fi
 
 mkdir -p "$target_dir"
@@ -213,7 +220,93 @@ git --git-dir="$mirror" worktree add --detach "$workdir" "$sha" >/dev/null
 cleanup() {
   git --git-dir="$mirror" worktree remove --force "$workdir" >/dev/null 2>&1 || rm -rf "$workdir"
 }
-trap cleanup EXIT
+
+restore_file_atomically() {
+  local source="$1"
+  local destination="$2"
+  local temporary="${destination}.rollback-${timestamp}"
+  cp -p "$source" "$temporary"
+  mv -f "$temporary" "$destination"
+}
+
+wait_for_public_sha() {
+  local expected_sha="$1"
+  local attempts="${2:-30}"
+  local attempt
+  for attempt in $(seq 1 "$attempts"); do
+    health_payload="$(curl -fsS "$health_url" 2>/dev/null || true)"
+    if HEALTH_PAYLOAD="$health_payload" EXPECTED_SHA="$expected_sha" python3 - <<'PY'
+import json
+import os
+
+try:
+    payload = json.loads(os.environ["HEALTH_PAYLOAD"])
+except (KeyError, json.JSONDecodeError):
+    raise SystemExit(1)
+raise SystemExit(
+    0
+    if payload.get("ok") is True and payload.get("version") == os.environ["EXPECTED_SHA"]
+    else 1
+)
+PY
+    then
+      return 0
+    fi
+    if [[ "$attempt" -lt "$attempts" ]]; then
+      sleep 2
+    fi
+  done
+  return 1
+}
+
+on_exit() {
+  local status=$?
+  local rollback_failed=false
+  trap - EXIT
+  if [[ $status -ne 0 && "$deployment_mutated" == "true" ]]; then
+    echo "Host deployment failed; restoring ${expected_current_sha}." >&2
+    if ! restore_file_atomically "$backup_compose" "$target_dir/docker-compose.yaml"; then
+      rollback_failed=true
+    fi
+    if ! restore_file_atomically "$backup_env" "$target_dir/.env"; then
+      rollback_failed=true
+    fi
+    if [[ "$rollback_failed" == "false" ]]; then
+      local restored_sha
+      restored_sha="$(sed -n 's/^SOURCE_COMMIT=//p' "$target_dir/.env" | tail -1)"
+      if [[ "$restored_sha" != "$expected_current_sha" ]]; then
+        echo "Restored host ownership is ${restored_sha:-unset}, expected ${expected_current_sha}." >&2
+        rollback_failed=true
+      fi
+    fi
+    if [[ "$rollback_failed" == "false" ]]; then
+      cd "$target_dir"
+      if [[ -n "$compose_project" ]]; then
+        if ! docker compose -p "$compose_project" up -d --no-deps --force-recreate; then
+          rollback_failed=true
+        fi
+      else
+        if ! docker compose up -d --no-deps --force-recreate; then
+          rollback_failed=true
+        fi
+      fi
+    fi
+    if [[ "$rollback_failed" == "false" ]] && ! wait_for_public_sha "$expected_current_sha"; then
+      echo "$health_url did not prove restored SHA $expected_current_sha." >&2
+      rollback_failed=true
+    fi
+    if [[ "$rollback_failed" == "true" ]]; then
+      echo "AUTOMATIC HOST ROLLBACK FAILED; state is unknown. Backups remain at $backup_compose and $backup_env." >&2
+      status=70
+    else
+      deployment_mutated=false
+      echo "Automatic host rollback restored and proved ${expected_current_sha}." >&2
+    fi
+  fi
+  cleanup
+  exit "$status"
+}
+trap on_exit EXIT
 
 image="${app_uuid}:${sha}"
 if [[ "$target" == "staging" ]]; then
@@ -249,8 +342,11 @@ else
   container_filter="oriental-staging-1ff751c"
 fi
 
-cp -p "$target_dir/docker-compose.yaml" "$target_dir/docker-compose.yaml.deploy-backup-${timestamp}"
-cp -p "$target_dir/.env" "$target_dir/.env.deploy-backup-${timestamp}"
+backup_compose="$target_dir/docker-compose.yaml.deploy-backup-${timestamp}"
+backup_env="$target_dir/.env.deploy-backup-${timestamp}"
+cp -p "$target_dir/docker-compose.yaml" "$backup_compose"
+cp -p "$target_dir/.env" "$backup_env"
+deployment_mutated=true
 python3 - "$target_dir" "$image" "$sha" "$target" "$voice_model_cell" "$voice_picker_mode" "$ga_measurement_id" "$google_site_verification" <<'PY'
 from pathlib import Path
 import os
@@ -350,12 +446,11 @@ sleep 8
 docker ps \
   --filter name="$container_filter" \
   --format '{{.Names}}\t{{.Image}}\t{{.Status}}'
-REMOTE
 
-if [[ "$target" == "production" ]]; then
-  health_url="https://oriental.mereka.io/api/health"
-else
-  health_url="https://staging.oriental.mereka.io/api/health"
+if ! wait_for_public_sha "$sha"; then
+  echo "$health_url did not prove candidate SHA $sha; rolling back." >&2
+  exit 1
 fi
-curl -fsS "$health_url"
-printf '\n'
+deployment_mutated=false
+printf '%s\n' "$health_payload"
+REMOTE

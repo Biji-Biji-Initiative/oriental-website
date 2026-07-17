@@ -60,6 +60,7 @@ describe("voice review snapshots", () => {
         }),
         "listening",
         {
+          snapshotSequence: 9,
           leadId: "lead_123",
           submittedAt: 1234,
           closeReason: "manual",
@@ -71,6 +72,7 @@ describe("voice review snapshots", () => {
       ),
     ).toMatchObject({
       sessionId: "sess_123",
+      snapshotSequence: 9,
       leadId: "lead_123",
       segment: "technology",
       status: "submitted",
