@@ -38,7 +38,7 @@ export function buildOwnerNotification(lead: StoredLead): OwnerNotification {
   ];
   if (lead.form.phone) rows.push(["Phone", lead.form.phone]);
   if (lead.form.website) rows.push(["Website / Socials", lead.form.website]);
-  const subject = `[Oriental] ${segment.label} lead from ${lead.form.org || lead.form.name || "a new partner"}`;
+  const subject = `[Mereka at Oriental] ${segment.label} lead from ${lead.form.org || lead.form.name || "a new partner"}`;
   const text = [
     "New Mereka at Oriental partner intake",
     "",
@@ -255,7 +255,7 @@ export function buildSlackPayload(lead: StoredLead): SlackLeadPayload {
   const blocks: SlackBlock[] = [
     {
       type: "header",
-      text: { type: "plain_text", text: truncate(`New Oriental lead · ${segment.label}`, 150), emoji: false },
+      text: { type: "plain_text", text: truncate(`New Mereka at Oriental lead · ${segment.label}`, 150), emoji: false },
     },
     { type: "section", text: { type: "mrkdwn", text: intro } },
     { type: "divider" },
@@ -284,7 +284,7 @@ export function buildSlackPayload(lead: StoredLead): SlackLeadPayload {
   });
 
   return {
-    text: `New Oriental lead for ${lead.routedTo}: ${lead.form.name || "a new partner"}${lead.form.org ? ` from ${lead.form.org}` : ""}`,
+    text: `New Mereka at Oriental lead for ${lead.routedTo}: ${lead.form.name || "a new partner"}${lead.form.org ? ` from ${lead.form.org}` : ""}`,
     blocks,
   };
 }

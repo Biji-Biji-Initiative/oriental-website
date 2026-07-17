@@ -64,6 +64,8 @@ export type VoiceRuntimeState = {
   ignoredPendingTranscripts?: number;
   /** Tagged transcriptions committed before clear-all that must not restore erased PII. */
   ignoredUserTranscriptIds?: string[];
+  /** Fixed-size fail-closed membership filter for every retired tagged transcription ID. */
+  ignoredUserTranscriptIdFilter?: number[];
   /** After clear-all, accept only uniquely tagged transcriptions seen in a new commit event. */
   requireCommittedUserTranscriptIds?: boolean;
   activeResponse?: boolean;
@@ -154,6 +156,59 @@ const BENIGN_VOICE_ERROR_CODES = new Set([
   "input_audio_buffer_commit_empty",
 ]);
 
+const RECENT_TRANSCRIPT_TOMBSTONE_LIMIT = 100;
+const TRANSCRIPT_TOMBSTONE_FILTER_WORDS = 64;
+const TRANSCRIPT_TOMBSTONE_FILTER_BITS = TRANSCRIPT_TOMBSTONE_FILTER_WORDS * 32;
+
+function appendRecentTranscriptTombstones(current: string[], additions: string[]) {
+  const unique = [...current];
+  for (const id of additions) {
+    if (!unique.includes(id)) unique.push(id);
+  }
+  return unique.slice(-RECENT_TRANSCRIPT_TOMBSTONE_LIMIT);
+}
+
+function transcriptIdFilterOffsets(id: string) {
+  const hash = (seed: number) => {
+    let value = seed >>> 0;
+    for (let index = 0; index < id.length; index += 1) {
+      value ^= id.charCodeAt(index);
+      value = Math.imul(value, 0x01000193) >>> 0;
+    }
+    return value % TRANSCRIPT_TOMBSTONE_FILTER_BITS;
+  };
+  return [hash(0x811c9dc5), hash(0x9e3779b9), hash(0x85ebca6b)];
+}
+
+function addTranscriptIdsToFilter(current: number[] | undefined, ids: string[]) {
+  if (ids.length === 0) return current;
+  const filter = Array.from({ length: TRANSCRIPT_TOMBSTONE_FILTER_WORDS }, (_, index) => (current?.[index] ?? 0) >>> 0);
+  for (const id of ids) {
+    for (const offset of transcriptIdFilterOffsets(id)) {
+      const word = Math.floor(offset / 32);
+      filter[word] = ((filter[word] ?? 0) | (1 << (offset % 32))) >>> 0;
+    }
+  }
+  return filter;
+}
+
+function transcriptIdFilterContains(filter: number[] | undefined, id: string) {
+  if (!filter) return false;
+  return transcriptIdFilterOffsets(id).every((offset) => {
+    const word = Math.floor(offset / 32);
+    return (((filter[word] ?? 0) >>> (offset % 32)) & 1) === 1;
+  });
+}
+
+function hasRetiredTranscriptId(
+  state: Pick<VoiceRuntimeState, "ignoredUserTranscriptIds" | "ignoredUserTranscriptIdFilter">,
+  id: string,
+) {
+  return Boolean(
+    state.ignoredUserTranscriptIds?.includes(id) || transcriptIdFilterContains(state.ignoredUserTranscriptIdFilter, id),
+  );
+}
+
 export function isBenignVoiceError(error: VoiceRuntimeError) {
   if (error.code && BENIGN_VOICE_ERROR_CODES.has(error.code)) return true;
   const message = error.message.toLowerCase();
@@ -205,7 +260,7 @@ export function reduceRealtimeServerEvent(
   const pendingTranscriptIds = state.pendingUserTranscriptIds ?? [];
   const ignoredTranscriptIds = state.ignoredUserTranscriptIds ?? [];
   const settlesPendingId = Boolean(settledTranscriptId && pendingTranscriptIds.includes(settledTranscriptId));
-  const ignoresSettledId = Boolean(settledTranscriptId && ignoredTranscriptIds.includes(settledTranscriptId));
+  const ignoresSettledId = Boolean(settledTranscriptId && hasRetiredTranscriptId(state, settledTranscriptId));
   const ignoresUnknownSettledId = Boolean(
     settlesUserTranscription &&
       state.requireCommittedUserTranscriptIds &&
@@ -239,9 +294,8 @@ export function reduceRealtimeServerEvent(
     const committedTranscriptId = asString(event.item_id);
     const duplicateOrIgnoredId = Boolean(
       committedTranscriptId &&
-        [...(state.pendingUserTranscriptIds ?? []), ...(state.ignoredUserTranscriptIds ?? [])].includes(
-          committedTranscriptId,
-        ),
+        ((state.pendingUserTranscriptIds ?? []).includes(committedTranscriptId) ||
+          hasRetiredTranscriptId(state, committedTranscriptId)),
     );
     const unsafeUntaggedCommit = Boolean(state.requireCommittedUserTranscriptIds && !committedTranscriptId);
     if (!duplicateOrIgnoredId && !unsafeUntaggedCommit) {
@@ -256,6 +310,7 @@ export function reduceRealtimeServerEvent(
   }
 
   if (settlesUserTranscription) {
+    const newlyRetiredTranscriptIds = settledTranscriptId && !ignoreSettledTranscription ? [settledTranscriptId] : [];
     state = {
       ...state,
       pendingUserTranscripts:
@@ -270,7 +325,17 @@ export function reduceRealtimeServerEvent(
         : state.ignoredPendingTranscripts,
       // Keep tagged tombstones for the rest of this voice session. A duplicate
       // completion or a protocol-invalid ID reuse must never restore cleared PII.
-      ignoredUserTranscriptIds: ignoredTranscriptIds,
+      ignoredUserTranscriptIds:
+        newlyRetiredTranscriptIds.length > 0
+          ? appendRecentTranscriptTombstones(ignoredTranscriptIds, newlyRetiredTranscriptIds)
+          : ignoredTranscriptIds,
+      ignoredUserTranscriptIdFilter:
+        newlyRetiredTranscriptIds.length > 0
+          ? addTranscriptIdsToFilter(state.ignoredUserTranscriptIdFilter, [
+              ...ignoredTranscriptIds,
+              ...newlyRetiredTranscriptIds,
+            ])
+          : state.ignoredUserTranscriptIdFilter,
     };
   }
 
@@ -611,6 +676,10 @@ function applyFunctionCall(
         0,
         (next.pendingUserTranscripts ?? 0) - pendingUserTranscriptIds.length,
       );
+      const retiredTranscriptIds = appendRecentTranscriptTombstones(
+        next.ignoredUserTranscriptIds ?? [],
+        pendingUserTranscriptIds,
+      );
       next = {
         ...next,
         captured: { ...emptyCapturedLead },
@@ -624,10 +693,11 @@ function applyFunctionCall(
         pendingUserTranscripts: 0,
         pendingUserTranscriptIds: [],
         ignoredPendingTranscripts,
-        ignoredUserTranscriptIds: [
+        ignoredUserTranscriptIds: retiredTranscriptIds,
+        ignoredUserTranscriptIdFilter: addTranscriptIdsToFilter(next.ignoredUserTranscriptIdFilter, [
           ...(next.ignoredUserTranscriptIds ?? []),
-          ...pendingUserTranscriptIds.filter((id) => !(next.ignoredUserTranscriptIds ?? []).includes(id)),
-        ].slice(-100),
+          ...pendingUserTranscriptIds,
+        ]),
         requireCommittedUserTranscriptIds: true,
       };
       output = { ok: true, cleared: true, clearedFields, captured: next.captured };
@@ -746,9 +816,13 @@ function appendTranscript(
 
 function applyUserEmailUpdate(state: VoiceRuntimeState, text: string, source: "speech" | "typed"): VoiceRuntimeState {
   const currentEmail = state.captured.email.trim();
-  const correctedLiteral = hasEmailCorrectionLanguage(text) ? getLiteralEmailMentions(text).at(-1)?.email : undefined;
-  const email = correctedLiteral ?? extractExplicitVisitorEmail(text);
+  const literalCorrections = hasEmailCorrectionLanguage(text) ? getLiteralEmailMentions(text) : [];
+  const correctedLiteral = getExplicitCorrectedVisitorEmail(text);
+  const email = literalCorrections.length > 0 ? correctedLiteral : extractExplicitVisitorEmail(text);
   if (!email) {
+    // An unsafe literal correction is evidence about some address, not authority
+    // to install it or erase the visitor's already-selected contact address.
+    if (literalCorrections.length > 0) return state;
     if (!currentEmail || (!hasOwnedEmailReplacementIntent(text) && !hasShortContextualEmailCorrection(state, text))) {
       return state;
     }
@@ -1429,6 +1503,73 @@ function hasEmailCorrectionLanguage(text: string) {
   );
 }
 
+function getExplicitCorrectedVisitorEmail(text: string) {
+  if (!hasEmailCorrectionLanguage(text)) return undefined;
+  let mentionOrder = 0;
+  const literalMentions = getEmailDecisionClauses(text).flatMap((clause) => {
+    const normalizedClause = clause
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/\p{Mark}/gu, "");
+    return getLiteralEmailMentions(clause).map((mention) => {
+      const disposition = getLiteralEmailMentionDisposition(normalizedClause, mention.start, mention.email.length);
+      const selfOwned = hasPrimaryContactOwnershipContext(clause);
+      const explicitlySelected = emailTurnSelectsTarget(clause, mention.email);
+      const selected = !(
+        disposition !== "selected" ||
+        (!selfOwned && !explicitlySelected) ||
+        hasSecondaryEmailContext(clause) ||
+        hasHistoricalEmailContext(clause) ||
+        hasExplicitNonEmailWebContext(clause) ||
+        hasThirdPartyEmailOwnershipContext(clause) ||
+        emailTurnRejectsTarget(clause, mention.email)
+      );
+      return {
+        email: mention.email,
+        disposition,
+        selected,
+        correctionClause: hasEmailCorrectionLanguage(clause),
+        order: mentionOrder++,
+      };
+    });
+  });
+  const selected = literalMentions.filter((mention) => mention.selected);
+  const distinctSelections = [...new Set(selected.map((selection) => selection.email))];
+  let selectedEmail = distinctSelections.length === 1 ? distinctSelections[0] : undefined;
+  let allowsEarlierPlainDeclarations = false;
+
+  // A later explicit correction may supersede an earlier plain declaration in
+  // the same turn. Multiple competing correction clauses remain ambiguous.
+  const correctionSelections = selected.filter((selection) => selection.correctionClause);
+  const finalSelection = selected.at(-1);
+  if (!selectedEmail && correctionSelections.length === 1 && finalSelection?.correctionClause) {
+    selectedEmail = finalSelection.email;
+    allowsEarlierPlainDeclarations = true;
+  }
+  if (!selectedEmail) return undefined;
+
+  // Every different literal in the turn must be explicitly rejected. The sole
+  // exception is an earlier plain declaration superseded by one final explicit
+  // correction, such as “My email is old@…; actually use new@…”.
+  const selectedOrder = selected.findLast((selection) => selection.email === selectedEmail)?.order ?? -1;
+  const competingMentionsAreResolved = literalMentions.every(
+    (mention) =>
+      mention.email === selectedEmail ||
+      mention.disposition === "rejected" ||
+      (allowsEarlierPlainDeclarations &&
+        mention.selected &&
+        !mention.correctionClause &&
+        mention.order < selectedOrder),
+  );
+  return competingMentionsAreResolved ? selectedEmail : undefined;
+}
+
+function hasThirdPartyEmailOwnershipContext(text: string) {
+  return /\b(?:his|her|their|someone\s+else'?s|(?:my\s+)?(?:colleague|coworker|co-worker|manager|assistant|friend|supplier|customer|client|partner)'?s|[\p{Letter}][\p{Letter}'’-]*'s)\s+(?:e-?mail|contact\s+address)\b/iu.test(
+    text,
+  );
+}
+
 function hasContextualEmailCorrection(text: string, groundedEmail: string) {
   const stronglyAnaphoricCorrection =
     /\b(?:i meant|i said)\b/i.test(text) &&
@@ -1971,28 +2112,28 @@ function confirmCapturedEmail(
  * `x sora dot kim ...` and `sora dot kim ... x` are different addresses.
  */
 function hasExactEmailReadback(text: string, email: string): boolean {
-  const candidates = [text, ...text.split(/(?:[!?]+|[.;]+\s+(?=[A-Z]))\s*/u)];
-
-  return candidates.some((value) => {
-    const stripTrailingContext = (candidate: string) =>
-      candidate
-        .replace(
-          /[,.!;:\-–—\s]*(?:(?:is|was)\s+that(?:\s+exactly)?\s+(?:right|correct)|did\s+i\s+(?:get|hear|capture)\s+that\s+(?:right|correct)|have\s+i\s+got\s+that\s+(?:right|correct)|(?:right|correct))\s*[?.!]*$/iu,
-          "",
-        )
-        .replace(/[\s"'“”‘’\])}.!?,;:]+$/u, "")
-        .trim();
+  const stripTrailingContext = (candidate: string) =>
+    candidate
+      .replace(
+        /[,.!;:\-–—\s]*(?:(?:is|was)\s+that(?:\s+exactly)?\s+(?:right|correct)|did\s+i\s+(?:get|hear|capture)\s+that\s+(?:right|correct)|have\s+i\s+got\s+that\s+(?:right|correct)|(?:right|correct))\s*[?.!]*$/iu,
+        "",
+      )
+      .replace(/[\s"'“”‘’\])}.!?,;:]+$/u, "")
+      .trim();
+  const readbackEmail = (value: string) => {
     let candidate = stripTrailingContext(value.trim());
+    const untouchedCanonical = canonicalizeEmailSpeech(candidate);
     // Test the untouched address first: valid local parts such as
     // right@example.com and confirm@example.com are not wrapper prose.
-    if (candidate && canonicalizeEmailSpeech(candidate) === email.trim().toLowerCase()) return true;
+    if (candidate && untouchedCanonical === email.trim().toLowerCase()) return untouchedCanonical;
 
     let previous = "";
+    let canonical = "";
     while (candidate && candidate !== previous) {
       previous = candidate;
       candidate = candidate
         .replace(/^[\s"'“”‘’([{]+/u, "")
-        .replace(/^(?:okay|ok|alright|right|great|perfect|thanks|thank you|got it|so|and)[.!,:;\-–—\s]+/iu, "")
+        .replace(/^(?:actually|okay|ok|alright|right|great|perfect|thanks|thank you|got it|so|and)[.!,:;\-–—\s]+/iu, "")
         .replace(
           /^(?:just\s+)?(?:to\s+)?confirm(?:ing)?(?:\s+(?:your|the))?(?:\s+(?:e-?mail|address)(?:\s+address)?)?(?:\s+(?:is|as))?[,:;\-–—\s]+/iu,
           "",
@@ -2002,11 +2143,18 @@ function hasExactEmailReadback(text: string, email: string): boolean {
           "",
         );
       candidate = stripTrailingContext(candidate);
-      if (candidate && canonicalizeEmailSpeech(candidate) === email.trim().toLowerCase()) return true;
+      canonical = canonicalizeEmailSpeech(candidate);
+      if (candidate && isLikelyEmail(canonical)) return canonical;
     }
 
-    return Boolean(candidate) && canonicalizeEmailSpeech(candidate) === email.trim().toLowerCase();
-  });
+    return isLikelyEmail(untouchedCanonical) ? untouchedCanonical : undefined;
+  };
+  const readbackEmails = text
+    .split(/(?:[!?]+|[.;]+\s+(?=[A-Z]))\s*/u)
+    .map(readbackEmail)
+    .filter((candidate): candidate is string => Boolean(candidate));
+
+  return readbackEmails.length === 1 && readbackEmails[0] === email.trim().toLowerCase();
 }
 
 const EXPLICIT_EMAIL_CONFIRMATIONS = new Set([

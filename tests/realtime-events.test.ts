@@ -60,6 +60,71 @@ describe("reduceRealtimeServerEvent", () => {
   });
 
   it.each([
+    "Actually, do not use new@example.com; keep the address already there.",
+    "Actually, her email is new@example.com.",
+    "Actually, Priya's email is new@example.com.",
+    "Actually, use new@example.com as an example.",
+  ])("does not give contradicted or non-visitor literal corrections capture authority: %s", (correction) => {
+    const result = appendTypedUserMessage(
+      state({
+        captured: { ...emptyCapturedLead, email: "old@example.com" },
+        emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+      }),
+      correction,
+    );
+
+    expect(result.captured.email).toBe("old@example.com");
+    expect(result.emailVerification).toEqual({
+      value: "old@example.com",
+      source: "typed",
+      status: "confirmed",
+    });
+  });
+
+  it.each([
+    "Actually use new@example.com, not old@example.com.",
+    "Actually not old@example.com, use new@example.com.",
+  ])("selects exactly one authorized literal correction regardless of address order: %s", (correction) => {
+    const result = appendTypedUserMessage(
+      state({
+        captured: { ...emptyCapturedLead, email: "old@example.com" },
+        emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+      }),
+      correction,
+    );
+
+    expect(result.captured.email).toBe("new@example.com");
+    expect(result.emailVerification).toEqual({
+      value: "new@example.com",
+      source: "typed",
+      status: "confirmed",
+    });
+  });
+
+  it.each([
+    "Actually use new@example.com or other@example.com.",
+    "Actually use new@example.com and other@example.com.",
+    "Actually use new@example.com, and also other@example.com.",
+    "Actually use new@example.com; maybe other@example.com.",
+    "Actually use new@example.com; other@example.com is also fine.",
+  ])("keeps existing authority when a correction offers a competing literal: %s", (correction) => {
+    const result = appendTypedUserMessage(
+      state({
+        captured: { ...emptyCapturedLead, email: "old@example.com" },
+        emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+      }),
+      correction,
+    );
+
+    expect(result.captured.email).toBe("old@example.com");
+    expect(result.emailVerification).toEqual({
+      value: "old@example.com",
+      source: "typed",
+      status: "confirmed",
+    });
+  });
+
+  it.each([
     "Sorry, I meant new.",
     "No, I said new.",
   ])("invalidates a current email after a short contextual correction: %s", (correction) => {
@@ -618,6 +683,64 @@ describe("reduceRealtimeServerEvent", () => {
               type: "function_call",
               name: "confirm_email",
               call_id: "call_confirm_bounded_readback",
+              arguments: JSON.stringify({ evidence: "Yes, correct." }),
+            },
+          ],
+        },
+      },
+      withConfirmation,
+    );
+
+    expect(confirmation.state.emailVerification?.status).toBe("pending");
+    expect(confirmation.commands[0]).toMatchObject({
+      output: { ok: false, error: "email_readback_missing", key: "email" },
+    });
+  });
+
+  it("rejects an exact read-back accompanied by a second conflicting address", () => {
+    const captured = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_capture_multi_readback",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "sora.kim@gmail.com",
+                evidence: "sora dot kim at gmail dot com",
+              }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "sora dot kim at gmail dot com" }] }),
+    );
+    const withReadback = reduceRealtimeServerEvent(
+      {
+        type: "response.output_audio_transcript.done",
+        transcript: "I heard sora dot kim at gmail dot com. Actually, I heard x sora dot kim at gmail dot com.",
+      },
+      captured.state,
+    ).state;
+    const withConfirmation = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        transcript: "Yes, correct.",
+      },
+      withReadback,
+    ).state;
+    const confirmation = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "confirm_email",
+              call_id: "call_confirm_multi_readback",
               arguments: JSON.stringify({ evidence: "Yes, correct." }),
             },
           ],
@@ -3623,7 +3746,7 @@ describe("reduceRealtimeServerEvent", () => {
     expect(oldCompleted.state.captured.email).toBe("new@example.com");
     expect(oldCompleted.state.transcript).toEqual([{ role: "user", text: "My email is new@example.com." }]);
     expect(oldCompleted.state.pendingUserTranscriptIds).toEqual([]);
-    expect(oldCompleted.state.ignoredUserTranscriptIds).toEqual(["old-item"]);
+    expect(oldCompleted.state.ignoredUserTranscriptIds).toEqual(["old-item", "new-item"]);
   });
 
   it("keeps duplicate, unknown, reused, and untagged events fenced after clear-all", () => {
@@ -3738,6 +3861,96 @@ describe("reduceRealtimeServerEvent", () => {
     expect(duplicateCommit.pendingUserTranscriptIds).toEqual(["new-item"]);
     expect(completed.captured.email).toBe("new@example.com");
     expect(completed.pendingUserTranscripts).toBe(0);
+  });
+
+  it("rejects reuse of a post-clear item ID after its successful settlement", () => {
+    const cleared = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "clear_fields",
+              call_id: "call_clear_settled_reuse",
+              arguments: JSON.stringify({ scope: "all" }),
+            },
+          ],
+        },
+      },
+      state(),
+    ).state;
+    const firstCommit = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.committed", item_id: "new-item" },
+      cleared,
+    ).state;
+    const firstCompletion = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "new-item",
+        transcript: "My email is new@example.com.",
+      },
+      firstCommit,
+    ).state;
+    const reusedCommit = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.committed", item_id: "new-item" },
+      firstCompletion,
+    ).state;
+    const reusedCompletion = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "new-item",
+        transcript: "My email is attacker@example.com.",
+      },
+      reusedCommit,
+    ).state;
+
+    expect(reusedCompletion.captured.email).toBe("new@example.com");
+    expect(reusedCompletion.transcript).toEqual([{ role: "user", text: "My email is new@example.com." }]);
+    expect(reusedCompletion.pendingUserTranscripts).toBe(0);
+    expect(reusedCompletion.pendingUserTranscriptIds).toEqual([]);
+    expect(reusedCompletion.ignoredUserTranscriptIds).toContain("new-item");
+  });
+
+  it("keeps evicted recent transcript IDs retired in bounded state", () => {
+    const pendingIds = Array.from({ length: 101 }, (_, index) => `old-item-${index}`);
+    const cleared = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "clear_fields",
+              call_id: "call_clear_tombstone_overflow",
+              arguments: JSON.stringify({ scope: "all" }),
+            },
+          ],
+        },
+      },
+      state({ pendingUserTranscripts: pendingIds.length, pendingUserTranscriptIds: pendingIds }),
+    ).state;
+
+    expect(cleared.ignoredUserTranscriptIds).toHaveLength(100);
+    expect(cleared.ignoredUserTranscriptIds).not.toContain("old-item-0");
+    expect(cleared.ignoredUserTranscriptIdFilter).toHaveLength(64);
+
+    const reusedCommit = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.committed", item_id: "old-item-0" },
+      cleared,
+    ).state;
+    const reusedCompletion = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "old-item-0",
+        transcript: "My email is attacker@example.com.",
+      },
+      reusedCommit,
+    ).state;
+
+    expect(reusedCompletion.pendingUserTranscripts).toBe(0);
+    expect(reusedCompletion.transcript).toEqual([]);
+    expect(reusedCompletion.captured.email).toBe("");
   });
 
   it("accepts evidence-consistent identity capture while a user transcription is still pending", () => {

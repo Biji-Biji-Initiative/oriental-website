@@ -37,7 +37,9 @@ import {
   meetsThreshold,
   mergeConversationSessions,
   parseJudgeResponse,
+  resolveLatestEmailCorrection,
   type SessionEval,
+  type SubmittedEmailCorrectionAttribution,
   type VoiceEvalSession,
   validateVoiceExperimentEvidence,
 } from "../lib/eval/voice-eval";
@@ -55,12 +57,13 @@ type Args = {
   maxDropped?: number;
   maxQuota: number;
   maxAvailability?: number;
-  maxCaptureFailures?: number;
+  maxCaptureFailures: number;
   maxStyleTics?: number;
 };
 
 const JUDGE_CONCURRENCY = 4;
 const PROFILE_ENRICHMENT_CONCURRENCY = 8;
+const IMMUTABLE_LEAD_ATTRIBUTION_LIMIT = 1_000;
 
 function parseArgs(argv: string[]): Args {
   const args: Args = {
@@ -70,6 +73,7 @@ function parseArgs(argv: string[]): Args {
     persist: false,
     out: "eval-reports",
     maxQuota: 0,
+    maxCaptureFailures: 0,
   };
   let outWasExplicit = false;
   for (let i = 0; i < argv.length; i += 1) {
@@ -107,7 +111,11 @@ function parseArgs(argv: string[]): Args {
       args.maxAvailability = Number(value);
       i += 1;
     } else if (flag === "--max-capture-failures") {
-      args.maxCaptureFailures = Number(value);
+      const maxCaptureFailures = Number(value);
+      if (!Number.isFinite(maxCaptureFailures) || maxCaptureFailures < 0) {
+        throw new Error("--max-capture-failures must be a non-negative number");
+      }
+      args.maxCaptureFailures = maxCaptureFailures;
       i += 1;
     } else if (flag === "--max-style-tics") {
       args.maxStyleTics = Number(value);
@@ -225,6 +233,54 @@ function isValidVariant(value: unknown): value is string | null {
   return value === null || (typeof value === "string" && value.trim().length > 0);
 }
 
+type ImmutableLeadEmail = { leadId?: unknown; email?: unknown };
+
+function needsSubmittedEmailAttribution(session: VoiceEvalSession): boolean {
+  const submitted = typeof session.submittedAt === "number" || Boolean(session.leadId);
+  return submitted && resolveLatestEmailCorrection(session.transcript).kind === "resolved";
+}
+
+/**
+ * Compare against the immutable routed lead in memory, then retain only a
+ * PII-free result on the eval row. Never treat the mutable session snapshot as
+ * submission-time evidence.
+ */
+async function enrichSubmittedEmailAttribution(
+  convex: ConvexHttpClient,
+  ingestSecret: string,
+  sessions: VoiceEvalSession[],
+): Promise<VoiceEvalSession[]> {
+  if (!sessions.some(needsSubmittedEmailAttribution)) return sessions;
+
+  let rawLeads: ImmutableLeadEmail[];
+  try {
+    rawLeads = (await convex.query(api.leads.adminLeadTable, {
+      ingestSecret,
+      limit: IMMUTABLE_LEAD_ATTRIBUTION_LIMIT,
+    })) as ImmutableLeadEmail[];
+  } catch {
+    throw new Error("Submitted email attribution query failed; capture-integrity evidence is unavailable.");
+  }
+
+  const submittedEmailsByLeadId = new Map<string, string>();
+  for (const lead of rawLeads) {
+    if (typeof lead.leadId !== "string" || typeof lead.email !== "string") continue;
+    submittedEmailsByLeadId.set(lead.leadId, lead.email.trim().toLowerCase());
+  }
+
+  return sessions.map((session) => {
+    const correction = resolveLatestEmailCorrection(session.transcript);
+    if (!needsSubmittedEmailAttribution(session) || correction.kind !== "resolved") return session;
+    const submittedEmail = typeof session.leadId === "string" ? submittedEmailsByLeadId.get(session.leadId) : null;
+    if (!submittedEmail) {
+      throw new Error("Submitted email attribution is incomplete; capture-integrity evidence is unavailable.");
+    }
+    const attribution: SubmittedEmailCorrectionAttribution =
+      submittedEmail === correction.email ? "matched" : "mismatched";
+    return { ...session, submittedEmailCorrectionAttribution: attribution };
+  });
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
 
@@ -258,8 +314,9 @@ async function main() {
 
   // Stitch dropped-and-resumed call rows into one conversation before judging,
   // so a single intake is scored once — not once per reconnect.
-  const sessions = mergeConversationSessions(rawSessions);
-  const mergedCount = rawSessions.length - sessions.length;
+  const mergedSessions = mergeConversationSessions(rawSessions);
+  const sessions = await enrichSubmittedEmailAttribution(convex, ingestSecret, mergedSessions);
+  const mergedCount = rawSessions.length - mergedSessions.length;
   if (!args.aggregateOnly && mergedCount > 0) {
     console.log(`Stitched ${rawSessions.length} call rows into ${sessions.length} conversations.`);
   }
@@ -401,7 +458,8 @@ function printSummary(
     `capture integrity:     ${aggregate.captureIntegrity.totalFailures} failures across ` +
       `${aggregate.captureIntegrity.failedSessions} sessions ` +
       `(rejected ${aggregate.captureIntegrity.rejectedCaptures}, rejected email ${aggregate.captureIntegrity.rejectedEmailCaptures}, ` +
-      `unconfirmed email ${aggregate.captureIntegrity.unconfirmedEmailFailures}, stale email submissions ${aggregate.captureIntegrity.staleEmailSubmissions})`,
+      `unconfirmed email ${aggregate.captureIntegrity.unconfirmedEmailFailures}, stale email submissions ${aggregate.captureIntegrity.staleEmailSubmissions}, ` +
+      `unattributed email submissions ${aggregate.captureIntegrity.unattributedEmailSubmissions})`,
   );
   console.log(
     `conversation style:    ${aggregate.conversationStyle.bannedPhraseOccurrences} banned tic occurrences across ` +

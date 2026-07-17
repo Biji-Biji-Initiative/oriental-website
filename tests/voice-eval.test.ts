@@ -16,6 +16,7 @@ import {
   meetsThreshold,
   mergeConversationSessions,
   parseJudgeResponse,
+  resolveLatestEmailCorrection,
   type VoiceEvalSession,
   validateVoiceExperimentEvidence,
 } from "@/lib/eval/voice-eval";
@@ -299,6 +300,8 @@ describe("mergeConversationSessions", () => {
 
     expect(merged[0]?.mixedVoiceProfile).toBe(true);
     expect(buildSessionEval(merged[0] as VoiceEvalSession, null).mixedVoiceProfile).toBe(true);
+    expect(merged[0]?.mixedExperimentProfile).toBe(true);
+    expect(buildSessionEval(merged[0] as VoiceEvalSession, null).mixedExperimentProfile).toBe(true);
   });
 });
 
@@ -467,15 +470,17 @@ describe("deriveCaptureIntegritySignals", () => {
       rejectedEmailCaptures: 1,
       unconfirmedEmailFailures: 1,
       staleEmailSubmissions: 0,
+      unattributedEmailSubmissions: 0,
       totalFailures: 3,
       failed: true,
     });
   });
 
-  it("flags a submitted stale prefill after a literal email correction even without a rejection event", () => {
+  it("flags an immutable submitted-email mismatch after a literal correction", () => {
     const signals = deriveCaptureIntegritySignals(
       session({
         submittedAt: 100,
+        submittedEmailCorrectionAttribution: "mismatched",
         captured: { name: "", email: "old@example.com", org: "", message: "" },
         transcript: [
           { role: "user", text: "My email is old@example.com." },
@@ -497,6 +502,7 @@ describe("deriveCaptureIntegritySignals", () => {
     const signals = deriveCaptureIntegritySignals(
       session({
         submittedAt: 100,
+        submittedEmailCorrectionAttribution: "matched",
         captured: { name: "", email: "new@example.com", org: "", message: "" },
         transcript: [{ role: "user", text: "Actually, my email is new@example.com." }],
         errors: [],
@@ -506,10 +512,141 @@ describe("deriveCaptureIntegritySignals", () => {
     expect(signals.staleEmailSubmissions).toBe(0);
   });
 
+  it.each([
+    "Actually use new@example.com, not old@example.com.",
+    "Actually not old@example.com, use new@example.com.",
+  ])("resolves selected and rejected addresses from correction wording: %s", (correction) => {
+    expect(resolveLatestEmailCorrection([{ role: "user", text: correction }])).toEqual({
+      kind: "resolved",
+      email: "new@example.com",
+    });
+
+    const correctedSubmission = deriveCaptureIntegritySignals(
+      session({
+        submittedAt: 100,
+        submittedEmailCorrectionAttribution: "matched",
+        captured: { name: "", email: "new@example.com", org: "", message: "" },
+        transcript: [{ role: "user", text: correction }],
+      }),
+    );
+    const staleSubmission = deriveCaptureIntegritySignals(
+      session({
+        submittedAt: 100,
+        submittedEmailCorrectionAttribution: "mismatched",
+        captured: { name: "", email: "old@example.com", org: "", message: "" },
+        transcript: [{ role: "user", text: correction }],
+      }),
+    );
+
+    expect(correctedSubmission.staleEmailSubmissions).toBe(0);
+    expect(staleSubmission.staleEmailSubmissions).toBe(1);
+  });
+
+  it("recognizes a spoken email correction for immutable submission attribution", () => {
+    expect(
+      resolveLatestEmailCorrection([{ role: "user", text: "Actually use new dot address at example dot com." }]),
+    ).toEqual({ kind: "resolved", email: "new.address@example.com" });
+
+    const signals = deriveCaptureIntegritySignals(
+      session({
+        submittedAt: 100,
+        submittedEmailCorrectionAttribution: "mismatched",
+        captured: { name: "", email: "new.address@example.com", org: "", message: "" },
+        transcript: [{ role: "user", text: "Actually use new dot address at example dot com." }],
+      }),
+    );
+
+    expect(signals).toMatchObject({
+      staleEmailSubmissions: 1,
+      unattributedEmailSubmissions: 0,
+    });
+  });
+
+  it("does not use mutable captured.email as submission-time proof", () => {
+    const mutableSnapshotMatches = deriveCaptureIntegritySignals(
+      session({
+        submittedAt: 100,
+        submittedEmailCorrectionAttribution: "mismatched",
+        captured: { name: "", email: "new@example.com", org: "", message: "" },
+        transcript: [{ role: "user", text: "Actually, my email is new@example.com." }],
+      }),
+    );
+    const mutableSnapshotDiffers = deriveCaptureIntegritySignals(
+      session({
+        submittedAt: 100,
+        submittedEmailCorrectionAttribution: "matched",
+        captured: { name: "", email: "old@example.com", org: "", message: "" },
+        transcript: [{ role: "user", text: "Actually, my email is new@example.com." }],
+      }),
+    );
+
+    expect(mutableSnapshotMatches.staleEmailSubmissions).toBe(1);
+    expect(mutableSnapshotDiffers.staleEmailSubmissions).toBe(0);
+  });
+
+  it("fails closed when immutable submission attribution is unavailable", () => {
+    const signals = deriveCaptureIntegritySignals(
+      session({
+        submittedAt: 100,
+        captured: { name: "", email: "new@example.com", org: "", message: "" },
+        transcript: [{ role: "user", text: "Actually, my email is new@example.com." }],
+      }),
+    );
+
+    expect(signals).toMatchObject({
+      staleEmailSubmissions: 0,
+      unattributedEmailSubmissions: 1,
+      totalFailures: 1,
+      failed: true,
+    });
+  });
+
+  it("fails closed on an ambiguous latest multi-address correction", () => {
+    const transcript = [
+      { role: "user", text: "Actually, my email is prior@example.com." },
+      { role: "user", text: "Actually use first@example.com or second@example.com." },
+    ];
+    const signals = deriveCaptureIntegritySignals(
+      session({
+        submittedAt: 100,
+        captured: { name: "", email: "unrelated@example.com", org: "", message: "" },
+        transcript,
+      }),
+    );
+
+    expect(resolveLatestEmailCorrection(transcript)).toEqual({ kind: "ambiguous" });
+    expect(signals.staleEmailSubmissions).toBe(0);
+    expect(signals.unattributedEmailSubmissions).toBe(1);
+    expect(signals.failed).toBe(true);
+  });
+
+  it.each([
+    "Actually, do not use rejected@example.com.",
+    "Actually, rejected@example.com is wrong.",
+    "Actually rejected@example.com, not that one.",
+    "Actually rejected@example.com — that is wrong.",
+    "Actually rejected@example.com? No, that is wrong.",
+  ])("does not treat a rejected single address as the intended correction: %s", (correction) => {
+    const signals = deriveCaptureIntegritySignals(
+      session({
+        submittedAt: 100,
+        transcript: [{ role: "user", text: correction }],
+      }),
+    );
+
+    expect(resolveLatestEmailCorrection([{ role: "user", text: correction }])).toEqual({ kind: "ambiguous" });
+    expect(signals).toMatchObject({
+      staleEmailSubmissions: 0,
+      unattributedEmailSubmissions: 1,
+      failed: true,
+    });
+  });
+
   it("flags a lead-id-only stale submission and uses the latest explicit correction", () => {
     const signals = deriveCaptureIntegritySignals(
       session({
         leadId: "lead_123",
+        submittedEmailCorrectionAttribution: "mismatched",
         captured: { name: "", email: "first@example.com", org: "", message: "" },
         transcript: [
           { role: "user", text: "Actually, my email is second@example.com." },
@@ -667,6 +804,7 @@ describe("aggregateEvals + meetsThreshold", () => {
       rejectedEmailCaptures: 1,
       unconfirmedEmailFailures: 1,
       staleEmailSubmissions: 0,
+      unattributedEmailSubmissions: 0,
       totalFailures: 2,
     });
     expect(aggregate.worstSessions).toContainEqual({
@@ -1085,7 +1223,93 @@ describe("aggregateEvals + meetsThreshold", () => {
     );
 
     const validation = validateVoiceExperimentEvidence([mixed]);
-    expect(validation.ok).toBe(false);
-    expect(validation.failures[0]).toContain("voice variant, voice profile");
+    expect(validation).toEqual({
+      ok: false,
+      failures: ["mixed-picker spans multiple voice profiles across reconnects"],
+    });
+  });
+
+  it("rejects and excludes a null-variant conversation that switched render profiles", () => {
+    const [merged] = mergeConversationSessions([
+      session({
+        reviewId: "render-a",
+        conversationId: "render-conversation",
+        connectStartedAt: 100,
+        voice: "coral",
+        speed: 1.28,
+        variant: null,
+      }),
+      session({
+        reviewId: "render-b",
+        conversationId: "render-conversation",
+        connectStartedAt: 200,
+        voice: "marin",
+        speed: 1.22,
+        variant: null,
+      }),
+    ]);
+    const mixed = buildSessionEval(merged as VoiceEvalSession, null);
+
+    expect(mixed.mixedVoiceProfile).toBe(true);
+    expect(mixed.mixedExperimentProfile).toBe(true);
+    expect(validateVoiceExperimentEvidence([mixed])).toEqual({
+      ok: false,
+      failures: ["render-b spans multiple complete experiment profiles across reconnects"],
+    });
+    expect(aggregateEvalsByExperimentCell([mixed])).toEqual({});
+  });
+
+  it.each([
+    ["runtime", { runtimeProfile: "instant-v1" as const, inputPolicy: "fast" as const }],
+    ["input policy", { inputPolicy: "fast" as const }],
+    ["model", { modelCell: "candidate" as const }],
+    ["reasoning", { reasoningCell: "minimal" as const }],
+    ["deployment environment", { deploymentEnvironment: "production" as const }],
+  ])("rejects and excludes a stitched conversation with %s profile drift", (_dimension, secondOverrides) => {
+    const control = buildSessionEval(
+      session({
+        reviewId: "clean-control",
+        deploymentEnvironment: "staging",
+        voice: "coral",
+        speed: 1.28,
+        variant: null,
+      }),
+      null,
+    );
+    const [merged] = mergeConversationSessions([
+      session({
+        reviewId: "drift-a",
+        conversationId: "drift-conversation",
+        connectStartedAt: 100,
+        deploymentEnvironment: "staging",
+        voice: "coral",
+        speed: 1.28,
+        variant: null,
+      }),
+      session({
+        reviewId: "drift-b",
+        conversationId: "drift-conversation",
+        connectStartedAt: 200,
+        deploymentEnvironment: "staging",
+        voice: "coral",
+        speed: 1.28,
+        variant: null,
+        ...secondOverrides,
+      }),
+    ]);
+    const mixed = buildSessionEval(merged as VoiceEvalSession, null);
+
+    expect(mixed.mixedVoiceProfile).toBe(false);
+    expect(mixed.mixedExperimentProfile).toBe(true);
+    expect(validateVoiceExperimentEvidence([control, mixed])).toEqual({
+      ok: false,
+      failures: ["drift-b spans multiple complete experiment profiles across reconnects"],
+    });
+    expect(aggregateEvalsByExperimentCell([control, mixed])).toEqual({
+      "baseline/control/low/env-default/coral/1.28": expect.objectContaining({ sessionCount: 1 }),
+    });
+    expect(aggregateEvalsByRuntimeProfile([control, mixed])).toEqual({
+      baseline: expect.objectContaining({ sessionCount: 1 }),
+    });
   });
 });
