@@ -68,9 +68,9 @@ export function AdminVoiceSessionTranscript({ reviewId, expectedTurnCount }: Adm
   if (expectedTurnCount <= 0) return null;
 
   return (
-    <div className="mt-4 rounded-lg border border-mk-ash/15 bg-white p-3" ref={rootRef}>
+    <div className="mt-4 rounded-lg border border-white/10 bg-white/[0.04] p-3" ref={rootRef}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-mk-ash">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
           Transcript · {expectedTurnCount} {expectedTurnCount === 1 ? "turn" : "turns"}
         </div>
         {state.status === "error" ? (
@@ -79,23 +79,41 @@ export function AdminVoiceSessionTranscript({ reviewId, expectedTurnCount }: Adm
           </Button>
         ) : null}
       </div>
-      {state.status === "loading" ? <p className="mt-2 text-xs leading-5 text-mk-ash">Loading transcript...</p> : null}
+      {state.status === "loading" ? (
+        <p className="mt-2 text-xs leading-5 text-slate-400">Loading transcript...</p>
+      ) : null}
       {state.status === "error" ? (
-        <p className="mt-2 text-xs leading-5 text-destructive">Could not load transcript: {state.message}</p>
+        <p className="mt-2 text-xs leading-5 text-rose-300">Could not load transcript: {state.message}</p>
       ) : null}
       {state.status === "loaded" ? (
-        <div className="mt-2 grid max-h-72 gap-2 overflow-y-auto">
+        <div className="mt-3 grid max-h-72 gap-2 overflow-y-auto">
           {state.transcript.length > 0 ? (
-            state.transcript.map((entry) => (
-              <p className="text-xs leading-5 text-mk-ash" key={`${entry.role}:${entry.text.slice(0, 120)}`}>
-                <span className="font-semibold text-mk-off-black">
-                  {entry.role === "assistant" ? "Reka" : "Visitor"}:
-                </span>{" "}
-                {entry.text}
-              </p>
-            ))
+            state.transcript.map((entry) => {
+              const isReka = entry.role === "assistant";
+              return (
+                <div
+                  className={isReka ? "flex justify-end" : "flex justify-start"}
+                  key={`${entry.role}:${entry.text.slice(0, 120)}`}
+                >
+                  <div
+                    className={
+                      isReka
+                        ? "max-w-[88%] rounded-2xl rounded-br-sm border border-sky-400/20 bg-sky-400/10 px-3 py-2"
+                        : "max-w-[88%] rounded-2xl rounded-bl-sm border border-white/10 bg-white/[0.05] px-3 py-2"
+                    }
+                  >
+                    <div
+                      className={`text-[10px] font-semibold uppercase tracking-[0.12em] ${isReka ? "text-sky-300" : "text-slate-500"}`}
+                    >
+                      {isReka ? "Reka" : "Visitor"}
+                    </div>
+                    <p className="mt-0.5 text-xs leading-5 text-slate-300">{entry.text}</p>
+                  </div>
+                </div>
+              );
+            })
           ) : (
-            <p className="text-xs leading-5 text-mk-ash">No transcript turns were stored for this session.</p>
+            <p className="text-xs leading-5 text-slate-400">No transcript turns were stored for this session.</p>
           )}
         </div>
       ) : null}

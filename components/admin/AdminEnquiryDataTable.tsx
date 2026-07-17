@@ -164,16 +164,16 @@ export function AdminEnquiryDataTable({
           <div className="min-w-52 max-w-64">
             <a
               aria-label={`Open ${row.original.name || row.original.email} enquiry record`}
-              className="font-semibold text-mk-blue hover:underline"
+              className="font-semibold text-sky-300 hover:underline"
               href={row.original.recordHref}
             >
               {row.original.name.trim() || "Unnamed visitor"}
             </a>
-            <div className="mt-1 truncate text-xs text-mk-ash">
+            <div className="mt-1 truncate text-xs text-slate-400">
               {row.original.org.trim() || "Organisation not captured"}
             </div>
             <a
-              className="mt-1 block truncate text-xs font-medium text-mk-off-black/75 hover:text-mk-blue hover:underline"
+              className="mt-1 block truncate text-xs font-medium text-slate-300 hover:text-sky-300 hover:underline"
               href={`mailto:${encodeURIComponent(row.original.email)}`}
             >
               {row.original.email}
@@ -190,7 +190,7 @@ export function AdminEnquiryDataTable({
             <p className="line-clamp-2 text-sm leading-5">
               {row.original.message.trim() || "No request brief captured."}
             </p>
-            <p className="mt-1.5 text-xs text-mk-ash">{getSegment(row.original.segment).label}</p>
+            <p className="mt-1.5 text-xs text-slate-400">{getSegment(row.original.segment).label}</p>
           </div>
         ),
       },
@@ -239,7 +239,7 @@ export function AdminEnquiryDataTable({
           return (
             <div className="min-w-44 max-w-56 whitespace-normal">
               <Badge tone={slaTone(state.state)}>{state.label}</Badge>
-              <p className="mt-1.5 line-clamp-2 text-xs leading-5 text-mk-ash">
+              <p className="mt-1.5 line-clamp-2 text-xs leading-5 text-slate-400">
                 {row.original.nextActionNote?.trim() || "No next action recorded"}
               </p>
             </div>
@@ -256,7 +256,7 @@ export function AdminEnquiryDataTable({
             <Badge tone={row.original.source === "voice" ? "blue" : "neutral"}>
               {sourceLabel(row.original.source)}
             </Badge>
-            <p className="mt-1.5 text-xs text-mk-ash">Route: {row.original.routedTo || "Not set"}</p>
+            <p className="mt-1.5 text-xs text-slate-400">Route: {row.original.routedTo || "Not set"}</p>
           </div>
         ),
       },
@@ -269,7 +269,7 @@ export function AdminEnquiryDataTable({
           return (
             <div className="min-w-28">
               <Badge tone={delivery.tone}>{delivery.label}</Badge>
-              <p className="mt-1.5 text-xs text-mk-ash">
+              <p className="mt-1.5 text-xs text-slate-400">
                 {row.original.notificationClickUpOk === true ? "ClickUp synced" : "ClickUp gap"}
               </p>
             </div>
@@ -282,7 +282,7 @@ export function AdminEnquiryDataTable({
         cell: ({ row }) => (
           <div className="min-w-28">
             <div className="font-semibold">{relativeAge(row.original.createdAt, generatedAt)}</div>
-            <div className="mt-1 text-xs text-mk-ash">{formatDate(row.original.createdAt)}</div>
+            <div className="mt-1 text-xs text-slate-400">{formatDate(row.original.createdAt)}</div>
           </div>
         ),
       },
@@ -418,11 +418,11 @@ export function AdminEnquiryDataTable({
 
   return (
     <section
-      className="overflow-hidden rounded-2xl border border-mk-ash/20 bg-white shadow-sm"
+      className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04]"
       data-admin-enquiry-table
       id="enquiry-table"
     >
-      <header className="border-b border-mk-ash/15 bg-gradient-to-r from-mk-blue/[0.06] via-white to-white px-4 py-5 sm:px-5">
+      <header className="border-b border-white/10 bg-gradient-to-r from-sky-400/10 via-transparent to-transparent px-4 py-5 sm:px-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <div className="flex flex-wrap items-center gap-2">
@@ -430,25 +430,25 @@ export function AdminEnquiryDataTable({
               <Badge tone="blue">{filteredCount} visible</Badge>
               <Badge tone="neutral">{totalRows} canonical</Badge>
             </div>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-mk-ash">
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-400">
               Search every captured field, control the columns, sort the pipeline, edit workflow, and archive or restore
               records without deleting customer evidence.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2 text-xs text-mk-ash">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
             <Badge tone="green">Convex canonical</Badge>
             <span>Up to 500 newest enquiries loaded · archived hidden by default</span>
           </div>
         </div>
       </header>
 
-      <div className="grid gap-3 border-b border-mk-ash/15 bg-mk-paper/45 p-4 sm:p-5">
+      <div className="grid gap-3 border-b border-white/10 bg-white/[0.02] p-4 sm:p-5">
         <div className="flex flex-col gap-2 xl:flex-row xl:items-center">
           <label className="relative min-w-0 flex-1">
-            <SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-mk-ash" />
+            <SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" />
             <Input
               aria-label="Search enquiries"
-              className="h-10 bg-white pl-9"
+              className="h-10 bg-white/[0.04] pl-9"
               onChange={(event) => {
                 setGlobalFilter(event.target.value);
                 table.setPageIndex(0);
@@ -555,10 +555,10 @@ export function AdminEnquiryDataTable({
         </div>
 
         {selectedRows.length > 0 ? (
-          <div className="flex flex-col gap-3 rounded-xl border border-mk-blue/20 bg-white p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-3 rounded-xl border border-sky-400/25 bg-white/[0.04] p-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="font-semibold">{selectedRows.length} selected</div>
-              <div className="text-xs text-mk-ash">
+              <div className="text-xs text-slate-400">
                 {assignableRows.length} assignable · {archivableRows.length} archivable · {restorableRows.length}{" "}
                 restorable
               </div>
@@ -591,9 +591,9 @@ export function AdminEnquiryDataTable({
 
       {visibleRows.length === 0 ? (
         <div className="px-5 py-16 text-center">
-          <SlidersHorizontalIcon className="mx-auto size-7 text-mk-ash" />
+          <SlidersHorizontalIcon className="mx-auto size-7 text-slate-400" />
           <p className="mt-3 font-semibold">No enquiries match this data view.</p>
-          <p className="mt-1 text-sm text-mk-ash">Reset filters or switch Status to All records.</p>
+          <p className="mt-1 text-sm text-slate-400">Reset filters or switch Status to All records.</p>
           <Button className="mt-4" onClick={resetFilters} variant="outline">
             Reset filters
           </Button>
@@ -602,7 +602,7 @@ export function AdminEnquiryDataTable({
         <>
           <div className="hidden max-h-[72vh] overflow-auto lg:block" data-crm-table>
             <Table className="min-w-[1320px] border-collapse">
-              <TableHeader className="sticky top-0 z-10 bg-mk-paper/95 text-[11px] uppercase tracking-[0.09em] backdrop-blur">
+              <TableHeader className="sticky top-0 z-10 bg-[#0a0f1c]/90 text-[11px] uppercase tracking-[0.09em] backdrop-blur">
                 {table.getHeaderGroups().map((headerGroup) => (
                   <TableRow key={headerGroup.id}>
                     {headerGroup.headers.map((header) => (
@@ -631,7 +631,7 @@ export function AdminEnquiryDataTable({
             </Table>
           </div>
 
-          <div className="grid gap-3 bg-mk-paper/45 p-3 lg:hidden" data-crm-mobile-cards>
+          <div className="grid gap-3 bg-white/[0.02] p-3 lg:hidden" data-crm-mobile-cards>
             {visibleRows.map((row) => (
               <MobileEnquiryCard
                 generatedAt={generatedAt}
@@ -647,8 +647,8 @@ export function AdminEnquiryDataTable({
         </>
       )}
 
-      <footer className="flex flex-col gap-3 border-t border-mk-ash/15 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-        <div className="text-xs text-mk-ash">
+      <footer className="flex flex-col gap-3 border-t border-white/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+        <div className="text-xs text-slate-400">
           Showing {visibleRows.length} of {filteredCount} matching rows · {table.getSelectedRowModel().rows.length}{" "}
           selected
         </div>
@@ -689,7 +689,7 @@ export function AdminEnquiryDataTable({
       </footer>
 
       <Dialog open={Boolean(editing)} onOpenChange={(open) => !open && setEditing(null)}>
-        <DialogContent className="max-h-[calc(100dvh-1rem)] w-[min(760px,calc(100vw-1rem))] max-w-none overflow-y-auto bg-mk-paper sm:max-w-none">
+        <DialogContent className="max-h-[calc(100dvh-1rem)] w-[min(760px,calc(100vw-1rem))] max-w-none overflow-y-auto bg-white/[0.04] sm:max-w-none">
           <DialogTitle>Edit enquiry workflow</DialogTitle>
           <DialogDescription>
             Update ownership, stage, priority, next action, and the reason. Every change is revision-checked and
@@ -711,7 +711,7 @@ export function AdminEnquiryDataTable({
       </Dialog>
 
       <Dialog open={Boolean(archiveIntent)} onOpenChange={(open) => !open && setArchiveIntent(null)}>
-        <DialogContent className="w-[min(560px,calc(100vw-1rem))] max-w-none bg-white sm:max-w-none">
+        <DialogContent className="w-[min(560px,calc(100vw-1rem))] max-w-none bg-white/[0.04] sm:max-w-none">
           <DialogTitle>{archiveIntent?.action === "restore" ? "Restore enquiries" : "Archive enquiries"}</DialogTitle>
           <DialogDescription>
             {archiveIntent?.action === "restore"
@@ -719,7 +719,7 @@ export function AdminEnquiryDataTable({
               : "Hide the selected records from the active pipeline. No customer, transcript, delivery, or audit data is deleted."}
           </DialogDescription>
           <form className="grid gap-4" onSubmit={submitArchive}>
-            <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.11em] text-mk-off-black/55">
+            <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.11em] text-slate-500">
               Reason
               <Input
                 autoFocus
@@ -733,7 +733,7 @@ export function AdminEnquiryDataTable({
                 value={archiveReason}
               />
             </label>
-            <div className="rounded-lg border border-mk-ash/15 bg-mk-paper p-3 text-sm">
+            <div className="rounded-lg border border-white/10 bg-white/[0.04] p-3 text-sm">
               {archiveIntent?.rows.length ?? 0} record{archiveIntent?.rows.length === 1 ? "" : "s"} · atomic action ·
               revision checked
             </div>
@@ -754,7 +754,7 @@ export function AdminEnquiryDataTable({
       </Dialog>
 
       <Dialog open={assignmentOpen} onOpenChange={setAssignmentOpen}>
-        <DialogContent className="w-[min(660px,calc(100vw-1rem))] max-w-none bg-white sm:max-w-none">
+        <DialogContent className="w-[min(660px,calc(100vw-1rem))] max-w-none bg-white/[0.04] sm:max-w-none">
           <DialogTitle>Assign selected enquiries</DialogTitle>
           <DialogDescription>
             Apply one owner and one dated next action to {assignableRows.length} active records. The mutation is
@@ -762,10 +762,10 @@ export function AdminEnquiryDataTable({
           </DialogDescription>
           <form className="grid gap-4" onSubmit={submitAssignment}>
             <div className="grid gap-3 sm:grid-cols-2">
-              <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.11em] text-mk-off-black/55">
+              <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.11em] text-slate-500">
                 Owner
                 <select
-                  className="h-10 rounded-lg border border-mk-ash/20 bg-mk-paper px-3 text-sm font-medium normal-case tracking-normal outline-none focus:border-mk-blue"
+                  className="h-10 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-sm font-medium normal-case tracking-normal outline-none focus:border-sky-400"
                   onChange={(event) => setAssignmentOwner(event.target.value)}
                   required
                   value={assignmentOwner}
@@ -778,7 +778,7 @@ export function AdminEnquiryDataTable({
                   ))}
                 </select>
               </label>
-              <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.11em] text-mk-off-black/55">
+              <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.11em] text-slate-500">
                 Due
                 <Input
                   onChange={(event) => setAssignmentDue(event.target.value)}
@@ -788,7 +788,7 @@ export function AdminEnquiryDataTable({
                 />
               </label>
             </div>
-            <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.11em] text-mk-off-black/55">
+            <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.11em] text-slate-500">
               Shared next action
               <Input
                 maxLength={500}
@@ -799,7 +799,7 @@ export function AdminEnquiryDataTable({
                 value={assignmentNote}
               />
             </label>
-            <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.11em] text-mk-off-black/55">
+            <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.11em] text-slate-500">
               Reason for assignment
               <Input
                 maxLength={300}
@@ -845,7 +845,7 @@ function SortableHeader({
   const sorted = column.getIsSorted();
   return (
     <button
-      className="inline-flex items-center gap-1 font-semibold hover:text-mk-blue"
+      className="inline-flex items-center gap-1 font-semibold hover:text-sky-300"
       onClick={(event) => column.toggleSorting(sorted === "asc", event.shiftKey)}
       type="button"
     >
@@ -868,7 +868,7 @@ function FilterSelect({
 }) {
   return (
     <Select onValueChange={(next) => next !== null && onChange(next)} value={value}>
-      <SelectTrigger aria-label={label} className="h-10 bg-white">
+      <SelectTrigger aria-label={label} className="h-10 bg-white/[0.04]">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
@@ -950,7 +950,7 @@ function MobileEnquiryCard({
   const priority = normalizeAdminLeadPriority(lead.priority);
   const sla = adminLeadSlaState(status, lead.nextActionAt, generatedAt);
   return (
-    <article className="rounded-xl border border-mk-ash/15 bg-white p-4 shadow-sm" data-lead-id={lead.leadId}>
+    <article className="rounded-xl border border-white/10 bg-white/[0.04] p-4" data-lead-id={lead.leadId}>
       <div className="flex items-start gap-3">
         <Checkbox
           aria-label={`Select ${lead.name || lead.email}`}
@@ -958,10 +958,10 @@ function MobileEnquiryCard({
           onCheckedChange={(checked) => onSelect(Boolean(checked))}
         />
         <div className="min-w-0 flex-1">
-          <a className="block truncate font-semibold text-mk-blue" href={lead.recordHref}>
+          <a className="block truncate font-semibold text-sky-300" href={lead.recordHref}>
             {lead.name.trim() || "Unnamed visitor"}
           </a>
-          <p className="mt-1 truncate text-xs text-mk-ash">{lead.org.trim() || lead.email}</p>
+          <p className="mt-1 truncate text-xs text-slate-400">{lead.org.trim() || lead.email}</p>
         </div>
         <RowActions lead={lead} onArchive={onArchive} onEdit={onEdit} />
       </div>
@@ -973,19 +973,19 @@ function MobileEnquiryCard({
         <Badge tone={slaTone(sla.state)}>{sla.label}</Badge>
       </div>
       {status === "archived" ? (
-        <div className="mt-3 rounded-lg border border-mk-ash/15 bg-mk-paper p-3 text-xs leading-5 text-mk-ash">
+        <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.04] p-3 text-xs leading-5 text-slate-400">
           Archived {lead.archivedAt ? formatDate(lead.archivedAt) : "before archive metadata was introduced"}
           {lead.archivedBy ? ` by ${lead.archivedBy}` : ""}
           {lead.archiveReason ? ` · ${lead.archiveReason}` : ""}
         </div>
       ) : null}
-      <div className="mt-3 flex items-center justify-between gap-3 border-t border-mk-ash/10 pt-3 text-xs text-mk-ash">
+      <div className="mt-3 flex items-center justify-between gap-3 border-t border-white/5 pt-3 text-xs text-slate-400">
         <span>{sourceLabel(lead.source)}</span>
         <span>{relativeAge(lead.createdAt, generatedAt)}</span>
       </div>
       <a
         aria-label="Open CRM record"
-        className="mt-3 inline-flex h-9 w-full items-center justify-center rounded-lg border border-mk-blue/20 bg-mk-blue/5 text-sm font-semibold text-mk-blue"
+        className="mt-3 inline-flex h-9 w-full items-center justify-center rounded-lg border border-sky-400/25 bg-sky-400/10 text-sm font-semibold text-sky-300"
         href={lead.recordHref}
       >
         Open CRM record

@@ -7,10 +7,18 @@ export const dynamic = "force-dynamic";
  * themselves stay statically prerendered while env values remain rotatable
  * without a rebuild.
  */
+const GA_MEASUREMENT_ID_PATTERN = /^G-[A-Z0-9]{4,16}$/;
+
+function gaMeasurementId() {
+  const value = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID?.trim() ?? "";
+  return GA_MEASUREMENT_ID_PATTERN.test(value) ? value : null;
+}
+
 export async function GET() {
   return Response.json(
     {
       turnstileSiteKey: null,
+      gaMeasurementId: gaMeasurementId(),
       // Variant selection is a QA tool, not a production default. Keeping it
       // opt-in prevents voice/persona changes from contaminating latency trials.
       voiceVariantPicker: process.env.VOICE_VARIANT_PICKER === "true",
