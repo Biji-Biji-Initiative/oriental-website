@@ -1,0 +1,31 @@
+name: oriental-admin-crm-data-table
+description: Ship-blocker review for lossless Oriental CRM tables and reversible archive
+
+documents:
+  readme: docs/06-API-CONTRACTS.md
+  spec: .apr/specs/oriental-admin-crm-data-table.md
+  implementation: .apr/evidence/oriental-admin-crm-data-table.md
+
+oracle:
+  model: "gpt-5.6-sol"
+
+rounds:
+  output_dir: .apr/rounds/oriental-admin-crm-data-table
+  impl_every_n: 1
+
+template: |
+  Perform the requested adversarial pre-merge CRM table review. Treat data
+  loss, hard deletion, partial batch mutation, permission bypass, stale-write
+  overwrite, wrong canonical counts, unusable tables/actions, touch failures,
+  public leakage, and unsafe release sequencing as blockers. This is a code
+  merge gate; do not demand live evidence that can exist only after merge. End
+  with exactly `VERDICT: MERGE CRM TABLE` or `VERDICT: DO NOT MERGE`.
+
+template_with_impl: |
+  Perform the requested adversarial pre-merge CRM table review against the
+  attached implementation evidence. Treat data loss, hard deletion, partial
+  batch mutation, permission bypass, stale-write overwrite, wrong canonical
+  counts, unusable tables/actions, touch failures, public leakage, and unsafe
+  release sequencing as blockers. This is a code merge gate; do not demand
+  final merged-SHA deployment proof. End with exactly
+  `VERDICT: MERGE CRM TABLE` or `VERDICT: DO NOT MERGE`.
