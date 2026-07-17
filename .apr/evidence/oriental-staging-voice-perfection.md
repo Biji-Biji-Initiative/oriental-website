@@ -2,9 +2,10 @@
 
 ## Exact candidate and live boundary
 
-- Candidate: `f315523c3ee4d8c8e510a5378c6c1424c7cec58d`.
-- Base: `c87c522374d711f5870e4b14ee108157e3561a03` (`origin/main`).
-- The candidate is one commit ahead and zero commits behind main.
+- Candidate implementation: `748e842c9cae7fb3bf61a647ec9c963ebe340e6a`.
+- Base: `b0b0d83c7499ea4ed470430e8e3cfa80ab7bd68e` (`origin/main`).
+- The candidate implementation is three commits ahead and zero commits behind
+  main; the following evidence-only commit does not alter runtime code.
 - `pnpm --silent ops:status --json` on 2026-07-17 reported both canonical
   environments healthy on the unchanged base SHA. Production reported
   `baseline/control/gpt-realtime-2/low`, strict email mode, picker false.
@@ -32,17 +33,28 @@
 - `lib/voice/profile.ts`, `components/voice-agent/voice-dialog-copy.ts`, and the
   operator copy identify Mereka as the team and Oriental Building as the place,
   and remove the repeated "quick one" phrase.
-- `lib/eval/voice-eval.ts`, `scripts/eval-voice.ts`, and `convex/leads.ts` add
-  PII-free integrity/style counters and fully attributed experiment grouping.
+- `lib/eval/voice-eval.ts` and `scripts/eval-voice.ts` add PII-free
+  integrity/style counters and fully attributed experiment grouping. The
+  harness enriches only missing bulk-query attribution through the already
+  deployed read-only `voiceSessionByReviewId` function with bounded
+  concurrency; no shared Convex function deploy is required.
+- `lib/server/convex.ts` preserves the complete staging snapshot against the
+  deployed legacy validator. The API logs canonical `clear_fields` before
+  persistence, while the durable wire sample uses the compatible
+  `clear_field` alias and retains its sequence, outcome, execution and response
+  timings, turn aggregates, transport, runtime/model/voice/variant attribution,
+  and email-verification metadata. There is no candidate diff under `convex/`.
 
 ## Executed evidence on the rebased candidate
 
-- `pnpm test`: 59 files, 598 tests passed.
+- `pnpm test`: 61 files, 612 tests passed.
 - Focused reducer/session/fuzz proof: 3 files, 257 tests passed.
-- `pnpm lint`: 224 files clean.
+- `pnpm lint`: 233 files clean.
 - `pnpm typecheck`: passed.
 - `pnpm build`: passed, including Next.js route generation.
 - `pnpm test:e2e`: 38 passed; 38 token-gated admin cases skipped as designed.
+- `pnpm test:performance`: mobile performance budget passed with 480 ms LCP,
+  zero CLS, and zero serious/critical accessibility violations.
 - Managed Infisical contracts passed in both environments with production-mode
   secret validation. Staging is candidate/picker-on; production is
   control/picker-off. ClickUp token presence and staging/production token parity
@@ -56,13 +68,18 @@
   findings were fixed. The final reserved-local-part P2 is covered by ten full
   wrapper regressions and equality checks after every wrapper-removal step.
 - `git diff --check`: clean. The worktree was clean before this evidence file.
+- Zero-shared-Convex compatibility proof: 2 focused files, 18 tests passed;
+  typecheck passed. The integration test proves a legacy bulk row is enriched
+  read-only into the exact `kl-polished/marin/1.22` experiment cell without
+  writing files or exposing identifiers.
 
 ## Remaining post-merge gates
 
 After GitHub CI and merge, freeze the exact full main SHA. Run managed Infisical
-cell checks and release preflight, deploy any changed Convex function first,
-then deploy only that exact SHA to canonical staging with the live staging SHA
-as `--expected-current-sha`. Run deterministic release verification, real
-WebRTC/audio reactivity smoke, and synthetic no-submit intake smoke. Finally
-prove production SHA/model/picker remain unchanged. Historical candidate eval
-rows and picker-audition rows must not be presented as a clean model comparison.
+cell checks and release preflight. Do **not** deploy Convex or mutate any shared
+production data plane. Deploy only that exact web SHA to canonical staging with
+the live staging SHA as `--expected-current-sha`. Run deterministic release
+verification, real WebRTC/audio reactivity smoke, and synthetic no-submit
+intake smoke. Finally prove production SHA/model/picker/image remain unchanged.
+Historical candidate eval rows and picker-audition rows must not be presented
+as a clean model comparison.

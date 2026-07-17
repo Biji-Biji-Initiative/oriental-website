@@ -1,6 +1,6 @@
 # Mereka at Oriental staging voice perfection — release contract
 
-Review branch commit `f315523c3ee4d8c8e510a5378c6c1424c7cec58d` for merge and
+Review implementation commit `748e842c9cae7fb3bf61a647ec9c963ebe340e6a` for merge and
 staging-only deployment. This contract does not authorize a production web
 deployment.
 
@@ -41,7 +41,12 @@ deployment.
    settlements must fail closed.
 9. Evaluation must count email rejections, stale submissions, and banned style
    tics; aggregate comparisons must be stratified by runtime, model, reasoning,
-   variant, voice, and speed. Model/voice confounds must be rejected.
+   variant, voice, and speed. Model/voice confounds must be rejected. Exact
+   attribution must be recovered read-only through the existing per-session
+   query when the deployed bulk query omits it; the staging preview must not
+   require a shared Convex deployment. Canonical clear-all telemetry may use a
+   documented legacy durable alias only after the PII-free application log has
+   retained the exact tool name and only if every measured field is preserved.
 10. Unit, lint, type, build, browser, managed cell, exact-SHA release, live
     WebRTC/audio, and no-submit intake gates must pass. The exact merged SHA may
     then move to canonical staging under optimistic concurrency. Production
