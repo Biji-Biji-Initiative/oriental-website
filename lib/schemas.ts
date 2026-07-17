@@ -61,7 +61,7 @@ export const leadRequestSchema = z
     fieldProvenance: fieldProvenanceSummarySchema.optional(),
     segment: segmentSchema.default("other"),
     form: leadFormSchema,
-    transcript: z.array(transcriptEntrySchema).max(200).default([]).transform(boundTranscript),
+    transcript: z.array(transcriptEntrySchema).max(200).default([]),
     turnstileToken: z.string().optional(),
     voiceReviewId: z.string().uuid().optional(),
     voiceReviewToken: z.string().min(20).max(500).optional(),
@@ -76,6 +76,7 @@ export const leadRequestSchema = z
     voiceInputPolicy: z.enum(["baseline", "fast", "patient"]).optional(),
     voiceEmailVerified: z.boolean().optional(),
     voiceEmailVerificationSource: z.enum(["prefill", "speech", "typed"]).optional(),
+    voiceEmailVerificationUserTurnSequence: z.number().int().nonnegative().max(200).optional(),
     utm: utmSchema,
   })
   .superRefine((lead, context) => {
@@ -118,6 +119,33 @@ export const leadRequestSchema = z
         path: [!lead.voiceReviewId ? "voiceReviewId" : "voiceReviewToken"],
       });
     }
+
+    const userTurnCount = lead.transcript.filter((turn) => turn.role === "user").length;
+    if (
+      typeof lead.voiceEmailVerificationUserTurnSequence === "number" &&
+      lead.voiceEmailVerificationUserTurnSequence > userTurnCount
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Email authority sequence exceeds the submitted user-turn count",
+        path: ["voiceEmailVerificationUserTurnSequence"],
+      });
+    }
+  })
+  .transform((lead) => {
+    const transcript = boundTranscript(lead.transcript);
+    if (typeof lead.voiceEmailVerificationUserTurnSequence !== "number") return { ...lead, transcript };
+    const rawUserTurns = lead.transcript.filter((turn) => turn.role === "user").length;
+    const retainedUserTurns = transcript.filter((turn) => turn.role === "user").length;
+    const removedUserTurns = Math.max(0, rawUserTurns - retainedUserTurns);
+    return {
+      ...lead,
+      transcript,
+      voiceEmailVerificationUserTurnSequence: Math.max(
+        0,
+        lead.voiceEmailVerificationUserTurnSequence - removedUserTurns,
+      ),
+    };
   });
 
 export const newsletterRequestSchema = z.object({

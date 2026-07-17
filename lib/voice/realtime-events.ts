@@ -760,30 +760,34 @@ function appendTranscript(
 
 function applyUserEmailUpdate(state: VoiceRuntimeState, text: string, source: "speech" | "typed"): VoiceRuntimeState {
   const currentEmail = state.captured.email.trim();
-  const correctedLiteral = hasEmailCorrectionLanguage(text) ? getLiteralEmailMentions(text).at(-1)?.email : undefined;
-  const email = correctedLiteral ?? extractExplicitVisitorEmail(text);
+  const literalDecision = resolveLiteralVisitorEmailUpdate(text, currentEmail);
+  if (literalDecision.kind === "invalidates") return clearSelectedEmail(state, source);
+  const email =
+    literalDecision.kind === "selected"
+      ? literalDecision.email
+      : literalDecision.kind === "irrelevant"
+        ? undefined
+        : extractExplicitVisitorEmail(text);
   if (!email) {
+    // Third-party, historical, example, and web literals do not affect the
+    // visitor's selected contact address.
+    if (literalDecision.kind === "irrelevant") return state;
     if (!currentEmail || (!hasOwnedEmailReplacementIntent(text) && !hasShortContextualEmailCorrection(state, text))) {
       return state;
     }
-    return {
-      ...state,
-      captured: { ...state.captured, email: "" },
-      emailVerification: undefined,
-      emailVerificationUserTurnSequence: undefined,
-      emailVerificationIgnoredTranscriptIds: undefined,
-      emailGroundingAwaitingTranscript: undefined,
-      activeResponseStaleForEmail:
-        source === "typed" && state.activeResponse ? true : state.activeResponseStaleForEmail,
-    };
+    return clearSelectedEmail(state, source);
   }
-  if (email.toLowerCase() === currentEmail.toLowerCase()) return state;
+  // Repeated speech must never promote itself through the strict read-back
+  // gate. Directly typing the same visible address, however, is fresh primary
+  // authority and must promote pending speech/prefill state immediately.
+  if (email.toLowerCase() === currentEmail.toLowerCase() && source === "speech") return state;
   const adaptiveSpeech = source === "speech" && state.emailCaptureMode === "adaptive";
   return {
     ...state,
     captured: { ...state.captured, email },
     emailVerificationUserTurnSequence: countUserTurns(state.transcript),
     emailVerificationIgnoredTranscriptIds: source === "typed" ? [...(state.pendingUserTranscriptIds ?? [])] : undefined,
+    emailGroundingAwaitingTranscript: source === "typed" ? undefined : state.emailGroundingAwaitingTranscript,
     activeResponseStaleForEmail: source === "typed" && state.activeResponse ? true : state.activeResponseStaleForEmail,
     emailVerification:
       source === "typed"
@@ -794,6 +798,289 @@ function applyUserEmailUpdate(state: VoiceRuntimeState, text: string, source: "s
             status: adaptiveSpeech ? "confirmed" : "pending",
             ...(adaptiveSpeech ? { confidence: "high" as const } : {}),
           },
+  };
+}
+
+type LiteralVisitorEmailUpdate =
+  | { kind: "none" }
+  | { kind: "selected"; email: string }
+  | { kind: "invalidates" }
+  | { kind: "irrelevant" };
+
+/** Resolve every literal together; never silently choose the first competitor. */
+function resolveLiteralVisitorEmailUpdate(text: string, currentEmail: string): LiteralVisitorEmailUpdate {
+  const allMentions = getLiteralEmailMentions(text);
+  if (allMentions.length === 0) return { kind: "none" };
+  // Relevance belongs to each literal's local decision span. A historical,
+  // billing, web, or third-party aside must never neutralize an explicit
+  // visitor correction elsewhere in the same sentence.
+  const normalizedText = normalizeEmailDecisionText(text);
+  const evaluatedMentions = allMentions.map((mention) => ({
+    ...mention,
+    context: literalEmailDecisionContext(normalizedText, mention.start, mention.email.length),
+    irrelevant: literalEmailMentionIsIrrelevant(normalizedText, mention.start, mention.email.length),
+  }));
+  const relevantMentions = evaluatedMentions.filter((mention) => !mention.irrelevant);
+  const normalizedCurrent = currentEmail.trim().toLowerCase();
+  const currentExplicitlyDisclaimed = evaluatedMentions.some(
+    (mention) =>
+      mention.email === normalizedCurrent &&
+      literalEmailMentionDisclaimsVisitorAuthority(
+        normalizedText,
+        mention.start,
+        mention.email.length,
+        mention.context,
+        mention.email,
+      ),
+  );
+  if (relevantMentions.length === 0) {
+    return currentExplicitlyDisclaimed ? { kind: "invalidates" } : { kind: "irrelevant" };
+  }
+  if (relevantMentions.length < allMentions.length) {
+    const scoped = resolveScopedRelevantLiteralUpdate(relevantMentions, currentEmail);
+    return scoped.kind === "irrelevant" && currentExplicitlyDisclaimed ? { kind: "invalidates" } : scoped;
+  }
+  const relevantText = text;
+  const mentions = getLiteralEmailMentions(relevantText);
+
+  const unambiguousSelection = resolveUnambiguousLiteralSelection(relevantText, mentions);
+  if (unambiguousSelection) return { kind: "selected", email: unambiguousSelection };
+
+  const corrected = getExplicitCorrectedVisitorEmail(relevantText);
+  if (corrected) return { kind: "selected", email: corrected };
+
+  const distinct = [...new Set(mentions.map((mention) => mention.email))];
+  const literal = extractExplicitVisitorEmail(relevantText);
+  if (
+    distinct.length === 1 &&
+    literal &&
+    !emailTurnRejectsTarget(relevantText, literal) &&
+    !emailTurnOffersAlternatives(relevantText)
+  ) {
+    return { kind: "selected", email: literal };
+  }
+
+  const hasVisitorAuthorityIntent =
+    hasPrimaryContactOwnershipContext(relevantText) ||
+    hasExplicitEmailOwnershipContext(relevantText) ||
+    hasOrderedEmailSelectionCue(relevantText) ||
+    hasEmailCorrectionLanguage(relevantText) ||
+    emailTurnOffersAlternatives(relevantText) ||
+    Boolean(currentEmail && emailTurnRejectsTarget(relevantText, currentEmail));
+  if (!hasVisitorAuthorityIntent) return { kind: "irrelevant" };
+
+  // Competing visitor/contact literals with no unique selection are always
+  // ambiguous, even when the current address is one of the alternatives.
+  if (distinct.length > 1) return { kind: "invalidates" };
+  return currentEmail &&
+    (emailTurnRejectsTarget(relevantText, currentEmail) || emailCorrectionInvalidates(relevantText, currentEmail))
+    ? { kind: "invalidates" }
+    : { kind: "irrelevant" };
+}
+
+function resolveScopedRelevantLiteralUpdate(
+  mentions: Array<{ email: string; context: string }>,
+  currentEmail: string,
+): LiteralVisitorEmailUpdate {
+  const current = currentEmail.trim().toLowerCase();
+  const rejected = mentions.filter((mention) => emailTurnRejectsTarget(mention.context, mention.email));
+  const selected = mentions.filter((mention) => {
+    if (emailTurnRejectsTarget(mention.context, mention.email)) return false;
+    const explicit = extractExplicitVisitorEmail(mention.context)?.toLowerCase();
+    return (
+      explicit === mention.email ||
+      emailTurnSelectsTarget(mention.context, mention.email) ||
+      emailTurnAssertsOwnership(mention.context, mention.email) ||
+      getExplicitCorrectedVisitorEmail(mention.context) === mention.email ||
+      hasPrimaryContactOwnershipContext(mention.context) ||
+      hasExplicitEmailOwnershipContext(mention.context)
+    );
+  });
+  const selectedEmails = [...new Set(selected.map((mention) => mention.email))];
+  const relevantEmails = [...new Set(mentions.map((mention) => mention.email))];
+  const rejectedEmails = new Set(rejected.map((mention) => mention.email));
+
+  if (selectedEmails.length === 1) {
+    const selectedEmail = selectedEmails[0] as string;
+    const competitorsAreRejected = relevantEmails.every(
+      (email) => email === selectedEmail || rejectedEmails.has(email),
+    );
+    return competitorsAreRejected ? { kind: "selected", email: selectedEmail } : { kind: "invalidates" };
+  }
+  if (selectedEmails.length > 1) return { kind: "invalidates" };
+  if (current && rejectedEmails.has(current)) return { kind: "invalidates" };
+
+  const hasAuthorityIntent = mentions.some(
+    (mention) =>
+      hasPrimaryContactOwnershipContext(mention.context) ||
+      hasExplicitEmailOwnershipContext(mention.context) ||
+      hasOrderedEmailSelectionCue(mention.context) ||
+      hasEmailCorrectionLanguage(mention.context) ||
+      emailTurnOffersAlternatives(mention.context),
+  );
+  return relevantEmails.length > 1 && hasAuthorityIntent ? { kind: "invalidates" } : { kind: "irrelevant" };
+}
+
+function resolveUnambiguousLiteralSelection(text: string, mentions: Array<{ email: string; start: number }>) {
+  const normalizedText = normalizeEmailDecisionText(text);
+  const explicitlyReplaced = getExplicitLiteralReplacement(normalizedText, mentions);
+  const selectedEmails = new Set<string>();
+  const rejectedEmails = new Set<string>();
+  for (const mention of mentions) {
+    const disposition = getLiteralEmailMentionDisposition(normalizedText, mention.start, mention.email.length);
+    const rejected = disposition === "rejected" || emailTurnRejectsTarget(text, mention.email);
+    if (rejected) {
+      rejectedEmails.add(mention.email);
+    } else if (
+      disposition === "selected" ||
+      emailTurnSelectsTarget(text, mention.email) ||
+      emailTurnAssertsOwnership(text, mention.email) ||
+      explicitlyReplaced === mention.email
+    ) {
+      selectedEmails.add(mention.email);
+    }
+  }
+  if (selectedEmails.size !== 1) return undefined;
+  const selected = [...selectedEmails][0] as string;
+  const competitorsResolved = mentions.every(
+    (mention) => mention.email === selected || rejectedEmails.has(mention.email),
+  );
+  return competitorsResolved ? selected : undefined;
+}
+
+function getExplicitLiteralReplacement(text: string, mentions: Array<{ email: string }>) {
+  const replacements = new Set<string>();
+  for (const previous of mentions) {
+    for (const next of mentions) {
+      if (previous.email === next.email) continue;
+      const from = previous.email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const to = next.email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      if (new RegExp(`(?:replace|change|update)\\s+${from}\\s+(?:to|with)\\s+${to}`, "iu").test(text)) {
+        replacements.add(next.email);
+      }
+    }
+  }
+  return replacements.size === 1 ? ([...replacements][0] as string) : undefined;
+}
+
+function emailTurnAssertsOwnership(text: string, email: string) {
+  const escapedEmail = email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(
+    `${escapedEmail}\\s+(?:(?:is|that's|that\\s+is)\\s+)?(?:mine|my\\s+(?:e-?mail|contact\\s+address))\\b|${escapedEmail}\\s+belongs\\s+to\\s+me\\b`,
+    "iu",
+  ).test(normalizeEmailDecisionText(text));
+}
+
+function normalizeEmailDecisionText(text: string) {
+  return text
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/\p{Mark}/gu, "");
+}
+
+function literalEmailDecisionContext(text: string, start: number, length: number) {
+  const boundary =
+    /[;.!?]+\s*|,\s*|\s+\b(?:instead\s+of|rather\s+than|as\s+well\s+as|along\s+with|together\s+with|in\s+addition\s+to|and|or|but|however|whereas|while|plus|versus|vs\.?)\b\s+/giu;
+  let contextStart = 0;
+  let contextEnd = text.length;
+  for (const match of text.matchAll(boundary)) {
+    const boundaryStart = match.index;
+    const boundaryEnd = boundaryStart + match[0].length;
+    if (boundaryEnd <= start) contextStart = boundaryEnd;
+    else if (boundaryStart >= start + length) {
+      if (anaphoricEmailRejectionStarts(text.slice(boundaryEnd))) continue;
+      // Keep the coordinator with the preceding literal so correction intent
+      // such as “use A rather than B” remains explicit after B is excluded.
+      contextEnd = boundaryEnd;
+      break;
+    }
+  }
+  return text.slice(contextStart, contextEnd).trim();
+}
+
+function anaphoricEmailRejectionStarts(text: string) {
+  return /^[,;:\s—–-]*(?:scratch\s+(?:that|this|it)|(?:(?:actually|no|nope|sorry)[,;:\s—–-]*)?(?:(?:that(?:\s+(?:one|e-?mail|address))?|this(?:\s+(?:one|e-?mail|address))?|it)\s+(?:(?:is|was|looks?)\s+)?(?:wrong|incorrect|not\s+(?:right|correct|mine|it|the\s+one)|isn['’]?t\s+(?:right|correct|mine|it)|a\s+typo|my\s+(?:old|previous|former|historical)\s+(?:e-?mail|address))|not\s+(?:that(?:\s+(?:one|e-?mail|address))?|this(?:\s+(?:one|e-?mail|address))?|it)))\b/i.test(
+    expandAnaphoricContractions(text),
+  );
+}
+
+function expandAnaphoricContractions(text: string) {
+  return text.replace(/\b(that|it)(?:['’]s|s)\b/giu, "$1 is");
+}
+
+function literalEmailMentionIsIrrelevant(text: string, start: number, length: number) {
+  const before = text.slice(Math.max(0, start - 120), start);
+  const after = text.slice(start + length, start + length + 80);
+  const secondaryBefore =
+    /(?:^|\b)(?:for\s+)?(?:the\s+)?(?:billing(?:\s+department)?|invoices?|accounts?(?:\s+payable)?|reference|sample|support|website|web\s*site|url|homepage)(?:\s+(?:e-?mail|address|contact))?(?:\s+(?:is|was|use|at))?\s*$/i.test(
+      before,
+    );
+  const secondaryAfter =
+    /^\s*(?:(?:is|was|=|:)\s*)?(?:(?:the\s+)?(?:billing|invoice|accounts?|reference|sample|support|website|web\s*site|url|homepage)\b|for\s+(?:billing|invoices?|accounts?|reference|support)\b|(?:as\s+)?(?:an\s+)?example\b)/i.test(
+      after,
+    );
+  const historicalBefore =
+    /(?:^|\b)(?:(?:the|my)\s+)?(?:old|previous|former|historical)(?:\s+(?:e-?mail|address))?(?:\s+(?:is|was))?\s*$/i.test(
+      before,
+    );
+  const historicalAfter =
+    /^\s*(?:(?:is|was|=|:)\s*)?(?:(?:(?:the|my)\s+)?(?:old|previous|former|historical)\b|used\s+to\s+be\b)/i.test(
+      after,
+    );
+  const thirdPartyBefore =
+    /(?:^|\b)(?:his|her|their|someone\s+else['’]?s|(?:my\s+)?(?:colleague|coworker|co-worker|manager|assistant|friend|supplier|customer|client|partner)['’]?s|[\p{Letter}][\p{Letter}'’-]*['’]s|(?:the\s+)?(?:customer|client|supplier|partner|billing\s+department|accounts?\s+payable))(?:\s+(?:e-?mail|contact\s+address))?(?:\s+(?:is|was|at))?\s*$/iu.test(
+      before,
+    );
+  const thirdPartyAfter =
+    /^\s*(?:(?:is|was|=|:)\s*)?(?:(?:his|her|their|someone\s+else['’]?s|(?:my\s+)?(?:colleague|coworker|co-worker|manager|assistant|friend|supplier|customer|client|partner)['’]?s|[\p{Letter}][\p{Letter}'’-]*['’]s|(?:the\s+)?(?:customer|client|supplier|partner|billing\s+department|accounts?\s+payable)(?:['’]s)?)(?:\s+(?:e-?mail|contact\s+address))?|belongs\s+to\s+(?:him|her|them|someone\s+else|[\p{Letter}][\p{Letter}'’-]*))\b/iu.test(
+      after,
+    );
+  const webBefore =
+    /(?:^|\b)(?:website|web\s*site|url|homepage|site(?:\s+link)?|domain)(?:\s+(?:is|was|at))?\s*$/i.test(before);
+  return (
+    secondaryBefore ||
+    secondaryAfter ||
+    historicalBefore ||
+    historicalAfter ||
+    thirdPartyBefore ||
+    thirdPartyAfter ||
+    webBefore
+  );
+}
+
+function literalEmailMentionDisclaimsVisitorAuthority(
+  text: string,
+  start: number,
+  length: number,
+  context: string,
+  email: string,
+) {
+  const before = text.slice(Math.max(0, start - 120), start);
+  const after = text.slice(start + length, start + length + 100);
+  const historicalOwnership =
+    /(?:^|\b)(?:my\s+)?(?:old|previous|former|historical)(?:\s+(?:e-?mail|address))?(?:\s+(?:is|was))?\s*$/iu.test(
+      before,
+    ) ||
+    /^\s*(?:(?:is|was|=|:)\s*)?(?:my\s+)?(?:old|previous|former|historical)(?:\s+(?:e-?mail|address))?\b/iu.test(after);
+  const thirdPartyOwnership =
+    /(?:^|\b)(?:his|her|their|someone\s+else['’]?s|(?:my\s+)?(?:colleague|coworker|co-worker|manager|assistant|friend|supplier|customer|client|partner)['’]?s|[\p{Letter}][\p{Letter}'’-]*['’]s)(?:\s+(?:e-?mail|contact\s+address))?(?:\s+(?:is|was|at))?\s*$/iu.test(
+      before,
+    ) ||
+    /^\s*(?:(?:is|was|=|:)\s*)?(?:his|her|their|someone\s+else['’]?s|(?:my\s+)?(?:colleague|coworker|co-worker|manager|assistant|friend|supplier|customer|client|partner)['’]?s|[\p{Letter}][\p{Letter}'’-]*['’]s)(?:\s+(?:e-?mail|contact\s+address))?\b/iu.test(
+      after,
+    );
+  return historicalOwnership || thirdPartyOwnership || emailTurnRejectsTarget(context, email);
+}
+
+function clearSelectedEmail(state: VoiceRuntimeState, source: "speech" | "typed"): VoiceRuntimeState {
+  return {
+    ...state,
+    captured: { ...state.captured, email: "" },
+    emailVerification: undefined,
+    emailVerificationUserTurnSequence: undefined,
+    emailVerificationIgnoredTranscriptIds: undefined,
+    emailGroundingAwaitingTranscript: undefined,
+    activeResponseStaleForEmail: source === "typed" && state.activeResponse ? true : state.activeResponseStaleForEmail,
   };
 }
 
@@ -946,6 +1233,11 @@ function getEmailDecisionClauses(text: string) {
   return text
     .split(
       /(?:[;.!?]+\s+|\s+[—–-]\s*(?=(?:actually|i\s+meant|correction|use|choose|select|prefer|keep|go\s+with|switch\s+to))|\s+\b(?:but|however|whereas|while)\b\s+|[,;]?\s+(?:and\s+)?(?:now|currently)\s+|,\s*then\s+|,\s*(?=[^,]{0,120}\b(?:is\s+(?:the\s+)?current|(?:my\s+)?new\s+(?:e-?mail|address)))|\s+and\s+(?=(?:my\s+)?new\s+(?:e-?mail|address))|,\s*(?:and\s+)?(?=(?:actually|i\s+meant|correction)\b|(?:use|choose|select|prefer|keep|go\s+with|switch\s+to|e-?mail\b|contact\b|reach\b))|\s+and\s+(?=(?:actually|i\s+meant|correction)\b|(?:use|choose|select|prefer|keep|go\s+with|switch\s+to|e-?mail\b|contact\b|reach\b)))/i,
+    )
+    .flatMap((clause) =>
+      clause.split(
+        /(?:,\s*|\s+and\s+)(?=(?:billing|invoices?|accounts?|support|website|web\s*site|url|homepage|old\s+e-?mail|previous\s+(?:e-?mail|address)|former\s+(?:e-?mail|address)|historical\s+(?:e-?mail|address)|(?:his|her|their|someone\s+else'?s|(?:my\s+)?(?:colleague|coworker|co-worker|manager|assistant|friend|supplier|customer|client|partner)'?s))\b)/i,
+      ),
     )
     .map((clause) => clause.trim())
     .filter(Boolean);
@@ -1610,13 +1902,17 @@ function hasOrderedEmailSelectionCue(text: string) {
 }
 function emailTurnRejectsTarget(text: string, groundedEmail: string) {
   const escapedEmail = groundedEmail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const normalizedText = text
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/\p{Mark}/gu, "");
+  const normalizedText = expandAnaphoricContractions(normalizeEmailDecisionText(text));
+  const exactGroundedIndex = normalizedText.indexOf(groundedEmail);
+  if (
+    exactGroundedIndex >= 0 &&
+    anaphoricEmailRejectionStarts(normalizedText.slice(exactGroundedIndex + groundedEmail.length))
+  ) {
+    return true;
+  }
   if (
     new RegExp(
-      `(?:forget\\s+|instead\\s+of\\s+|rather\\s+than\\s+|in\\s+place\\s+of\\s+|replacement\\s+for\\s+|replace\\s+|over\\s+|versus\\s+|bukan\\s+|(?:do\\s+not|don't|dont|not)\\s+(?:use\\s+)?)${escapedEmail}|${escapedEmail}\\s+(?:(?:was|is|looks?)\\s+)?(?:wrong|incorrect|not\\s+(?:right|correct)|a\\s+typo)|${escapedEmail}\\s+isn['’]?t\\s+(?:right|correct)|(?:change|replace|update)\\s+${escapedEmail}\\s+(?:to|with)`,
+      `(?:forget\\s+|instead\\s+of\\s+|rather\\s+than\\s+|in\\s+place\\s+of\\s+|replacement\\s+for\\s+|replace\\s+|over\\s+|versus\\s+|bukan\\s+|(?:do\\s+not|don't|dont|not)\\s+(?:use\\s+)?)${escapedEmail}|${escapedEmail}\\s+(?:(?:was|is|looks?)\\s+)?(?:wrong|incorrect|not\\s+(?:right|correct|mine|the\\s+one)|a\\s+typo)|${escapedEmail}\\s+isn['’]?t\\s+(?:right|correct|mine|my\\s+(?:e-?mail|address))|${escapedEmail}\\s*[,;:—–-]?\\s*(?:(?:actually|no|nope|sorry)[,;:\\s—–-]*)?(?:(?:that(?:\\s+(?:one|e-?mail|address))?|this(?:\\s+(?:one|e-?mail|address))?|it)\\s+(?:(?:is|was|looks?)\\s+)?(?:wrong|incorrect|not\\s+(?:right|correct|mine|it|the\\s+one)|isn['’]?t\\s+(?:right|correct|mine|it)|a\\s+typo|my\\s+(?:old|previous|former|historical)\\s+(?:e-?mail|address))|not\\s+(?:that(?:\\s+(?:one|e-?mail|address))?|this(?:\\s+(?:one|e-?mail|address))?|it))|(?:change|replace|update)\\s+${escapedEmail}\\s+(?:to|with)`,
       "iu",
     ).test(normalizedText)
   ) {
@@ -1638,7 +1934,15 @@ function emailTurnRejectsTarget(text: string, groundedEmail: string) {
     /(?:forget|insteadof|ratherthan|inplaceof|replacementfor|replace|over|versus|bukan|donotuse|dontuse|not)$/.test(
       beforeGrounded,
     ) ||
-    /^(?:(?:was|is|looks?)?(?:wrong|incorrect|notright|notcorrect|atypo)|isnt(?:right|correct))/.test(afterGrounded) ||
+    /^(?:(?:was|is|looks?)?(?:wrong|incorrect|notright|notcorrect|notmine|atypo)|isnt(?:right|correct|mine))/.test(
+      afterGrounded,
+    ) ||
+    /^(?:(?:actually|no|nope|sorry))?(?:thatone|thatemail|thataddress|that|thisone|thisemail|thisaddress|this|it)(?:(?:is|was|looks?))?(?:wrong|incorrect|notright|notcorrect|notmine|isntright|isntcorrect|isntmine|atypo)/.test(
+      afterGrounded,
+    ) ||
+    /^(?:(?:actually|no|nope|sorry))?not(?:thatone|thatemail|thataddress|that|thisone|thisemail|thisaddress|this|it)/.test(
+      afterGrounded,
+    ) ||
     (/(?:change|replace|update)$/.test(beforeGrounded) && /^(?:to|with)/.test(afterGrounded))
   );
 }
@@ -1688,7 +1992,7 @@ function getLiteralEmailMentionDisposition(
   const after = normalizedText.slice(start + length, start + length + 48);
   if (
     /(?:instead\s+of|rather\s+than|bukan|do\s+not\s+use|don't\s+use|dont\s+use|not)\s*$/i.test(before) ||
-    /^\s*(?:(?:was|is|looks?)\s+)?(?:wrong|incorrect|not\s+(?:right|correct)|isn['’]?t\s+(?:right|correct))/i.test(
+    /^\s*(?:(?:was|is|looks?)\s+)?(?:wrong|incorrect|not\s+(?:right|correct|mine)|isn['’]?t\s+(?:right|correct|mine))/i.test(
       after,
     )
   ) {

@@ -42,6 +42,12 @@ import {
   type VoiceEvalSession,
   validateVoiceExperimentEvidence,
 } from "../lib/eval/voice-eval";
+import {
+  deriveLegacyVoiceSubmissionEvidence,
+  hasVoiceSubmissionEvidenceEnvelope,
+  type ImmutableVoiceLeadEvidenceSource,
+  verifyVoiceSubmissionEvidence,
+} from "../lib/server/voice-submission-evidence";
 import { buildAggregateOnlyVoiceEvalReport } from "./lib/voice-eval-audit";
 
 type Args = {
@@ -62,6 +68,7 @@ type Args = {
 
 const JUDGE_CONCURRENCY = 4;
 const PROFILE_ENRICHMENT_CONCURRENCY = 8;
+const IMMUTABLE_LEAD_ATTRIBUTION_LIMIT = 500;
 
 function parseArgs(argv: string[]): Args {
   const args: Args = {
@@ -173,6 +180,8 @@ async function mapPool<T, R>(items: T[], concurrency: number, mapper: (item: T) 
 }
 
 type RawVoiceSessionProfile = {
+  reviewId?: unknown;
+  sessionId?: unknown;
   voice?: unknown;
   speed?: unknown;
   variant?: unknown;
@@ -216,6 +225,111 @@ async function enrichVoiceSessionProfiles(
   });
 }
 
+/**
+ * Discover submissions from immutable routed leads, then join each lead to its
+ * raw call row before reconnect rows are merged. This recovers attribution even
+ * when the browser loses its fire-and-forget post-submit review snapshot.
+ */
+async function enrichSubmittedEmailAttribution(
+  convex: ConvexHttpClient,
+  ingestSecret: string,
+  sessions: VoiceEvalSession[],
+): Promise<VoiceEvalSession[]> {
+  let rawLeads: ImmutableVoiceLeadEvidenceSource[];
+  try {
+    rawLeads = (await convex.query(api.leads.adminLeadTable, {
+      ingestSecret,
+      limit: IMMUTABLE_LEAD_ATTRIBUTION_LIMIT,
+    })) as ImmutableVoiceLeadEvidenceSource[];
+  } catch {
+    throw new Error("Submitted email attribution query failed; capture-integrity evidence is unavailable.");
+  }
+
+  const sessionPairKeys = new Set(sessions.map((session) => submissionPairKey(session.reviewId, session.sessionId)));
+  const sessionReviewIds = new Set(sessions.map((session) => session.reviewId));
+  const sessionIds = new Set(sessions.map((session) => session.sessionId));
+  const markedLeadIds = new Set(
+    sessions.map((session) => session.leadId).filter((leadId): leadId is string => typeof leadId === "string"),
+  );
+  const leadsByPair = new Map<string, ImmutableVoiceLeadEvidenceSource[]>();
+  const sessionWindowStart = evaluatedSessionWindowStart(sessions);
+  for (const lead of rawLeads) {
+    const reviewId = typeof lead.voiceReviewId === "string" ? lead.voiceReviewId : null;
+    const sessionId = typeof lead.voiceSessionId === "string" ? lead.voiceSessionId : null;
+    const leadId = typeof lead.leadId === "string" ? lead.leadId : null;
+    const overlapsEvaluatedSession =
+      (reviewId !== null && sessionReviewIds.has(reviewId)) ||
+      (sessionId !== null && sessionIds.has(sessionId)) ||
+      (leadId !== null && markedLeadIds.has(leadId));
+    if (!overlapsEvaluatedSession) {
+      const leadCreatedAt = typeof lead.createdAt === "number" ? lead.createdAt : null;
+      const orphanIsInWindow =
+        hasVoiceSubmissionEvidenceEnvelope(lead) &&
+        (sessions.length === 0 ||
+          sessionWindowStart === null ||
+          leadCreatedAt === null ||
+          leadCreatedAt >= sessionWindowStart);
+      if (orphanIsInWindow) {
+        throw new Error("Submitted email attribution is incomplete; capture-integrity evidence is unavailable.");
+      }
+      continue;
+    }
+    if (!reviewId || !sessionId || !sessionPairKeys.has(submissionPairKey(reviewId, sessionId))) {
+      throw new Error("Submitted email attribution is incomplete; capture-integrity evidence is unavailable.");
+    }
+    const key = submissionPairKey(reviewId, sessionId);
+    const matches = leadsByPair.get(key) ?? [];
+    matches.push(lead);
+    leadsByPair.set(key, matches);
+  }
+
+  return sessions.map((session) => {
+    const markedSubmitted = typeof session.submittedAt === "number" || Boolean(session.leadId);
+    const matches = leadsByPair.get(submissionPairKey(session.reviewId, session.sessionId)) ?? [];
+    const lead = matches[0];
+    if (matches.length === 0 && !markedSubmitted) return session;
+    if (matches.length !== 1 || !lead || (session.leadId && lead.leadId !== session.leadId)) {
+      throw new Error("Submitted email attribution is incomplete; capture-integrity evidence is unavailable.");
+    }
+    const hasEnvelope = hasVoiceSubmissionEvidenceEnvelope(lead);
+    const verified = verifyVoiceSubmissionEvidence(lead);
+    // The candidate staging path was introduced with v1 and must never count a
+    // legacy snapshot as release evidence. Production rows created before that
+    // rollout remain auditable under explicit legacy provenance.
+    const legacyAllowed =
+      !hasEnvelope &&
+      session.modelCell !== "candidate" &&
+      (session.deploymentEnvironment === "production" || session.deploymentEnvironment === "local");
+    const evidence = verified ?? (legacyAllowed ? deriveLegacyVoiceSubmissionEvidence(lead) : null);
+    if (!evidence) {
+      throw new Error("Submitted email attribution is incomplete; capture-integrity evidence is unavailable.");
+    }
+    return {
+      ...session,
+      submittedAt: evidence.acceptedAt,
+      submissionAuthorityTurnSequence: evidence.authorityTurnSequence,
+      submissionEvidenceOutcome: evidence.outcome,
+      submissionEvidenceProvenance: evidence.provenance,
+      submissionEvidenceSource: evidence.source,
+      ...(evidence.outcome === "matched" || evidence.outcome === "mismatched"
+        ? { submittedEmailCorrectionAttribution: evidence.outcome }
+        : {}),
+    };
+  });
+}
+
+function submissionPairKey(reviewId: string, sessionId: string) {
+  return `${reviewId}\u0000${sessionId}`;
+}
+
+function evaluatedSessionWindowStart(sessions: VoiceEvalSession[]) {
+  const timestamps = sessions.flatMap((session) => {
+    const values = [session.createdAt, session.updatedAt, session.connectStartedAt, session.connectedAt];
+    return values.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  });
+  return timestamps.length > 0 ? Math.min(...timestamps) : null;
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
 
@@ -240,17 +354,16 @@ async function main() {
     console.log(`Excluded ${syntheticRowsExcluded} synthetic smoke row(s).`);
   }
 
-  if (rawSessions.length === 0) {
-    if (!args.aggregateOnly) {
-      console.log("No customer voice sessions to evaluate in this window.");
-      return;
-    }
-  }
-
   // Stitch dropped-and-resumed call rows into one conversation before judging,
   // so a single intake is scored once — not once per reconnect.
-  const sessions = mergeConversationSessions(rawSessions);
-  const mergedCount = rawSessions.length - sessions.length;
+  const attributedRawSessions = await enrichSubmittedEmailAttribution(convex, ingestSecret, rawSessions);
+  if (attributedRawSessions.length === 0 && !args.aggregateOnly) {
+    console.log("No customer voice sessions to evaluate in this window.");
+    return;
+  }
+  const mergedSessions = mergeConversationSessions(attributedRawSessions);
+  const sessions = mergedSessions;
+  const mergedCount = rawSessions.length - mergedSessions.length;
   if (!args.aggregateOnly && mergedCount > 0) {
     console.log(`Stitched ${rawSessions.length} call rows into ${sessions.length} conversations.`);
   }

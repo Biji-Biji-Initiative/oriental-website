@@ -88,6 +88,10 @@ type VoiceAgentDialogProps = {
     entryPoint?: VoiceEntryPoint;
     entryMethod?: VoiceEntryMethod;
   };
+  /** Monotonic id for this one-shot opening request. */
+  prefillRequestId?: number;
+  /** Compare-and-swap removal of provider-owned prefill PII. */
+  onPrefillRevoked?: (requestId: number) => void;
   /** Bumped on talk-CTA hover/focus: pre-mint a session before the tap. */
   prewarmSignal?: number;
   /** QA voice variant id, threaded to the session mint. */
@@ -99,6 +103,8 @@ export function VoiceAgentDialog({
   onOpenChange,
   intent,
   prefill,
+  prefillRequestId,
+  onPrefillRevoked,
   prewarmSignal,
   voiceVariant,
 }: VoiceAgentDialogProps) {
@@ -131,6 +137,9 @@ export function VoiceAgentDialog({
   );
   const connectionStatusRef = useRef<VoiceConnectionStatus>("idle");
   const postCloseSnapshotRef = useRef<((reason: VoiceCloseReason) => void) | null>(null);
+  const lastAppliedPrefillRequestIdRef = useRef<number | null>(null);
+  const prefillRef = useRef(prefill);
+  prefillRef.current = prefill;
   const recordToolDurationRef = useRef<
     ((sample: { at: number; durationMs: number; name: VoiceToolName; outcome: VoiceToolOutcome }) => void) | null
   >(null);
@@ -254,6 +263,7 @@ export function VoiceAgentDialog({
                     ...buildVoiceLeadMetadata(currentReviewCredentials()),
                     voiceEmailVerified: submissionMethod === "handoff_button" || isVoiceEmailConfirmed(leadState),
                     voiceEmailVerificationSource: leadState.emailVerification?.source,
+                    voiceEmailVerificationUserTurnSequence: leadState.emailVerificationUserTurnSequence,
                   }
                 : {}),
               utm: {},
@@ -285,12 +295,16 @@ export function VoiceAgentDialog({
           const review = currentReviewCredentials();
           submittedLeadIdRef.current = responseBody?.id ?? null;
           if (review) {
+            const acceptedAt =
+              typeof responseBody?.acceptedAt === "number" && Number.isFinite(responseBody.acceptedAt)
+                ? responseBody.acceptedAt
+                : Date.now();
             void postVoiceReviewSnapshot(
               review,
               buildVoiceReviewSnapshot(review, leadState, connectionStatusRef.current, {
                 snapshotSequence: nextSnapshotSequence(review.id),
                 leadId: responseBody?.id ?? null,
-                submittedAt: Date.now(),
+                submittedAt: acceptedAt,
                 entryPoint,
                 entryMethod,
                 submissionMethod,
@@ -320,6 +334,11 @@ export function VoiceAgentDialog({
     [currentReviewCredentials, focusCapturedField, nextSnapshotSequence],
   );
 
+  const handleClearFields = useCallback(() => {
+    forgetHandoff();
+    if (typeof prefillRequestId === "number") onPrefillRevoked?.(prefillRequestId);
+  }, [onPrefillRevoked, prefillRequestId]);
+
   const runtime = useVoiceRuntime({
     initialSegment: intent ?? "other",
     prefillEmail: prefill?.email,
@@ -327,7 +346,7 @@ export function VoiceAgentDialog({
     onEndVoice: () => teardownVoiceRef.current?.("manual"),
     onToolDuration: (sample) => recordToolDurationRef.current?.(sample),
     onCaptureNeedsAttention: (key) => focusCapturedField(key),
-    onClearFields: forgetHandoff,
+    onClearFields: handleClearFields,
   });
   const { segment, captured, emailVerification, transcript, stateRef } = runtime;
   const emailValid = leadFormSchema.shape.email.safeParse(captured.email).success;
@@ -517,13 +536,18 @@ export function VoiceAgentDialog({
 
   useEffect(() => {
     if (!open) return;
+    if (typeof prefillRequestId === "number" && lastAppliedPrefillRequestIdRef.current === prefillRequestId) {
+      return;
+    }
+    if (typeof prefillRequestId === "number") lastAppliedPrefillRequestIdRef.current = prefillRequestId;
+    const openingPrefill = prefillRef.current;
     // Returning visitors are greeted like known partners: identity fields and
     // segment come back from local memory; the brief always starts fresh.
     const remembered = recallHandoff();
     // Resume the in-flight conversation if the visitor reopens soon after a
-    // drop or closes an unfinished typed form. Form mode only controls focus;
-    // an explicit external email prefill starts a different handoff.
-    const explicitFreshHandoff = Boolean(prefill?.email);
+    // drop or closes an unfinished typed form. An explicit external email
+    // prefill starts a different handoff; form mode alone preserves the draft.
+    const explicitFreshHandoff = Boolean(openingPrefill?.email);
     if (explicitFreshHandoff) endConversation();
     const nextConversationId = resolveConversationId();
     const resumesInFlightConversation = shouldResumeVoiceConversation(
@@ -538,15 +562,15 @@ export function VoiceAgentDialog({
       explicitFreshHandoff,
     );
     if (!resumesInFlightConversation || !activeEntryPointRef.current || !activeEntryMethodRef.current) {
-      activeEntryPointRef.current = prefill?.entryPoint ?? "unknown";
-      activeEntryMethodRef.current = prefill?.entryMethod ?? "unknown";
+      activeEntryPointRef.current = openingPrefill?.entryPoint ?? "unknown";
+      activeEntryMethodRef.current = openingPrefill?.entryMethod ?? "unknown";
     }
     conversationIdRef.current = nextConversationId;
     setConversationId(nextConversationId);
     if (!resumesInFlightConversation) {
       runtime.reset({
         segment: intent ?? remembered?.segment ?? "other",
-        email: prefill?.email || remembered?.email,
+        email: openingPrefill?.email || remembered?.email,
         name: remembered?.name,
         org: remembered?.org,
       });
@@ -564,7 +588,8 @@ export function VoiceAgentDialog({
     reviewRef.current = null;
     setReviewMetadata(null);
     localReviewRef.current = null;
-  }, [intent, open, prefill, runtime.reset, stateRef]);
+    if (typeof prefillRequestId === "number") onPrefillRevoked?.(prefillRequestId);
+  }, [intent, onPrefillRevoked, open, prefillRequestId, runtime.reset, stateRef]);
 
   useEffect(() => {
     if (status === "submitted") teardownVoice("manual");
@@ -577,7 +602,7 @@ export function VoiceAgentDialog({
     if (!open || prefill?.mode === "form") return;
     preconnect("https://api.openai.com");
     prewarmVoiceSession();
-  }, [open, prefill, prewarmVoiceSession]);
+  }, [open, prefill?.mode, prewarmVoiceSession]);
 
   // Hover/focus on a talk CTA, before any click: same warm-up, earlier, but
   // still permission-aware inside useRealtimeVoiceSession.

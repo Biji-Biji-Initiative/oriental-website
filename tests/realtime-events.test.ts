@@ -60,6 +60,303 @@ describe("reduceRealtimeServerEvent", () => {
   });
 
   it.each([
+    "Actually, do not use new@example.com; keep the address already there.",
+    "Actually, her email is new@example.com.",
+    "Actually, Priya's email is new@example.com.",
+    "Priya’s email is new@example.com.",
+    "My colleague’s email is new@example.com.",
+    "The customer email is new@example.com.",
+    "The accounts payable email is new@example.com.",
+    "The billing department email is new@example.com.",
+    "Actually, use new@example.com as an example.",
+  ])("does not give contradicted or non-visitor literal corrections capture authority: %s", (correction) => {
+    const result = appendTypedUserMessage(
+      state({
+        captured: { ...emptyCapturedLead, email: "old@example.com" },
+        emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+      }),
+      correction,
+    );
+
+    expect(result.captured.email).toBe("old@example.com");
+    expect(result.emailVerification).toEqual({
+      value: "old@example.com",
+      source: "typed",
+      status: "confirmed",
+    });
+  });
+
+  it.each([
+    "Actually use new@example.com, not old@example.com.",
+    "Actually not old@example.com, use new@example.com.",
+    "Use new@example.com.",
+    "Replace old@example.com with new@example.com.",
+    "Change old@example.com to new@example.com.",
+    "Update old@example.com with new@example.com.",
+    "Use new@example.com, not other@example.com.",
+  ])("selects exactly one authorized literal correction regardless of address order: %s", (correction) => {
+    const result = appendTypedUserMessage(
+      state({
+        captured: { ...emptyCapturedLead, email: "old@example.com" },
+        emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+      }),
+      correction,
+    );
+
+    expect(result.captured.email).toBe("new@example.com");
+    expect(result.emailVerification).toEqual({
+      value: "new@example.com",
+      source: "typed",
+      status: "confirmed",
+    });
+  });
+
+  it.each([
+    "Actually use new@example.com or other@example.com.",
+    "Actually use new@example.com and other@example.com.",
+    "Actually use new@example.com, and also other@example.com.",
+    "Actually use new@example.com; maybe other@example.com.",
+    "Actually use new@example.com; other@example.com is also fine.",
+  ])("revokes existing authority when a correction offers competing literals: %s", (correction) => {
+    const result = appendTypedUserMessage(
+      state({
+        captured: { ...emptyCapturedLead, email: "old@example.com" },
+        emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+      }),
+      correction,
+    );
+
+    expect(result.captured.email).toBe("");
+    expect(result.emailVerification).toBeUndefined();
+  });
+
+  it.each([
+    "Do not use old@example.com.",
+    "old@example.com is not mine.",
+    "old@example.com isn’t my email.",
+    "old@example.com is not the one.",
+  ])("revokes a specifically contradicted current literal: %s", (correction) => {
+    const result = appendTypedUserMessage(
+      state({
+        activeResponse: true,
+        captured: { ...emptyCapturedLead, email: "old@example.com" },
+        emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+      }),
+      correction,
+    );
+
+    expect(result.captured.email).toBe("");
+    expect(result.emailVerification).toBeUndefined();
+    expect(result.activeResponseStaleForEmail).toBe(true);
+  });
+
+  it("does not let an irrelevant billing aside preserve a rejected current address", () => {
+    const result = appendTypedUserMessage(
+      state({
+        captured: { ...emptyCapturedLead, email: "old@example.com" },
+        emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+      }),
+      "old@example.com is not mine; billing@example.com is for invoices",
+    );
+
+    expect(result.captured.email).toBe("");
+    expect(result.emailVerification).toBeUndefined();
+  });
+
+  it("does not let a coordinated billing clause preserve a rejected current address", () => {
+    const result = appendTypedUserMessage(
+      state({
+        captured: { ...emptyCapturedLead, email: "old@example.com" },
+        emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+      }),
+      "old@example.com is not mine and billing@example.com is for invoices",
+    );
+
+    expect(result.captured.email).toBe("");
+    expect(result.emailVerification).toBeUndefined();
+  });
+
+  it("does not let an article-prefixed billing clause preserve a rejected current address", () => {
+    const result = appendTypedUserMessage(
+      state({
+        captured: { ...emptyCapturedLead, email: "old@example.com" },
+        emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+      }),
+      "old@example.com is not mine, and the billing email is billing@example.com",
+    );
+
+    expect(result.captured.email).toBe("");
+    expect(result.emailVerification).toBeUndefined();
+  });
+
+  it("selects a primary correction even when a later clause describes the old address", () => {
+    const result = appendTypedUserMessage(
+      state({
+        captured: { ...emptyCapturedLead, email: "old@example.com" },
+        emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+      }),
+      "Actually use new@example.com. The old email was old@example.com",
+    );
+
+    expect(result.captured.email).toBe("new@example.com");
+    expect(result.emailVerification).toEqual({ value: "new@example.com", source: "typed", status: "confirmed" });
+  });
+
+  it("selects a visitor address before a coordinated billing aside", () => {
+    const result = appendTypedUserMessage(
+      state({
+        captured: { ...emptyCapturedLead, email: "old@example.com" },
+        emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+      }),
+      "My email is new@example.com, billing@example.com is for invoices",
+    );
+
+    expect(result.captured.email).toBe("new@example.com");
+    expect(result.emailVerification).toEqual({ value: "new@example.com", source: "typed", status: "confirmed" });
+  });
+
+  it("selects a visitor address before a purpose-prefixed billing aside", () => {
+    const result = appendTypedUserMessage(
+      state({
+        captured: { ...emptyCapturedLead, email: "old@example.com" },
+        emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+      }),
+      "My email is new@example.com and for billing use billing@example.com",
+    );
+
+    expect(result.captured.email).toBe("new@example.com");
+    expect(result.emailVerification).toEqual({ value: "new@example.com", source: "typed", status: "confirmed" });
+  });
+
+  it.each([
+    "Actually use new@example.com instead of billing@example.com for invoices",
+    "Use new@example.com rather than billing@example.com for invoices",
+    "My email is new@example.com plus billing@example.com for invoices",
+  ])("selects the visitor address across a replacement/comparison coordinator: %s", (correction) => {
+    const result = appendTypedUserMessage(
+      state({
+        captured: { ...emptyCapturedLead, email: "old@example.com" },
+        emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+      }),
+      correction,
+    );
+
+    expect(result.captured.email).toBe("new@example.com");
+    expect(result.emailVerification).toEqual({ value: "new@example.com", source: "typed", status: "confirmed" });
+  });
+
+  it.each([
+    "old@example.com, no that is not mine",
+    "old@example.com, no that email is not mine",
+    "old@example.com, no this is not mine",
+    "old@example.com, nope, that is not mine",
+    "old@example.com, that’s not it",
+    "old@example.com, scratch that",
+    "old@example.com, that’s my old email",
+    "old@example.com; actually that one is wrong",
+    "old@example.com, no that's not mine",
+    "old@example.com; actually it’s wrong",
+    "old@example.com, not that one",
+    "old@example.com, no that is not mine and billing@example.com is for invoices",
+  ])("binds an immediate anaphoric rejection to the preceding address: %s", (correction) => {
+    const result = appendTypedUserMessage(
+      state({
+        captured: { ...emptyCapturedLead, email: "old@example.com" },
+        emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+      }),
+      correction,
+    );
+
+    expect(result.captured.email).toBe("");
+    expect(result.emailVerification).toBeUndefined();
+  });
+
+  it.each([
+    "old@example.com is my old email",
+    "old@example.com is Priya’s email",
+  ])("revokes a current address explicitly reassigned to historical or third-party ownership: %s", (correction) => {
+    const result = appendTypedUserMessage(
+      state({
+        captured: { ...emptyCapturedLead, email: "old@example.com" },
+        emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+      }),
+      correction,
+    );
+
+    expect(result.captured.email).toBe("");
+    expect(result.emailVerification).toBeUndefined();
+  });
+
+  it.each([
+    "Use new@example.com; other@example.com is Priya’s email",
+    "Use new@example.com; other@example.com is an example",
+  ])("selects the visitor address while ignoring a labelled non-visitor address: %s", (correction) => {
+    const result = appendTypedUserMessage(
+      state({
+        captured: { ...emptyCapturedLead, email: "old@example.com" },
+        emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+      }),
+      correction,
+    );
+
+    expect(result.captured.email).toBe("new@example.com");
+    expect(result.emailVerification).toEqual({ value: "new@example.com", source: "typed", status: "confirmed" });
+  });
+
+  it("selects an address that the visitor explicitly owns while ignoring a billing address", () => {
+    const result = appendTypedUserMessage(
+      state({
+        captured: { ...emptyCapturedLead, email: "old@example.com" },
+        emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+      }),
+      "new@example.com is mine, billing@example.com is for invoices",
+    );
+
+    expect(result.captured.email).toBe("new@example.com");
+    expect(result.emailVerification).toEqual({ value: "new@example.com", source: "typed", status: "confirmed" });
+  });
+
+  it("does not select the first address from an unresolved visitor declaration", () => {
+    const result = appendTypedUserMessage(state(), "My email is first@example.com or second@example.com.");
+    expect(result.captured.email).toBe("");
+    expect(result.emailVerification).toBeUndefined();
+  });
+
+  it("promotes an identical typed address and fences older ASR work", () => {
+    const result = appendTypedUserMessage(
+      state({
+        activeResponse: true,
+        captured: { ...emptyCapturedLead, email: "person@example.com" },
+        emailVerification: { value: "person@example.com", source: "speech", status: "pending" },
+        pendingUserTranscriptIds: ["older-asr-item"],
+        emailGroundingAwaitingTranscript: { value: "person@example.com", userTurnCount: 0, itemId: "older-asr-item" },
+      }),
+      "My email is person@example.com.",
+    );
+
+    expect(result.emailVerification).toEqual({
+      value: "person@example.com",
+      source: "typed",
+      status: "confirmed",
+    });
+    expect(result.emailVerificationUserTurnSequence).toBe(1);
+    expect(result.emailVerificationIgnoredTranscriptIds).toEqual(["older-asr-item"]);
+    expect(result.emailGroundingAwaitingTranscript).toBeUndefined();
+    expect(result.activeResponseStaleForEmail).toBe(true);
+
+    const late = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "older-asr-item",
+        transcript: "Actually, use old@example.com.",
+      },
+      result,
+    );
+    expect(late.state.captured.email).toBe("person@example.com");
+    expect(late.state.emailVerification).toMatchObject({ source: "typed", status: "confirmed" });
+  });
+
+  it.each([
     "Sorry, I meant new.",
     "No, I said new.",
   ])("invalidates a current email after a short contextual correction: %s", (correction) => {
