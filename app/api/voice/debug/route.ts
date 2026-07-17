@@ -52,16 +52,26 @@ export async function POST(request: Request) {
     verified &&
     persistence?.ok === true &&
     parsed.data.snapshot.closeReason &&
+    typeof parsed.data.snapshot.closedAt === "number" &&
     (parsed.data.snapshot.transcript?.length ?? 0) > 0 &&
-    process.env.EVAL_AUTO_ON_CLOSE !== "false"
+    process.env.EVAL_AUTO_ON_CLOSE !== "false" &&
+    !scheduledAutoEvalReviewIds.has(parsed.data.review.id)
   ) {
     const reviewId = parsed.data.review.id;
+    scheduledAutoEvalReviewIds.add(reviewId);
+    trimToRecent(scheduledAutoEvalReviewIds);
     scheduleAfterResponse(async () => {
       const result = await runAdminVoiceEvals({ reviewIds: [reviewId] }).catch(() => null);
-      if (result?.ok) {
+      if (result?.ok && result.persisted > 0) {
         logInfo("voice_review.auto_eval", { reviewId, model: result.model, persisted: result.persisted });
       } else {
-        logWarn("voice_review.auto_eval_skipped", { reviewId, reason: result ? result.reason : "run_failed" });
+        // A failed evaluator is retryable if the browser reposts the terminal
+        // snapshot; successful reviews stay idempotent within this runtime.
+        scheduledAutoEvalReviewIds.delete(reviewId);
+        logWarn("voice_review.auto_eval_skipped", {
+          reviewId,
+          reason: result?.ok ? "no_evals_persisted" : result ? result.reason : "run_failed",
+        });
       }
     });
   }
@@ -95,6 +105,7 @@ const loggedSnapshotSignatures = new Map<string, string>();
 const loggedSubmissions = new Set<string>();
 const loggedDisconnectCounts = new Map<string, number>();
 const loggedAvailabilityFailures = new Set<string>();
+const scheduledAutoEvalReviewIds = new Set<string>();
 
 async function reportVoiceAvailabilityFailure(reviewId: string, snapshot: VoiceReviewSnapshotRequest["snapshot"]) {
   const reason = snapshot.closeReason;

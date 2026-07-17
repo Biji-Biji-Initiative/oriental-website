@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   persistVoiceReviewSnapshot: vi.fn(),
   logInfo: vi.fn(),
   logWarn: vi.fn(),
+  runAdminVoiceEvals: vi.fn(),
   sendOpsAlert: vi.fn(),
 }));
 
@@ -20,6 +21,10 @@ vi.mock("@/lib/server/logger", () => ({
 
 vi.mock("@/lib/server/ops-alerts", () => ({
   sendOpsAlert: mocks.sendOpsAlert,
+}));
+
+vi.mock("@/lib/server/voice-evals", () => ({
+  runAdminVoiceEvals: mocks.runAdminVoiceEvals,
 }));
 
 const originalEnv = process.env;
@@ -120,6 +125,7 @@ describe("POST /api/voice/debug", () => {
       IP_HASH_SECRET: "voice-review-secret",
     };
     mocks.persistVoiceReviewSnapshot.mockResolvedValue({ ok: true, id: "review_123" });
+    mocks.runAdminVoiceEvals.mockResolvedValue({ ok: true, model: "gpt-5.4-mini", persisted: 1 });
     mocks.sendOpsAlert.mockResolvedValue({ ok: true, transport: "slack" });
   });
 
@@ -141,6 +147,44 @@ describe("POST /api/voice/debug", () => {
         latency: expect.objectContaining({ version: 1 }),
       }),
     );
+  });
+
+  it("evaluates only a persisted terminal snapshot and deduplicates reposts", async () => {
+    process.env.EVAL_AUTO_ON_CLOSE = "true";
+    const review = createVoiceReviewCredentials();
+
+    await POST(snapshotRequest(review, { closeReason: undefined, closedAt: undefined }));
+    await POST(snapshotRequest(review, { closeReason: "page_hidden", closedAt: undefined }));
+    expect(mocks.runAdminVoiceEvals).not.toHaveBeenCalled();
+
+    const terminal = { closeReason: "page_hidden", closedAt: 9_000 };
+    await POST(snapshotRequest(review, terminal));
+    await vi.waitFor(() => expect(mocks.runAdminVoiceEvals).toHaveBeenCalledTimes(1));
+    expect(mocks.runAdminVoiceEvals).toHaveBeenCalledWith({ reviewIds: [review.id] });
+
+    await POST(snapshotRequest(review, terminal));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mocks.runAdminVoiceEvals).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries a terminal snapshot when every evaluator failed to persist a score", async () => {
+    process.env.EVAL_AUTO_ON_CLOSE = "true";
+    const review = createVoiceReviewCredentials();
+    mocks.runAdminVoiceEvals
+      .mockResolvedValueOnce({ ok: true, model: "gpt-5.4-mini", persisted: 0 })
+      .mockResolvedValueOnce({ ok: true, model: "gpt-5.4-mini", persisted: 1 });
+
+    const terminal = { closeReason: "page_hidden", closedAt: 10_000 };
+    await POST(snapshotRequest(review, terminal));
+    await vi.waitFor(() =>
+      expect(mocks.logWarn).toHaveBeenCalledWith("voice_review.auto_eval_skipped", {
+        reviewId: review.id,
+        reason: "no_evals_persisted",
+      }),
+    );
+
+    await POST(snapshotRequest(review, terminal));
+    await vi.waitFor(() => expect(mocks.runAdminVoiceEvals).toHaveBeenCalledTimes(2));
   });
 
   it("logs structured voice session health without captured PII or transcript text", async () => {
