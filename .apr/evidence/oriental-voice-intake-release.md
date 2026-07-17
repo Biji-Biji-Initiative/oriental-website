@@ -130,7 +130,7 @@ candidate.
 
 ## Current clean candidate verification
 
-Runtime candidate `d24d5d80db93be270be79b4f864c0291fc63b7dc` was verified from a clean,
+Runtime candidate `4ab21c192f91077cc3ae71874c84e67813d0efe5` was verified from a clean,
 detached worktree so unrelated shared-checkout admin edits could not enter the
 release evidence.
 
@@ -139,8 +139,8 @@ release evidence.
 - `pnpm test`: 52 files and 331 tests passed.
 - `pnpm check-secrets`: contract passed; local credentials intentionally absent.
 - `pnpm build`: production standalone build passed.
-- `pnpm test:performance`: LCP 480 ms, CLS 0, initial JavaScript 397,505
-  transferred / 1,368,448 decoded bytes, zero serious/critical axe findings.
+- `pnpm test:performance`: LCP 504 ms, CLS 0, initial JavaScript 397,517
+  transferred / 1,368,464 decoded bytes, zero serious/critical axe findings.
 - Full Playwright run: 34 public-site tests passed across Chromium desktop and
   Pixel 7 projects; 12 admin tests were explicitly skipped because the local
   admin credential was absent. The responsive, long-caption, Mereka-mark, and
@@ -182,6 +182,17 @@ stage visibly renders `MerekaMiniMark` in both branches, and the brand-motion
 test asserts the canonical viewbox, path, and dot while rejecting the former
 sphere geometry.
 
+## Independent review correction closure
+
+Agent Mail review of `d24d5d8` found that the brand-only rename also changed
+the non-waiting status reset from immediate to a zero-delay timer. That could
+leave stale waiting copy visible for one event-loop tick. Teammate commit
+`13e7a2d3bdefc8902a61863490aec4115b11dd0f` isolated the correction with 14
+focused tests; it was integrated as
+`4ab21c192f91077cc3ae71874c84e67813d0efe5`. The immediate reset is restored,
+the 300 ms waiting threshold is unchanged, and the full exact-SHA gate above
+was rerun after integration.
+
 ## APR round 7 final verdict
 
 Round 7 re-traced every blocker area against the exact candidate, including
@@ -191,6 +202,16 @@ to `.apr/rounds/oriental-voice-intake-release/round_7.md`. Its generic
 truncation heuristic then warned because the mandated verdict ends in a letter
 rather than punctuation; the saved review itself is complete and ends on the
 exact workflow-required verdict.
+
+## APR round 8 final reconciled verdict
+
+Round 8 re-ran after the Agent Mail waiting-copy correction and traced the
+exact `4ab21c192f91077cc3ae71874c84e67813d0efe5` runtime boundary. It found no
+unproven claim, circular verification, PII exposure, candidate leak, or
+production mutation and ended `VERDICT: SHIP SAFE DEFAULTS`. APR saved the
+complete 3,589-byte review to
+`.apr/rounds/oriental-voice-intake-release/round_8.md`; the same known generic
+end-character heuristic warned after the complete mandated verdict.
 
 ## APR round 1 correction closure
 
