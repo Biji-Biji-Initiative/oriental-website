@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useVoice } from "@/components/voice-agent/voice-state";
+import { trackEvent } from "@/lib/analytics";
 
 const emailPattern = /^\S+@\S+\.\S+$/;
 
@@ -32,6 +33,7 @@ export function HeroEmailCapture() {
       return;
     }
     setSubmitted(true);
+    trackEvent("newsletter_signup", { placement: "hero" });
   }
 
   if (submitted) {

@@ -35,15 +35,21 @@ export function isValidEvalModelId(model: string) {
 }
 
 export type AdminEvalRunResult =
-  | { ok: false; reason: "unconfigured" | "convex_failed" | "no_sessions" }
+  | {
+      ok: false;
+      reason: "unconfigured" | "convex_failed" | "no_sessions";
+      window?: { fetched: number; conversations: number; alreadyEvaluated: number };
+    }
   | {
       ok: true;
       model: string;
       fetched: number;
       conversations: number;
+      alreadyEvaluated: number;
       judged: number;
       persisted: number;
       failures: number;
+      failureSamples: string[];
     };
 
 /**
@@ -55,6 +61,8 @@ export async function runAdminVoiceEvals(options: {
   limit?: number;
   model?: string;
   reviewIds?: string[];
+  /** Re-judge sessions that already have a persisted evaluation. */
+  force?: boolean;
 }): Promise<AdminEvalRunResult> {
   const convexUrl = readEnv("CONVEX_URL") ?? readEnv("NEXT_PUBLIC_CONVEX_URL");
   const ingestSecret = readEnv("CONVEX_INGEST_SECRET");
@@ -68,10 +76,12 @@ export async function runAdminVoiceEvals(options: {
   const convex = new ConvexHttpClient(convexUrl);
   let fetchedSessions: VoiceEvalSession[];
   try {
+    // Always fetch a wide window: `limit` bounds how many conversations we
+    // JUDGE, never how far back we look. Recent rows are often judge-less
+    // prewarms, so a narrow fetch silently starves the batch.
     fetchedSessions = (await convex.query(api.leads.voiceSessionsForEval, {
       ingestSecret,
-      // Targeted runs still fetch a window: the target may be an older session.
-      limit: targetReviewIds ? MAX_ADMIN_EVAL_SESSIONS * 4 : limit,
+      limit: MAX_ADMIN_EVAL_SESSIONS * 4,
     })) as VoiceEvalSession[];
   } catch {
     return { ok: false, reason: "convex_failed" };
@@ -85,13 +95,31 @@ export async function runAdminVoiceEvals(options: {
     if (targetReviewIds.has(session.reviewId)) return true;
     return (session.callReviewIds ?? []).some((id) => targetReviewIds.has(id));
   });
-  const judgeable = conversations.filter(isJudgeable).slice(0, limit);
-  if (judgeable.length === 0) return { ok: false, reason: "no_sessions" };
+  const judgeableAll = conversations.filter(isJudgeable);
+  // Untargeted runs spend tokens on NEW conversations only; a targeted run
+  // (auto-eval on close, per-record button) re-judges so a resumed
+  // conversation's score reflects the full stitched thread.
+  const conversationEvaluated = (session: VoiceEvalSession & { callReviewIds?: string[] }) =>
+    typeof session.evaluatedAt === "number" && session.evaluatedAt > 0;
+  const pending =
+    targetReviewIds || options.force ? judgeableAll : judgeableAll.filter((s) => !conversationEvaluated(s));
+  const alreadyEvaluated = judgeableAll.length - (targetReviewIds || options.force ? 0 : pending.length);
+  const judgeable = pending.slice(0, limit);
+  if (judgeable.length === 0) {
+    return {
+      ok: false,
+      reason: "no_sessions",
+      window: { fetched: customerSessions.length, conversations: conversations.length, alreadyEvaluated },
+    };
+  }
 
   const client = new OpenAI({ apiKey: openaiKey });
   const scores = new Map<string, JudgeScore | null>();
+  const failureSamples: string[] = [];
   await mapPool(judgeable, JUDGE_CONCURRENCY, async (session) => {
-    scores.set(session.reviewId, await judgeSession(client, model, session));
+    const judged = await judgeSession(client, model, session);
+    if (!judged.score && judged.error && failureSamples.length < 3) failureSamples.push(judged.error);
+    scores.set(session.reviewId, judged.score);
   });
 
   const evals: SessionEval[] = judgeable.map((session) =>
@@ -127,13 +155,19 @@ export async function runAdminVoiceEvals(options: {
     model,
     fetched: customerSessions.length,
     conversations: conversations.length,
+    alreadyEvaluated,
     judged: judgeable.length,
     persisted,
     failures: judgeable.length - payloads.length,
+    failureSamples,
   };
 }
 
-async function judgeSession(client: OpenAI, model: string, session: VoiceEvalSession): Promise<JudgeScore | null> {
+async function judgeSession(
+  client: OpenAI,
+  model: string,
+  session: VoiceEvalSession,
+): Promise<{ score: JudgeScore | null; error?: string }> {
   try {
     const completion = await client.chat.completions.create({
       model,
@@ -144,9 +178,10 @@ async function judgeSession(client: OpenAI, model: string, session: VoiceEvalSes
       ],
     });
     const content = completion.choices[0]?.message?.content;
-    return content ? parseJudgeResponse(content) : null;
-  } catch {
-    return null;
+    const score = content ? parseJudgeResponse(content) : null;
+    return score ? { score } : { score: null, error: "judge_response_unparseable" };
+  } catch (error) {
+    return { score: null, error: error instanceof Error ? error.message.slice(0, 160) : "judge_call_failed" };
   }
 }
 

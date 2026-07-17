@@ -30,6 +30,8 @@ describe("admin evals route", () => {
       judged: 3,
       persisted: 3,
       failures: 0,
+      alreadyEvaluated: 0,
+      failureSamples: [],
     });
   });
 

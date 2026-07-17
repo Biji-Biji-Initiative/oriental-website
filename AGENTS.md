@@ -105,6 +105,8 @@ docs/                     # handover specs — reference, not auto-synced to cod
 | Admin session review | `app/admin/session-review/page.tsx`, `app/api/admin/*`, `components/admin/*` |
 | Admin dark theme / login / command palette | `app/admin/layout.tsx`, `app/admin/theme.css`, `components/admin/AdminLoginForm.tsx`, `components/admin/AdminCommandPalette.tsx` |
 | On-demand voice evals (admin) | `app/api/admin/evals/route.ts`, `lib/server/voice-evals.ts`, `components/admin/AdminRunEvalsButton.tsx`; judge model via `EVAL_JUDGE_MODEL` |
+| GA4 conversion events | `lib/analytics.ts` (client helper, PII rule in JSDoc); fired from `HeroEmailCapture` and `VoiceAgentDialog`; key events managed in GA4 property 545999652 |
+| Scheduled evals + lead SLA alerts | `.github/workflows/analytics-ops.yml` (nightly evals, hourly `POST /api/admin/sla-check`); GH secret `ADMIN_REVIEW_TOKEN` |
 | Sentry setup | `sentry.*.config.ts`, `instrumentation.ts`, `instrumentation-client.ts`, `next.config.ts` |
 | Ops Slack alerts | `lib/server/ops-alerts.ts`; production target is `OPS_ALERT_SLACK_CHANNEL_ID` |
 | Lead payload validation | `lib/schemas.ts` |

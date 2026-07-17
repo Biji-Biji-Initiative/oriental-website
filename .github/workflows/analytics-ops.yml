@@ -1,0 +1,45 @@
+name: Analytics ops
+
+on:
+  schedule:
+    # Nightly voice evals at 05:00 MYT (21:00 UTC).
+    - cron: "0 21 * * *"
+    # Hourly lead-SLA sweep.
+    - cron: "0 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  nightly-evals:
+    # Runs on the nightly cron and on manual dispatch; skipped on the hourly tick.
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 21 * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Score recent voice sessions with the LLM judge
+        run: |
+          set -euo pipefail
+          response=$(curl -fsS -X POST "https://oriental.mereka.io/api/admin/evals" \
+            -H "Authorization: Bearer ${{ secrets.ADMIN_REVIEW_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"limit":25}' || true)
+          echo "$response"
+          echo "$response" | jq -e '.ok == true or .error == "no_sessions"' >/dev/null \
+            || { echo "::error::eval run failed"; exit 1; }
+
+  sla-check:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 * * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Sweep lead ownership SLA
+        run: |
+          set -euo pipefail
+          response=$(curl -fsS -X POST "https://oriental.mereka.io/api/admin/sla-check" \
+            -H "Authorization: Bearer ${{ secrets.ADMIN_REVIEW_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"maxUnownedHours":4}')
+          echo "$response"
+          echo "$response" | jq -e '.ok == true' >/dev/null
