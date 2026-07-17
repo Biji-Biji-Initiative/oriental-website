@@ -42,6 +42,11 @@ cannot affect the runtime image.
 - Infisical is canonical configuration. Coolify's environment-variable store
   and staging's host-local `.env` are separate materialized copies and MUST be
   compared with Infisical before release.
+- The production deployer MUST reconcile and read back the exact managed
+  `NEXT_PUBLIC_GA_MEASUREMENT_ID` and
+  `NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION` values as Coolify build-and-runtime
+  variables before changing the frozen SHA. The API credential therefore needs
+  scoped `read:sensitive`, `write`, and `deploy` access; values are never logged.
 - Production voice MUST remain `baseline/control/low/adaptive`. A staging-only
   model trial MUST be explicit, hold runtime/reasoning/capture constant, and
   never imply production promotion.
@@ -180,8 +185,13 @@ include release docs before the first deployment.
 3. Run the deterministic public verifier:
 
    ```bash
-   pnpm release:verify -- --sha "$sha" --target staging \
-     --staging-model-cell candidate
+   infisical run \
+     --domain https://secrets.mereka.io \
+     --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
+     --env staging \
+     --path /deploy/oriental-website \
+     -- pnpm release:verify -- --sha "$sha" --target staging \
+       --staging-model-cell candidate
    ```
 
 4. Run `pnpm smoke:staging:voice` when voice, OpenAI configuration, WebRTC,
@@ -203,23 +213,44 @@ OpenAI, Redis, and notification accounts.
      --domain https://secrets.mereka.io \
      --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
      --env prod \
-     --path /platform/coolify \
-     -- pnpm release:deploy:production -- \
-       --sha "$sha" \
-       --expected-current-sha "$current_production_sha"
+     --path /deploy/oriental-website \
+     -- infisical run \
+       --domain https://secrets.mereka.io \
+       --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
+       --env prod \
+       --path /platform/coolify \
+       -- pnpm release:deploy:production -- \
+         --sha "$sha" \
+         --expected-current-sha "$current_production_sha"
    ```
 
    The deployer fails unless staging currently runs the candidate SHA,
    production still runs the expected rollback SHA, and the candidate is an
    ancestor of `origin/main`. It pins Coolify's `git_commit_sha`, reads it back,
    starts the application, and refuses success unless the deployment record and
-   public production health both resolve to the full frozen SHA.
+   public production health both resolve to the full frozen SHA. Before changing
+   the SHA, it validates the two Google public identifiers supplied by the
+   application scope, creates or updates their production Coolify entries, and
+   reads back exact values with build-time and runtime enabled. The deploy token
+   must include `read:sensitive`; otherwise value parity fails closed without
+   printing either identifier.
 3. Require terminal `finished`; do not infer success from a queued build.
 4. Verify both environments together:
 
    ```bash
-   pnpm release:verify -- --sha "$sha" --target both
+   infisical run \
+     --domain https://secrets.mereka.io \
+     --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
+     --env prod \
+     --path /deploy/oriental-website \
+     -- pnpm release:verify -- --sha "$sha" --target both
    ```
+
+   This browser-backed verifier requires Playwright Chromium (or
+   `PLAYWRIGHT_CHROMIUM_PATH`). It proves the exact Search Console meta tag,
+   observes no GA request before consent, observes the expected GA asset only
+   after clicking **Allow analytics**, and proves an already-consented admin
+   surface still emits no GA request.
 
 5. Confirm Coolify reports `running:healthy`, its health-check host is
    `127.0.0.1`, and the production container exposes the intended runtime cells.
@@ -273,11 +304,13 @@ early convergence and fail-closed checks, not repeated manual verification.
 
 - [x] Exact SHA, clean `main`, image-tag, health-binding, runbook, and mandatory
   managed-cell checks: `scripts/release-preflight.ts`.
-- [x] Exact staging/current-production preconditions, immutable Coolify commit
-  pin/readback, deployment-record commit, terminal status, and post-deploy
-  production health: `scripts/deploy-coolify-production.ts`.
+- [x] Exact staging/current-production preconditions, managed Google public
+  build-variable reconciliation/readback, immutable Coolify commit pin/readback,
+  deployment-record commit, terminal status, and post-deploy production health:
+  `scripts/deploy-coolify-production.ts`.
 - [x] Canonical hosts, exact health SHA, Convex presence, QA picker, DNS-only
-  request path, and compatibility redirects: `scripts/release-verify.ts`.
+  request path, compatibility redirects, Search Console meta, and browser-proven
+  GA opt-in/admin exclusion: `scripts/release-verify.ts`.
 - [x] Pure governance contracts: `tests/release-governance.test.ts`.
 - [x] Context-independent takeover state and privacy-safe evidence summary:
   `scripts/ops-status.ts`, `tests/ops-status.test.ts`.

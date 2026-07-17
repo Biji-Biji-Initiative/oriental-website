@@ -45,6 +45,8 @@ MUST NOT be reported as complete.
 - [x] Sentry `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_ORG`, and
       `SENTRY_PROJECT=oriental-website` are present
 - [x] `OPS_ALERT_SLACK_CHANNEL_ID=C01AVSGACFN` targets `#tech-team-test`
+- [ ] Governed production deploy reads back the exact managed GA4 and Google
+      verification values with both Coolify build-time and runtime enabled
 
 ## Optional Cloudflare Turnstile
 
@@ -164,6 +166,8 @@ Walk through every user path on the staging URL:
       Slack, WhatsApp, X, LinkedIn, iMessage
 - [ ] `sitemap.xml` and `robots.txt` served
 - [ ] Canonical URL set to `https://oriental.mereka.io/`
+- [ ] Live root renders the exact managed `google-site-verification` meta tag
+- [ ] Search Console ownership is verified and `/sitemap.xml` is submitted
 
 ## Legal / privacy
 
@@ -172,6 +176,8 @@ Walk through every user path on the staging URL:
 - [x] Privacy notice link in main footer
 - [ ] "No recordings kept" claim verified against actual behaviour
 - [x] Analytics fails closed behind explicit opt-in; legal copy approval remains a human sign-off gate
+- [ ] Live browser proof observes no GA asset before opt-in or on admin, and the
+      expected GA asset only after explicit public consent
 
 ## Stakeholder sign-off
 

@@ -144,7 +144,7 @@ pnpm eval:voice -- --aggregate-only --limit 100  # Query-only aggregate/gates + 
 pnpm --silent ops:status --json  # machine-readable live/repo/review/work-queue truth
 pnpm release:preflight -- --sha <full-main-sha>  # requires managed release env
 pnpm release:deploy:production -- --sha <full-sha> --expected-current-sha <full-sha>
-pnpm release:verify -- --sha <full-sha> --target staging|production|both
+pnpm release:verify -- --sha <full-sha> --target staging|production|both  # run under managed app env; needs Chromium
 pnpm voice:debug             # inspect latest local voice debug snapshots
 pnpm exec convex deploy     # needs CONVEX_DEPLOY_KEY
 ```
@@ -168,7 +168,9 @@ before any deployment. For runtime work:
    `pnpm release:preflight -- --sha <sha>`; managed cell validation is mandatory.
 4. Deploy/prove staging, then deploy production through the Coolify API.
 5. Run `pnpm release:verify -- --sha <sha> --target both` and inspect the
-   running containers' revision and cells.
+   running containers' revision and cells. Run the verifier under the managed
+   application environment: it also proves the exact Google verification meta,
+   GA's explicit-consent boundary, and admin exclusion in Chromium.
 
 Do not force an application rebuild for a docs/operator-only commit with no
 runtime impact. Do not create late cleanup PRs after the final-SHA freeze; if a

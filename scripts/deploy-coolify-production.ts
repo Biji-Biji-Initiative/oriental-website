@@ -9,6 +9,13 @@ import {
   deploymentUuidFromDeployResponse,
 } from "./lib/coolify-release";
 import {
+  type CoolifyEnvironmentVariable,
+  coolifyGoogleEnvironmentFailures,
+  coolifyGoogleEnvironmentPayloads,
+  type GooglePublicBuildConfiguration,
+  googlePublicBuildConfigurationFromEnv,
+} from "./lib/google-release";
+import {
   CONTROL_VOICE_CELL,
   type GovernedVoiceCell,
   type HealthPayloadValidationOptions,
@@ -138,6 +145,29 @@ async function coolifyRequest<T>(baseUrl: string, token: string, path: string, i
   return (text ? JSON.parse(text) : undefined) as T;
 }
 
+async function reconcileGoogleBuildEnvironment(
+  baseUrl: string,
+  token: string,
+  applicationUuid: string,
+  expected: GooglePublicBuildConfiguration,
+) {
+  const path = `applications/${applicationUuid}/envs`;
+  const current = await coolifyRequest<CoolifyEnvironmentVariable[]>(baseUrl, token, path);
+  for (const payload of coolifyGoogleEnvironmentPayloads(expected)) {
+    const exists = current.some((row) => row.key === payload.key && row.is_preview !== true);
+    await coolifyRequest(baseUrl, token, path, {
+      method: exists ? "PATCH" : "POST",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  const updated = await coolifyRequest<CoolifyEnvironmentVariable[]>(baseUrl, token, path);
+  const failures = coolifyGoogleEnvironmentFailures(updated, expected);
+  if (failures.length > 0) {
+    throw new Error(`Coolify Google build environment: ${failures.join("; ")}`);
+  }
+}
+
 function assertOrientalApplication(application: CoolifyApplication, uuid: string) {
   if (application.uuid !== uuid) throw new Error("Coolify returned a different application UUID");
   if (application.git_branch !== "main") throw new Error("Coolify application git_branch must be main");
@@ -197,6 +227,7 @@ async function main() {
   const token = requireEnv("COOLIFY_API_TOKEN");
   const baseUrl = process.env.COOLIFY_API_URL?.trim() || DEFAULT_API_URL;
   const applicationUuid = process.env.COOLIFY_ORIENTAL_APPLICATION_UUID?.trim() || DEFAULT_APPLICATION_UUID;
+  const googleBuildEnvironment = googlePublicBuildConfigurationFromEnv(process.env);
 
   assertFrozenMainCommit(args.sha);
   await readPublicHealth(RELEASE_TARGETS.staging.origin, args.sha, "staging candidate", STAGING_CANDIDATE_VOICE_CELL);
@@ -210,6 +241,7 @@ async function main() {
 
   const application = await coolifyRequest<CoolifyApplication>(baseUrl, token, `applications/${applicationUuid}`);
   assertOrientalApplication(application, applicationUuid);
+  await reconcileGoogleBuildEnvironment(baseUrl, token, applicationUuid, googleBuildEnvironment);
 
   await coolifyRequest(baseUrl, token, `applications/${applicationUuid}`, {
     method: "PATCH",
@@ -244,6 +276,7 @@ async function main() {
         applicationUuid,
         deploymentUuid,
         status: deploymentStatus(deployment),
+        googleBuildEnvironment: "verified",
       },
       null,
       2,

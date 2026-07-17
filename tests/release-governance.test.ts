@@ -173,6 +173,23 @@ describe("release governance", () => {
     expect(productionDeployer).not.toContain("/start?");
   });
 
+  it("reconciles and reads back Google public build variables before changing the release SHA", () => {
+    expect(productionDeployer).toContain("googlePublicBuildConfigurationFromEnv(process.env)");
+    expect(productionDeployer).toContain("coolifyGoogleEnvironmentPayloads(expected)");
+    expect(productionDeployer).toContain("coolifyGoogleEnvironmentFailures(updated, expected)");
+    expect(productionDeployer.indexOf("await reconcileGoogleBuildEnvironment")).toBeLessThan(
+      productionDeployer.indexOf("body: JSON.stringify({ git_commit_sha: args.sha })"),
+    );
+  });
+
+  it("proves Search Console metadata and consent-gated GA on public but never admin surfaces", () => {
+    expect(releaseVerifier).toContain("readGoogleSiteVerification(canonicalHtml)");
+    expect(releaseVerifier).toContain("await verifyGoogleAnalyticsConsentBoundary");
+    expect(releaseVerifier).toContain('getByRole("button", { name: "Allow analytics" })');
+    expect(releaseVerifier).toContain("/admin/session-review");
+    expect(releaseVerifier).toContain("googleAnalyticsAdminExcluded: true");
+  });
+
   it("pins the staging voice smoke to the governed candidate instead of public health", () => {
     expect(stagingVoiceSmoke).toContain("process.env.EXPECTED_REALTIME_MODEL ?? STAGING_CANDIDATE_VOICE_CELL.model");
     expect(stagingVoiceSmoke).toContain(

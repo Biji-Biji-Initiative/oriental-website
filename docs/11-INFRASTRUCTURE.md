@@ -108,7 +108,14 @@ folder through the app at runtime: an operator must reconcile the values into
 Coolify's environment-variable store, and into staging's host-local `.env`,
 before recreating containers. The app reads `process.env.*` and has no
 Infisical SDK runtime dependency. Source checks alone are insufficient; inspect
-the running container after every configuration release.
+the running container after every configuration release. The governed
+production deployer performs this reconciliation automatically for
+`NEXT_PUBLIC_GA_MEASUREMENT_ID` and
+`NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION`: it validates the managed application
+values, creates or updates the Coolify production entries, enables both build
+and runtime use, and reads back exact parity before it is allowed to change the
+release SHA. Its Coolify token needs scoped `read:sensitive`, `write`, and
+`deploy` permissions; the identifiers are never written to logs.
 
 `pnpm release:verify:voice-cell` is the fast, non-secret parity check. Run it
 under `infisical run` with `--model-cell candidate` for native staging and
@@ -174,14 +181,19 @@ Deploy flow:
 
 1. PR opens → GitHub `verify` workflow runs.
 2. Merge once to `main`, run release preflight, and freeze the full SHA.
-3. Reconcile Infisical with Coolify and the host-managed staging `.env`.
+3. Reconcile Infisical with the host-managed staging `.env`; inject both the
+   application scope and the operator-only Coolify scope for production.
 4. Build/prove the distinct staging image.
 5. Run `pnpm release:deploy:production` with the frozen SHA, live production
-   SHA, and operator credential from Infisical `/platform/coolify`.
-6. The deployer pins and reads back Coolify's commit, inspects the deployment
-   record, and proves public health; Coolify swaps traffic only after the
-   candidate is healthy.
-7. Run `pnpm release:verify -- --sha <sha> --target both`.
+   SHA, managed Google public values from `/deploy/oriental-website`, and the
+   operator credential from Infisical `/platform/coolify`.
+6. The deployer reconciles and reads back both Google build variables before it
+   pins and reads back Coolify's commit, inspects the deployment record, and
+   proves public health; Coolify swaps traffic only after the candidate is
+   healthy.
+7. Run `pnpm release:verify -- --sha <sha> --target both` under the managed
+   application scope. The verifier uses Playwright to prove the Search Console
+   meta tag and the GA public-consent/admin-exclusion boundary.
 
 Convex function deployment is separate:
 
