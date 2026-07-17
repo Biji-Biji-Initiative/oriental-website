@@ -1,5 +1,6 @@
 import { mutationGeneric, queryGeneric } from "convex/server";
 import { v } from "convex/values";
+import { ADMIN_LEAD_OWNERS, validateAdminLeadWorkflow } from "../lib/admin-workflow";
 
 function requireIngestSecret(ingestSecret: string) {
   const expected = process.env.CONVEX_INGEST_SECRET;
@@ -327,12 +328,38 @@ export const updateLeadWorkflow = mutationGeneric({
     priority: leadPriorityValidator,
     owner: v.string(),
     note: v.optional(v.string()),
+    nextActionAt: v.union(v.number(), v.null()),
+    nextActionNote: v.optional(v.string()),
+    outcomeReason: v.optional(v.string()),
+    expectedRevision: v.number(),
+    reason: v.string(),
+    actor: v.string(),
+    requestId: v.string(),
   },
   returns: v.union(
-    v.object({ ok: v.literal(true) }),
+    v.object({ ok: v.literal(true), changed: v.boolean(), revision: v.number() }),
     v.object({ ok: v.literal(false), reason: v.literal("not_found") }),
+    v.object({ ok: v.literal(false), reason: v.literal("conflict"), currentRevision: v.number() }),
+    v.object({ ok: v.literal(false), reason: v.literal("invalid_workflow") }),
   ),
-  handler: async (ctx, { ingestSecret, leadId, status, priority, owner, note }) => {
+  handler: async (
+    ctx,
+    {
+      ingestSecret,
+      leadId,
+      status,
+      priority,
+      owner,
+      note,
+      nextActionAt,
+      nextActionNote,
+      outcomeReason,
+      expectedRevision,
+      reason,
+      actor,
+      requestId,
+    },
+  ) => {
     requireIngestSecret(ingestSecret);
     const lead = await ctx.db
       .query("leads")
@@ -343,23 +370,175 @@ export const updateLeadWorkflow = mutationGeneric({
     const now = Date.now();
     const cleanOwner = owner.trim();
     const cleanNote = note?.trim() ?? "";
+    const cleanNextActionNote = nextActionNote?.trim() ?? "";
+    const cleanOutcomeReason = outcomeReason?.trim() ?? "";
+    const cleanReason = reason.trim();
+    const cleanActor = actor.trim() || "Oriental admin";
+    const currentRevision = lead.workflowRevision ?? 0;
+
+    if (expectedRevision !== currentRevision) {
+      return { ok: false as const, reason: "conflict" as const, currentRevision };
+    }
+    if (
+      validateAdminLeadWorkflow(
+        {
+          status,
+          owner: cleanOwner,
+          nextActionAt,
+          nextActionNote: cleanNextActionNote,
+          outcomeReason: cleanOutcomeReason,
+        },
+        now,
+      ).length > 0
+    ) {
+      return { ok: false as const, reason: "invalid_workflow" as const };
+    }
+
+    const changes = [
+      auditChange("status", lead.status, status),
+      auditChange("priority", lead.priority ?? "normal", priority),
+      auditChange("owner", lead.owner ?? "", cleanOwner),
+      ...(cleanNote ? [auditChange("workflowNote", lead.workflowNote ?? "", cleanNote)] : []),
+      ...(typeof nextActionAt === "number" ? [auditChange("nextActionAt", lead.nextActionAt, nextActionAt)] : []),
+      ...(cleanNextActionNote ? [auditChange("nextActionNote", lead.nextActionNote ?? "", cleanNextActionNote)] : []),
+      ...(cleanOutcomeReason ? [auditChange("outcomeReason", lead.outcomeReason ?? "", cleanOutcomeReason)] : []),
+    ].filter((change): change is NonNullable<typeof change> => Boolean(change));
+
+    if (changes.length === 0) return { ok: true as const, changed: false, revision: currentRevision };
+
+    const revision = currentRevision + 1;
     await ctx.db.patch(lead._id, {
       status,
       priority,
       owner: cleanOwner,
       ...(cleanNote ? { workflowNote: cleanNote } : {}),
+      ...(typeof nextActionAt === "number" ? { nextActionAt } : {}),
+      ...(cleanNextActionNote ? { nextActionNote: cleanNextActionNote } : {}),
+      ...(cleanOutcomeReason ? { outcomeReason: cleanOutcomeReason } : {}),
+      ...(!lead.firstAssignedAt && cleanOwner ? { firstAssignedAt: now } : {}),
+      ...(!lead.firstContactedAt && (status === "contacted" || status === "qualified")
+        ? { firstContactedAt: now }
+        : {}),
       lastReviewedAt: now,
+      workflowRevision: revision,
     });
     await ctx.db.insert("leadEvents", {
       leadId,
       kind: "workflow_update",
-      actor: "admin",
+      actor: cleanActor,
       fromStatus: lead.status,
       toStatus: status,
-      note: cleanNote || `Priority ${priority}${cleanOwner ? `, owner ${cleanOwner}` : ""}`,
+      note: cleanNote || cleanNextActionNote || cleanReason,
+      requestId,
+      reason: cleanReason,
+      changes,
       createdAt: now,
     });
-    return { ok: true as const };
+    return { ok: true as const, changed: true, revision };
+  },
+});
+
+function auditChange(field: string, before: string | number | undefined, after: string | number | undefined) {
+  if (before === after) return null;
+  return {
+    field,
+    ...(typeof before !== "undefined" ? { before: String(before) } : {}),
+    ...(typeof after !== "undefined" ? { after: String(after) } : {}),
+  };
+}
+
+export const bulkAssignLeads = mutationGeneric({
+  args: {
+    ingestSecret: v.string(),
+    leads: v.array(v.object({ leadId: v.string(), expectedRevision: v.number() })),
+    owner: v.string(),
+    nextActionAt: v.number(),
+    nextActionNote: v.string(),
+    reason: v.string(),
+    actor: v.string(),
+    requestId: v.string(),
+  },
+  returns: v.union(
+    v.object({ ok: v.literal(true), count: v.number() }),
+    v.object({ ok: v.literal(false), reason: v.literal("not_found"), leadIds: v.array(v.string()) }),
+    v.object({ ok: v.literal(false), reason: v.literal("conflict"), leadIds: v.array(v.string()) }),
+    v.object({ ok: v.literal(false), reason: v.literal("invalid_workflow"), leadIds: v.array(v.string()) }),
+  ),
+  handler: async (ctx, { ingestSecret, leads, owner, nextActionAt, nextActionNote, reason, actor, requestId }) => {
+    requireIngestSecret(ingestSecret);
+    const cleanOwner = owner.trim();
+    const cleanNextActionNote = nextActionNote.trim();
+    const cleanReason = reason.trim();
+    const cleanActor = actor.trim() || "Oriental admin";
+    const now = Date.now();
+
+    if (
+      leads.length < 1 ||
+      leads.length > 50 ||
+      !ADMIN_LEAD_OWNERS.includes(cleanOwner as (typeof ADMIN_LEAD_OWNERS)[number]) ||
+      !cleanNextActionNote ||
+      !cleanReason ||
+      nextActionAt < now - 60_000
+    ) {
+      return { ok: false as const, reason: "invalid_workflow" as const, leadIds: leads.map((lead) => lead.leadId) };
+    }
+
+    const records = await Promise.all(
+      leads.map(async (target) => ({
+        target,
+        lead: await ctx.db
+          .query("leads")
+          .withIndex("by_lead_id", (query) => query.eq("leadId", target.leadId))
+          .unique(),
+      })),
+    );
+    const missing = records.filter((record) => !record.lead).map((record) => record.target.leadId);
+    if (missing.length > 0) return { ok: false as const, reason: "not_found" as const, leadIds: missing };
+
+    const conflicts = records
+      .filter((record) => (record.lead?.workflowRevision ?? 0) !== record.target.expectedRevision)
+      .map((record) => record.target.leadId);
+    if (conflicts.length > 0) return { ok: false as const, reason: "conflict" as const, leadIds: conflicts };
+
+    const terminal = records
+      .filter((record) => record.lead && ["qualified", "archived"].includes(record.lead.status))
+      .map((record) => record.target.leadId);
+    if (terminal.length > 0) {
+      return { ok: false as const, reason: "invalid_workflow" as const, leadIds: terminal };
+    }
+
+    for (const record of records) {
+      const lead = record.lead;
+      if (!lead) continue;
+      const revision = (lead.workflowRevision ?? 0) + 1;
+      const changes = [
+        auditChange("owner", lead.owner ?? "", cleanOwner),
+        auditChange("nextActionAt", lead.nextActionAt, nextActionAt),
+        auditChange("nextActionNote", lead.nextActionNote ?? "", cleanNextActionNote),
+      ].filter((change): change is NonNullable<typeof change> => Boolean(change));
+      await ctx.db.patch(lead._id, {
+        owner: cleanOwner,
+        nextActionAt,
+        nextActionNote: cleanNextActionNote,
+        ...(!lead.firstAssignedAt ? { firstAssignedAt: now } : {}),
+        lastReviewedAt: now,
+        workflowRevision: revision,
+      });
+      await ctx.db.insert("leadEvents", {
+        leadId: lead.leadId,
+        kind: "workflow_bulk_assignment",
+        actor: cleanActor,
+        fromStatus: lead.status,
+        toStatus: lead.status,
+        note: cleanNextActionNote,
+        requestId,
+        reason: cleanReason,
+        changes,
+        createdAt: now,
+      });
+    }
+
+    return { ok: true as const, count: records.length };
   },
 });
 

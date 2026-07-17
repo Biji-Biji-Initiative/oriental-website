@@ -36,6 +36,12 @@ export default defineSchema({
     owner: v.optional(v.string()),
     workflowNote: v.optional(v.string()),
     lastReviewedAt: v.optional(v.number()),
+    nextActionAt: v.optional(v.number()),
+    nextActionNote: v.optional(v.string()),
+    firstAssignedAt: v.optional(v.number()),
+    firstContactedAt: v.optional(v.number()),
+    outcomeReason: v.optional(v.string()),
+    workflowRevision: v.optional(v.number()),
     notificationDelivered: v.optional(v.boolean()),
     notificationEmailOk: v.optional(v.boolean()),
     notificationSlackOk: v.optional(v.boolean()),
@@ -58,6 +64,17 @@ export default defineSchema({
     fromStatus: v.optional(v.string()),
     toStatus: v.optional(v.string()),
     note: v.optional(v.string()),
+    requestId: v.optional(v.string()),
+    reason: v.optional(v.string()),
+    changes: v.optional(
+      v.array(
+        v.object({
+          field: v.string(),
+          before: v.optional(v.string()),
+          after: v.optional(v.string()),
+        }),
+      ),
+    ),
     createdAt: v.number(),
   }).index("by_lead", ["leadId"]),
   voiceSessions: defineTable({

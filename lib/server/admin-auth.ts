@@ -1,4 +1,10 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import {
+  type AdminPermission,
+  type AdminRole,
+  configuredAdminIdentity,
+  hasAdminPermission,
+} from "@/lib/admin-permissions";
 import { readEnv } from "@/lib/env";
 
 export const adminCookieName = "oriental_admin";
@@ -7,8 +13,8 @@ const sessionTtlMs = 12 * 60 * 60 * 1000;
 const sharedAdminPasswordHash = "70ba5f3dd65f091c85e93a0e3155a17121225e799d25e18e8f3675cbb5669c2d";
 
 export type AdminAuthState =
-  | { ok: true; expiresAt: number }
-  | { ok: false; reason: "unconfigured" | "missing" | "invalid" };
+  | { ok: true; actor: string; expiresAt: number; role: AdminRole }
+  | { ok: false; reason: "unconfigured" | "missing" | "invalid" | "forbidden" };
 
 export function verifyAdminToken(token: string | null | undefined): AdminAuthState {
   const expected = readEnv("ADMIN_REVIEW_TOKEN");
@@ -17,7 +23,7 @@ export function verifyAdminToken(token: string | null | undefined): AdminAuthSta
   if (!constantTimeEqual(token, expected) && !constantTimeEqual(sha256(token), sharedAdminPasswordHash)) {
     return { ok: false, reason: "invalid" };
   }
-  return { ok: true, expiresAt: Date.now() + sessionTtlMs };
+  return { ok: true, ...configuredAdminIdentity(), expiresAt: Date.now() + sessionTtlMs };
 }
 
 export function createAdminSessionCookie(now = Date.now()) {
@@ -36,7 +42,7 @@ export function verifyAdminSessionCookie(value: string | null | undefined): Admi
   if (!constantTimeEqual(parts[2] ?? "", sign(payload))) return { ok: false, reason: "invalid" };
   const expiresAt = Number(parts[1]);
   if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return { ok: false, reason: "invalid" };
-  return { ok: true, expiresAt };
+  return { ok: true, ...configuredAdminIdentity(), expiresAt };
 }
 
 export function verifyAdminRequest(request: Request): AdminAuthState {
@@ -45,6 +51,19 @@ export function verifyAdminRequest(request: Request): AdminAuthState {
     return verifyAdminToken(authorization.slice("Bearer ".length).trim());
   }
   return verifyAdminSessionCookie(cookieValue(request.headers.get("cookie"), adminCookieName));
+}
+
+export function verifyAdminPermission(request: Request, permission: AdminPermission): AdminAuthState {
+  const auth = verifyAdminRequest(request);
+  if (!auth.ok) return auth;
+  if (!hasAdminPermission(auth.role, permission)) return { ok: false, reason: "forbidden" };
+  return auth;
+}
+
+export function adminAuthFailureStatus(auth: Extract<AdminAuthState, { ok: false }>) {
+  if (auth.reason === "unconfigured") return 503;
+  if (auth.reason === "forbidden") return 403;
+  return 401;
 }
 
 export function adminCookieHeader(value: string, expiresAt: number) {
