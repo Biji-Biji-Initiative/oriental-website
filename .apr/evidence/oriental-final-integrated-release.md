@@ -4,9 +4,9 @@
 
 - Review base: `b0b0d83c7499ea4ed470430e8e3cfa80ab7bd68e`
 - Integrated implementation head before this evidence update:
-  `374365d96cbf03fa415a8f6862b85ffa8f4e6385`
-- Integrated implementation tree: `25d8a7a41be828e1f2e08287204e0575e4f24f85`
-- Scope: 106 files, 5,688 insertions and 854 deletions spanning the admin
+  `69b793f50154b8f30b3179504e06f72382f99c64`
+- Integrated implementation tree: `34795c295a2049fce6168442458579d08f0da50a`
+- Scope: 106 files, 5,821 insertions and 854 deletions spanning the admin
   console, safe evaluation, consented analytics, Google release wiring,
   responsive voice UI, reactive brand motion, capture correctness, PII-free
   tool telemetry, managed-environment convergence, and release verification.
@@ -80,9 +80,11 @@
   application scope and the separate Coolify operator scope, excludes
   deploy-only values, reconciles exactly one
   entry per runtime key with only public `NEXT_PUBLIC_*` values build-enabled,
-  reads back value/scope parity without logging secrets, changes the frozen SHA,
-  explicitly clears any formerly managed value retired from Infisical, and
-  verifies empty/absent parity. It re-reads the expected-current Coolify SHA,
+  writes concrete Infisical values as literals, and reads back effective value,
+  literal, multiline, runtime, and build scope without logging secrets. A live
+  value missing from the supplied scope stops before any mutation; clearing is
+  allowed only through a code-reviewed retirement tombstone introduced with
+  the source removal and retained as ownership history. It re-reads the expected-current Coolify SHA,
   `running:healthy` state, enabled health checking, and host `127.0.0.1`
   immediately before the first environment mutation and again before changing
   the frozen SHA; the same state is re-fetched after deployment.
@@ -97,15 +99,16 @@
 
 - Biome: 241 files checked, no findings.
 - TypeScript: passed with strict project configuration.
-- Vitest: 64 files, 648 tests passed, zero failures.
-- Final blocker-closure suites: 71 tests passed, zero failures.
+- Vitest: 64 files, 651 tests passed, zero failures.
+- Independent final semantic re-review: clean; its focused suites passed 80
+  tests with zero failures.
 - Next.js 16.2.10 production build: passed; 9 static pages generated.
 - Admin Chromium matrix: 43 passed, one intentional mobile mutation skip,
   zero unexpected and zero flaky results.
 - Responsive homepage/voice Chromium matrix: 40 passed, zero failures,
   including immediate interaction through the non-blocking entrance treatment.
-- Performance/a11y: mobile LCP 468 ms, CLS 0, 411,212 transferred JavaScript
-  bytes, 1,412,100 decoded bytes, 14 requests, and zero serious/critical Axe
+- Performance/a11y: mobile LCP 480 ms, CLS 0, 411,217 transferred JavaScript
+  bytes, 1,412,117 decoded bytes, 14 requests, and zero serious/critical Axe
   violations.
 - Working tree was clean after the combined implementation validation.
 
