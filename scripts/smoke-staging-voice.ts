@@ -1,5 +1,6 @@
 import { chromium, type Page, type Response } from "playwright";
 import { voiceReviewSnapshotSchema } from "../lib/schemas";
+import { DEFAULT_VOICE_VARIANT_ID, getVoiceVariant } from "../lib/voice/variants";
 import { STAGING_CANDIDATE_VOICE_CELL } from "./lib/release-governance";
 
 const canonicalStagingOrigin = "https://staging.oriental.mereka.io";
@@ -8,9 +9,16 @@ const expectedModel = process.env.EXPECTED_REALTIME_MODEL ?? STAGING_CANDIDATE_V
 const expectedModelCell = process.env.EXPECTED_REALTIME_MODEL_CELL ?? STAGING_CANDIDATE_VOICE_CELL.modelCell;
 const expectedEmailCaptureMode =
   process.env.EXPECTED_EMAIL_CAPTURE_MODE ?? STAGING_CANDIDATE_VOICE_CELL.emailCaptureMode;
+const expectedVoiceVariant = requireDefaultVoiceVariant();
 
 if (targetOrigin !== canonicalStagingOrigin) {
   throw new Error(`Refusing voice smoke target outside canonical staging: ${targetOrigin}`);
+}
+
+function requireDefaultVoiceVariant() {
+  const variant = getVoiceVariant(DEFAULT_VOICE_VARIANT_ID);
+  if (!variant) throw new Error(`Default voice variant is missing: ${DEFAULT_VOICE_VARIANT_ID}`);
+  return variant;
 }
 
 type SmokeResult = {
@@ -21,11 +29,16 @@ type SmokeResult = {
   interruptionRecoveryMs: number;
   loaderObserved: boolean;
   nebulaRenderer: "webgl" | "svg-fallback";
+  voiceVariantPicker: boolean;
   responsiveViewportsChecked: number;
   remoteAudioTrackLive: boolean;
   remoteAudioAdvanced: boolean;
+  voiceReactivePeak: number;
   realtimeModel: string;
   realtimeModelCell: string;
+  realtimeVoice: string;
+  realtimeSpeed: number;
+  realtimeVariant: string | null;
   emailCaptureMode: string;
   transcriptionModel: string;
   sessionMintStatuses: number[];
@@ -52,6 +65,9 @@ async function run() {
     modelCell: string;
     emailCaptureMode: string;
     transcriptionModel: string;
+    voice: string;
+    speed: number;
+    variant: string | null;
   }> = [];
   const sessionProfileCaptures: Array<Promise<void>> = [];
   const debugStatuses: number[] = [];
@@ -125,7 +141,7 @@ async function run() {
       ok?: boolean;
       version?: string;
       convex?: boolean;
-      voice?: { model?: string; model_cell?: string; email_capture_mode?: string };
+      voice?: { model?: string; model_cell?: string; email_capture_mode?: string; variant_picker?: boolean };
     };
     if (
       !health.ok ||
@@ -133,7 +149,8 @@ async function run() {
       !health.convex ||
       !health.voice?.model ||
       !health.voice.model_cell ||
-      !health.voice.email_capture_mode
+      !health.voice.email_capture_mode ||
+      health.voice.variant_picker !== true
     ) {
       throw new Error("Staging health payload is incomplete");
     }
@@ -154,6 +171,7 @@ async function run() {
     await loader.waitFor({ state: "visible", timeout: 3_000 });
     await loader.waitFor({ state: "hidden", timeout: 5_000 });
     await page.locator('header button[aria-label="Talk to Mereka"]').waitFor({ state: "visible" });
+    await page.getByRole("button", { name: /Choose Reka voice/i }).waitFor({ state: "visible" });
     await page.locator('header button[aria-label="Talk to Mereka"]').click();
     const orb = page.locator(".voice-orb");
     await orb.waitFor({ state: "visible" });
@@ -178,7 +196,13 @@ async function run() {
 
     const openerStartedAt = performance.now();
     await waitForTurn(page, "listening", "assistant_speaking", 60_000);
-    await waitForRemoteAudio(page, 30_000);
+    const [, voiceReactivePeak] = await Promise.all([
+      waitForRemoteAudio(page, 30_000),
+      sampleCssLevelPeak(page, "--voice-level", 2_000),
+    ]);
+    if (voiceReactivePeak < 0.12) {
+      throw new Error(`Nebula voice response was too weak: peak=${voiceReactivePeak.toFixed(3)}`);
+    }
     const openerAudioMs = performance.now() - openerStartedAt;
     const audioBeforeInterrupt = await remoteAudioState(page);
 
@@ -221,6 +245,15 @@ async function run() {
         `Unexpected staging email capture mode: ${sessionProfile.emailCaptureMode}; expected ${expectedEmailCaptureMode}`,
       );
     }
+    if (
+      sessionProfile.variant !== expectedVoiceVariant.id ||
+      sessionProfile.voice !== expectedVoiceVariant.voice ||
+      sessionProfile.speed !== expectedVoiceVariant.speed
+    ) {
+      throw new Error(
+        `Unexpected staging voice variant: ${sessionProfile.variant}/${sessionProfile.voice}/${sessionProfile.speed}; expected ${expectedVoiceVariant.id}/${expectedVoiceVariant.voice}/${expectedVoiceVariant.speed}`,
+      );
+    }
     if (!debugStatuses.some((status) => status === 200)) throw new Error("Voice review snapshot was not persisted");
     await Promise.allSettled(responseDiagnostics);
     if (pageErrors.length > 0 || consoleErrors.length > 0) {
@@ -235,11 +268,16 @@ async function run() {
       interruptionRecoveryMs: Math.round(interruptionRecoveryMs),
       loaderObserved: true,
       nebulaRenderer,
+      voiceVariantPicker: true,
       responsiveViewportsChecked,
       remoteAudioTrackLive: audioAfterInterrupt.trackLive,
       remoteAudioAdvanced: audioAfterInterrupt.currentTime > audioBeforeInterrupt.currentTime,
+      voiceReactivePeak: Number(voiceReactivePeak.toFixed(3)),
       realtimeModel: sessionProfile.model,
       realtimeModelCell: sessionProfile.modelCell,
+      realtimeVoice: sessionProfile.voice,
+      realtimeSpeed: sessionProfile.speed,
+      realtimeVariant: sessionProfile.variant,
       emailCaptureMode: sessionProfile.emailCaptureMode,
       transcriptionModel: sessionProfile.transcriptionModel,
       sessionMintStatuses,
@@ -278,7 +316,10 @@ function readSessionProfile(value: unknown) {
     typeof body.model !== "string" ||
     typeof body.model_cell !== "string" ||
     typeof body.email_capture_mode !== "string" ||
-    typeof body.transcription_model !== "string"
+    typeof body.transcription_model !== "string" ||
+    typeof body.voice !== "string" ||
+    typeof body.speed !== "number" ||
+    (body.variant !== null && typeof body.variant !== "string")
   ) {
     return null;
   }
@@ -287,6 +328,9 @@ function readSessionProfile(value: unknown) {
     modelCell: body.model_cell,
     emailCaptureMode: body.email_capture_mode,
     transcriptionModel: body.transcription_model,
+    voice: body.voice,
+    speed: body.speed,
+    variant: body.variant,
   };
 }
 
@@ -415,6 +459,28 @@ async function remoteAudioState(page: Page) {
       trackLive: Boolean(stream?.getAudioTracks().some((track) => track.readyState === "live")),
     };
   });
+}
+
+async function sampleCssLevelPeak(page: Page, property: string, durationMs: number) {
+  return page.locator(".voice-orb").evaluate(
+    (orb, options) =>
+      new Promise<number>((resolve) => {
+        const startedAt = performance.now();
+        let peak = 0;
+        const sample = () => {
+          const rawValue = getComputedStyle(orb).getPropertyValue(options.property);
+          const level = Number.parseFloat(rawValue);
+          if (Number.isFinite(level)) peak = Math.max(peak, level);
+          if (performance.now() - startedAt >= options.durationMs) {
+            resolve(peak);
+            return;
+          }
+          requestAnimationFrame(sample);
+        };
+        sample();
+      }),
+    { property, durationMs },
+  );
 }
 
 function sanitizeDiagnostic(message: string) {

@@ -41,6 +41,7 @@ const EVENT_TYPES = [
 const TOOL_NAMES = [
   "capture_field",
   "clear_field",
+  "clear_fields",
   "set_partner_type",
   "summarise_lead",
   "route_to_team",

@@ -116,7 +116,8 @@ describe("golden voice session", () => {
 
     step({
       type: "conversation.item.input_audio_transcription.completed",
-      transcript: "My name is Goodbreed and my email is asia.lim@example.my. We want to run digital-skills workshops.",
+      transcript:
+        "My name is Goodbreed and my email is asia dot lim at example dot my. We want to run digital-skills workshops.",
     });
     const captured = step(
       functionCall("call_contact_drift", "capture_fields", {

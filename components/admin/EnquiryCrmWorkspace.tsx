@@ -286,7 +286,7 @@ function CrmIntelligencePanel({
           </div>
           <div className="mt-4 overflow-x-auto rounded-xl border border-white/10 bg-white/[0.04]">
             <table className="w-full min-w-[360px] border-collapse text-left text-sm" data-owner-table>
-              <caption className="sr-only">Oriental enquiry owner workload</caption>
+              <caption className="sr-only">Mereka at Oriental enquiry owner workload</caption>
               <thead className="bg-[#0a0f1c]/85 text-[10px] font-semibold uppercase tracking-[0.11em] text-slate-500">
                 <tr>
                   <th className="px-3 py-2.5" scope="col">

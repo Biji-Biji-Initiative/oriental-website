@@ -71,7 +71,7 @@ describe("release governance", () => {
         VOICE_REASONING_CELL: CONTROL_VOICE_CELL.reasoningCell,
         VOICE_EMAIL_CAPTURE_MODE: CONTROL_VOICE_CELL.emailCaptureMode,
       }),
-    ).toEqual(["VOICE_VARIANT_PICKER must be explicitly false for a governed release"]);
+    ).toEqual(["VOICE_VARIANT_PICKER must be explicitly false for the control cell"]);
   });
 
   it("makes managed cell checks the preflight default", () => {
@@ -130,7 +130,7 @@ describe("release governance", () => {
       },
     });
     expect(missingPicker.status).toBe(1);
-    expect(missingPicker.stderr).toContain("VOICE_VARIANT_PICKER must be explicitly false");
+    expect(missingPicker.stderr).toContain("VOICE_VARIANT_PICKER must be explicitly false for the control cell");
 
     const candidate = spawnSync("pnpm", [...command, "--model-cell", "candidate"], {
       encoding: "utf8",
@@ -141,7 +141,7 @@ describe("release governance", () => {
         OPENAI_REALTIME_MODEL_CANDIDATE: "gpt-realtime-2.1",
         VOICE_REASONING_CELL: "low",
         VOICE_EMAIL_CAPTURE_MODE: "adaptive",
-        VOICE_VARIANT_PICKER: "false",
+        VOICE_VARIANT_PICKER: "true",
       },
     });
     expect(candidate.status, candidate.stderr).toBe(0);
@@ -150,6 +150,15 @@ describe("release governance", () => {
   it("expands the both alias before target lookup", () => {
     expect(releaseVerifier).toContain('args.target === "both" ? ["staging", "production"] : [args.target]');
     expect(releaseVerifier).toContain('name === "staging" ? governedVoiceCell(stagingModelCell) : CONTROL_VOICE_CELL');
+  });
+
+  it("verifies client picker visibility against the governed target cell", () => {
+    expect(CONTROL_VOICE_CELL.variantPicker).toBe(false);
+    expect(STAGING_CANDIDATE_VOICE_CELL.variantPicker).toBe(true);
+    expect(releaseVerifier).toContain("const expectedVariantPicker = expectedVoiceCell.variantPicker");
+    expect(releaseVerifier).toContain("config.voiceVariantPicker !== expectedVariantPicker");
+    expect(releaseVerifier).toContain("voiceVariantPicker: expectedVariantPicker");
+    expect(releaseVerifier).not.toContain("config.voiceVariantPicker !== false");
   });
 
   it("validates the staging promotion boundary against the candidate voice cell", () => {
@@ -213,7 +222,7 @@ describe("release governance", () => {
             model: "gpt-realtime-2.1",
             reasoning_cell: "low",
             email_capture_mode: "adaptive",
-            variant_picker: false,
+            variant_picker: true,
           },
         },
         sha,

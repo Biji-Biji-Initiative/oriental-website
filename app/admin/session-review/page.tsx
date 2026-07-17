@@ -991,7 +991,7 @@ function buildRekaFixActions(entries: EvalAttentionEntry[]): RekaFixAction[] {
       title: "Replace vague recovery with one concrete next question",
       surface: "lib/voice/profile.ts -> Conversation Flow + sample phrases",
       change:
-        "If the visitor stalls, ask one specific question about what they want to bring to Oriental, capture the answer as brief, then move to the compact contact block.",
+        "If the visitor stalls, ask one specific question about what they want to build with Mereka at Oriental, capture the answer as brief, then move to the compact contact block.",
       acceptance:
         "Conversation quality should trend above 3/5 and frustration below 2.5/5 after the next persisted eval batch.",
       why: "Frustration and low-quality sessions point to unclear direction, low engagement, and conversations ending without useful data.",
@@ -2195,10 +2195,10 @@ function RecoverableVoicePanel({
 }
 
 function followUpMailto(session: VoiceSessionRow) {
-  const subject = encodeURIComponent("Following up on your Oriental enquiry");
+  const subject = encodeURIComponent("Following up on your Mereka at Oriental enquiry");
   const greeting = session.captured.name ? `Hi ${session.captured.name},` : "Hi,";
   const body = encodeURIComponent(
-    `${greeting}\n\nThanks for talking with Reka about Oriental. Picking up where that conversation left off —\n\n`,
+    `${greeting}\n\nThanks for talking with Reka about building with Mereka at Oriental. Picking up where that conversation left off —\n\n`,
   );
   return `mailto:${encodeURIComponent(session.captured.email)}?subject=${subject}&body=${body}`;
 }

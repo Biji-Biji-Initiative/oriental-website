@@ -201,7 +201,7 @@ if target == "staging":
         "VOICE_MODEL_CELL": voice_model_cell,
         "VOICE_REASONING_CELL": "low",
         "VOICE_EMAIL_CAPTURE_MODE": "adaptive",
-        "VOICE_VARIANT_PICKER": "false",
+        "VOICE_VARIANT_PICKER": "true" if voice_model_cell == "candidate" else "false",
     })
 seen = set()
 out = []

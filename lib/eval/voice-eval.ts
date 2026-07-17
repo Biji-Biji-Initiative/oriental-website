@@ -85,6 +85,9 @@ export type VoiceEvalSession = {
   inputPolicy?: "baseline" | "fast" | "patient" | null;
   modelCell?: "control" | "candidate" | null;
   reasoningCell?: "low" | "minimal" | null;
+  voice?: string | null;
+  speed?: number | null;
+  variant?: string | null;
   transcript: EvalTranscriptTurn[];
   captured?: {
     name: string;
@@ -621,16 +624,72 @@ export type EngagementSignals = {
 
 export type CaptureIntegritySignals = {
   rejectedCaptures: number;
+  rejectedEmailCaptures: number;
   unconfirmedEmailFailures: number;
+  staleEmailSubmissions: number;
   totalFailures: number;
   failed: boolean;
 };
 
 export function deriveCaptureIntegritySignals(session: VoiceEvalSession): CaptureIntegritySignals {
   const rejectedCaptures = session.errors.filter((error) => error.code === "voice_capture_rejected").length;
+  const rejectedEmailCaptures = session.errors.filter(
+    (error) => error.code === "voice_capture_rejected" && /(?:^|:)email(?:$|:)/i.test(error.message),
+  ).length;
   const unconfirmedEmailFailures = session.errors.filter((error) => error.code === "voice_email_unconfirmed").length;
-  const totalFailures = rejectedCaptures + unconfirmedEmailFailures;
-  return { rejectedCaptures, unconfirmedEmailFailures, totalFailures, failed: totalFailures > 0 };
+  const correctedEmail = lastLiteralEmailCorrection(session);
+  const submittedEmail = session.captured?.email.trim().toLowerCase() ?? "";
+  const staleEmailSubmissions =
+    rejectedEmailCaptures > 0 &&
+    (session.submittedAt || session.leadId) &&
+    correctedEmail !== null &&
+    submittedEmail !== correctedEmail
+      ? 1
+      : 0;
+  const totalFailures = rejectedCaptures + unconfirmedEmailFailures + staleEmailSubmissions;
+  return {
+    rejectedCaptures,
+    rejectedEmailCaptures,
+    unconfirmedEmailFailures,
+    staleEmailSubmissions,
+    totalFailures,
+    failed: totalFailures > 0,
+  };
+}
+
+const EVAL_EMAIL_PATTERN =
+  /[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+/gi;
+
+/** Return only the latest literal address from an explicit visitor correction. */
+function lastLiteralEmailCorrection(session: VoiceEvalSession): string | null {
+  for (let index = session.transcript.length - 1; index >= 0; index -= 1) {
+    const turn = session.transcript[index];
+    if (turn?.role !== "user" || !EXPLICIT_CORRECTION_PATTERN.test(turn.text)) continue;
+    const matches = [...turn.text.matchAll(EVAL_EMAIL_PATTERN)];
+    const last = matches.at(-1)?.[0];
+    if (last) return last.toLowerCase();
+  }
+  return null;
+}
+
+export type ConversationStyleSignals = {
+  bannedPhraseOccurrences: number;
+  failed: boolean;
+};
+
+const BANNED_ASSISTANT_PHRASES = [/\bquick\s+one\b/gi];
+
+/** Deterministically catch known verbal tics without exposing transcript text. */
+export function deriveConversationStyleSignals(session: VoiceEvalSession): ConversationStyleSignals {
+  const assistantText = session.transcript
+    .filter((turn) => turn.role === "assistant")
+    .map((turn) => turn.text)
+    .join("\n");
+  const bannedPhraseOccurrences = BANNED_ASSISTANT_PHRASES.reduce(
+    (count, pattern) => count + [...assistantText.matchAll(pattern)].length,
+    0,
+  );
+  return { bannedPhraseOccurrences, failed: bannedPhraseOccurrences > 0 };
 }
 
 export function deriveEngagementSignals(session: VoiceEvalSession): EngagementSignals {
@@ -674,7 +733,7 @@ export const judgeScoreSchema = z.object({
 export type JudgeScore = z.infer<typeof judgeScoreSchema>;
 
 export const JUDGE_SYSTEM_PROMPT = [
-  "You are a strict QA evaluator for Reka, a Malaysian voice concierge that qualifies partner leads for the Oriental Building and routes them to the right team.",
+  "You are a strict QA evaluator for Reka, Mereka's Malaysian voice concierge for people interested in collaborating with Mereka at the Oriental Building.",
   "Score one transcript on a 0-5 integer scale per dimension. Be critical; reserve 5 for excellent.",
   "Dimensions:",
   "- routingCorrect: did Reka steer the visitor toward the correct partner segment and capture intent accurately?",
@@ -752,9 +811,13 @@ export type SessionEval = {
   inputPolicy: "baseline" | "fast" | "patient";
   modelCell: "control" | "candidate";
   reasoningCell: "low" | "minimal";
+  voice: string | null;
+  speed: number | null;
+  variant: string | null;
   transport: TransportSignals;
   latency: LatencySignals;
   captureIntegrity: CaptureIntegritySignals;
+  conversationStyle: ConversationStyleSignals;
   engagement: EngagementSignals;
   score: JudgeScore | null;
 };
@@ -773,9 +836,13 @@ export function buildSessionEval(session: VoiceEvalSession, score: JudgeScore | 
     inputPolicy: session.inputPolicy ?? "baseline",
     modelCell: session.modelCell ?? "control",
     reasoningCell: session.reasoningCell ?? "low",
+    voice: session.voice ?? null,
+    speed: session.speed ?? null,
+    variant: session.variant ?? null,
     transport: deriveTransportSignals(session),
     latency: deriveLatencySignals(session),
     captureIntegrity: deriveCaptureIntegritySignals(session),
+    conversationStyle: deriveConversationStyleSignals(session),
     engagement: deriveEngagementSignals(session),
     score,
   };
@@ -814,8 +881,14 @@ export type EvalAggregate = {
   captureIntegrity: {
     failedSessions: number;
     rejectedCaptures: number;
+    rejectedEmailCaptures: number;
     unconfirmedEmailFailures: number;
+    staleEmailSubmissions: number;
     totalFailures: number;
+  };
+  conversationStyle: {
+    failedSessions: number;
+    bannedPhraseOccurrences: number;
   };
   attribution: {
     environments: Record<"production" | "staging" | "local" | "unknown", number>;
@@ -861,12 +934,17 @@ export function aggregateEvals(evals: SessionEval[]): EvalAggregate {
   );
   const availabilityFailures = evals.filter((entry) => entry.closeReasons.some(isVoiceAvailabilityFailure));
   const captureIntegrityFailures = evals.filter((entry) => entry.captureIntegrity.failed);
+  const conversationStyleFailures = evals.filter((entry) => entry.conversationStyle.failed);
   const worstSessions = [
     ...quotaFailures.map((entry) => ({ reviewId: entry.reviewId, reason: "OpenAI Realtime quota exhausted" })),
     ...droppedMidTurn.map((entry) => ({ reviewId: entry.reviewId, reason: "dropped mid-utterance" })),
     ...captureIntegrityFailures.map((entry) => ({
       reviewId: entry.reviewId,
       reason: `${entry.captureIntegrity.totalFailures} capture-integrity failure${entry.captureIntegrity.totalFailures === 1 ? "" : "s"}`,
+    })),
+    ...conversationStyleFailures.map((entry) => ({
+      reviewId: entry.reviewId,
+      reason: `${entry.conversationStyle.bannedPhraseOccurrences} banned style-tic occurrence${entry.conversationStyle.bannedPhraseOccurrences === 1 ? "" : "s"}`,
     })),
     ...scored
       .filter((entry) => (entry.score as JudgeScore).frustration >= 4)
@@ -913,8 +991,14 @@ export function aggregateEvals(evals: SessionEval[]): EvalAggregate {
     captureIntegrity: {
       failedSessions: captureIntegrityFailures.length,
       rejectedCaptures: evals.reduce((sum, entry) => sum + entry.captureIntegrity.rejectedCaptures, 0),
+      rejectedEmailCaptures: evals.reduce((sum, entry) => sum + entry.captureIntegrity.rejectedEmailCaptures, 0),
       unconfirmedEmailFailures: evals.reduce((sum, entry) => sum + entry.captureIntegrity.unconfirmedEmailFailures, 0),
+      staleEmailSubmissions: evals.reduce((sum, entry) => sum + entry.captureIntegrity.staleEmailSubmissions, 0),
       totalFailures: evals.reduce((sum, entry) => sum + entry.captureIntegrity.totalFailures, 0),
+    },
+    conversationStyle: {
+      failedSessions: conversationStyleFailures.length,
+      bannedPhraseOccurrences: evals.reduce((sum, entry) => sum + entry.conversationStyle.bannedPhraseOccurrences, 0),
     },
     attribution: {
       environments: countBy(
@@ -954,7 +1038,10 @@ export function aggregateEvalsByRuntimeProfile(evals: SessionEval[]): Record<str
 export function aggregateEvalsByExperimentCell(evals: SessionEval[]): Record<string, EvalAggregate> {
   const groups = new Map<string, SessionEval[]>();
   for (const entry of evals) {
-    const key = `${entry.runtimeProfile}/${entry.modelCell}/${entry.reasoningCell}`;
+    const variant = entry.variant ?? "env-default";
+    const voice = entry.voice ?? "unknown-voice";
+    const speed = entry.speed ?? "unknown-speed";
+    const key = `${entry.runtimeProfile}/${entry.modelCell}/${entry.reasoningCell}/${variant}/${voice}/${speed}`;
     const group = groups.get(key);
     if (group) group.push(entry);
     else groups.set(key, [entry]);
@@ -967,7 +1054,8 @@ export type VoiceExperimentEvidenceValidation = { ok: boolean; failures: string[
 /** Reject rows that vary more than one controlled experiment dimension. */
 export function validateVoiceExperimentEvidence(evals: SessionEval[]): VoiceExperimentEvidenceValidation {
   const failures = evals.flatMap((entry) => {
-    const activeDimensions = activeVoiceExperimentDimensions(entry);
+    const activeDimensions: string[] = [...activeVoiceExperimentDimensions(entry)];
+    if (entry.variant) activeDimensions.push("voice variant");
     return activeDimensions.length > 1
       ? [
           `${entry.reviewId} varies multiple experiment dimensions: ${activeDimensions.join(", ")} ` +
@@ -986,6 +1074,7 @@ export type EvalThresholds = {
   maxQuotaFailures?: number;
   maxAvailabilityFailures?: number;
   maxCaptureIntegrityFailures?: number;
+  maxStyleTicOccurrences?: number;
 };
 
 /** Gate an aggregate against thresholds — used for a CI regression check. */
@@ -1042,6 +1131,14 @@ export function meetsThreshold(
   ) {
     failures.push(
       `captureIntegrityFailures ${aggregate.captureIntegrity.totalFailures} > ${thresholds.maxCaptureIntegrityFailures}`,
+    );
+  }
+  if (
+    typeof thresholds.maxStyleTicOccurrences === "number" &&
+    aggregate.conversationStyle.bannedPhraseOccurrences > thresholds.maxStyleTicOccurrences
+  ) {
+    failures.push(
+      `styleTicOccurrences ${aggregate.conversationStyle.bannedPhraseOccurrences} > ${thresholds.maxStyleTicOccurrences}`,
     );
   }
   return { ok: failures.length === 0, failures };

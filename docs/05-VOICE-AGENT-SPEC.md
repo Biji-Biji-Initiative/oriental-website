@@ -52,7 +52,7 @@ constant matching the prototype's `voice-agent.jsx`.
 ## 3. Conversation flow (voice)
 
 ```
-1. Greeting        → "Hi, I'm Reka. What would you like to build at Oriental?"
+1. Greeting        → "Hi, I'm Reka from Mereka. What would you like to build with us at Oriental Building?"
 2. Segment pick    → tool_call: set_partner_type(segment)
 3. Opener          → voiceOpener for the picked segment
 4. Discovery       → free dialogue, agent batches grounded reversible fields with capture_fields()
@@ -67,18 +67,26 @@ agent re-routes.
 
 In governed `adaptive` mode, a speech email is sendable only after syntax,
 model-evidence, and latest-turn grounding pass; exact evidence is high
-confidence and bounded ASR drift with an explicit email cue is medium. It stays
-visible/editable and does not require a blanket confirmation turn. A correction
-invalidates the earlier verification before any route can submit it, then the
-replacement is grounded from scratch. Duplicate email tool calls pass through
-the same grounding rule. A pending transcription may relax fresh native-audio
-capture to medium confidence only when no completed turn already contradicts
-the proposed value. Non-PII turn sequence and Realtime item identity preserve
-that decision across form edits and out-of-order transcription completion. A
-typed form edit versions any already-active response stale for email capture,
-confirmation, clearing, and routing, so older tool output cannot overwrite or
-submit the typed value.
-`strict` restores exact
+confidence and is immediately usable only when the complete literal or spoken
+evidence canonicalizes to that exact address. Bounded ASR substitution applies
+only to a complete spoken-form candidate with an explicit email cue; it is
+medium confidence, stays pending, and gets one exact readback with explicit
+affirmation before it is usable. A literal email that differs from the proposed
+address never enters the approximate path. The address is always
+visible/editable; exact high-confidence captures do not pay a blanket
+confirmation turn.
+
+A correction or failed replacement invalidates the earlier verification before
+any route can submit it, then grounds the replacement from scratch. Duplicate
+email tool calls pass through the same grounding rule. A pending native-audio
+transcription may yield medium confidence only when no completed turn already
+contradicts the proposed value, and it never bypasses the exact readback.
+Non-PII turn sequence and Realtime item identity preserve that decision across
+form edits and out-of-order transcription completion. Clear-all also clears the
+remembered handoff and fences every pre-clear ASR completion by Realtime item
+identity. A typed form edit versions any already-active response stale for email
+capture, confirmation, clearing, and routing, so older tool output cannot
+overwrite or submit the typed value. `strict` restores exact
 readback plus explicit confirmation. Email supplied through the hero prefill or
 edited directly in the handoff form is confirmed by that typed action. Both the
 client runtime and `/api/leads` reject invalid, stale, or pending email state.
@@ -140,7 +148,7 @@ claim a handoff succeeded before `route_to_team` returns success.
 | Input audio | Browser-default mic; page load imports the voice bundle and preconnects, but Realtime token minting happens only while permission is currently granted or after the visitor grants a first/expired one-time prompt. The app releases tracks on close. |
 | Session length cap | **10 minutes** by default from the typed policy in `lib/voice/session-policy.ts`; bounded override `VOICE_MAX_DURATION_MS` accepts 1–30 minutes. `/api/voice/session` returns the resolved value to the client. |
 | Turn detection | `baseline` uses semantic VAD `auto`. `instant-v1` uses `high` for normal turns, switches deterministically to `low` after Reka asks for an email, then returns to `high` on the next response. `VOICE_RUNTIME_PROFILE=baseline` is the rollback. |
-| Email capture | `adaptive` accepts only syntactically valid, independently grounded speech email evidence and keeps it visible/editable without a blanket confirmation turn. `strict` restores exact readback plus explicit confirmation. |
+| Email capture | `adaptive` immediately confirms only exact high-confidence speech evidence; medium ASR substitution gets one exact readback. Both stay visible/editable. `strict` always requires exact readback plus explicit confirmation. |
 | Input transcription | `gpt-4o-transcribe` by default via `OPENAI_REALTIME_TRANSCRIPTION_MODEL`, with a multilingual domain `prompt` covering Malaysian English, Bahasa Melayu, Mandarin, and Tamil plus spoken-email patterns and brand terms. Transcription feeds the visible transcript, review snapshots, and capture grounding; the model itself hears audio natively |
 | Noise reduction | `near_field` for mobile user agents, `far_field` for desktops, chosen at mint time in `/api/voice/session` |
 | Idle behaviour | Reka speaks a one-sentence goodbye in a grace window (`idleGoodbyeGraceMs`, 6 s) before the 20 s idle cutoff; the goodbye cannot extend the session and the visitor speaking cancels the close |

@@ -183,6 +183,10 @@ OWNER_COMMUNITY=
 OWNER_OTHER=
 ```
 
+`VOICE_VARIANT_PICKER` stays `false` in production. The governed staging
+candidate cell alone sets it to `true` so voice/persona options can be auditioned
+without exposing the picker or accepting client-selected variants in production.
+
 Deploy-only:
 
 ```dotenv

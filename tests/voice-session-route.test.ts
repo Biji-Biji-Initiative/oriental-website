@@ -24,6 +24,9 @@ async function json(response: Response) {
     device_profile?: string;
     deployment_environment?: string;
     email_capture_mode?: string;
+    variant?: string | null;
+    voice?: string;
+    speed?: number;
   };
 }
 
@@ -164,5 +167,53 @@ describe("POST /api/voice/session", () => {
     const response = await POST(request({ intent: "technology" }));
 
     expect(await json(response)).toMatchObject({ deployment_environment: "staging" });
+  });
+
+  it("ignores browser voice variants when the runtime picker is disabled", async () => {
+    process.env.VOICE_VARIANT_PICKER = "false";
+    process.env.OPENAI_REALTIME_VOICE = "coral";
+    process.env.OPENAI_REALTIME_SPEED = "1.28";
+    const fetchMock = mockOpenAiFetch();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await POST(request({ intent: "technology", variant: "gen-z-kl" }));
+
+    expect(await json(response)).toMatchObject({ ok: true, variant: null, voice: "coral", speed: 1.28 });
+  });
+
+  it("accepts a catalogued voice variant only when staging enables the picker", async () => {
+    process.env.VOICE_VARIANT_PICKER = "true";
+    process.env.OPENAI_REALTIME_VOICE = "coral";
+    const fetchMock = mockOpenAiFetch();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await POST(
+      request(
+        { intent: "technology", variant: "gen-z-kl" },
+        "203.0.113.10",
+        "https://staging.oriental.mereka.io/api/voice/session",
+      ),
+    );
+
+    expect(await json(response)).toMatchObject({ ok: true, variant: "gen-z-kl", voice: "alloy", speed: 1.3 });
+  });
+
+  it("ignores a picker flag accidentally enabled on production", async () => {
+    process.env.VOICE_VARIANT_PICKER = "true";
+    process.env.APP_ENV = "staging";
+    process.env.OPENAI_REALTIME_VOICE = "coral";
+    process.env.OPENAI_REALTIME_SPEED = "1.28";
+    const fetchMock = mockOpenAiFetch();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await POST(
+      request(
+        { intent: "technology", variant: "gen-z-kl" },
+        "203.0.113.10",
+        "https://oriental.mereka.io/api/voice/session",
+      ),
+    );
+
+    expect(await json(response)).toMatchObject({ ok: true, variant: null, voice: "coral", speed: 1.28 });
   });
 });

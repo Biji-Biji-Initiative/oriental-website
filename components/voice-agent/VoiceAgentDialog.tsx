@@ -15,8 +15,13 @@ import {
   serializeResponseCreate,
   serializeTypedTurn,
 } from "@/lib/voice/client-events";
-import { endConversation, resolveConversationId, touchConversation } from "@/lib/voice/conversation";
-import { recallHandoff, rememberHandoff } from "@/lib/voice/handoff-memory";
+import {
+  endConversation,
+  resolveConversationId,
+  shouldResumeVoiceConversation,
+  touchConversation,
+} from "@/lib/voice/conversation";
+import { forgetHandoff, recallHandoff, rememberHandoff } from "@/lib/voice/handoff-memory";
 import type { VoiceToolName, VoiceToolOutcome } from "@/lib/voice/latency";
 import {
   fetchWithTimeout,
@@ -92,6 +97,7 @@ export function VoiceAgentDialog({
   // Stable across every call/reconnect in one intake; resolved on open so a
   // dropped-and-resumed conversation stitches to a single thread in review.
   const [conversationId, setConversationId] = useState<string>("");
+  const conversationIdRef = useRef("");
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const submittingRef = useRef(false);
   const submittedLeadIdRef = useRef<string | null>(null);
@@ -233,6 +239,7 @@ export function VoiceAgentDialog({
     onEndVoice: () => teardownVoiceRef.current?.("manual"),
     onToolDuration: (sample) => recordToolDurationRef.current?.(sample),
     onCaptureNeedsAttention: (key) => formRef.current?.setFocus(key),
+    onClearFields: forgetHandoff,
   });
   const { segment, captured, emailVerification, transcript, stateRef } = runtime;
 
@@ -318,14 +325,26 @@ export function VoiceAgentDialog({
     // segment come back from local memory; the brief always starts fresh.
     const remembered = recallHandoff();
     // Resume the in-flight conversation if the visitor reopens soon after a
-    // drop; otherwise this starts a fresh thread.
-    setConversationId(resolveConversationId());
-    runtime.reset({
-      segment: intent ?? remembered?.segment ?? "other",
-      email: prefill?.email || remembered?.email,
-      name: remembered?.name,
-      org: remembered?.org,
-    });
+    // drop. A new form/email entry is an explicit fresh handoff, not a reconnect.
+    const explicitFreshHandoff = prefill?.mode === "form" || Boolean(prefill?.email);
+    if (explicitFreshHandoff) endConversation();
+    const nextConversationId = resolveConversationId();
+    const resumesInFlightConversation = shouldResumeVoiceConversation(
+      conversationIdRef.current,
+      nextConversationId,
+      stateRef.current.transcript.length,
+      explicitFreshHandoff,
+    );
+    conversationIdRef.current = nextConversationId;
+    setConversationId(nextConversationId);
+    if (!resumesInFlightConversation) {
+      runtime.reset({
+        segment: intent ?? remembered?.segment ?? "other",
+        email: prefill?.email || remembered?.email,
+        name: remembered?.name,
+        org: remembered?.org,
+      });
+    }
     setStatus("idle");
     setActiveTopicId(null);
     setSubmitting(false);
@@ -341,7 +360,7 @@ export function VoiceAgentDialog({
       const timer = window.setTimeout(() => formRef.current?.setFocus("name"), 80);
       return () => window.clearTimeout(timer);
     }
-  }, [intent, open, prefill, runtime.reset]);
+  }, [intent, open, prefill, runtime.reset, stateRef]);
 
   useEffect(() => {
     if (status === "submitted") teardownVoice("manual");
