@@ -159,7 +159,8 @@ function managedEnvironmentPayload(key: ManagedApplicationEnvironmentKey, value:
     key,
     value,
     is_preview: false,
-    is_literal: false,
+    // Infisical exports concrete values, never Coolify $KEY references.
+    is_literal: true,
     is_multiline: value.includes("\n"),
     is_shown_once: false,
     is_runtime: true,
@@ -177,7 +178,10 @@ async function reconcileManagedApplicationEnvironment(
 ) {
   const path = `applications/${applicationUuid}/envs`;
   const current = await coolifyRequest<CoolifyEnvironmentVariable[]>(baseUrl, token, path);
-  const { expected, mutations } = managedEnvironmentReconciliationPlan(environment, current);
+  const { expected, mutations, failures: planFailures } = managedEnvironmentReconciliationPlan(environment, current);
+  if (planFailures.length > 0) {
+    throw new Error(`Coolify managed application environment: ${planFailures.join("; ")}`);
+  }
   if (mutations.length > 0) await assertCurrentProduction();
   for (const { key, value } of mutations) {
     const matches = current.filter((row) => row.key === key && row.is_preview !== true);

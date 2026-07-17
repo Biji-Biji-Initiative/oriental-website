@@ -78,4 +78,16 @@ describe("Mereka brand motion", () => {
     expect(shouldShowMerekaSiteLoader("/", true, false)).toBe(false);
     expect(shouldShowMerekaSiteLoader("/", false, true)).toBe(false);
   });
+
+  it("fails open when browser storage allows reads but rejects writes", () => {
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("Storage is unavailable", "QuotaExceededError");
+    });
+
+    render(<MerekaSiteLoader />);
+
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(document.documentElement.style.overflow).toBe("");
+    setItem.mockRestore();
+  });
 });

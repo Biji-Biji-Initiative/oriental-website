@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+  type ManagedApplicationEnvironmentKey,
   managedEnvironmentParityFailures,
   managedEnvironmentReconciliationPlan,
 } from "../scripts/lib/managed-app-environment";
@@ -260,17 +261,72 @@ describe("release governance", () => {
     const retiredRow = {
       key: "CLICKUP_API_TOKEN",
       value: "stale-live-secret",
+      real_value: "stale-live-secret",
       is_preview: false,
       is_runtime: true,
       is_buildtime: false,
+      is_literal: true,
+      is_multiline: false,
     };
-    const plan = managedEnvironmentReconciliationPlan({}, [retiredRow]);
+    const retiredKeys = new Set<ManagedApplicationEnvironmentKey>(["CLICKUP_API_TOKEN"]);
+    const plan = managedEnvironmentReconciliationPlan({}, [retiredRow], retiredKeys);
 
     expect(plan.mutations).toContainEqual({ key: "CLICKUP_API_TOKEN", value: "" });
-    expect(managedEnvironmentParityFailures({}, [retiredRow])).toContain(
+    expect(plan.failures).toEqual([]);
+    expect(managedEnvironmentParityFailures({}, [retiredRow], retiredKeys)).toContain(
       "CLICKUP_API_TOKEN retired Coolify value must be empty with the governed runtime/build scope",
     );
-    expect(managedEnvironmentParityFailures({}, [{ ...retiredRow, value: "" }])).toEqual([]);
+    expect(managedEnvironmentParityFailures({}, [{ ...retiredRow, value: "", real_value: "" }], retiredKeys)).toEqual(
+      [],
+    );
+  });
+
+  it("refuses to infer retirement from an incomplete supplied scope before emitting mutations", () => {
+    const liveSecret = {
+      key: "REDIS_URL",
+      value: "redis://live-value",
+      real_value: "redis://live-value",
+      is_preview: false,
+      is_runtime: true,
+      is_buildtime: false,
+      is_literal: true,
+      is_multiline: false,
+    };
+    const plan = managedEnvironmentReconciliationPlan({}, [liveSecret]);
+
+    expect(plan.mutations).toEqual([]);
+    expect(plan.failures).toEqual([
+      "REDIS_URL is live in Coolify but missing from the supplied scope; refusing implicit retirement",
+    ]);
+    expect(productionDeployer.indexOf("if (planFailures.length > 0)")).toBeLessThan(
+      productionDeployer.indexOf("if (mutations.length > 0) await assertCurrentProduction()"),
+    );
+  });
+
+  it("treats Infisical values as concrete literals and rejects expanded runtime drift", () => {
+    const env = { SMTP_PASSWORD: "$OTHER_SECRET" };
+    const expanded = {
+      key: "SMTP_PASSWORD",
+      value: "$OTHER_SECRET",
+      real_value: "unexpected-expanded-value",
+      is_preview: false,
+      is_runtime: true,
+      is_buildtime: false,
+      is_literal: false,
+      is_multiline: false,
+    };
+
+    expect(managedEnvironmentReconciliationPlan(env, [expanded]).mutations).toContainEqual({
+      key: "SMTP_PASSWORD",
+      value: "$OTHER_SECRET",
+    });
+    expect(managedEnvironmentParityFailures(env, [expanded])).toContain(
+      "SMTP_PASSWORD Coolify value or runtime/build scope does not match Infisical",
+    );
+    expect(
+      managedEnvironmentParityFailures(env, [{ ...expanded, real_value: "$OTHER_SECRET", is_literal: true }]),
+    ).toEqual([]);
+    expect(productionDeployer).toContain("is_literal: true");
   });
 
   it("proves Coolify runtime health and loopback health-check ownership after deployment", () => {

@@ -73,6 +73,14 @@ export const MANAGED_RUNTIME_APPLICATION_ENVIRONMENT_KEYS = MANAGED_APPLICATION_
   (key) => !DEPLOY_ONLY_APPLICATION_ENVIRONMENT_KEYS.has(key),
 );
 
+/**
+ * Retirement is a reviewed code change, never inferred from a missing shell
+ * value. Add a key here only in the same release that intentionally removes it
+ * from the native Infisical application scope. Reintroducing a value always
+ * wins over this declaration.
+ */
+export const RETIRED_MANAGED_APPLICATION_ENVIRONMENT_KEYS = new Set<ManagedApplicationEnvironmentKey>();
+
 export type ManagedEnvironmentSnapshotRow = {
   key?: unknown;
   value?: unknown;
@@ -81,6 +89,8 @@ export type ManagedEnvironmentSnapshotRow = {
   is_runtime?: unknown;
   is_buildtime?: unknown;
   is_build_time?: unknown;
+  is_literal?: unknown;
+  is_multiline?: unknown;
 };
 
 export type ManagedEnvironmentMutation = {
@@ -108,10 +118,13 @@ function managedEnvironmentRowMatches(
   value: string,
 ) {
   const buildTime = isManagedBuildTimeEnvironmentKey(key);
+  const effectiveValue = typeof row.real_value === "string" ? row.real_value : row.value;
   return (
-    (row.value === value || row.real_value === value) &&
+    effectiveValue === value &&
     row.is_runtime === true &&
-    (row.is_buildtime === true || row.is_build_time === true) === buildTime
+    (row.is_buildtime === true || row.is_build_time === true) === buildTime &&
+    row.is_literal === true &&
+    row.is_multiline === value.includes("\n")
   );
 }
 
@@ -124,9 +137,11 @@ function managedEnvironmentRowMatches(
 export function managedEnvironmentReconciliationPlan(
   env: Readonly<Record<string, string | undefined>>,
   rows: ManagedEnvironmentSnapshotRow[],
+  retiredKeys: ReadonlySet<ManagedApplicationEnvironmentKey> = RETIRED_MANAGED_APPLICATION_ENVIRONMENT_KEYS,
 ) {
   const expected = managedRuntimeEnvironmentFromEnv(env);
   const mutations: ManagedEnvironmentMutation[] = [];
+  const failures: string[] = [];
   for (const key of MANAGED_RUNTIME_APPLICATION_ENVIRONMENT_KEYS) {
     const value = expected.get(key);
     const matches = rows.filter((row) => row.key === key && row.is_preview !== true);
@@ -137,19 +152,25 @@ export function managedEnvironmentReconciliationPlan(
       continue;
     }
     if (
-      matches.length > 0 &&
-      (matches.length !== 1 || !matches[0] || !managedEnvironmentRowMatches(matches[0], key, ""))
+      matches.length === 0 ||
+      (matches.length === 1 && matches[0] && managedEnvironmentRowMatches(matches[0], key, ""))
     ) {
+      continue;
+    }
+    if (retiredKeys.has(key)) {
       mutations.push({ key, value: "" });
+    } else {
+      failures.push(`${key} is live in Coolify but missing from the supplied scope; refusing implicit retirement`);
     }
   }
-  return { expected, mutations };
+  return { expected, mutations, failures };
 }
 
 /** Exact post-write parity, including proof that retired values are absent or empty. */
 export function managedEnvironmentParityFailures(
   env: Readonly<Record<string, string | undefined>>,
   rows: ManagedEnvironmentSnapshotRow[],
+  retiredKeys: ReadonlySet<ManagedApplicationEnvironmentKey> = RETIRED_MANAGED_APPLICATION_ENVIRONMENT_KEYS,
 ) {
   const expected = managedRuntimeEnvironmentFromEnv(env);
   const failures: string[] = [];
@@ -166,7 +187,9 @@ export function managedEnvironmentParityFailures(
     if (!matches[0] || !managedEnvironmentRowMatches(matches[0], key, value ?? "")) {
       failures.push(
         value === undefined
-          ? `${key} retired Coolify value must be empty with the governed runtime/build scope`
+          ? retiredKeys.has(key)
+            ? `${key} retired Coolify value must be empty with the governed runtime/build scope`
+            : `${key} is live in Coolify but missing from the supplied scope; refusing implicit retirement`
           : `${key} Coolify value or runtime/build scope does not match Infisical`,
       );
     }

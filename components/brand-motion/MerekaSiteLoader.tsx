@@ -28,7 +28,12 @@ export function MerekaSiteLoader() {
     const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
     if (!shouldShowMerekaSiteLoader(window.location.pathname, alreadySeen, reducedMotion)) return;
 
-    window.sessionStorage.setItem(merekaLoaderSessionKey, "true");
+    try {
+      window.sessionStorage.setItem(merekaLoaderSessionKey, "true");
+    } catch {
+      // A quota/privacy write failure is not allowed to break page hydration.
+      return;
+    }
     setPhase("visible");
     const leaveTimer = window.setTimeout(() => setPhase("leaving"), MEREKA_LOADER_HOLD_MS);
     const hideTimer = window.setTimeout(() => setPhase("hidden"), MEREKA_LOADER_HOLD_MS + MEREKA_LOADER_EXIT_MS);

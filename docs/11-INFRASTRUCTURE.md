@@ -113,7 +113,11 @@ deployer streams the complete native staging export through encrypted stdin and
 atomically merges managed keys into the host `.env`. The production deployer
 creates or updates every approved runtime entry, enables `NEXT_PUBLIC_*` values
 at build time as well, and reads back exact value/scope parity before it may
-change the release SHA. Its Coolify token needs scoped `read:sensitive`,
+change the release SHA. An absent injected value is never implicit retirement:
+the deployer stops before writes unless that key is already empty/absent or is
+listed in the code-reviewed `RETIRED_MANAGED_APPLICATION_ENVIRONMENT_KEYS` set.
+Infisical exports are materialized as Coolify literal values, so `$...` inside a
+concrete secret cannot be expanded a second time. Its Coolify token needs scoped `read:sensitive`,
 `write`, and `deploy` permissions; values are never written to process arguments
 or logs.
 

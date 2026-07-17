@@ -175,6 +175,9 @@ before any deployment. For runtime work:
    Chromium. The deployers must first reconcile and read back the complete
    approved Infisical scope; production additionally proves Coolify
    `running:healthy` with health ownership on `127.0.0.1`.
+   Production never infers retirement from an absent process value: a removed
+   managed key must be declared in the reviewed
+   `RETIRED_MANAGED_APPLICATION_ENVIRONMENT_KEYS` set before it may be cleared.
 
 Do not force an application rebuild for a docs/operator-only commit with no
 runtime impact. Do not create late cleanup PRs after the final-SHA freeze; if a

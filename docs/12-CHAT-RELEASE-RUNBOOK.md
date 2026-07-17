@@ -50,7 +50,11 @@ cannot affect the runtime image.
   key from the native production application scope before changing the frozen
   SHA, explicitly clear values retired from Infisical, and re-read the
   `running:healthy` expected-current Coolify SHA immediately before every first
-  mutation boundary. `NEXT_PUBLIC_*` keys are also build-time values. The Coolify credential
+  mutation boundary. Retirement requires a code-reviewed entry in
+  `RETIRED_MANAGED_APPLICATION_ENVIRONMENT_KEYS`; missing injection never
+  authorizes clearing a live value. Concrete Infisical values are written as
+  Coolify literals and their effective value plus multiline/runtime/build scope
+  is read back exactly. `NEXT_PUBLIC_*` keys are also build-time values. The Coolify credential
   therefore needs scoped `read:sensitive`, `write`, and `deploy` access; values
   are never written to process arguments or logs.
 - Production voice MUST remain `baseline/control/low/adaptive`. A staging-only
