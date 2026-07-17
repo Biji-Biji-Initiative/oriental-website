@@ -1,0 +1,27 @@
+name: oriental-aggregate-voice-audit
+description: Adversarial privacy review of query-only aggregate voice evidence
+
+documents:
+  readme: scripts/eval-voice.ts
+  spec: .apr/specs/oriental-aggregate-voice-audit.md
+  implementation: scripts/lib/voice-eval-audit.ts
+
+oracle:
+  model: "gemini-3.1-pro"
+
+rounds:
+  output_dir: .apr/rounds/oriental-aggregate-voice-audit
+  impl_every_n: 1
+
+template: |
+  Review this operator contract for every path that could write, invoke a judge,
+  mutate Convex, emit non-JSON stdout, or expose transcript/contact/session data.
+  Treat any such path as a blocker. End with exactly `VERDICT: SHIP` or
+  `VERDICT: DO NOT SHIP`.
+
+template_with_impl: |
+  Review the attached evaluator entrypoint and aggregate-report builder against
+  the contract. Look adversarially for control-flow leaks, hidden identifier
+  fields, conflicting flags, empty-corpus behavior, and regressions to the
+  detailed evaluator. Treat any privacy or write-boundary ambiguity as a
+  blocker. End with exactly `VERDICT: SHIP` or `VERDICT: DO NOT SHIP`.
