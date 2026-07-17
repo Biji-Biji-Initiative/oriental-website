@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckIcon } from "lucide-react";
+import { ArchiveIcon, CheckIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   ADMIN_LEAD_OWNERS,
   ADMIN_LEAD_PRIORITIES,
-  ADMIN_LEAD_STATUSES,
+  ADMIN_WORKFLOW_LEAD_STATUSES,
   type AdminLeadPriority,
   type AdminLeadStatus,
   adminLeadPriorityLabels,
@@ -117,6 +117,25 @@ export function AdminLeadWorkflowForm({
     });
   }
 
+  if (status === "archived") {
+    return (
+      <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.04] p-4" data-admin-workflow-locked>
+        <div className="flex items-start gap-3">
+          <span className="mt-0.5 rounded-lg bg-white/[0.06] p-2 text-slate-400">
+            <ArchiveIcon className="size-4" />
+          </span>
+          <div>
+            <p className="font-semibold">Archived record</p>
+            <p className="mt-1 text-sm leading-6 text-slate-400">
+              Workflow editing is locked while this enquiry is archived. Use Restore record to return it to its prior
+              pipeline stage without losing archive history.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <form
       className="mt-4 grid gap-4 rounded-xl border border-white/10 bg-white/[0.04] p-4"
@@ -131,7 +150,7 @@ export function AdminLeadWorkflowForm({
             value={status}
             onChange={(event) => setStatus(event.target.value as AdminLeadStatus)}
           >
-            {ADMIN_LEAD_STATUSES.map((value) => (
+            {ADMIN_WORKFLOW_LEAD_STATUSES.map((value) => (
               <option key={value} value={value}>
                 {adminLeadStatusLabels[value]}
               </option>

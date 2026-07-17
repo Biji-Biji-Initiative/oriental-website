@@ -296,6 +296,39 @@ test("voice prewarms on page load for returning microphone permission without Tu
   expect(JSON.stringify(voiceSessionBodies[0])).not.toContain("turnstile");
 });
 
+test("ending a consumed prewarm does not mint an unused replacement", async ({ page, context, baseURL }) => {
+  let voiceSessionMints = 0;
+  await context.grantPermissions(["microphone"], { origin: baseURL ?? "http://localhost:3000" });
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: async () => new MediaStream(),
+      },
+    });
+  });
+  page.on("request", (request) => {
+    if (request.url().includes("/api/voice/session")) voiceSessionMints += 1;
+  });
+  await page.route("https://api.openai.com/v1/realtime/calls", async (route) => {
+    await route.fulfill({
+      status: 429,
+      contentType: "application/json",
+      headers: { "Access-Control-Allow-Origin": "*" },
+      body: JSON.stringify({ error: { code: "insufficient_quota", type: "insufficient_quota" } }),
+    });
+  });
+
+  await page.goto("/");
+  await expect.poll(() => voiceSessionMints).toBe(1);
+  await page.locator('header button[aria-label="Talk to Mereka"]').click();
+  await page.getByRole("button", { name: "Start voice with Reka" }).click();
+  await expect(page.getByText("Live voice is temporarily unavailable.")).toBeVisible();
+
+  await page.waitForTimeout(750);
+  expect(voiceSessionMints).toBe(1);
+});
+
 test("talk CTA opens the partner dialog without requesting the microphone", async ({ page, isMobile }) => {
   await page.addInitScript(() => {
     const state = window as typeof window & { __voiceGetUserMediaCalled?: boolean };

@@ -23,6 +23,31 @@ test.describe("admin session review console", () => {
     await expect(page.getByRole("heading", { name: "Enquiry CRM" })).toBeVisible();
   });
 
+  test("uses the real root-scoped login cookie for protected admin mutations", async ({ context, page }) => {
+    await context.clearCookies();
+    const login = await context.request.post("/api/admin/login", {
+      data: { token: adminPassword },
+    });
+    expect(login.status()).toBe(200);
+
+    const cookie = (await context.cookies()).find(({ name }) => name === adminCookieName);
+    expect(cookie?.httpOnly).toBe(true);
+    expect(cookie?.path).toBe("/");
+    expect(cookie?.sameSite).toBe("Lax");
+
+    const protectedMutation = await context.request.patch("/api/admin/leads/lead-cookie-proof", {
+      data: { status: "archived" },
+    });
+    expect(protectedMutation.status()).toBe(400);
+    await expect(protectedMutation.json()).resolves.toMatchObject({
+      ok: false,
+      error: "invalid_payload",
+    });
+
+    await page.goto("/admin/session-review?view=leads");
+    await expect(page.getByRole("heading", { name: "Enquiry CRM" })).toBeVisible();
+  });
+
   test("turns the default overview into an executive enquiry command center", async ({ page }, testInfo) => {
     const command = page.locator("[data-command-center]");
     await expect(
@@ -102,6 +127,38 @@ test.describe("admin session review console", () => {
     await expect(accountHistory.getByText("Daniel Lim")).toBeVisible();
   });
 
+  test("keeps the canonical total stable while shadcn filters change visible rows", async ({ page }) => {
+    await page.goto("/admin/session-review?view=leads");
+    const workspace = page.locator("[data-admin-enquiry-table]");
+
+    await expect(workspace.getByText("3 canonical", { exact: true })).toBeVisible();
+    await workspace.getByLabel("Owner").click();
+    await page.locator('[role="listbox"]:visible').getByRole("option", { name: "Unassigned", exact: true }).click();
+
+    await expect(workspace.getByText("1 visible", { exact: true })).toBeVisible();
+    await expect(workspace.getByText("3 canonical", { exact: true })).toBeVisible();
+    await expect(workspace.getByText("Aisha Rahman").filter({ visible: true }).first()).toBeVisible();
+  });
+
+  test("opens shadcn column and row action menus without leaving the CRM", async ({ page }, testInfo) => {
+    await page.goto("/admin/session-review?view=leads");
+    const workspace = page.locator("[data-admin-enquiry-table]");
+
+    await workspace.getByRole("button", { name: "Choose visible columns" }).click();
+    await expect(page.getByText("Visible columns", { exact: true })).toBeVisible();
+    await expect(page.getByText("Source and route", { exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    const row = workspace.locator(
+      `${testInfo.project.name === "mobile" ? "article" : "[data-crm-table] tr"}[data-lead-id="lead-critical-1"]`,
+    );
+    await row.getByRole("button", { name: "Actions for Aisha Rahman" }).click();
+    await expect(page.getByText("Record actions", { exact: true })).toBeVisible();
+    await page.getByText("Edit workflow", { exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Edit enquiry workflow" })).toBeVisible();
+    await expect(page.getByText("This page couldn’t load")).toHaveCount(0);
+  });
+
   test("shows account portfolio and owner workload as CRM tables", async ({ page }, testInfo) => {
     await page.goto("/admin/session-review?view=leads");
     await expect(page.getByRole("heading", { name: "Account portfolio & ownership" })).toBeVisible();
@@ -163,18 +220,44 @@ test.describe("admin session review console", () => {
     await expect(workflow.getByText(/Revision 0.*every saved change is attributed/i)).toBeVisible();
   });
 
-  test("offers atomic bulk assignment for the visible active queue", async ({ page }) => {
+  test("offers atomic bulk assignment for the visible active queue", async ({ page }, testInfo) => {
     await page.goto("/admin/session-review?view=leads");
-    const bulk = page.locator("[data-bulk-assignment]");
-    await bulk.locator(":scope > summary").click();
+    const workspace = page.locator("[data-admin-enquiry-table]");
+    const row = workspace.locator(
+      `${testInfo.project.name === "mobile" ? "article" : "[data-crm-table] tr"}[data-lead-id="lead-critical-1"]`,
+    );
+    await row.getByRole("checkbox", { name: "Select Aisha Rahman" }).click();
 
-    await expect(bulk.getByRole("checkbox")).toHaveCount(2);
-    await expect(bulk.getByLabel("Owner")).toBeVisible();
-    await expect(bulk.getByLabel("Shared next action")).toBeVisible();
-    await expect(bulk.getByLabel("Due")).toBeVisible();
-    await expect(bulk.getByLabel("Reason for assignment")).toBeVisible();
-    await expect(bulk.getByText(/batch is atomic/i)).toBeVisible();
-    await expect(bulk.getByRole("button", { name: "Assign selected" })).toBeDisabled();
+    await expect(workspace.getByText("1 selected", { exact: true })).toBeVisible();
+    await workspace.getByRole("button", { name: "Assign selected" }).click();
+
+    const dialog = page.getByRole("dialog", { name: "Assign selected enquiries" });
+    await expect(dialog.getByLabel("Owner")).toBeVisible();
+    await expect(dialog.getByLabel("Shared next action")).toBeVisible();
+    await expect(dialog.getByLabel("Due")).toBeVisible();
+    await expect(dialog.getByLabel("Reason for assignment")).toBeVisible();
+    await expect(dialog.getByText(/all-or-nothing/i)).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Assign 1" })).toBeDisabled();
+  });
+
+  test("offers reversible archive without a hard-delete path", async ({ page }, testInfo) => {
+    await page.goto("/admin/session-review?view=leads");
+    const workspace = page.locator("[data-admin-enquiry-table]");
+    await expect(workspace.getByLabel("Search enquiries")).toBeVisible();
+    await expect(workspace.getByLabel("Status")).toBeVisible();
+    await expect(workspace.getByRole("button", { name: "Choose visible columns" })).toBeVisible();
+
+    const row = workspace.locator(
+      `${testInfo.project.name === "mobile" ? "article" : "tr"}[data-lead-id="lead-critical-1"]`,
+    );
+    await row.getByRole("checkbox", { name: "Select Aisha Rahman" }).click();
+    await workspace.getByRole("button", { name: "Archive 1" }).click();
+
+    const dialog = page.getByRole("dialog", { name: "Archive enquiries" });
+    await expect(dialog.getByText(/no customer, transcript, delivery, or audit data is deleted/i)).toBeVisible();
+    await expect(dialog.getByLabel("Reason")).toBeVisible();
+    await expect(dialog.getByText(/atomic action.*revision checked/i)).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Archive records" })).toBeDisabled();
   });
 
   test("renders the operator queues without horizontal overflow", async ({ page }) => {

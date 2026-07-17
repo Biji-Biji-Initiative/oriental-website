@@ -303,27 +303,62 @@ async function assertResponsiveDialog(page: Page) {
   ];
   for (const viewport of viewports) {
     await page.setViewportSize(viewport);
-    const fit = await page.locator('[data-slot="dialog-content"]').evaluate((dialog) => {
-      const rect = dialog.getBoundingClientRect();
-      const close = dialog.querySelector<HTMLElement>('[data-slot="dialog-close"]')?.getBoundingClientRect();
-      return {
-        dialogFits:
-          rect.left >= -1 &&
-          rect.top >= -1 &&
-          rect.right <= window.innerWidth + 1 &&
-          rect.bottom <= window.innerHeight + 1,
-        closeFits: Boolean(
-          close &&
-            close.left >= rect.left &&
-            close.top >= rect.top &&
-            close.right <= rect.right &&
-            close.bottom <= rect.bottom,
-        ),
-        noPageOverflow: document.documentElement.scrollWidth <= window.innerWidth,
-      };
-    });
-    if (!fit.dialogFits || !fit.closeFits || !fit.noPageOverflow) {
-      throw new Error(`Voice dialog does not fit ${viewport.width}x${viewport.height}: ${JSON.stringify(fit)}`);
+    try {
+      await page.waitForFunction(
+        () => {
+          const dialog = document.querySelector<HTMLElement>('[data-slot="dialog-content"]');
+          if (!dialog) return false;
+          const rect = dialog.getBoundingClientRect();
+          const close = dialog.querySelector<HTMLElement>('[data-slot="dialog-close"]')?.getBoundingClientRect();
+          return (
+            rect.left >= -1 &&
+            rect.top >= -1 &&
+            rect.right <= window.innerWidth + 1 &&
+            rect.bottom <= window.innerHeight + 1 &&
+            Boolean(
+              close &&
+                close.left >= rect.left &&
+                close.top >= rect.top &&
+                close.right <= rect.right &&
+                close.bottom <= rect.bottom,
+            ) &&
+            document.documentElement.scrollWidth <= window.innerWidth
+          );
+        },
+        undefined,
+        { timeout: 2_000 },
+      );
+    } catch {
+      const geometry = await page.locator('[data-slot="dialog-content"]').evaluate((dialog) => {
+        const rect = dialog.getBoundingClientRect();
+        const close = dialog.querySelector<HTMLElement>('[data-slot="dialog-close"]')?.getBoundingClientRect();
+        const style = getComputedStyle(dialog);
+        return {
+          viewport: { width: window.innerWidth, height: window.innerHeight },
+          dialog: {
+            left: rect.left,
+            top: rect.top,
+            right: rect.right,
+            bottom: rect.bottom,
+            width: rect.width,
+            height: rect.height,
+          },
+          close: close
+            ? {
+                left: close.left,
+                top: close.top,
+                right: close.right,
+                bottom: close.bottom,
+              }
+            : null,
+          animation: style.animation,
+          transition: style.transition,
+          documentScrollWidth: document.documentElement.scrollWidth,
+        };
+      });
+      throw new Error(
+        `Voice dialog did not settle within ${viewport.width}x${viewport.height}: ${JSON.stringify(geometry)}`,
+      );
     }
   }
 

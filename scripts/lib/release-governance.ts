@@ -14,6 +14,10 @@ export const STAGING_CANDIDATE_VOICE_CELL = {
 
 export type GovernedVoiceCell = typeof CONTROL_VOICE_CELL | typeof STAGING_CANDIDATE_VOICE_CELL;
 
+export type HealthPayloadValidationOptions = {
+  allowMissingEmailCaptureMode?: boolean;
+};
+
 export function governedVoiceCell(modelCell: GovernedVoiceCell["modelCell"]): GovernedVoiceCell {
   return modelCell === "candidate" ? STAGING_CANDIDATE_VOICE_CELL : CONTROL_VOICE_CELL;
 }
@@ -95,6 +99,7 @@ export function validateHealthPayload(
   payload: unknown,
   expectedSha: string,
   expected: GovernedVoiceCell = CONTROL_VOICE_CELL,
+  options: HealthPayloadValidationOptions = {},
 ): string[] {
   if (!payload || typeof payload !== "object") return ["health response must be an object"];
   const health = payload as Record<string, unknown>;
@@ -116,7 +121,9 @@ export function validateHealthPayload(
     if (voice.reasoning_cell !== expected.reasoningCell) {
       failures.push(`health voice reasoning_cell must be ${expected.reasoningCell}`);
     }
-    if (voice.email_capture_mode !== expected.emailCaptureMode) {
+    const missingLegacyEmailCaptureMode =
+      options.allowMissingEmailCaptureMode === true && voice.email_capture_mode === undefined;
+    if (voice.email_capture_mode !== expected.emailCaptureMode && !missingLegacyEmailCaptureMode) {
       failures.push(`health voice email_capture_mode must be ${expected.emailCaptureMode}`);
     }
     if (voice.variant_picker !== false) failures.push("health voice variant_picker must be false");

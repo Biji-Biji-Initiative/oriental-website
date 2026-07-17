@@ -45,7 +45,7 @@ export async function PATCH(request: Request, context: RouteContext<"/api/admin/
         ? 404
         : result.reason === "conflict"
           ? 409
-          : result.reason === "invalid_workflow"
+          : result.reason === "invalid_workflow" || result.reason === "archive_boundary"
             ? 400
             : 503;
     return noStoreJson(

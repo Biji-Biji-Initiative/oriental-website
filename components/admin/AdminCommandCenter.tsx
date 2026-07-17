@@ -69,7 +69,7 @@ export function AdminCommandCenter({
                   {highest.lead.name || highest.lead.email} · {highest.lead.org || "Organisation not captured"}
                 </p>
                 <Link
-                  className="mt-4 inline-flex h-10 items-center rounded-lg bg-slate-100 px-4 text-sm font-semibold text-slate-900 transition hover:bg-white hover:shadow-[0_0_24px_-6px_rgba(255,255,255,0.5)]"
+                  className="mt-4 inline-flex h-10 items-center rounded-lg bg-slate-100 px-4 text-sm font-semibold text-slate-900 transition hover:bg-white/[0.06] hover:shadow-[0_0_24px_-6px_rgba(255,255,255,0.5)]"
                   href={recordHref(highest.lead.leadId)}
                 >
                   Open highest-priority record <ArrowRightIcon className="ml-2 size-4" />

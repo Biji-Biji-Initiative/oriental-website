@@ -11,11 +11,14 @@ import {
   validateReleaseSha,
   validateReleaseStaticContracts,
 } from "../scripts/lib/release-governance";
+import { releaseTestEnv } from "../scripts/lib/release-test-env";
 
 const sha = "bb8e2673e5f129f342fba78f3eb653a54de8763b";
 const releasePreflight = readFileSync("scripts/release-preflight.ts", "utf8");
 const releaseVerifier = readFileSync("scripts/release-verify.ts", "utf8");
+const productionDeployer = readFileSync("scripts/deploy-coolify-production.ts", "utf8");
 const stagingVoiceSmoke = readFileSync("scripts/smoke-staging-voice.ts", "utf8");
+const packageScripts = JSON.parse(readFileSync("package.json", "utf8")) as { scripts: Record<string, string> };
 
 describe("release governance", () => {
   it("pins canonical and compatibility-only hostnames", () => {
@@ -78,6 +81,26 @@ describe("release governance", () => {
     expect(releasePreflight).toContain('--allow-unmanaged"');
   });
 
+  it("scrubs managed application secrets and production mode before preflight tests", () => {
+    expect(
+      releaseTestEnv({
+        HOME: "/tmp/home",
+        PATH: "/tmp/bin",
+        NODE_ENV: "production",
+        NODE_OPTIONS: "--experimental-webstorage --require=/tmp/unsafe.js",
+        OPENAI_API_KEY: "live-key",
+        SLACK_BOT_TOKEN: "live-token",
+        TEAM_LEAD_EMAIL: "live@example.com",
+      }),
+    ).toEqual({
+      HOME: "/tmp/home",
+      PATH: "/tmp/bin",
+      NODE_ENV: "test",
+      NODE_OPTIONS: "--no-experimental-webstorage",
+    });
+    expect(packageScripts.scripts["release:preflight"]).toContain("tsx scripts/run-release-tests.ts");
+  });
+
   it("provides a fast executable Infisical voice-cell parity check", () => {
     const command = ["exec", "tsx", "scripts/release-preflight.ts", "--voice-cell-only"];
     const valid = spawnSync("pnpm", command, {
@@ -122,11 +145,32 @@ describe("release governance", () => {
       },
     });
     expect(candidate.status, candidate.stderr).toBe(0);
-  });
+  }, 20_000);
 
   it("expands the both alias before target lookup", () => {
     expect(releaseVerifier).toContain('args.target === "both" ? ["staging", "production"] : [args.target]');
     expect(releaseVerifier).toContain('name === "staging" ? governedVoiceCell(stagingModelCell) : CONTROL_VOICE_CELL');
+  });
+
+  it("validates the staging promotion boundary against the candidate voice cell", () => {
+    expect(productionDeployer).toContain(
+      'readPublicHealth(RELEASE_TARGETS.staging.origin, args.sha, "staging candidate", STAGING_CANDIDATE_VOICE_CELL)',
+    );
+    expect(productionDeployer).toContain('"current production",\n    CONTROL_VOICE_CELL');
+    expect(productionDeployer).toContain(
+      'readPublicHealth(RELEASE_TARGETS.production.origin, args.sha, "new production", CONTROL_VOICE_CELL)',
+    );
+    expect(productionDeployer).toContain(
+      "validateHealthPayload(payload, expectedSha, expectedVoiceCell, validationOptions)",
+    );
+  });
+
+  it("uses the documented Coolify deployment trigger and validates its response identity", () => {
+    expect(productionDeployer).toMatch(
+      /const started = await coolifyRequest<unknown>\(\s*baseUrl,\s*token,\s*`deploy\?uuid=\$\{encodeURIComponent\(applicationUuid\)\}&force=false`,\s*\);/,
+    );
+    expect(productionDeployer).toContain("deploymentUuidFromDeployResponse(started, applicationUuid)");
+    expect(productionDeployer).not.toContain("/start?");
   });
 
   it("pins the staging voice smoke to the governed candidate instead of public health", () => {
@@ -177,6 +221,36 @@ describe("release governance", () => {
       ),
     ).toEqual([]);
     expect(validateHealthPayload({ ok: true, version: "wrong", convex: false }, sha)).toHaveLength(3);
+  });
+
+  it("allows only current-production migration checks to bridge the legacy missing email mode", () => {
+    const legacyHealth = {
+      ok: true,
+      version: sha,
+      convex: true,
+      voice: {
+        runtime_profile: "baseline",
+        model_cell: "control",
+        model: "gpt-realtime-2",
+        reasoning_cell: "low",
+        variant_picker: false,
+      },
+    };
+    expect(validateHealthPayload(legacyHealth, sha)).toEqual(["health voice email_capture_mode must be adaptive"]);
+    expect(
+      validateHealthPayload(legacyHealth, sha, CONTROL_VOICE_CELL, { allowMissingEmailCaptureMode: true }),
+    ).toEqual([]);
+    expect(
+      validateHealthPayload(
+        { ...legacyHealth, voice: { ...legacyHealth.voice, email_capture_mode: "strict" } },
+        sha,
+        CONTROL_VOICE_CELL,
+        { allowMissingEmailCaptureMode: true },
+      ),
+    ).toEqual(["health voice email_capture_mode must be adaptive"]);
+    expect(productionDeployer).toContain(
+      '"current production",\n    CONTROL_VOICE_CELL,\n    { allowMissingEmailCaptureMode: true }',
+    );
   });
 
   it("rejects Cloudflare edge response markers", () => {

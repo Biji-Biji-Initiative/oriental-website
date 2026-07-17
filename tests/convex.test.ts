@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  archiveAdminLeads,
   bulkAssignAdminLeads,
+  getAdminLeadTable,
   getAdminReviewDashboard,
   getAdminVoiceSession,
   persistLead,
@@ -30,6 +32,9 @@ vi.mock("convex/browser", () => ({
 vi.mock("@/convex/_generated/api", () => ({
   api: {
     leads: {
+      adminLeadCounts: "adminLeadCounts",
+      adminLeadTable: "adminLeadTable",
+      archiveLeads: "archiveLeads",
       createLead: "createLead",
       bulkAssignLeads: "bulkAssignLeads",
       recordLeadNotification: "recordLeadNotification",
@@ -183,6 +188,89 @@ describe("persistLead", () => {
       reason: "Morning intake allocation",
       actor: "Gurpreet",
       requestId: "request_bulk_1",
+    });
+  });
+
+  it("applies atomic reversible archives through Convex", async () => {
+    mocks.mutation.mockResolvedValue({ ok: true, count: 2 });
+
+    await expect(
+      archiveAdminLeads(
+        {
+          action: "archive",
+          leads: [
+            { leadId: "lead_1", expectedRevision: 1 },
+            { leadId: "lead_2", expectedRevision: 4 },
+          ],
+          reason: "Duplicate submissions",
+        },
+        { actor: "Nadia", requestId: "request_archive_1" },
+      ),
+    ).resolves.toEqual({ ok: true, count: 2 });
+
+    expect(mocks.mutation).toHaveBeenCalledWith("archiveLeads", {
+      ingestSecret: "ingest-secret",
+      action: "archive",
+      leads: [
+        { leadId: "lead_1", expectedRevision: 1 },
+        { leadId: "lead_2", expectedRevision: 4 },
+      ],
+      reason: "Duplicate submissions",
+      actor: "Nadia",
+      requestId: "request_archive_1",
+    });
+  });
+});
+
+describe("getAdminLeadTable", () => {
+  beforeEach(() => {
+    process.env = {
+      ...originalEnv,
+      CONVEX_URL: "https://convex.example",
+      CONVEX_INGEST_SECRET: "ingest-secret",
+    };
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+    vi.clearAllMocks();
+  });
+
+  it("keeps canonical totals exact when the corpus is larger than the bounded row window", async () => {
+    const rows = [{ leadId: "lead_1" }, { leadId: "lead_2" }];
+    const counts = {
+      total: 720,
+      active: 611,
+      archived: 40,
+      qualified: 69,
+      unassignedActive: 83,
+      highPriorityActive: 27,
+      clickUpGaps: 14,
+      newToday: 9,
+    };
+    mocks.query.mockImplementation((query) => Promise.resolve(query === "adminLeadTable" ? rows : counts));
+
+    await expect(getAdminLeadTable(500)).resolves.toEqual({ ok: true, leads: rows, counts });
+    expect(mocks.query).toHaveBeenCalledWith("adminLeadTable", {
+      ingestSecret: "ingest-secret",
+      limit: 500,
+    });
+    expect(mocks.query).toHaveBeenCalledWith("adminLeadCounts", {
+      ingestSecret: "ingest-secret",
+    });
+  });
+
+  it("caps oversized lead table requests without capping the count query", async () => {
+    mocks.query.mockImplementation((query) => Promise.resolve(query === "adminLeadTable" ? [] : { total: 2_400 }));
+
+    await getAdminLeadTable(10_000);
+
+    expect(mocks.query).toHaveBeenCalledWith("adminLeadTable", {
+      ingestSecret: "ingest-secret",
+      limit: 1000,
+    });
+    expect(mocks.query).toHaveBeenCalledWith("adminLeadCounts", {
+      ingestSecret: "ingest-secret",
     });
   });
 });

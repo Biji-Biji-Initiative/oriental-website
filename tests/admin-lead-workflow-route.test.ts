@@ -62,6 +62,27 @@ describe("admin lead workflow route", () => {
     expect(updateWorkflowMock).not.toHaveBeenCalled();
   });
 
+  it("rejects active-to-archived transitions before calling the workflow mutation", async () => {
+    const response = await PATCH(workflowRequest({ status: "archived" }), {
+      params: Promise.resolve({ leadId: "lead_123" }),
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ ok: false, error: "invalid_payload" });
+    expect(updateWorkflowMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects archived-to-active transitions at the atomic data boundary", async () => {
+    updateWorkflowMock.mockResolvedValue({ ok: false, reason: "archive_boundary" });
+
+    const response = await PATCH(workflowRequest({ status: "reviewing" }), {
+      params: Promise.resolve({ leadId: "archived_lead" }),
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ ok: false, error: "archive_boundary" });
+  });
+
   it("returns a conflict instead of overwriting a newer revision", async () => {
     updateWorkflowMock.mockResolvedValue({ ok: false, reason: "conflict", currentRevision: 4 });
 
@@ -84,7 +105,13 @@ describe("admin lead workflow route", () => {
   });
 });
 
-function workflowRequest({ token = "admin-review-token-123456789" }: { token?: string | null }) {
+function workflowRequest({
+  status = "reviewing",
+  token = "admin-review-token-123456789",
+}: {
+  status?: string;
+  token?: string | null;
+}) {
   return new Request("http://localhost/api/admin/leads/lead_123", {
     method: "PATCH",
     headers: {
@@ -92,7 +119,7 @@ function workflowRequest({ token = "admin-review-token-123456789" }: { token?: s
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      status: "reviewing",
+      status,
       priority: "high",
       owner: "Gurpreet",
       note: "Call back after site walk.",

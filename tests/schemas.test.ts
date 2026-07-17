@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  adminLeadArchiveSchema,
   adminLeadBulkAssignmentSchema,
   adminLeadWorkflowSchema,
   adminLoginSchema,
@@ -163,16 +164,31 @@ describe("admin lead workflow schema", () => {
     }
   });
 
-  it("requires an outcome reason when closing an enquiry", () => {
+  it("rejects archive transitions from the ordinary workflow endpoint", () => {
+    expect(
+      adminLeadWorkflowSchema.safeParse({
+        status: "archived",
+        priority: "normal",
+        owner: "Gurpreet",
+        nextActionAt: null,
+        nextActionNote: "",
+        outcomeReason: "Duplicate",
+        expectedRevision: 2,
+        reason: "Close duplicate",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("requires an outcome reason when qualifying an enquiry", () => {
     const parsed = adminLeadWorkflowSchema.safeParse({
-      status: "archived",
+      status: "qualified",
       priority: "normal",
       owner: "Gurpreet",
       nextActionAt: null,
       nextActionNote: "",
       outcomeReason: "",
       expectedRevision: 2,
-      reason: "Close duplicate",
+      reason: "Qualified after review",
     });
 
     expect(parsed.success).toBe(false);
@@ -181,6 +197,38 @@ describe("admin lead workflow schema", () => {
         "Qualified and archived enquiries need an outcome reason.",
       );
     }
+  });
+});
+
+describe("admin lead archive schema", () => {
+  it("accepts a revision-checked restore with an audit reason", () => {
+    expect(
+      adminLeadArchiveSchema.safeParse({
+        action: "restore",
+        leads: [
+          { leadId: "lead_1", expectedRevision: 2 },
+          { leadId: "lead_2", expectedRevision: 7 },
+        ],
+        reason: "New customer context received",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects duplicate records and missing reasons", () => {
+    const duplicateLeads = [
+      { leadId: "lead_1", expectedRevision: 2 },
+      { leadId: "lead_1", expectedRevision: 2 },
+    ];
+    expect(
+      adminLeadArchiveSchema.safeParse({ action: "archive", leads: duplicateLeads, reason: "Duplicate" }).success,
+    ).toBe(false);
+    expect(
+      adminLeadArchiveSchema.safeParse({
+        action: "archive",
+        leads: [{ leadId: "lead_1", expectedRevision: 2 }],
+        reason: "",
+      }).success,
+    ).toBe(false);
   });
 });
 

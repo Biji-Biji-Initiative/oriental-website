@@ -132,14 +132,18 @@ dimension, and prove the exact staged commit before promotion.
   only when it passes syntax validation, the model's evidence canonicalizes to
   the exact proposed address, and the latest visitor turn either matches it or
   has an explicit email cue within the bounded ASR distance. Pending native
-  transcription may yield medium confidence; corrections MUST re-evaluate from
-  the latest turn and replace prior verification. The address remains visible
-  and editable without a blanket confirmation turn.
+  transcription may yield medium confidence only when no completed turn
+  contradicts the proposed value. Corrections MUST invalidate prior
+  verification before routing and re-evaluate from the latest turn; duplicate
+  email tool calls MUST pass the same grounding boundary. The address remains
+  visible and editable without a blanket confirmation turn.
 - `VOICE_EMAIL_CAPTURE_MODE=strict` MUST restore exact readback and grounded
   explicit confirmation. Unknown or missing values MUST resolve to `strict`.
   Typed edits and verified prefills MAY confirm their exact current value in
   either mode. Client and API MUST still reject invalid, pending, ungrounded, or
-  stale email values.
+  stale email values. A typed edit MUST invalidate any already-active response
+  for email mutation and routing; older tool output MUST NOT overwrite or
+  submit the typed value.
 
 ### Quality and promotion
 

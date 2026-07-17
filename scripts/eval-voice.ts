@@ -6,6 +6,7 @@
  *   pnpm eval:voice                       # judge the last 50 sessions
  *   pnpm eval:voice -- --limit 100        # judge the last 100
  *   pnpm eval:voice -- --dry              # transport/latency/engagement signals only, no LLM
+ *   pnpm eval:voice -- --aggregate-only   # query-only aggregate/gate JSON; no judge, mutation, or report
  *   pnpm eval:voice -- --min-quality 3.5 --max-dropped 0   # CI gate
  *
  * Quota failures are hard-gated at zero by default. Override only when
@@ -39,10 +40,12 @@ import {
   type VoiceEvalSession,
   validateVoiceExperimentEvidence,
 } from "../lib/eval/voice-eval";
+import { buildAggregateOnlyVoiceEvalReport } from "./lib/voice-eval-audit";
 
 type Args = {
   limit: number;
   dry: boolean;
+  aggregateOnly: boolean;
   persist: boolean;
   out: string;
   minQuality?: number;
@@ -57,12 +60,22 @@ type Args = {
 const JUDGE_CONCURRENCY = 4;
 
 function parseArgs(argv: string[]): Args {
-  const args: Args = { limit: 50, dry: false, persist: false, out: "eval-reports", maxQuota: 0 };
+  const args: Args = {
+    limit: 50,
+    dry: false,
+    aggregateOnly: false,
+    persist: false,
+    out: "eval-reports",
+    maxQuota: 0,
+  };
+  let outWasExplicit = false;
   for (let i = 0; i < argv.length; i += 1) {
     const flag = argv[i];
     const value = argv[i + 1];
     if (flag === "--dry") {
       args.dry = true;
+    } else if (flag === "--aggregate-only") {
+      args.aggregateOnly = true;
     } else if (flag === "--persist") {
       args.persist = true;
     } else if (flag === "--limit") {
@@ -70,6 +83,7 @@ function parseArgs(argv: string[]): Args {
       i += 1;
     } else if (flag === "--out") {
       args.out = value ?? args.out;
+      outWasExplicit = true;
       i += 1;
     } else if (flag === "--min-quality") {
       args.minQuality = Number(value);
@@ -93,6 +107,9 @@ function parseArgs(argv: string[]): Args {
       args.maxCaptureFailures = Number(value);
       i += 1;
     }
+  }
+  if (args.aggregateOnly && (args.persist || outWasExplicit)) {
+    throw new Error("--aggregate-only cannot be combined with --persist or --out");
   }
   return args;
 }
@@ -158,35 +175,45 @@ async function main() {
     process.exit(1);
   }
 
-  const convex = new ConvexHttpClient(convexUrl);
+  // Query logs are suppressed in aggregate-only mode so stdout remains one
+  // machine-readable JSON document even if a Convex function emits log lines.
+  const convex = new ConvexHttpClient(convexUrl, args.aggregateOnly ? { logger: false } : undefined);
   const fetchedSessions = (await convex.query(api.leads.voiceSessionsForEval, {
     ingestSecret,
     limit: args.limit,
   })) as VoiceEvalSession[];
   const rawSessions = fetchedSessions.filter((session) => !isSyntheticVoiceSession(session));
   const syntheticRowsExcluded = fetchedSessions.length - rawSessions.length;
-  if (syntheticRowsExcluded > 0) console.log(`Excluded ${syntheticRowsExcluded} synthetic smoke row(s).`);
+  if (!args.aggregateOnly && syntheticRowsExcluded > 0) {
+    console.log(`Excluded ${syntheticRowsExcluded} synthetic smoke row(s).`);
+  }
 
   if (rawSessions.length === 0) {
-    console.log("No customer voice sessions to evaluate in this window.");
-    process.exit(0);
+    if (!args.aggregateOnly) {
+      console.log("No customer voice sessions to evaluate in this window.");
+      return;
+    }
   }
 
   // Stitch dropped-and-resumed call rows into one conversation before judging,
   // so a single intake is scored once — not once per reconnect.
   const sessions = mergeConversationSessions(rawSessions);
   const mergedCount = rawSessions.length - sessions.length;
-  if (mergedCount > 0) {
+  if (!args.aggregateOnly && mergedCount > 0) {
     console.log(`Stitched ${rawSessions.length} call rows into ${sessions.length} conversations.`);
   }
 
-  const openaiKey = requireEnv("OPENAI_API_KEY");
+  const openaiKey = args.aggregateOnly ? null : requireEnv("OPENAI_API_KEY");
   const model = process.env.EVAL_JUDGE_MODEL ?? "gpt-4o-mini";
-  const dry = args.dry || !openaiKey;
-  if (args.dry) console.log("Dry run: computing transport/latency/engagement signals only (no LLM judge).");
+  const dry = args.aggregateOnly || args.dry || !openaiKey;
+  if (args.aggregateOnly) {
+    // Aggregate-only is intentionally silent until the final JSON document.
+  } else if (args.dry) console.log("Dry run: computing transport/latency/engagement signals only (no LLM judge).");
   else if (!openaiKey) console.warn("OPENAI_API_KEY not set — falling back to dry run (no LLM judge).");
 
-  console.log(`Evaluating ${sessions.length} sessions${dry ? "" : ` with judge model ${model}`}...`);
+  if (!args.aggregateOnly) {
+    console.log(`Evaluating ${sessions.length} sessions${dry ? "" : ` with judge model ${model}`}...`);
+  }
 
   const judgeable = sessions.filter(isJudgeable);
   const scores = new Map<string, JudgeScore | null>();
@@ -240,6 +267,25 @@ async function main() {
     ok: thresholdGate.ok && experimentValidation.ok,
     failures: [...experimentValidation.failures, ...thresholdGate.failures],
   };
+
+  if (args.aggregateOnly) {
+    const report = buildAggregateOnlyVoiceEvalReport({
+      generatedAt: new Date().toISOString(),
+      queriedRows: fetchedSessions.length,
+      syntheticRowsExcluded,
+      customerCallRows: rawSessions.length,
+      conversations: sessions.length,
+      aggregate,
+      profileAggregates,
+      experimentAggregates,
+      experimentValidation,
+      latencyAutopilotGate,
+      thresholdGate,
+    });
+    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+    if (!report.gate.ok) process.exitCode = 2;
+    return;
+  }
 
   // Full report (with transcripts) → gitignored dir only.
   mkdirSync(args.out, { recursive: true });
@@ -352,4 +398,7 @@ function fmtRate(value: number | null) {
   return value === null ? "n/a" : `${Math.round(value * 100)}%`;
 }
 
-void main();
+void main().catch((error) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+});

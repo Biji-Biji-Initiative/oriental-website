@@ -17,7 +17,13 @@ async function run() {
   });
   const pageErrors: string[] = [];
   const consoleErrors: string[] = [];
+  const sessionMintStatuses: number[] = [];
+  const realtimeCallStatuses: number[] = [];
   let leadPosts = 0;
+  let rejectUpstreamFailure: ((error: Error) => void) | undefined;
+  const upstreamFailure = new Promise<never>((_, reject) => {
+    rejectUpstreamFailure = reject;
+  });
 
   try {
     const context = await browser.newContext();
@@ -30,6 +36,16 @@ async function run() {
     page.on("request", (request) => {
       if (request.method() === "POST" && new URL(request.url()).pathname === "/api/leads") leadPosts += 1;
     });
+    page.on("response", (response) => {
+      const url = new URL(response.url());
+      if (url.pathname === "/api/voice/session") sessionMintStatuses.push(response.status());
+      if (url.host === "api.openai.com" && url.pathname === "/v1/realtime/calls") {
+        realtimeCallStatuses.push(response.status());
+        if (response.status() >= 400) {
+          rejectUpstreamFailure?.(new Error(`OpenAI Realtime call failed with HTTP ${response.status()}`));
+        }
+      }
+    });
 
     const healthResponse = await context.request.get(`${stagingOrigin}/api/health`);
     if (!healthResponse.ok()) throw new Error(`Staging health failed: ${healthResponse.status()}`);
@@ -39,7 +55,18 @@ async function run() {
     await page.goto(stagingOrigin, { waitUntil: "load" });
     await page.locator('header button[aria-label="Talk to Mereka"]').click();
     await page.getByRole("button", { name: "Start voice with Reka" }).click();
-    await waitForListening(page, 45_000);
+    try {
+      await Promise.race([waitForListening(page, 45_000), upstreamFailure]);
+    } catch (error) {
+      const orbState = await page
+        .locator(".voice-orb")
+        .evaluate((orb) => ({ status: (orb as HTMLElement).dataset.status, turn: (orb as HTMLElement).dataset.turn }))
+        .catch(() => null);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `${message}; diagnostics=${JSON.stringify({ orbState, sessionMintStatuses, realtimeCallStatuses })}`,
+      );
+    }
 
     const assistantTurnsBefore = await assistantTurnCount(page);
     await sendTyped(page, "My email is q a dot nebula at example dot test. Please capture it, but do not send.");
@@ -93,6 +120,8 @@ async function run() {
           mandatoryConfirmationObserved: false,
           captureField,
           leadPosts,
+          sessionMintStatuses,
+          realtimeCallStatuses,
           pageErrors: pageErrors.length,
           consoleErrors: consoleErrors.length,
         },
