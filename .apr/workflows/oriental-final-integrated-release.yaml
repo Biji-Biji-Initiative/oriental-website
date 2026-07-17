@@ -7,7 +7,7 @@ documents:
   implementation: .apr/evidence/oriental-final-implementation.patch
 
 oracle:
-  model: "gpt-5.2-pro"
+  model: "gemini-3.1-pro"
 
 rounds:
   output_dir: .apr/rounds/oriental-final-integrated-release
