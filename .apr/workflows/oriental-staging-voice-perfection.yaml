@@ -33,6 +33,9 @@ template_with_impl: |
   aggregation, production hostname precedence, clean versus audition staging
   governance, responsive/fallback behavior, attribution, and claimed test
   evidence. Production must remain on its existing SHA, control model, picker
-  off, legacy orb, and no Trace entrance. Post-merge exact-SHA live evidence is
-  a later release gate, not a pre-merge code blocker. End with exactly
+  off, and current live visual surface. The reviewed code must fail closed to
+  the legacy orb and no Trace entrance for any future production build, but
+  this staging-only release must not deploy it there. Post-merge exact-SHA live
+  evidence is a later release gate, not a pre-merge code blocker. End with
+  exactly
   `VERDICT: MERGE FOR RELEASE` or `VERDICT: DO NOT MERGE`.

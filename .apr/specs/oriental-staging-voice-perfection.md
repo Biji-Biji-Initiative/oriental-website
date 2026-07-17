@@ -4,8 +4,10 @@ Review the exact current integration tree based on
 `401a04f12119bd41751af172f9255bdb25bacf38` for merge and an exact-SHA deploy to
 canonical staging only. This contract does not authorize production, shared
 Convex, DNS, backfill, retention, or production Infisical/Coolify mutation.
-Production must remain on its current deployed SHA, legacy orb, no Trace
-entrance, `baseline/control/gpt-realtime-2/low/adaptive`, and picker off.
+Production must remain on its current deployed SHA and current live visual
+surface, with `baseline/control/gpt-realtime-2/low/adaptive` and picker off. The
+reviewed candidate code must fail closed to the legacy orb and no Trace entrance
+for a future production build, but this release does not deploy that fallback.
 
 ## Required behavior
 

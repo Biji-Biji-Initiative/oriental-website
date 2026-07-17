@@ -11,6 +11,13 @@
   stale SHAs in prose are not release authority.
 - No staging, production, shared Convex, DNS, backfill, retention, Infisical,
   or Coolify mutation has been performed from this branch yet.
+- Read-only pre-merge baseline: both public hosts run
+  `401a04f12119bd41751af172f9255bdb25bacf38`; production is
+  `baseline/control/gpt-realtime-2/low/adaptive` with picker off. That older
+  production image already renders Trace and the Nebula. This staging-only
+  release must leave its SHA and live surface unchanged; the reviewed legacy/
+  no-Trace production fallback is code evidence, not a claim that production
+  already runs this candidate.
 
 ## Implementation map
 

@@ -81,7 +81,8 @@ is stronger than the normal production-promotion phases below:
 - use synthetic no-submit verification because staging shares production data
   and notification planes;
 - capture read-only before/after proof that the production SHA, runtime/model
-  cell, picker state, and legacy brand-motion surface did not change.
+  cell, picker state, and current live brand-motion surface did not change. Do
+  not represent a reviewed-but-undeployed production fallback as live evidence.
 
 Staging success does not authorize promotion. Production requires a new
 explicit operator decision, a fresh exact-tree review, and a new release gate.
