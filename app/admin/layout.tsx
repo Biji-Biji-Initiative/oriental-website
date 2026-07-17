@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { PortalBoundary } from "@/components/ui/portal-boundary";
 import "./theme.css";
 
 export const metadata: Metadata = {
@@ -7,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
-  return <div className="admin-root font-sans antialiased">{children}</div>;
+  return <PortalBoundary className="admin-root font-sans antialiased">{children}</PortalBoundary>;
 }

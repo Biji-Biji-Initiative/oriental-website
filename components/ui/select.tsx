@@ -3,9 +3,15 @@
 import { Select as SelectPrimitive } from "@base-ui/react/select";
 import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react";
 import type * as React from "react";
+import { usePortalContainer } from "@/components/ui/portal-boundary";
 import { cn } from "@/lib/utils";
 
 const Select = SelectPrimitive.Root;
+
+function SelectPortal({ ...props }: SelectPrimitive.Portal.Props) {
+  const container = usePortalContainer();
+  return <SelectPrimitive.Portal container={container} data-slot="select-portal" {...props} />;
+}
 
 function SelectGroup({ className, ...props }: SelectPrimitive.Group.Props) {
   return <SelectPrimitive.Group data-slot="select-group" className={cn("scroll-my-1 p-1", className)} {...props} />;
@@ -53,7 +59,7 @@ function SelectContent({
 }: SelectPrimitive.Popup.Props &
   Pick<SelectPrimitive.Positioner.Props, "align" | "alignOffset" | "side" | "sideOffset" | "alignItemWithTrigger">) {
   return (
-    <SelectPrimitive.Portal>
+    <SelectPortal>
       <SelectPrimitive.Positioner
         side={side}
         sideOffset={sideOffset}
@@ -76,7 +82,7 @@ function SelectContent({
           <SelectScrollDownButton />
         </SelectPrimitive.Popup>
       </SelectPrimitive.Positioner>
-    </SelectPrimitive.Portal>
+    </SelectPortal>
   );
 }
 
@@ -158,6 +164,7 @@ export {
   SelectGroup,
   SelectItem,
   SelectLabel,
+  SelectPortal,
   SelectScrollDownButton,
   SelectScrollUpButton,
   SelectSeparator,
