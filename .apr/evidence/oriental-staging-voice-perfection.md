@@ -44,10 +44,12 @@
   query exact durable sessions for signed leads outside `--limit`, and expose
   only PII-free aggregate outcomes/tool latency. Aggregate schema v2 adds a
   strict post-cutoff/environment/model cohort, proves the existing 200-row
-  updated-at window is complete, rejects empty current quality evidence,
-  separates synthetic pipeline health from customer quality and promotion,
-  and reports pre-cohort missing/invalid v1 only as bounded non-authoritative
-  evidence debt. No Convex/schema deployment or backfill is required.
+  updated-at window and bounded created-at lead window cover the cutoff, rejects
+  empty current quality evidence, and refuses to treat exact-limit reconnect
+  history as complete or promotion-eligible. It separates synthetic pipeline
+  health from customer quality and promotion, and reports pre-cohort
+  missing/invalid v1 only as bounded non-authoritative evidence debt. No
+  Convex/schema deployment or backfill is required.
 - The current contract and repo guidance explicitly forbid production, Convex,
   and backfill mutation for this staging-only release and require Oracle/APR
   only through `ssh g` or `ssh mereka`.

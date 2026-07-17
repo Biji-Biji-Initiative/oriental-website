@@ -33,6 +33,8 @@ export type AggregateOnlyVoiceEvalReport = {
     windowComplete: boolean | null;
     leadRowsQueried: number;
     leadCap: 500;
+    oldestFetchedLeadCreatedAt: number | null;
+    leadWindowComplete: boolean | null;
     leadWindowMayBeTruncated: boolean;
     syntheticRowsExcluded: number;
     customerCallRows: number;
@@ -46,6 +48,9 @@ export type AggregateOnlyVoiceEvalReport = {
     customerCallRows: number;
     customerConversations: number;
     targetConversations: number;
+    targetConversationHistoryComplete: boolean;
+    targetConversationsWithIncompleteHistory: number;
+    promotionEvidenceConversations: number;
     syntheticCallRows: number;
     syntheticConversations: number;
     preCohortRowsExcluded: number;
@@ -126,6 +131,8 @@ export function buildAggregateOnlyVoiceEvalReport(input: {
   oldestFetchedUpdatedAt?: number | null;
   windowComplete?: boolean | null;
   leadRowsQueried?: number;
+  oldestFetchedLeadCreatedAt?: number | null;
+  leadWindowComplete?: boolean | null;
   syntheticRowsExcluded: number;
   customerCallRows: number;
   conversations: number;
@@ -151,6 +158,9 @@ export function buildAggregateOnlyVoiceEvalReport(input: {
       customerCallRows: input.customerCallRows,
       customerConversations: input.conversations,
       targetConversations: input.conversations,
+      targetConversationHistoryComplete: true,
+      targetConversationsWithIncompleteHistory: 0,
+      promotionEvidenceConversations: input.conversations,
       syntheticCallRows: input.syntheticRowsExcluded,
       syntheticConversations: 0,
       preCohortRowsExcluded: 0,
@@ -208,6 +218,8 @@ export function buildAggregateOnlyVoiceEvalReport(input: {
       windowComplete: input.windowComplete ?? null,
       leadRowsQueried: input.leadRowsQueried ?? 0,
       leadCap: 500,
+      oldestFetchedLeadCreatedAt: input.oldestFetchedLeadCreatedAt ?? null,
+      leadWindowComplete: input.leadWindowComplete ?? null,
       leadWindowMayBeTruncated: (input.leadRowsQueried ?? 0) >= 500,
       syntheticRowsExcluded: input.syntheticRowsExcluded,
       customerCallRows: input.customerCallRows,

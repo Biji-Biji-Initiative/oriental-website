@@ -126,9 +126,14 @@ pnpm eval:voice -- --aggregate-only --limit 200 \
 ```
 
 All three cohort options are required together. The evaluator proves that the
-updated-at-ordered 200-row query contains the complete post-cutoff window,
-rejects a truncated or empty target cohort, requires verified v1 evidence for
-every current submission, and reports older missing/invalid evidence only as
+updated-at-ordered 200-row query contains the complete post-cutoff window and
+that the created-at-ordered lead query either exhausts the corpus below its
+500-row cap or reaches strictly before the cutoff.
+An exact-limit result cannot claim complete reconnect history: affected target
+conversations fail release quality and all affected customer cells are removed
+from promotion evidence. The evaluator rejects a truncated or empty target
+cohort, requires verified v1 evidence for every current submission, and reports
+older missing/invalid evidence only as
 bounded PII-free `historicalEvidenceDebt` that cannot make the release green or
 be treated as attribution. Customer `releaseQuality`, the synthetic activation/
 remote-audio `syntheticPipeline`, and confound-sensitive `promotionEvidence`
@@ -292,7 +297,8 @@ include release docs before the first deployment.
    approved staging audition use `VOICE_SMOKE_MODE=audition`; neither mode may
    submit a lead.
 5. Run the exact post-cutoff aggregate-only cohort command above. Require a
-   complete query window and `syntheticPipeline.status=pass`. Keep customer
+   complete session window, complete lead window, complete target reconnect
+   history, and `syntheticPipeline.status=pass`. Keep customer
    quality and promotion status honest: no organic post-cutoff conversation is
    `insufficient_data`, and picker/variant evidence is never a clean model
    comparison. Historical evidence debt remains visible but does not authorize

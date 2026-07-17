@@ -1059,7 +1059,7 @@ describe("eval-voice aggregate-only mode", () => {
   });
 
   it("fails closed on a truncated or boundary-equal updatedAt window and proves an older boundary", async () => {
-    const customer = cleanCohortSession();
+    const customer = cleanCohortSession({ conversationId: null });
     const synthetic = cleanCohortSession({
       reviewId: "private-window-synthetic-review",
       sessionId: "private-window-synthetic-session",
@@ -1105,6 +1105,110 @@ describe("eval-voice aggregate-only mode", () => {
     // pre-cutoff, but older historical sessions may still exist beyond the
     // bounded result. Never overstate debt-scan completeness.
     expect(provedReport.historicalEvidenceDebt.complete).toBe(false);
+  });
+
+  it("fails a cap-edge lead window that could conceal a lost voice snapshot", async () => {
+    const customer = cleanCohortSession();
+    const synthetic = cleanCohortSession({
+      reviewId: "private-lead-cap-synthetic-review",
+      sessionId: "private-lead-cap-synthetic-session",
+      conversationId: "private-lead-cap-synthetic-conversation",
+      captured: { name: "QA", email: "qa.nebula@example.test", org: "", message: "" },
+    });
+    const capEdgeLeads = Array.from({ length: 500 }, (_, index) => ({
+      leadId: `private-cap-edge-lead-${index}`,
+      createdAt: COHORT_START + 10_000 - index,
+      utm: {},
+    }));
+    const incomplete = await runCohortAudit({ sessions: [synthetic, customer], leads: capEdgeLeads });
+
+    expect(incomplete.code).toBe(2);
+    const incompleteReport = JSON.parse(incomplete.stdout) as AggregateOnlyVoiceEvalReport;
+    expect(incompleteReport.source).toMatchObject({
+      leadRowsQueried: 500,
+      leadCap: 500,
+      oldestFetchedLeadCreatedAt: COHORT_START + 9_501,
+      leadWindowComplete: false,
+      leadWindowMayBeTruncated: true,
+    });
+    expect(incompleteReport.gates.releaseQuality).toEqual({
+      ok: false,
+      failures: ["lead query window is incomplete for the requested cohort"],
+    });
+    expect(incompleteReport.syntheticPipeline.status).toBe("pass");
+    expect(incompleteReport.historicalEvidenceDebt.complete).toBe(false);
+
+    const boundedLeads = capEdgeLeads.map((lead, index) =>
+      index === capEdgeLeads.length - 1 ? { ...lead, createdAt: COHORT_START - 1 } : lead,
+    );
+    const bounded = await runCohortAudit({ sessions: [synthetic, customer], leads: boundedLeads });
+    expect(bounded.code).toBe(0);
+    expect(JSON.parse(bounded.stdout).source).toMatchObject({
+      oldestFetchedLeadCreatedAt: COHORT_START - 1,
+      leadWindowComplete: true,
+      leadWindowMayBeTruncated: true,
+    });
+
+    const invalidTimestamp = await runCohortAudit({
+      sessions: [synthetic, customer],
+      leads: [{ leadId: "private-invalid-created-at-lead", createdAt: "not-a-timestamp", utm: {} }],
+    });
+    expect(invalidTimestamp.code).toBe(2);
+    expect(JSON.parse(invalidTimestamp.stdout).source).toMatchObject({
+      oldestFetchedLeadCreatedAt: null,
+      leadWindowComplete: false,
+    });
+  });
+
+  it("fails target reconnect history at the exact row limit and excludes it from promotion evidence", async () => {
+    const customer = cleanCohortSession({
+      reviewId: "private-history-current-review",
+      sessionId: "private-history-current-session",
+      conversationId: "private-history-conversation",
+    });
+    const synthetic = cleanCohortSession({
+      reviewId: "private-history-synthetic-review",
+      sessionId: "private-history-synthetic-session",
+      conversationId: "private-history-synthetic-conversation",
+      captured: { name: "QA", email: "qa.nebula@example.test", org: "", message: "" },
+    });
+    const oldControl = cleanCohortSession({
+      reviewId: "private-history-old-control-review",
+      sessionId: "private-history-old-control-session",
+      conversationId: null,
+      modelCell: "control",
+      createdAt: COHORT_START - 2_000,
+      updatedAt: COHORT_START - 1_000,
+    });
+    const currentControl = cleanCohortSession({
+      reviewId: "private-history-current-control-review",
+      sessionId: "private-history-current-control-session",
+      conversationId: "private-history-current-control-conversation",
+      modelCell: "control",
+    });
+    const result = await runCohortAudit({ sessions: [synthetic, customer, currentControl, oldControl], limit: 4 });
+
+    expect(result.code).toBe(2);
+    const report = JSON.parse(result.stdout) as AggregateOnlyVoiceEvalReport;
+    expect(report.source).toMatchObject({ windowComplete: true, leadWindowComplete: true });
+    expect(report.cohort).toMatchObject({
+      customerConversations: 2,
+      targetConversations: 1,
+      targetConversationHistoryComplete: false,
+      targetConversationsWithIncompleteHistory: 1,
+      promotionEvidenceConversations: 0,
+    });
+    expect(report.gates.releaseQuality).toEqual({
+      ok: false,
+      failures: ["1 target conversation may have reconnect history outside the query window"],
+    });
+    expect(report.aggregate.sessionCount).toBe(1);
+    expect(report.experimentAggregates).toEqual({});
+    expect(report.promotionEvidence.latencyAutopilotGate.status).toBe("insufficient_data");
+    expect(report.syntheticPipeline.status).toBe("pass");
+    // Root's stricter historical debt rule is intentional: exact-limit session
+    // results never prove the older debt scan complete.
+    expect(report.historicalEvidenceDebt.complete).toBe(false);
   });
 
   it("keeps synthetic pipeline failure separate from clean customer quality", async () => {

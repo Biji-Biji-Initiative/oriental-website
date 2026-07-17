@@ -537,6 +537,47 @@ function assessCohortQueryWindow(sessions: VoiceEvalSession[], requestedLimit: n
   };
 }
 
+function assessCohortLeadWindow(rawLeads: ImmutableVoiceLeadEvidenceSource[], cohortStart: number) {
+  const timestampsValid = rawLeads.every(
+    (lead) => typeof lead.createdAt === "number" && Number.isSafeInteger(lead.createdAt) && lead.createdAt > 0,
+  );
+  const oldestFetchedLeadCreatedAt =
+    timestampsValid && rawLeads.length > 0 ? Math.min(...rawLeads.map((lead) => lead.createdAt as number)) : null;
+  return {
+    oldestFetchedLeadCreatedAt,
+    complete:
+      timestampsValid &&
+      (rawLeads.length < IMMUTABLE_LEAD_ATTRIBUTION_LIMIT ||
+        (oldestFetchedLeadCreatedAt !== null && oldestFetchedLeadCreatedAt < cohortStart)),
+  };
+}
+
+function assessTargetConversationHistory(
+  rawRows: VoiceEvalSession[],
+  targetModelCell: EvalCohortModelCell,
+  queryStoppedAtLimit: boolean,
+) {
+  const incompleteConversationKeys = queryStoppedAtLimit
+    ? new Set(
+        rawRows
+          .filter((session) => typeof session.conversationId === "string" && session.conversationId.length > 0)
+          .map((session) => conversationKey(session)),
+      )
+    : new Set<string>();
+  const incompleteTargetConversationKeys = new Set(
+    rawRows
+      .filter(
+        (session) => session.modelCell === targetModelCell && incompleteConversationKeys.has(conversationKey(session)),
+      )
+      .map((session) => conversationKey(session)),
+  );
+  return {
+    incompleteConversationKeys,
+    complete: incompleteTargetConversationKeys.size === 0,
+    incompleteConversations: incompleteTargetConversationKeys.size,
+  };
+}
+
 function targetConversations(
   rawRows: VoiceEvalSession[],
   merged: VoiceEvalSession[],
@@ -661,6 +702,9 @@ async function main() {
   const rawSyntheticSessions = args.cohort
     ? await enrichVoiceSessionProfiles(convex, ingestSecret, syntheticRows, args.aggregateOnly)
     : syntheticRows;
+  const targetConversationHistory = args.cohort
+    ? assessTargetConversationHistory(rawSessions, args.cohort.targetModelCell, fetchedSessions.length === args.limit)
+    : { incompleteConversationKeys: new Set<string>(), complete: true, incompleteConversations: 0 };
   const syntheticRowsExcluded = syntheticRows.length;
   if (!args.aggregateOnly && syntheticRowsExcluded > 0) {
     console.log(`Excluded ${syntheticRowsExcluded} synthetic smoke row(s).`);
@@ -669,6 +713,7 @@ async function main() {
   // Stitch dropped-and-resumed call rows into one conversation before judging,
   // so a single intake is scored once — not once per reconnect.
   const rawLeads = await loadImmutableVoiceLeads(convex, ingestSecret);
+  const leadWindow = assessCohortLeadWindow(rawLeads, args.cohort?.startAt ?? Number.NEGATIVE_INFINITY);
   const attributedRawSessions = await enrichSubmittedEmailAttribution(
     convex,
     ingestSecret,
@@ -680,15 +725,20 @@ async function main() {
     console.log("No customer voice sessions to evaluate in this window.");
     return;
   }
-  const promotionSessions = mergeConversationSessions(attributedRawSessions);
+  const mergedCustomerSessions = mergeConversationSessions(attributedRawSessions);
   const sessions = args.cohort
-    ? targetConversations(rawSessions, promotionSessions, args.cohort.targetModelCell)
-    : promotionSessions;
+    ? targetConversations(rawSessions, mergedCustomerSessions, args.cohort.targetModelCell)
+    : mergedCustomerSessions;
+  const promotionSessions = args.cohort
+    ? mergedCustomerSessions.filter(
+        (session) => !targetConversationHistory.incompleteConversationKeys.has(conversationKey(session)),
+      )
+    : mergedCustomerSessions;
   const mergedSyntheticSessions = mergeConversationSessions(rawSyntheticSessions);
   const syntheticSessions = args.cohort
     ? targetConversations(rawSyntheticSessions, mergedSyntheticSessions, args.cohort.targetModelCell)
     : mergedSyntheticSessions;
-  const mergedCount = rawSessions.length - promotionSessions.length;
+  const mergedCount = rawSessions.length - mergedCustomerSessions.length;
   if (!args.aggregateOnly && mergedCount > 0) {
     console.log(`Stitched ${rawSessions.length} call rows into ${sessions.length} conversations.`);
   }
@@ -775,6 +825,12 @@ async function main() {
   const releaseQualityFailures = args.cohort
     ? [
         ...(cohortWindow.complete ? [] : ["query window is incomplete for the requested cohort"]),
+        ...(leadWindow.complete ? [] : ["lead query window is incomplete for the requested cohort"]),
+        ...(targetConversationHistory.complete
+          ? []
+          : [
+              `${targetConversationHistory.incompleteConversations} target conversation${targetConversationHistory.incompleteConversations === 1 ? "" : "s"} may have reconnect history outside the query window`,
+            ]),
         ...(sessions.length > 0 ? [] : ["current target cohort contains 0 customer conversations"]),
         ...(mixedTargetConversations > 0
           ? [
@@ -807,6 +863,8 @@ async function main() {
       oldestFetchedUpdatedAt: cohortWindow.oldestFetchedUpdatedAt,
       windowComplete: args.cohort ? cohortWindow.complete : null,
       leadRowsQueried: rawLeads.length,
+      oldestFetchedLeadCreatedAt: leadWindow.oldestFetchedLeadCreatedAt,
+      leadWindowComplete: args.cohort ? leadWindow.complete : null,
       syntheticRowsExcluded,
       customerCallRows: rawSessions.length,
       conversations: sessions.length,
@@ -817,8 +875,11 @@ async function main() {
             environment: args.cohort.environment,
             targetModelCell: args.cohort.targetModelCell,
             customerCallRows: rawSessions.length,
-            customerConversations: promotionSessions.length,
+            customerConversations: mergedCustomerSessions.length,
             targetConversations: sessions.length,
+            targetConversationHistoryComplete: targetConversationHistory.complete,
+            targetConversationsWithIncompleteHistory: targetConversationHistory.incompleteConversations,
+            promotionEvidenceConversations: promotionSessions.length,
             syntheticCallRows: rawSyntheticSessions.length,
             syntheticConversations: syntheticSessions.length,
             preCohortRowsExcluded: cohortPartition?.preCohortRowsExcluded ?? 0,
