@@ -119,15 +119,15 @@ export function AdminLeadWorkflowForm({
 
   return (
     <form
-      className="mt-4 grid gap-4 rounded-xl border border-mk-ash/15 bg-white p-4 shadow-sm"
+      className="mt-4 grid gap-4 rounded-xl border border-white/10 bg-white/[0.04] p-4"
       data-admin-workflow-form
       onSubmit={submit}
     >
       <div className={compact ? "grid gap-3 2xl:grid-cols-3" : "grid gap-3 sm:grid-cols-3"}>
-        <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
+        <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
           Status
           <select
-            className="h-9 rounded-lg border border-mk-ash/20 bg-mk-paper px-2 text-sm font-medium normal-case tracking-normal text-mk-off-black outline-none focus:border-mk-blue"
+            className="h-9 rounded-lg border border-white/10 bg-white/[0.04] px-2 text-sm font-medium normal-case tracking-normal text-slate-100 outline-none focus:border-sky-400"
             value={status}
             onChange={(event) => setStatus(event.target.value as AdminLeadStatus)}
           >
@@ -138,10 +138,10 @@ export function AdminLeadWorkflowForm({
             ))}
           </select>
         </label>
-        <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
+        <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
           Priority
           <select
-            className="h-9 rounded-lg border border-mk-ash/20 bg-mk-paper px-2 text-sm font-medium normal-case tracking-normal text-mk-off-black outline-none focus:border-mk-blue"
+            className="h-9 rounded-lg border border-white/10 bg-white/[0.04] px-2 text-sm font-medium normal-case tracking-normal text-slate-100 outline-none focus:border-sky-400"
             value={priority}
             onChange={(event) => setPriority(event.target.value as AdminLeadPriority)}
           >
@@ -152,10 +152,10 @@ export function AdminLeadWorkflowForm({
             ))}
           </select>
         </label>
-        <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
+        <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
           Owner
           <select
-            className="h-9 rounded-lg border border-mk-ash/20 bg-mk-paper px-2 text-sm font-medium normal-case tracking-normal text-mk-off-black outline-none focus:border-mk-blue"
+            className="h-9 rounded-lg border border-white/10 bg-white/[0.04] px-2 text-sm font-medium normal-case tracking-normal text-slate-100 outline-none focus:border-sky-400"
             required={active}
             value={owner}
             onChange={(event) => setOwner(event.target.value)}
@@ -171,10 +171,10 @@ export function AdminLeadWorkflowForm({
         </label>
       </div>
       <div className={compact ? "grid gap-3" : "grid gap-3 sm:grid-cols-2"}>
-        <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
+        <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
           Next action
           <input
-            className="h-10 rounded-lg border border-mk-ash/20 bg-mk-paper px-3 text-sm font-medium normal-case tracking-normal text-mk-off-black outline-none focus:border-mk-blue"
+            className="h-10 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-sm font-medium normal-case tracking-normal text-slate-100 outline-none focus:border-sky-400"
             maxLength={500}
             placeholder="Call to confirm programme scope"
             required={active}
@@ -182,10 +182,10 @@ export function AdminLeadWorkflowForm({
             onChange={(event) => setNextActionNote(event.target.value)}
           />
         </label>
-        <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
+        <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
           Due
           <input
-            className="h-10 rounded-lg border border-mk-ash/20 bg-mk-paper px-3 text-sm font-medium normal-case tracking-normal text-mk-off-black outline-none focus:border-mk-blue"
+            className="h-10 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-sm font-medium normal-case tracking-normal text-slate-100 outline-none focus:border-sky-400"
             required={active}
             type="datetime-local"
             value={nextActionAt}
@@ -194,10 +194,10 @@ export function AdminLeadWorkflowForm({
         </label>
       </div>
       {terminal ? (
-        <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
+        <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
           Outcome reason
           <Textarea
-            className="min-h-16 bg-mk-paper text-sm normal-case tracking-normal"
+            className="min-h-16 bg-white/[0.04] text-sm normal-case tracking-normal"
             maxLength={500}
             placeholder="What was agreed, won, declined, duplicated, or disqualified?"
             required
@@ -207,16 +207,16 @@ export function AdminLeadWorkflowForm({
         </label>
       ) : null}
       <Textarea
-        className="min-h-20 bg-mk-paper text-sm"
+        className="min-h-20 bg-white/[0.04] text-sm"
         maxLength={600}
         placeholder="Internal context for the next person who opens this record"
         value={note}
         onChange={(event) => setNote(event.target.value)}
       />
-      <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
+      <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
         Reason for this change
         <input
-          className="h-10 rounded-lg border border-mk-ash/20 bg-mk-paper px-3 text-sm font-medium normal-case tracking-normal text-mk-off-black outline-none focus:border-mk-blue"
+          className="h-10 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-sm font-medium normal-case tracking-normal text-slate-100 outline-none focus:border-sky-400"
           maxLength={300}
           minLength={3}
           placeholder="Assigned after morning intake review"
@@ -226,7 +226,7 @@ export function AdminLeadWorkflowForm({
         />
       </label>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-xs leading-5 text-mk-ash">
+        <p className="text-xs leading-5 text-slate-400">
           Revision {revision} · every saved change is attributed and added to the activity trail.
         </p>
         <Button disabled={isPending} size="sm" type="submit">

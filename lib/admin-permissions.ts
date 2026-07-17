@@ -9,6 +9,7 @@ export const ADMIN_PERMISSIONS = [
   "leads.export",
   "voice.read",
   "voice.follow_up",
+  "evals.run",
 ] as const;
 
 export type AdminRole = (typeof ADMIN_ROLES)[number];
@@ -24,6 +25,7 @@ const rolePermissions: Record<AdminRole, readonly AdminPermission[]> = {
     "leads.export",
     "voice.read",
     "voice.follow_up",
+    "evals.run",
   ],
   admin: ADMIN_PERMISSIONS,
 };

@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import type { ReactNode } from "react";
 import { AdminAutoRefresh } from "@/components/admin/AdminAutoRefresh";
 import { AdminCommandCenter } from "@/components/admin/AdminCommandCenter";
+import { AdminCommandPalette, type AdminPaletteItem } from "@/components/admin/AdminCommandPalette";
 import { AdminHashOpenDetails } from "@/components/admin/AdminHashOpenDetails";
 import { AdminLeadWorkflowForm } from "@/components/admin/AdminLeadWorkflowForm";
 import { AdminLoginForm } from "@/components/admin/AdminLoginForm";
@@ -11,6 +12,7 @@ import { AdminVoiceSessionTranscript } from "@/components/admin/AdminVoiceSessio
 import { Badge } from "@/components/admin/Badge";
 import { EnquiryCrmWorkspace } from "@/components/admin/EnquiryCrmWorkspace";
 import { RekaQualityWorkspace } from "@/components/admin/RekaQualityWorkspace";
+import { MerekaMiniMark } from "@/components/orb/MerekaMiniMark";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { type CrmSort, crmSortLabels, normalizeCrmSort } from "@/lib/admin-crm";
@@ -83,7 +85,7 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
   const showAudit = showAll || view === "audit";
 
   return (
-    <AdminShell generatedAt={dashboard.data.generatedAt}>
+    <AdminShell generatedAt={dashboard.data.generatedAt} palette={buildPaletteItems(dashboard.data)}>
       <AdminSectionTabs activeView={view} data={dashboard.data} sessionsWithRealErrors={sessionsWithRealErrors} />
       {showToday ? <AdminCommandCenter data={dashboard.data} sessionsWithRealErrors={sessionsWithRealErrors} /> : null}
 
@@ -163,7 +165,7 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
         >
           <section className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(360px,0.65fr)]">
             <AnalyticsPanel data={dashboard.data} />
-            <EventsPanel events={dashboard.data.leadEvents} />
+            <EventsPanel events={dashboard.data.leadEvents} leads={dashboard.data.leads} />
           </section>
         </DisclosureSection>
       ) : null}
@@ -171,26 +173,76 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
   );
 }
 
-function AdminShell({ children, generatedAt }: { children: ReactNode; generatedAt?: number }) {
+function buildPaletteItems(data: DashboardData): AdminPaletteItem[] {
+  const leads = data.leads.slice(0, 40).map((lead) => ({
+    id: `lead-${lead.leadId}`,
+    label: lead.name || lead.email || "Unnamed enquiry",
+    hint: [lead.email, lead.org, normalizeAdminLeadStatus(lead.status)].filter(Boolean).join(" · "),
+    href: `/admin/session-review?view=leads&lead=${encodeURIComponent(lead.leadId)}#crm-record`,
+    group: "Enquiries",
+    keywords: [lead.owner, lead.routedTo, lead.segment, lead.source].filter(Boolean).join(" "),
+  }));
+  const sessions = data.voiceSessions.slice(0, 25).map((session) => ({
+    id: `voice-${session.reviewId}`,
+    label: session.captured.name || session.captured.email || `Session ${session.reviewId.slice(0, 8)}`,
+    hint: [session.captured.email, session.segment, session.leadId ? "submitted" : session.status]
+      .filter(Boolean)
+      .join(" · "),
+    href: adminModeHref("voice", voiceSessionAnchorId(session.reviewId)),
+    group: "Voice sessions",
+    keywords: [session.variant, session.voice, session.reviewId].filter(Boolean).join(" "),
+  }));
+  return [...leads, ...sessions];
+}
+
+function AdminShell({
+  children,
+  generatedAt,
+  palette,
+}: {
+  children: ReactNode;
+  generatedAt?: number;
+  palette?: AdminPaletteItem[];
+}) {
   return (
-    <main className="min-h-svh bg-mk-paper px-4 py-8 text-mk-off-black sm:px-6 lg:px-8">
-      <div className="mx-auto grid max-w-[1500px] gap-6">
-        <header className="flex flex-col gap-4 border-b border-mk-ash/20 pb-5 md:flex-row md:items-end md:justify-between">
+    <main className="min-h-svh px-4 pb-20 pt-6 text-slate-100 sm:px-6 lg:px-10">
+      <div className="admin-rise mx-auto grid max-w-[1500px] gap-6">
+        <header className="flex flex-col gap-5 pb-1 md:flex-row md:items-end md:justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-mk-blue">Oriental Building · Admin</p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-tight">Enquiry CRM</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-mk-ash">
+            <div className="flex items-center gap-3">
+              <div className="grid size-9 place-items-center rounded-xl border border-sky-400/30 bg-sky-400/10 shadow-[0_0_28px_-6px_rgba(138,176,255,0.55)]">
+                <MerekaMiniMark size={22} />
+              </div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.32em] text-sky-300/90">
+                Oriental Building · Admin
+              </p>
+            </div>
+            <h1 className="mt-4 bg-gradient-to-br from-white via-slate-100 to-slate-400 bg-clip-text text-3xl font-bold tracking-tight text-transparent sm:text-4xl">
+              Enquiry CRM
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
               One customer pipeline for new enquiries, ownership, follow-up, delivery, and interaction evidence.
             </p>
-            {generatedAt ? <p className="mt-2 text-xs text-mk-ash">Fresh as of {formatDate(generatedAt)}</p> : null}
           </div>
-          <div className="flex items-center gap-2">
-            <AdminAutoRefresh />
-            <form action="/api/admin/logout" method="post">
-              <Button type="submit" variant="outline">
-                Sign out
-              </Button>
-            </form>
+          <div className="flex flex-col items-start gap-3 md:items-end">
+            <div className="flex items-center gap-2">
+              <AdminCommandPalette items={palette} />
+              <AdminAutoRefresh />
+              <form action="/api/admin/logout" method="post">
+                <Button type="submit" variant="outline">
+                  Sign out
+                </Button>
+              </form>
+            </div>
+            {generatedAt ? (
+              <p className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] font-medium tabular-nums text-slate-400">
+                <span aria-hidden className="relative flex size-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60 motion-reduce:animate-none" />
+                  <span className="relative inline-flex size-2 rounded-full bg-emerald-400" />
+                </span>
+                Live · {formatDate(generatedAt)}
+              </p>
+            ) : null}
           </div>
         </header>
         <AdminHashOpenDetails />
@@ -250,7 +302,7 @@ function AdminSectionTabs({
   return (
     <nav
       aria-label="Admin work modes"
-      className="sticky top-0 z-20 -mx-4 overflow-x-auto border-y border-mk-ash/15 bg-white/95 px-4 py-2 backdrop-blur sm:mx-0 sm:rounded-xl sm:border sm:shadow-sm"
+      className="sticky top-0 z-20 -mx-4 overflow-x-auto border-y border-white/10 bg-[#0a0f1c]/85 px-4 py-2 backdrop-blur sm:mx-0 sm:rounded-xl sm:border sm:shadow-sm"
     >
       <div className="grid min-w-[860px] grid-cols-5 gap-1">
         {items.map((item) => {
@@ -258,8 +310,10 @@ function AdminSectionTabs({
           return (
             <a
               aria-current={active ? "page" : undefined}
-              className={`group flex min-h-11 items-center justify-between gap-2 rounded-lg px-3 py-2 transition ${
-                active ? "bg-mk-off-black text-white shadow-sm" : "text-mk-off-black hover:bg-mk-paper"
+              className={`group flex min-h-11 items-center justify-between gap-2 rounded-lg px-3 py-2 transition duration-200 ${
+                active
+                  ? "bg-sky-400/15 text-sky-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_20px_-8px_rgba(56,189,248,0.5)]"
+                  : "text-slate-300 hover:bg-white/[0.05] hover:text-slate-100"
               }`}
               href={adminModeHref(item.view)}
               key={item.view}
@@ -268,7 +322,7 @@ function AdminSectionTabs({
               <span
                 className={
                   active
-                    ? "rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-white"
+                    ? "rounded-full border border-sky-400/25 bg-sky-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-sky-300"
                     : ""
                 }
               >
@@ -361,7 +415,7 @@ function _NextBestActionPanel({
                 };
 
   return (
-    <Card className="border-mk-ash/20 bg-white shadow-sm">
+    <Card className="border-white/10 bg-white/[0.04]">
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -374,26 +428,24 @@ function _NextBestActionPanel({
         </div>
       </CardHeader>
       <CardContent className="grid gap-4">
-        <div className="rounded-lg border border-mk-ash/15 bg-mk-paper/70 p-4">
+        <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4">
           <h2 className="text-xl font-semibold leading-tight">{action.title}</h2>
-          <p className="mt-3 text-sm leading-6 text-mk-ash">{action.detail}</p>
+          <p className="mt-3 text-sm leading-6 text-slate-400">{action.detail}</p>
           <a
-            className="mt-4 inline-flex h-9 items-center rounded-full bg-mk-off-black px-4 text-xs font-semibold uppercase tracking-[0.12em] text-white transition hover:bg-mk-blue"
+            className="mt-4 inline-flex h-9 items-center rounded-full bg-slate-100 px-4 text-xs font-semibold uppercase tracking-[0.12em] text-slate-900 transition hover:bg-white"
             href={action.href}
           >
             {action.cta}
           </a>
         </div>
-        <div className="grid gap-2 text-xs leading-5 text-mk-ash">
-          <div className="font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">Daily close criteria</div>
+        <div className="grid gap-2 text-xs leading-5 text-slate-400">
+          <div className="font-semibold uppercase tracking-[0.12em] text-slate-500">Daily close criteria</div>
           <p>
             Failed notifications at zero, recoverable voice leads followed up, active leads owned, and QA errors
             understood.
           </p>
           {sessionsWithRealErrors > 0 ? (
-            <p className="text-destructive">
-              Realtime errors are present; do not treat today’s voice tests as clean yet.
-            </p>
+            <p className="text-rose-300">Realtime errors are present; do not treat today’s voice tests as clean yet.</p>
           ) : null}
         </div>
       </CardContent>
@@ -448,12 +500,12 @@ function _OperationalHealthStrip({
   return (
     <section aria-label="Operational health" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
       {items.map((item) => (
-        <div className="rounded-xl border border-mk-ash/15 bg-white p-4 shadow-sm" key={item.label}>
+        <div className="rounded-xl border border-white/10 bg-white/[0.04] p-4" key={item.label}>
           <div className="flex items-center justify-between gap-2">
-            <div className="text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">{item.label}</div>
+            <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{item.label}</div>
             <Badge tone={item.tone}>{item.value}</Badge>
           </div>
-          <p className="mt-3 text-xs leading-5 text-mk-ash">{item.detail}</p>
+          <p className="mt-3 text-xs leading-5 text-slate-400">{item.detail}</p>
         </div>
       ))}
     </section>
@@ -502,7 +554,7 @@ function _OperatingBriefPanel({
 
   return (
     <section aria-label="Operating brief" className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(420px,1.05fr)]">
-      <Card className="border-mk-ash/20 bg-white shadow-sm">
+      <Card className="border-white/10 bg-white/[0.04]">
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -608,15 +660,15 @@ function buildOperatingInsights(
 function InsightTile({ insight }: { insight: BriefInsight }) {
   return (
     <a
-      className="grid gap-2 rounded-xl border border-mk-ash/15 bg-mk-paper/60 p-4 transition hover:border-mk-blue/40 hover:bg-white sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-start"
+      className="grid gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-4 transition hover:border-sky-400/40 hover:bg-white/[0.06] sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-start"
       href={insight.href}
     >
       <Badge tone={insight.tone}>{insight.label}</Badge>
       <span>
-        <span className="block text-sm font-semibold leading-snug text-mk-off-black">{insight.title}</span>
-        <span className="mt-1 block text-xs leading-5 text-mk-ash">{insight.detail}</span>
+        <span className="block text-sm font-semibold leading-snug text-slate-100">{insight.title}</span>
+        <span className="mt-1 block text-xs leading-5 text-slate-400">{insight.detail}</span>
       </span>
-      <span className="text-xs font-semibold uppercase tracking-[0.12em] text-mk-blue">Open</span>
+      <span className="text-xs font-semibold uppercase tracking-[0.12em] text-sky-300">Open</span>
     </a>
   );
 }
@@ -632,7 +684,7 @@ function MetricFunnel({
 }) {
   const max = Math.max(...items.map((item) => item.value), 1);
   return (
-    <Card className="border-mk-ash/20 bg-white shadow-sm">
+    <Card className="border-white/10 bg-white/[0.04]">
       <CardHeader>
         <CardTitle>{title}</CardTitle>
         <CardDescription>{detail}</CardDescription>
@@ -641,17 +693,17 @@ function MetricFunnel({
         {items.map((item) => {
           const width = Math.max((item.value / max) * 100, item.value > 0 ? 8 : 2);
           const toneClass =
-            item.tone === "amber" ? "bg-amber-500" : item.tone === "green" ? "bg-emerald-600" : "bg-mk-blue";
+            item.tone === "amber" ? "bg-amber-400" : item.tone === "green" ? "bg-emerald-400" : "bg-sky-400";
           return (
             <div className="grid gap-1" key={`${title}:${item.label}`}>
               <div className="flex items-center justify-between gap-3 text-xs">
                 <div>
-                  <span className="font-semibold text-mk-off-black">{item.label}</span>
-                  <span className="ml-2 text-mk-ash">{item.detail}</span>
+                  <span className="font-semibold text-slate-100">{item.label}</span>
+                  <span className="ml-2 text-slate-400">{item.detail}</span>
                 </div>
-                <span className="font-semibold text-mk-off-black">{item.value}</span>
+                <span className="font-semibold text-slate-100">{item.value}</span>
               </div>
-              <div className="h-2 overflow-hidden rounded-full bg-mk-paper">
+              <div className="h-2 overflow-hidden rounded-full bg-white/[0.04]">
                 <div className={`h-full rounded-full ${toneClass}`} style={{ width: `${width}%` }} />
               </div>
             </div>
@@ -690,7 +742,7 @@ function _VoiceQualityPanel({ data }: { data: DashboardData }) {
 
   return (
     <section aria-label="Reka quality" className="scroll-mt-36" id="reka-quality">
-      <Card className="border-mk-ash/20 bg-white shadow-sm">
+      <Card className="border-white/10 bg-white/[0.04]">
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -711,25 +763,25 @@ function _VoiceQualityPanel({ data }: { data: DashboardData }) {
           ) : (
             <>
               <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_390px]">
-                <div className="rounded-xl border border-amber-700/20 bg-amber-500/10 p-4">
+                <div className="rounded-xl border border-amber-400/25 bg-amber-400/10 p-4">
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge tone={primaryFix.tone}>{primaryFix.badge}</Badge>
-                    <span className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-900/70">
+                    <span className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-200/80">
                       Fix next
                     </span>
                   </div>
-                  <h3 className="mt-3 text-xl font-semibold leading-tight text-mk-off-black">{primaryFix.title}</h3>
+                  <h3 className="mt-3 text-xl font-semibold leading-tight text-slate-100">{primaryFix.title}</h3>
                   <div className="mt-4 grid gap-2 md:grid-cols-3">
                     <ActionDetail label="Runtime surface" value={primaryFix.surface} />
                     <ActionDetail label="Patch" value={primaryFix.change} />
                     <ActionDetail label="Verify" value={primaryFix.acceptance} />
                   </div>
-                  <p className="mt-3 max-w-3xl text-sm leading-6 text-mk-ash">
-                    <span className="font-semibold text-mk-off-black">Why this is first: </span>
+                  <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-400">
+                    <span className="font-semibold text-slate-100">Why this is first: </span>
                     {primaryFix.why}
                   </p>
                   <a
-                    className="mt-4 inline-flex h-9 items-center rounded-full bg-mk-off-black px-4 text-xs font-semibold uppercase tracking-[0.12em] text-white transition hover:bg-mk-blue"
+                    className="mt-4 inline-flex h-9 items-center rounded-full bg-slate-100 px-4 text-xs font-semibold uppercase tracking-[0.12em] text-slate-900 transition hover:bg-white"
                     href={primaryFix.href}
                   >
                     {primaryFix.cta}
@@ -738,7 +790,7 @@ function _VoiceQualityPanel({ data }: { data: DashboardData }) {
                     <div className="mt-3 flex flex-wrap gap-2">
                       {primaryFix.entries.slice(0, 3).map((entry) => (
                         <a
-                          className="rounded-full border border-mk-blue/20 bg-white/70 px-3 py-1.5 text-xs font-semibold text-mk-blue transition hover:border-mk-blue/45 hover:bg-white"
+                          className="rounded-full border border-sky-400/25 bg-white/[0.06] px-3 py-1.5 text-xs font-semibold text-sky-300 transition hover:border-sky-400/50 hover:bg-white/[0.06]"
                           href={adminModeHref("voice", voiceSessionAnchorId(entry.reviewId))}
                           key={`primary:${entry.reviewId}`}
                         >
@@ -748,9 +800,9 @@ function _VoiceQualityPanel({ data }: { data: DashboardData }) {
                     </div>
                   ) : null}
                 </div>
-                <div className="grid content-start gap-3 rounded-xl border border-mk-ash/15 bg-mk-paper/70 p-3">
+                <div className="grid content-start gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-3">
                   <RekaDiagnosisPanel actions={fixActions} evals={evals} />
-                  <div className="text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
+                  <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
                     Current eval scores
                   </div>
                   {dims.map((dim) => (
@@ -761,11 +813,11 @@ function _VoiceQualityPanel({ data }: { data: DashboardData }) {
 
               {fixActions.length > 1 ? <RekaFixActionList actions={fixActions.slice(1)} /> : null}
 
-              <details className="rounded-lg border border-mk-ash/15 bg-mk-paper/60" suppressHydrationWarning>
+              <details className="rounded-lg border border-white/10 bg-white/[0.03]" suppressHydrationWarning>
                 <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold marker:hidden">
                   Show score trends and raw flagged sessions
                 </summary>
-                <div className="grid gap-5 border-t border-mk-ash/15 p-4">
+                <div className="grid gap-5 border-t border-white/10 p-4">
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     {dims.map((dim) => (
                       <ScoreTile invert={dim.invert} key={`tile:${dim.key}`} label={dim.label} value={dim.value} />
@@ -798,10 +850,10 @@ function ScoreSummaryRow({ label, value, invert }: { label: string; value: numbe
   const tone = value === null ? "neutral" : scoreTone(value, invert);
   const verdict = value === null ? "not evaluated" : scoreVerdict(value, invert);
   return (
-    <div className="flex items-center justify-between gap-3 rounded-lg border border-mk-ash/15 bg-white px-3 py-2 text-sm">
+    <div className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm">
       <div>
         <div className="font-semibold">{label}</div>
-        <div className="text-xs text-mk-ash">{verdict}</div>
+        <div className="text-xs text-slate-400">{verdict}</div>
       </div>
       <Badge tone={tone}>{value === null ? "--" : `${value.toFixed(2)}/5`}</Badge>
     </div>
@@ -810,9 +862,9 @@ function ScoreSummaryRow({ label, value, invert }: { label: string; value: numbe
 
 function ActionDetail({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-amber-700/15 bg-white/80 p-3">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-900/65">{label}</div>
-      <div className="mt-1 text-sm leading-5 text-mk-off-black">{value}</div>
+    <div className="rounded-lg border border-amber-400/20 bg-white/[0.06] p-3">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-200/80">{label}</div>
+      <div className="mt-1 text-sm leading-5 text-slate-100">{value}</div>
     </div>
   );
 }
@@ -820,7 +872,7 @@ function ActionDetail({ label, value }: { label: string; value: string }) {
 function RekaFixActionList({ actions }: { actions: RekaFixAction[] }) {
   if (actions.length === 0) {
     return (
-      <div className="rounded-lg border border-emerald-700/20 bg-emerald-700/5 p-4 text-sm leading-6 text-emerald-800">
+      <div className="rounded-lg border border-emerald-400/25 bg-emerald-400/10 p-4 text-sm leading-6 text-emerald-300">
         No repeated failure pattern is visible in the current evaluated sessions. Keep watching new evals after the next
         Reka change.
       </div>
@@ -829,32 +881,32 @@ function RekaFixActionList({ actions }: { actions: RekaFixAction[] }) {
   return (
     <div className="grid gap-3 lg:grid-cols-2">
       {actions.map((action) => (
-        <article className="rounded-xl border border-mk-ash/15 bg-white p-4 shadow-sm" key={action.key}>
+        <article className="rounded-xl border border-white/10 bg-white/[0.04] p-4" key={action.key}>
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={action.tone}>{action.count} examples</Badge>
-            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">Reka change</span>
+            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Reka change</span>
           </div>
           <h3 className="mt-3 text-base font-semibold leading-snug">{action.title}</h3>
-          <p className="mt-2 text-sm leading-6 text-mk-ash">
-            <span className="font-semibold text-mk-off-black">Surface: </span>
+          <p className="mt-2 text-sm leading-6 text-slate-400">
+            <span className="font-semibold text-slate-100">Surface: </span>
             {action.surface}
           </p>
-          <p className="mt-2 text-sm leading-6 text-mk-ash">
-            <span className="font-semibold text-mk-off-black">Patch: </span>
+          <p className="mt-2 text-sm leading-6 text-slate-400">
+            <span className="font-semibold text-slate-100">Patch: </span>
             {action.change}
           </p>
-          <p className="mt-2 text-xs leading-5 text-mk-ash">
-            <span className="font-semibold text-mk-off-black">Verify: </span>
+          <p className="mt-2 text-xs leading-5 text-slate-400">
+            <span className="font-semibold text-slate-100">Verify: </span>
             {action.acceptance}
           </p>
-          <p className="mt-2 text-xs leading-5 text-mk-ash">
-            <span className="font-semibold text-mk-off-black">Evidence: </span>
+          <p className="mt-2 text-xs leading-5 text-slate-400">
+            <span className="font-semibold text-slate-100">Evidence: </span>
             {action.why}
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             {action.entries.slice(0, 3).map((entry) => (
               <a
-                className="rounded-full border border-mk-blue/20 bg-mk-blue/5 px-3 py-1.5 text-xs font-semibold text-mk-blue transition hover:border-mk-blue/45 hover:bg-mk-blue/10"
+                className="rounded-full border border-sky-400/25 bg-sky-400/10 px-3 py-1.5 text-xs font-semibold text-sky-300 transition hover:border-sky-400/50 hover:bg-sky-400/10"
                 href={adminModeHref("voice", voiceSessionAnchorId(entry.reviewId))}
                 key={`${action.key}:${entry.reviewId}`}
               >
@@ -1012,7 +1064,7 @@ function OperatorFilters({
   const targetHash = targetView === "voice" ? "voice-recovery" : "crm-workspace";
   return (
     <section aria-label="Operator filters" className="scroll-mt-36" id="operator-filters">
-      <Card className="border-mk-ash/20 bg-white shadow-sm">
+      <Card className="border-white/10 bg-white/[0.04]">
         <CardHeader className="pb-3">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -1034,10 +1086,10 @@ function OperatorFilters({
             className="grid gap-3 xl:grid-cols-[minmax(220px,1fr)_repeat(4,150px)_auto_auto]"
           >
             <input name="view" type="hidden" value={targetView} />
-            <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
+            <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
               Search
               <input
-                className="h-10 rounded-lg border border-mk-ash/25 bg-white px-3 text-sm font-normal normal-case tracking-normal text-mk-off-black outline-none transition placeholder:text-mk-ash/70 focus:border-mk-blue focus:ring-2 focus:ring-mk-blue/10"
+                className="h-10 rounded-lg border border-white/15 bg-white/[0.04] px-3 text-sm font-normal normal-case tracking-normal text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20"
                 defaultValue={filters.q}
                 name="q"
                 placeholder="name, email, org, note"
@@ -1046,10 +1098,10 @@ function OperatorFilters({
             </label>
             <FilterSelect label="Status" name="status" options={adminLeadStatusLabels} value={filters.status} />
             <FilterSelect label="Priority" name="priority" options={adminLeadPriorityLabels} value={filters.priority} />
-            <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
+            <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
               Source
               <select
-                className="h-10 rounded-lg border border-mk-ash/25 bg-white px-3 text-sm font-normal normal-case tracking-normal text-mk-off-black outline-none transition focus:border-mk-blue focus:ring-2 focus:ring-mk-blue/10"
+                className="h-10 rounded-lg border border-white/15 bg-white/[0.04] px-3 text-sm font-normal normal-case tracking-normal text-slate-100 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20"
                 defaultValue={filters.source}
                 name="source"
               >
@@ -1067,22 +1119,22 @@ function OperatorFilters({
             </div>
             <div className="flex items-end">
               <a
-                className="inline-flex h-10 w-full items-center justify-center rounded-lg border border-mk-ash/25 bg-white px-3 text-sm font-medium transition hover:bg-mk-paper"
+                className="inline-flex h-10 w-full items-center justify-center rounded-lg border border-white/15 bg-white/[0.04] px-3 text-sm font-medium transition hover:bg-white/[0.04]"
                 href={adminModeHref(targetView, targetHash)}
               >
                 Reset
               </a>
             </div>
           </form>
-          <div className="mt-3 flex flex-wrap gap-2 text-xs text-mk-ash">
-            <span className="rounded-full bg-mk-paper px-3 py-1">
+          <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-400">
+            <span className="rounded-full bg-white/[0.04] px-3 py-1">
               Leads: {leadCount}/{totalLeads}
             </span>
-            <span className="rounded-full bg-mk-paper px-3 py-1">
+            <span className="rounded-full bg-white/[0.04] px-3 py-1">
               Voice recovery: {voiceRecoverableCount}/{totalVoiceRecoverable}
             </span>
             {filterActive ? (
-              <span className="rounded-full bg-mk-blue/10 px-3 py-1 text-mk-blue">Filtered queue view</span>
+              <span className="rounded-full bg-sky-400/10 px-3 py-1 text-sky-300">Filtered queue view</span>
             ) : null}
           </div>
         </CardContent>
@@ -1103,10 +1155,10 @@ function FilterSelect({
   value: string;
 }) {
   return (
-    <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
+    <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
       {label}
       <select
-        className="h-10 rounded-lg border border-mk-ash/25 bg-white px-3 text-sm font-normal normal-case tracking-normal text-mk-off-black outline-none transition focus:border-mk-blue focus:ring-2 focus:ring-mk-blue/10"
+        className="h-10 rounded-lg border border-white/15 bg-white/[0.04] px-3 text-sm font-normal normal-case tracking-normal text-slate-100 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20"
         defaultValue={value}
         name={name}
       >
@@ -1129,30 +1181,30 @@ function scoreTone(value: number, invert: boolean): "green" | "amber" | "red" {
 }
 
 const scoreBarClass: Record<"green" | "amber" | "red", string> = {
-  green: "bg-emerald-600",
-  amber: "bg-amber-500",
-  red: "bg-destructive",
+  green: "bg-emerald-400",
+  amber: "bg-amber-400",
+  red: "bg-rose-400",
 };
 
 function ScoreTile({ label, value, invert }: { label: string; value: number | null; invert: boolean }) {
   const tone = value === null ? null : scoreTone(value, invert);
   const pct = value === null ? 0 : (value / 5) * 100;
   return (
-    <div className="rounded-xl border border-mk-ash/15 bg-white p-4 shadow-sm">
+    <div className="rounded-xl border border-white/10 bg-white/[0.04] p-4">
       <div className="flex items-baseline justify-between gap-2">
-        <span className="text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">{label}</span>
-        <span className="text-lg font-semibold text-mk-off-black">
+        <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</span>
+        <span className="text-lg font-semibold text-slate-100">
           {value === null ? "—" : value.toFixed(2)}
-          <span className="ml-0.5 text-xs font-normal text-mk-ash">/5</span>
+          <span className="ml-0.5 text-xs font-normal text-slate-400">/5</span>
         </span>
       </div>
-      <div className="mt-3 h-2 rounded-full bg-mk-paper">
+      <div className="mt-3 h-2 rounded-full bg-white/[0.04]">
         <div
-          className={`h-2 rounded-full ${tone ? scoreBarClass[tone] : "bg-mk-ash/30"}`}
+          className={`h-2 rounded-full ${tone ? scoreBarClass[tone] : "bg-white/15"}`}
           style={{ width: `${pct}%` }}
         />
       </div>
-      <p className="mt-2 text-[11px] text-mk-ash">{invert ? "lower is better" : "higher is better"}</p>
+      <p className="mt-2 text-[11px] text-slate-400">{invert ? "lower is better" : "higher is better"}</p>
     </div>
   );
 }
@@ -1166,13 +1218,13 @@ function TrendCard({ buckets, label }: { buckets: EvalAnalytics["trend"]["daily"
       count: bucket.count,
     }));
   return (
-    <div className="rounded-lg border border-mk-ash/15 bg-mk-paper p-3">
+    <div className="rounded-lg border border-white/10 bg-white/[0.04] p-3">
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">{label}</span>
-        <span className="text-[11px] text-mk-ash">conversation quality · 0–5</span>
+        <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</span>
+        <span className="text-[11px] text-slate-400">conversation quality · 0–5</span>
       </div>
       {points.length === 0 ? (
-        <div className="py-6 text-center text-xs text-mk-ash">Not enough evaluated sessions yet.</div>
+        <div className="py-6 text-center text-xs text-slate-400">Not enough evaluated sessions yet.</div>
       ) : (
         <TrendChart points={points} />
       )}
@@ -1195,7 +1247,7 @@ function TrendChart({ points }: { points: Array<{ label: string; value: number; 
   return (
     <div className="grid gap-2">
       <svg
-        className="h-16 w-full text-mk-blue"
+        className="h-16 w-full text-sky-300"
         preserveAspectRatio="none"
         role="img"
         viewBox={`0 0 ${width} ${height}`}
@@ -1230,7 +1282,7 @@ function TrendChart({ points }: { points: Array<{ label: string; value: number; 
           />
         ))}
       </svg>
-      <div className="flex justify-between text-[10px] text-mk-ash">
+      <div className="flex justify-between text-[10px] text-slate-400">
         {coords.map((coord) => (
           <span
             className="flex-1 text-center"
@@ -1248,7 +1300,7 @@ function TrendChart({ points }: { points: Array<{ label: string; value: number; 
 function EvalAttentionList({ entries }: { entries: EvalAnalytics["attention"] }) {
   if (entries.length === 0) {
     return (
-      <div className="rounded-lg border border-emerald-700/20 bg-emerald-700/5 p-3 text-xs text-emerald-800">
+      <div className="rounded-lg border border-emerald-400/25 bg-emerald-400/10 p-3 text-xs text-emerald-300">
         No sessions flagged for attention in this window.
       </div>
     );
@@ -1258,7 +1310,7 @@ function EvalAttentionList({ entries }: { entries: EvalAnalytics["attention"] })
   return (
     <div className="grid gap-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
+        <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
           Needs attention ({entries.length})
         </div>
         {hidden.length > 0 ? <Badge tone="amber">Top 5 shown</Badge> : null}
@@ -1267,11 +1319,11 @@ function EvalAttentionList({ entries }: { entries: EvalAnalytics["attention"] })
         <EvalAttentionRow entry={entry} key={entry.reviewId} />
       ))}
       {hidden.length > 0 ? (
-        <details className="rounded-lg border border-mk-ash/15 bg-mk-paper/60" suppressHydrationWarning>
+        <details className="rounded-lg border border-white/10 bg-white/[0.03]" suppressHydrationWarning>
           <summary className="cursor-pointer list-none px-3 py-2 text-sm font-semibold marker:hidden">
             Show {hidden.length} additional flagged {hidden.length === 1 ? "session" : "sessions"}
           </summary>
-          <div className="grid gap-2 border-t border-mk-ash/15 p-3">
+          <div className="grid gap-2 border-t border-white/10 p-3">
             {hidden.map((entry) => (
               <EvalAttentionRow entry={entry} key={`hidden:${entry.reviewId}`} />
             ))}
@@ -1284,7 +1336,7 @@ function EvalAttentionList({ entries }: { entries: EvalAnalytics["attention"] })
 
 function EvalAttentionRow({ entry }: { entry: EvalAnalytics["attention"][number] }) {
   return (
-    <div className="grid gap-1 rounded-lg border border-mk-ash/15 bg-white p-3 text-sm">
+    <div className="grid gap-1 rounded-lg border border-white/10 bg-white/[0.04] p-3 text-sm">
       <div className="flex flex-wrap items-center gap-2">
         <Badge tone="neutral">{getSegment(entry.segment).label}</Badge>
         {entry.droppedMidTurn ? <Badge tone="red">dropped mid-turn</Badge> : null}
@@ -1294,9 +1346,9 @@ function EvalAttentionRow({ entry }: { entry: EvalAnalytics["attention"][number]
         {typeof entry.conversationQuality === "number" ? (
           <Badge tone={scoreTone(entry.conversationQuality, false)}>quality {entry.conversationQuality}</Badge>
         ) : null}
-        <span className="ml-auto font-mono text-[11px] text-mk-ash">{entry.reviewId.slice(0, 8)}</span>
+        <span className="ml-auto font-mono text-[11px] text-slate-400">{entry.reviewId.slice(0, 8)}</span>
       </div>
-      {entry.summary ? <p className="text-xs leading-5 text-mk-ash">{entry.summary}</p> : null}
+      {entry.summary ? <p className="text-xs leading-5 text-slate-400">{entry.summary}</p> : null}
     </div>
   );
 }
@@ -1316,7 +1368,7 @@ function DisclosureSection({
 }) {
   return (
     <details
-      className="group scroll-mt-36 rounded-xl border border-mk-ash/20 bg-white shadow-sm"
+      className="group scroll-mt-36 rounded-xl border border-white/10 bg-white/[0.04]"
       id={id}
       open={defaultOpen}
       suppressHydrationWarning
@@ -1324,16 +1376,16 @@ function DisclosureSection({
       <summary className="flex cursor-pointer list-none flex-wrap items-start justify-between gap-3 px-4 py-4 marker:hidden">
         <span>
           <span className="block text-base font-semibold leading-snug">{title}</span>
-          <span className="mt-1 block text-sm leading-6 text-mk-ash">{detail}</span>
+          <span className="mt-1 block text-sm leading-6 text-slate-400">{detail}</span>
         </span>
-        <span className="rounded-full border border-mk-ash/20 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-mk-ash group-open:hidden">
+        <span className="rounded-full border border-white/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400 group-open:hidden">
           Open
         </span>
-        <span className="hidden rounded-full border border-mk-blue/20 bg-mk-blue/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-mk-blue group-open:inline-flex">
+        <span className="hidden rounded-full border border-sky-400/25 bg-sky-400/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-sky-300 group-open:inline-flex">
           Close
         </span>
       </summary>
-      <div className="border-t border-mk-ash/15 py-4">{children}</div>
+      <div className="border-t border-white/10 py-4">{children}</div>
     </details>
   );
 }
@@ -1355,7 +1407,7 @@ function _WorkflowPanel({
   const visibleIds = new Set(visible.map((lead) => lead.leadId));
   const hidden = ordered.filter((lead) => !visibleIds.has(lead.leadId));
   return (
-    <Card className="scroll-mt-36 border-mk-ash/20 bg-white shadow-sm" id="workflow">
+    <Card className="scroll-mt-36 border-white/10 bg-white/[0.04]" id="workflow">
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -1379,11 +1431,11 @@ function _WorkflowPanel({
           <WorkflowLeadCard key={lead.leadId} lead={lead} />
         ))}
         {hidden.length > 0 ? (
-          <details className="rounded-lg border border-mk-ash/15 bg-mk-paper/60" suppressHydrationWarning>
+          <details className="rounded-lg border border-white/10 bg-white/[0.03]" suppressHydrationWarning>
             <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold marker:hidden">
               Show {hidden.length} additional recent {hidden.length === 1 ? "lead" : "leads"}
             </summary>
-            <div className="grid gap-2 border-t border-mk-ash/15 p-3">
+            <div className="grid gap-2 border-t border-white/10 p-3">
               {hidden.map((lead) => (
                 <CompactLeadRow key={`compact:${lead.leadId}`} lead={lead} />
               ))}
@@ -1404,7 +1456,7 @@ function AnalyticsPanel({ data }: { data: DashboardData }) {
     (session: VoiceSessionRow) => !session.leadId && session.captured.email.trim().length > 0 && !session.followedUpAt,
   ).length;
   return (
-    <Card className="border-mk-ash/20 bg-white shadow-sm">
+    <Card className="border-white/10 bg-white/[0.04]">
       <CardHeader>
         <CardTitle>Analytics</CardTitle>
         <CardDescription>
@@ -1412,43 +1464,53 @@ function AnalyticsPanel({ data }: { data: DashboardData }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-5">
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <CountList title="Status" values={data.analytics.statusCounts} />
           <CountList title="Source" values={data.analytics.sourceCounts} />
           <CountList title="Priority" values={data.analytics.priorityCounts} />
           <CountList title="Segment" values={data.analytics.segmentCounts} />
-          <CountList
-            title="Voice variants"
-            values={countByVoiceSessions(data.voiceSessions, (session) => session.variant || "default")}
-          />
-          <CountList
-            title="Runtime profiles"
-            values={countByVoiceSessions(data.voiceSessions, (session) => session.runtimeProfile || "baseline")}
-          />
-          <CountList
-            title="Model cells"
-            values={countByVoiceSessions(data.voiceSessions, (session) => session.modelCell || "control")}
-          />
-          <CountList
-            title="Reasoning cells"
-            values={countByVoiceSessions(data.voiceSessions, (session) => session.reasoningCell || "low")}
-          />
-          <CountList
-            title="Realtime voices"
-            values={countByVoiceSessions(data.voiceSessions, (session) => session.voice || "unknown")}
-          />
         </div>
+        <details className="rounded-lg border border-white/10 bg-white/[0.02]" suppressHydrationWarning>
+          <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-slate-300 marker:hidden">
+            Engineering details — voice experiment cells
+          </summary>
+          <div className="grid gap-4 border-t border-white/10 p-4 md:grid-cols-2 xl:grid-cols-3">
+            <CountList
+              title="Voice variants"
+              values={countByVoiceSessions(data.voiceSessions, (session) => session.variant || "default")}
+            />
+            <CountList
+              title="Runtime profiles"
+              values={countByVoiceSessions(data.voiceSessions, (session) => session.runtimeProfile || "baseline")}
+            />
+            <CountList
+              title="Model cells"
+              values={countByVoiceSessions(data.voiceSessions, (session) => session.modelCell || "control")}
+            />
+            <CountList
+              title="Reasoning cells"
+              values={countByVoiceSessions(data.voiceSessions, (session) => session.reasoningCell || "low")}
+            />
+            <CountList
+              title="Realtime voices"
+              values={countByVoiceSessions(data.voiceSessions, (session) => session.voice || "unknown")}
+            />
+          </div>
+        </details>
         <div>
-          <div className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">7-day leads</div>
-          <div className="grid grid-cols-7 items-end gap-2 rounded-lg bg-mk-paper p-3">
+          <div className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">7-day leads</div>
+          <div className="grid grid-cols-7 items-end gap-2 rounded-lg bg-white/[0.04] p-3">
             {data.analytics.dailyLeads.map((day) => (
-              <div className="grid gap-2 text-center text-[11px] text-mk-ash" key={day.date}>
-                <div className="flex h-24 items-end rounded bg-white">
+              <div className="grid gap-1.5 text-center text-[11px] text-slate-400" key={day.date}>
+                <span className={`tabular-nums ${day.count > 0 ? "font-semibold text-slate-200" : "text-slate-600"}`}>
+                  {day.count}
+                </span>
+                <div className="flex h-20 items-end rounded-sm bg-white/[0.03]">
                   <div
                     aria-label={`${day.count} leads on ${day.date}`}
-                    className="w-full rounded bg-mk-blue/80"
+                    className="w-full rounded-sm bg-sky-400/80"
                     role="img"
-                    style={{ height: `${Math.max((day.count / maxDaily) * 100, day.count > 0 ? 8 : 2)}%` }}
+                    style={{ height: `${Math.max((day.count / maxDaily) * 100, day.count > 0 ? 6 : 2)}%` }}
                   />
                 </div>
                 <span>{day.date.slice(5)}</span>
@@ -1480,11 +1542,11 @@ function WorkflowLeadCard({ lead }: { lead: LeadRow }) {
   const priority = normalizeAdminLeadPriority(lead.priority);
   const notification = notificationStatus(lead);
   return (
-    <article className="scroll-mt-24 rounded-lg border border-mk-ash/15 bg-mk-paper/60 p-4" id={leadAnchorId(lead)}>
+    <article className="scroll-mt-24 rounded-lg border border-white/10 bg-white/[0.03] p-4" id={leadAnchorId(lead)}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="font-semibold">{lead.name || "Unnamed"}</div>
-          <div className="mt-1 text-xs text-mk-ash">
+          <div className="mt-1 text-xs text-slate-400">
             {lead.email} · {lead.org || "No organisation"}
           </div>
         </div>
@@ -1495,26 +1557,26 @@ function WorkflowLeadCard({ lead }: { lead: LeadRow }) {
           <Badge tone={notification.tone}>{notification.label}</Badge>
         </div>
       </div>
-      <div className="mt-4 rounded-lg border border-mk-ash/15 bg-white p-3 text-sm leading-6">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
+      <div className="mt-4 rounded-lg border border-white/10 bg-white/[0.04] p-3 text-sm leading-6">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
           Recommended next step
         </div>
-        <p className="mt-1 text-mk-ash">{leadActionHint(lead)}</p>
+        <p className="mt-1 text-slate-400">{leadActionHint(lead)}</p>
       </div>
-      {lead.message ? <p className="mt-3 line-clamp-3 text-sm leading-6 text-mk-ash">{lead.message}</p> : null}
-      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-mk-ash">
+      {lead.message ? <p className="mt-3 line-clamp-3 text-sm leading-6 text-slate-400">{lead.message}</p> : null}
+      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400">
         <span>{lead.routedTo}</span>
         <span>{lead.owner?.trim() || "Unassigned"}</span>
         <span>{formatDate(lead.createdAt)}</span>
       </div>
       {lead.workflowNote ? (
-        <p className="mt-3 rounded-lg bg-mk-horizon/15 p-3 text-xs leading-5 text-mk-ash">{lead.workflowNote}</p>
+        <p className="mt-3 rounded-lg bg-sky-300/10 p-3 text-xs leading-5 text-slate-400">{lead.workflowNote}</p>
       ) : null}
-      <details className="mt-3 rounded-lg border border-mk-ash/15 bg-white" suppressHydrationWarning>
-        <summary className="cursor-pointer list-none px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-mk-blue marker:hidden">
+      <details className="mt-3 rounded-lg border border-white/10 bg-white/[0.04]" suppressHydrationWarning>
+        <summary className="cursor-pointer list-none px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-sky-300 marker:hidden">
           Update workflow
         </summary>
-        <div className="border-t border-mk-ash/15 px-3 pb-3">
+        <div className="border-t border-white/10 px-3 pb-3">
           <AdminLeadWorkflowForm
             leadId={lead.leadId}
             initialNextActionAt={lead.nextActionAt}
@@ -1527,33 +1589,33 @@ function WorkflowLeadCard({ lead }: { lead: LeadRow }) {
           />
         </div>
       </details>
-      <details className="mt-3 rounded-lg border border-mk-ash/15 bg-white" suppressHydrationWarning>
-        <summary className="cursor-pointer list-none px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-mk-ash marker:hidden">
+      <details className="mt-3 rounded-lg border border-white/10 bg-white/[0.04]" suppressHydrationWarning>
+        <summary className="cursor-pointer list-none px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400 marker:hidden">
           Route, metadata, and transcript
         </summary>
-        <div className="border-t border-mk-ash/15 p-3">
-          <dl className="grid gap-2 text-xs text-mk-ash sm:grid-cols-4">
+        <div className="border-t border-white/10 p-3">
+          <dl className="grid gap-2 text-xs text-slate-400 sm:grid-cols-4">
             <div>
-              <dt className="font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">Route</dt>
+              <dt className="font-semibold uppercase tracking-[0.12em] text-slate-500">Route</dt>
               <dd>{lead.routedTo}</dd>
             </div>
             <div>
-              <dt className="font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">Owner email</dt>
+              <dt className="font-semibold uppercase tracking-[0.12em] text-slate-500">Owner email</dt>
               <dd className="break-all">{lead.routedToEmail || "n/a"}</dd>
             </div>
             <div>
-              <dt className="font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">Created</dt>
+              <dt className="font-semibold uppercase tracking-[0.12em] text-slate-500">Created</dt>
               <dd>{formatDate(lead.createdAt)}</dd>
             </div>
             <div>
-              <dt className="font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">Last reviewed</dt>
+              <dt className="font-semibold uppercase tracking-[0.12em] text-slate-500">Last reviewed</dt>
               <dd>{lead.lastReviewedAt ? formatDate(lead.lastReviewedAt) : "Not yet"}</dd>
             </div>
           </dl>
           <LeadContactChips lead={lead} />
           {lead.voiceReviewId ? (
             <a
-              className="mt-3 inline-flex rounded-full border border-mk-blue/20 bg-mk-blue/5 px-3 py-1.5 text-xs font-semibold text-mk-blue transition hover:border-mk-blue/45 hover:bg-mk-blue/10"
+              className="mt-3 inline-flex rounded-full border border-sky-400/25 bg-sky-400/10 px-3 py-1.5 text-xs font-semibold text-sky-300 transition hover:border-sky-400/50 hover:bg-sky-400/10"
               href={`#${voiceSessionAnchorId(lead.voiceReviewId)}`}
             >
               Open source voice session · {lead.voiceVariant || "default"}
@@ -1571,12 +1633,12 @@ function CompactLeadRow({ lead }: { lead: LeadRow }) {
   const priority = normalizeAdminLeadPriority(lead.priority);
   return (
     <a
-      className="grid gap-2 rounded-lg border border-mk-ash/15 bg-white p-3 text-sm transition hover:border-mk-blue/40 hover:bg-mk-paper/70 sm:grid-cols-[minmax(0,1fr)_auto]"
+      className="grid gap-2 rounded-lg border border-white/10 bg-white/[0.04] p-3 text-sm transition hover:border-sky-400/40 hover:bg-white/[0.03] sm:grid-cols-[minmax(0,1fr)_auto]"
       href={`#${leadAnchorId(lead)}`}
     >
       <span className="min-w-0">
         <span className="block truncate font-semibold">{lead.name || lead.email}</span>
-        <span className="mt-1 block truncate text-xs text-mk-ash">
+        <span className="mt-1 block truncate text-xs text-slate-400">
           {lead.email} · {lead.org || "No organisation"} · {formatDate(lead.createdAt)}
         </span>
       </span>
@@ -1699,7 +1761,7 @@ function QueuePanel({
   const visible = leads.slice(0, 5);
   const hiddenCount = Math.max(leads.length - visible.length, 0);
   return (
-    <Card className="scroll-mt-36 border-mk-ash/20 bg-white shadow-sm" id={id}>
+    <Card className="scroll-mt-36 border-white/10 bg-white/[0.04]" id={id}>
       <CardHeader>
         <CardTitle>{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
@@ -1714,14 +1776,14 @@ function QueuePanel({
           const notification = notificationStatus(lead);
           return (
             <a
-              className="block rounded-lg border border-mk-ash/15 p-3 transition hover:border-mk-blue/40 hover:bg-mk-paper/70"
+              className="block rounded-lg border border-white/10 p-3 transition hover:border-sky-400/40 hover:bg-white/[0.03]"
               href={`#${leadAnchorId(lead)}`}
               key={`${title}:${lead.leadId}`}
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <div className="font-semibold">{lead.name || "Unnamed"}</div>
-                  <div className="mt-1 text-xs text-mk-ash">{lead.email}</div>
+                  <div className="mt-1 text-xs text-slate-400">{lead.email}</div>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Badge tone={priorityTone(priority)}>{adminLeadPriorityLabels[priority]}</Badge>
@@ -1729,13 +1791,13 @@ function QueuePanel({
                   <Badge tone={notification.tone}>{notification.label}</Badge>
                 </div>
               </div>
-              <div className="mt-3 text-xs text-mk-ash">
+              <div className="mt-3 text-xs text-slate-400">
                 {lead.routedTo} · {lead.owner || "Unassigned"} · {formatDate(lead.createdAt)}
               </div>
               {lead.notificationSummary ? (
-                <p className="mt-2 text-xs text-destructive">{lead.notificationSummary}</p>
+                <p className="mt-2 text-xs text-rose-300">{lead.notificationSummary}</p>
               ) : null}
-              <div className="mt-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-mk-blue">
+              <div className="mt-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-sky-300">
                 Open workflow
               </div>
             </a>
@@ -1743,7 +1805,7 @@ function QueuePanel({
         })}
         {hiddenCount > 0 ? (
           <a
-            className="rounded-lg border border-dashed border-mk-ash/25 p-3 text-center text-xs font-semibold uppercase tracking-[0.12em] text-mk-blue transition hover:border-mk-blue/40 hover:bg-mk-blue/5"
+            className="rounded-lg border border-dashed border-white/15 p-3 text-center text-xs font-semibold uppercase tracking-[0.12em] text-sky-300 transition hover:border-sky-400/40 hover:bg-sky-400/10"
             href="#workflow"
           >
             {hiddenCount} more in lead workflow
@@ -1754,11 +1816,12 @@ function QueuePanel({
   );
 }
 
-function EventsPanel({ events }: { events: LeadEventRow[] }) {
+function EventsPanel({ events, leads }: { events: LeadEventRow[]; leads: LeadRow[] }) {
+  const nameFor = new Map(leads.map((lead) => [lead.leadId, lead.name || lead.email]));
   const visible = events.slice(0, 12);
   const hidden = events.slice(12);
   return (
-    <Card className="border-mk-ash/20 bg-white shadow-sm">
+    <Card className="border-white/10 bg-white/[0.04]">
       <CardHeader>
         <CardTitle>Audit trail</CardTitle>
         <CardDescription>Recent system and admin events written beside lead records.</CardDescription>
@@ -1766,16 +1829,24 @@ function EventsPanel({ events }: { events: LeadEventRow[] }) {
       <CardContent className="grid gap-3">
         {events.length === 0 ? <EmptyState label="No lead events yet." /> : null}
         {visible.map((event) => (
-          <EventRow event={event} key={`${event.leadId}:${event.createdAt}:${event.kind}`} />
+          <EventRow
+            event={event}
+            key={`${event.leadId}:${event.createdAt}:${event.kind}`}
+            leadName={nameFor.get(event.leadId)}
+          />
         ))}
         {hidden.length > 0 ? (
-          <details className="rounded-lg border border-mk-ash/15 bg-mk-paper/60" suppressHydrationWarning>
+          <details className="rounded-lg border border-white/10 bg-white/[0.03]" suppressHydrationWarning>
             <summary className="cursor-pointer list-none px-3 py-2 text-sm font-semibold marker:hidden">
               Show {hidden.length} older audit events
             </summary>
-            <div className="grid gap-3 border-t border-mk-ash/15 p-3">
+            <div className="grid gap-3 border-t border-white/10 p-3">
               {hidden.map((event) => (
-                <EventRow event={event} key={`hidden:${event.leadId}:${event.createdAt}:${event.kind}`} />
+                <EventRow
+                  event={event}
+                  key={`hidden:${event.leadId}:${event.createdAt}:${event.kind}`}
+                  leadName={nameFor.get(event.leadId)}
+                />
               ))}
             </div>
           </details>
@@ -1785,21 +1856,27 @@ function EventsPanel({ events }: { events: LeadEventRow[] }) {
   );
 }
 
-function EventRow({ event }: { event: LeadEventRow }) {
+function EventRow({ event, leadName }: { event: LeadEventRow; leadName?: string }) {
   return (
-    <article className="rounded-lg border border-mk-ash/15 bg-white p-3">
+    <article className="rounded-lg border border-white/10 bg-white/[0.04] p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="font-semibold capitalize">{event.kind.replaceAll("_", " ")}</div>
         <Badge tone={event.actor === "admin" ? "blue" : "neutral"}>{event.actor ?? "system"}</Badge>
       </div>
-      <div className="mt-1 break-all text-xs text-mk-ash">{event.leadId}</div>
+      <div className="mt-1 text-xs text-slate-400">
+        {leadName ? <span className="font-medium text-slate-300">{leadName}</span> : null}
+        <span className={`break-all font-mono text-[10px] text-slate-600 ${leadName ? "ml-2" : ""}`}>
+          {event.leadId}
+        </span>
+      </div>
       {event.fromStatus || event.toStatus ? (
-        <div className="mt-2 text-xs text-mk-ash">
-          {event.fromStatus ?? "n/a"} {"->"} {event.toStatus ?? "n/a"}
+        <div className="mt-2 text-xs text-slate-400">
+          Status: <span className="capitalize">{event.fromStatus ?? "n/a"}</span> →{" "}
+          <span className="capitalize text-slate-300">{event.toStatus ?? "n/a"}</span>
         </div>
       ) : null}
-      {event.note ? <p className="mt-2 line-clamp-3 text-sm leading-6">{event.note}</p> : null}
-      <div className="mt-2 text-xs text-mk-ash">{formatDate(event.createdAt)}</div>
+      {event.note ? <p className="mt-2 line-clamp-3 font-mono text-xs leading-5 text-slate-400">{event.note}</p> : null}
+      <div className="mt-2 text-xs text-slate-500">{formatDate(event.createdAt)}</div>
     </article>
   );
 }
@@ -1808,19 +1885,19 @@ function CountList({ title, values }: { title: string; values: Record<string, nu
   const entries = Object.entries(values).sort((left, right) => right[1] - left[1]);
   const total = entries.reduce((sum, [, count]) => sum + count, 0);
   return (
-    <div className="rounded-lg border border-mk-ash/15 p-3">
-      <div className="mb-3 text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">{title}</div>
+    <div className="rounded-lg border border-white/10 p-3">
+      <div className="mb-3 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{title}</div>
       <div className="grid gap-2">
-        {entries.length === 0 ? <div className="text-xs text-mk-ash">No data</div> : null}
+        {entries.length === 0 ? <div className="text-xs text-slate-400">No data</div> : null}
         {entries.slice(0, 6).map(([label, count]) => (
           <div className="grid gap-1" key={`${title}:${label}`}>
             <div className="flex items-center justify-between gap-2 text-xs">
-              <span className="capitalize text-mk-ash">{label.replaceAll("-", " ")}</span>
+              <span className="capitalize text-slate-400">{label.replaceAll("-", " ")}</span>
               <span className="font-semibold">{count}</span>
             </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-mk-paper">
+            <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.04]">
               <div
-                className="h-full rounded-full bg-mk-blue"
+                className="h-full rounded-full bg-sky-400"
                 style={{ width: `${total ? (count / total) * 100 : 0}%` }}
               />
             </div>
@@ -1843,12 +1920,12 @@ function HealthBox({
   danger?: boolean;
 }) {
   return (
-    <div className="rounded-lg border border-mk-ash/15 bg-mk-paper p-3">
-      <div className="text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">{label}</div>
-      <div className={danger ? "mt-2 text-2xl font-semibold text-destructive" : "mt-2 text-2xl font-semibold"}>
+    <div className="rounded-lg border border-white/10 bg-white/[0.04] p-3">
+      <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</div>
+      <div className={danger ? "mt-2 text-2xl font-semibold text-rose-300" : "mt-2 text-2xl font-semibold"}>
         {value}
       </div>
-      <div className="mt-1 text-xs leading-5 text-mk-ash">{detail}</div>
+      <div className="mt-1 text-xs leading-5 text-slate-400">{detail}</div>
     </div>
   );
 }
@@ -1943,7 +2020,7 @@ function _ActionQueuePanel({ data, sessionsWithRealErrors }: { data: DashboardDa
   ] as const;
 
   return (
-    <Card className="border-mk-ash/20 bg-white shadow-sm">
+    <Card className="border-white/10 bg-white/[0.04]">
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -1958,17 +2035,15 @@ function _ActionQueuePanel({ data, sessionsWithRealErrors }: { data: DashboardDa
       <CardContent className="grid gap-3 md:grid-cols-5">
         {cards.map((card) => (
           <a
-            className="group rounded-lg border border-mk-ash/15 bg-mk-paper/60 p-3 transition hover:border-mk-blue/40 hover:bg-white"
+            className="group rounded-lg border border-white/10 bg-white/[0.03] p-3 transition hover:border-sky-400/40 hover:bg-white/[0.06]"
             href={card.href}
             key={card.label}
           >
             <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
-                {card.label}
-              </span>
+              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{card.label}</span>
               <Badge tone={card.tone}>{card.value}</Badge>
             </div>
-            <p className="mt-3 text-xs leading-5 text-mk-ash">{card.detail}</p>
+            <p className="mt-3 text-xs leading-5 text-slate-400">{card.detail}</p>
           </a>
         ))}
       </CardContent>
@@ -1993,7 +2068,7 @@ function RecoverableVoicePanel({
   const visibleRecoverable = recoverable.slice(0, 4);
   const hiddenRecoverable = recoverable.slice(4);
   return (
-    <Card className="scroll-mt-36 border-mk-ash/20 bg-white shadow-sm" id="voice-recovery">
+    <Card className="scroll-mt-36 border-white/10 bg-white/[0.04]" id="voice-recovery">
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -2020,18 +2095,18 @@ function RecoverableVoicePanel({
         {visibleRecoverable.map((session) => {
           const owner = getSegment(session.segment).routedTo.name;
           return (
-            <article className="rounded-lg border border-mk-ash/15 p-3" key={session.reviewId}>
+            <article className="rounded-lg border border-white/10 p-3" key={session.reviewId}>
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <div className="font-semibold">{session.captured.name || "Unnamed visitor"}</div>
-                  <div className="mt-1 break-all text-xs text-mk-ash">
+                  <div className="mt-1 break-all text-xs text-slate-400">
                     {session.captured.email}
                     {session.captured.org ? ` · ${session.captured.org}` : ""}
                   </div>
                 </div>
                 <Badge tone="amber">unsent</Badge>
               </div>
-              <div className="mt-3 text-xs text-mk-ash">
+              <div className="mt-3 text-xs text-slate-400">
                 {owner} · {session.segment} · {formatDate(session.updatedAt)}
               </div>
               {session.captured.message ? (
@@ -2039,7 +2114,7 @@ function RecoverableVoicePanel({
               ) : null}
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <a
-                  className="inline-flex h-8 items-center rounded-full bg-mk-off-black px-4 text-xs font-semibold text-white transition hover:bg-mk-blue"
+                  className="inline-flex h-8 items-center rounded-full bg-slate-100 px-4 text-xs font-semibold text-slate-900 transition hover:bg-white"
                   href={followUpMailto(session)}
                 >
                   Follow up by email
@@ -2052,29 +2127,29 @@ function RecoverableVoicePanel({
           );
         })}
         {hiddenRecoverable.length > 0 ? (
-          <details className="rounded-lg border border-mk-ash/15 bg-mk-paper/60" suppressHydrationWarning>
+          <details className="rounded-lg border border-white/10 bg-white/[0.03]" suppressHydrationWarning>
             <summary className="cursor-pointer list-none px-3 py-2 text-sm font-semibold marker:hidden">
               Show {hiddenRecoverable.length} more recoverable {hiddenRecoverable.length === 1 ? "session" : "sessions"}
             </summary>
-            <div className="grid gap-2 border-t border-mk-ash/15 p-3">
+            <div className="grid gap-2 border-t border-white/10 p-3">
               {hiddenRecoverable.map((session) => (
                 <div
-                  className="grid gap-2 rounded-lg border border-mk-ash/15 bg-white p-3 text-xs sm:grid-cols-[minmax(0,1fr)_auto]"
+                  className="grid gap-2 rounded-lg border border-white/10 bg-white/[0.04] p-3 text-xs sm:grid-cols-[minmax(0,1fr)_auto]"
                   key={`hidden:${session.reviewId}`}
                 >
                   <div className="min-w-0">
                     <div className="truncate font-semibold text-sm">{session.captured.name || "Unnamed visitor"}</div>
-                    <div className="mt-1 truncate text-mk-ash">
+                    <div className="mt-1 truncate text-slate-400">
                       {session.captured.email}
                       {session.captured.org ? ` · ${session.captured.org}` : ""}
                     </div>
-                    <div className="mt-1 text-mk-ash">
+                    <div className="mt-1 text-slate-400">
                       {getSegment(session.segment).routedTo.name} · {formatDate(session.updatedAt)}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 sm:justify-end">
                     <a
-                      className="inline-flex h-8 items-center rounded-full bg-mk-off-black px-3 text-xs font-semibold text-white transition hover:bg-mk-blue"
+                      className="inline-flex h-8 items-center rounded-full bg-slate-100 px-3 text-xs font-semibold text-slate-900 transition hover:bg-white"
                       href={followUpMailto(session)}
                     >
                       Email
@@ -2089,14 +2164,12 @@ function RecoverableVoicePanel({
           </details>
         ) : null}
         {followedUp.length > 0 ? (
-          <div className="rounded-lg border border-mk-ash/15 bg-mk-paper/60 p-3">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
-              Followed up
-            </div>
+          <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Followed up</div>
             <div className="mt-2 grid gap-2">
               {followedUp.map((session) => (
                 <div className="flex flex-wrap items-center justify-between gap-2 text-xs" key={session.reviewId}>
-                  <span className="break-all text-mk-ash">
+                  <span className="break-all text-slate-400">
                     {session.captured.name || "Unnamed visitor"} · {session.captured.email}
                     {session.followedUpAt ? ` · ${formatDate(session.followedUpAt)}` : ""}
                   </span>
@@ -2135,7 +2208,7 @@ function VoiceSessionsPanel({ sessions }: { sessions: VoiceSessionRow[] }) {
   const visibleRoutine = [...pinnedRoutine, ...recentRoutine];
   const hiddenRoutineCount = Math.max(routine.length - visibleRoutine.length, 0);
   return (
-    <Card className="border-mk-ash/20 bg-white shadow-sm" id="voice-sessions">
+    <Card className="border-white/10 bg-white/[0.04]" id="voice-sessions">
       <CardHeader>
         <CardTitle>Voice sessions</CardTitle>
         <CardDescription>
@@ -2146,25 +2219,25 @@ function VoiceSessionsPanel({ sessions }: { sessions: VoiceSessionRow[] }) {
         <VoiceQaRollup sessions={sessions} />
         {sessions.length === 0 ? <EmptyState label="No voice review snapshots yet." /> : null}
         {reviewNeeded.length > 0 ? (
-          <div className="grid gap-3 rounded-lg border border-amber-700/20 bg-amber-500/10 p-3">
-            <div className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-800">Review first</div>
+          <div className="grid gap-3 rounded-lg border border-amber-400/25 bg-amber-400/10 p-3">
+            <div className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-300">Review first</div>
             {reviewNeeded.map((session) => (
               <VoiceSessionDetails key={session.reviewId} session={session} />
             ))}
           </div>
         ) : null}
         {routine.length > 0 ? (
-          <details className="rounded-lg border border-mk-ash/15 bg-mk-paper/60" suppressHydrationWarning>
+          <details className="rounded-lg border border-white/10 bg-white/[0.03]" suppressHydrationWarning>
             <summary className="cursor-pointer list-none px-3 py-2 text-sm font-semibold marker:hidden">
               Show {visibleRoutine.length} diagnostic {visibleRoutine.length === 1 ? "session" : "sessions"}
               {hiddenRoutineCount > 0 ? ` · ${hiddenRoutineCount} routine hidden` : ""}
             </summary>
-            <div className="grid gap-3 border-t border-mk-ash/15 p-3">
+            <div className="grid gap-3 border-t border-white/10 p-3">
               {visibleRoutine.map((session) => (
                 <VoiceSessionCompactDetails key={session.reviewId} session={session} />
               ))}
               {hiddenRoutineCount > 0 ? (
-                <div className="rounded-lg border border-dashed border-mk-ash/25 bg-white p-3 text-center text-xs leading-5 text-mk-ash">
+                <div className="rounded-lg border border-dashed border-white/15 bg-white/[0.04] p-3 text-center text-xs leading-5 text-slate-400">
                   {hiddenRoutineCount} low-signal routine sessions are summarized in the QA rollup and omitted from the
                   initial page for speed.
                 </div>
@@ -2182,7 +2255,7 @@ function VoiceSessionCompactDetails({ session }: { session: ConversationHead }) 
   const callCount = session.calls.length;
   return (
     <details
-      className="rounded-lg border border-mk-ash/15 bg-white"
+      className="rounded-lg border border-white/10 bg-white/[0.04]"
       id={voiceSessionAnchorId(session.reviewId)}
       suppressHydrationWarning
     >
@@ -2192,7 +2265,7 @@ function VoiceSessionCompactDetails({ session }: { session: ConversationHead }) 
             <div className="font-semibold">
               {session.captured.name || session.captured.email || "Uncaptured visitor"}
             </div>
-            <div className="mt-1 text-xs text-mk-ash">
+            <div className="mt-1 text-xs text-slate-400">
               {session.segment} · {formatDate(session.updatedAt)} · {transcriptTurnCount(session)} turns
             </div>
           </div>
@@ -2209,7 +2282,7 @@ function VoiceSessionCompactDetails({ session }: { session: ConversationHead }) 
           </div>
         </div>
       </summary>
-      <div className="border-t border-mk-ash/15 p-3">
+      <div className="border-t border-white/10 p-3">
         <SessionQualityFlags session={session} realErrorCount={realErrorCount} />
         <UsageSummary session={session} />
         <ConversationTranscript calls={session.calls} />
@@ -2224,7 +2297,7 @@ function VoiceSessionDetails({ session }: { session: ConversationHead }) {
   const callCount = session.calls.length;
   return (
     <details
-      className="rounded-lg border border-mk-ash/15 bg-white"
+      className="rounded-lg border border-white/10 bg-white/[0.04]"
       id={voiceSessionAnchorId(session.reviewId)}
       suppressHydrationWarning
     >
@@ -2232,11 +2305,11 @@ function VoiceSessionDetails({ session }: { session: ConversationHead }) {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="font-semibold">{session.captured.name || "Uncaptured visitor"}</div>
-            <div className="mt-1 text-xs text-mk-ash">
+            <div className="mt-1 text-xs text-slate-400">
               {session.segment} · updated {formatDate(session.updatedAt)}
             </div>
             {session.captured.email ? (
-              <div className="mt-1 break-all text-xs text-mk-ash">{session.captured.email}</div>
+              <div className="mt-1 break-all text-xs text-slate-400">{session.captured.email}</div>
             ) : null}
           </div>
           <div className="flex flex-wrap gap-2">
@@ -2259,32 +2332,32 @@ function VoiceSessionDetails({ session }: { session: ConversationHead }) {
           </div>
         </div>
       </summary>
-      <div className="border-t border-mk-ash/15 p-4">
-        <dl className="grid gap-2 text-xs text-mk-ash sm:grid-cols-4">
+      <div className="border-t border-white/10 p-4">
+        <dl className="grid gap-2 text-xs text-slate-400 sm:grid-cols-4">
           <div>
-            <dt className="font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">Session</dt>
+            <dt className="font-semibold uppercase tracking-[0.12em] text-slate-500">Session</dt>
             <dd className="break-all">{session.sessionId}</dd>
           </div>
           <div>
-            <dt className="font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">Model</dt>
+            <dt className="font-semibold uppercase tracking-[0.12em] text-slate-500">Model</dt>
             <dd>
               {[session.model, session.voice, session.speed ? `${session.speed}x` : null].filter(Boolean).join(" · ") ||
                 "n/a"}
             </dd>
           </div>
           <div>
-            <dt className="font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">Variant</dt>
+            <dt className="font-semibold uppercase tracking-[0.12em] text-slate-500">Variant</dt>
             <dd>{session.variant || "default"}</dd>
           </div>
           <div>
-            <dt className="font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">Runtime</dt>
+            <dt className="font-semibold uppercase tracking-[0.12em] text-slate-500">Runtime</dt>
             <dd>{session.connectionStatus}</dd>
           </div>
         </dl>
         <SessionQualityFlags session={session} realErrorCount={realErrorCount} />
         <SessionLifecycle session={session} />
         <SessionLatency calls={session.calls} />
-        <div className="mt-4 grid gap-3 rounded-lg bg-mk-paper p-3 text-sm leading-6">
+        <div className="mt-4 grid gap-3 rounded-lg bg-white/[0.04] p-3 text-sm leading-6">
           <div>
             <span className="font-semibold">Email:</span> {session.captured.email || "empty"}
           </div>
@@ -2310,13 +2383,13 @@ function VoiceSessionDetails({ session }: { session: ConversationHead }) {
           <div
             className={
               realErrorCount > 0
-                ? "mt-3 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-xs"
-                : "mt-3 rounded-lg border border-mk-ash/15 bg-mk-paper p-3 text-xs"
+                ? "mt-3 rounded-lg border border-rose-400/25 bg-rose-400/10 p-3 text-xs"
+                : "mt-3 rounded-lg border border-white/10 bg-white/[0.04] p-3 text-xs"
             }
           >
             {session.errors.map((error: VoiceRuntimeError) => (
               <div
-                className={isBenignVoiceError(error) ? "text-mk-ash" : "text-destructive"}
+                className={isBenignVoiceError(error) ? "text-slate-400" : "text-rose-300"}
                 key={`${error.eventId ?? "error"}:${error.message}`}
               >
                 {error.code ? <span className="font-semibold">{error.code}: </span> : null}
@@ -2335,7 +2408,7 @@ function VoiceSessionDetails({ session }: { session: ConversationHead }) {
 function UsageSummary({ session }: { session: VoiceSessionRow }) {
   if (!session.usage) return null;
   return (
-    <div className="mt-3 grid gap-2 text-xs text-mk-ash sm:grid-cols-3 lg:grid-cols-6">
+    <div className="mt-3 grid gap-2 text-xs text-slate-400 sm:grid-cols-3 lg:grid-cols-6">
       <div>Responses: {session.usage.responseCount}</div>
       <div>Response tokens: {session.usage.responseTokens}</div>
       <div>Input: {session.usage.responseInputTokens}</div>
@@ -2353,10 +2426,10 @@ function VoiceQaRollup({ sessions }: { sessions: VoiceSessionRow[] }) {
   const connected = sessions.filter((session) => session.connectedAt).length;
   const latency = summarizeSessionLatency(sessions);
   return (
-    <div className="grid gap-3 rounded-lg border border-mk-ash/15 bg-mk-paper/70 p-3 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)]">
+    <div className="grid gap-3 rounded-lg border border-white/10 bg-white/[0.03] p-3 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)]">
       <div>
-        <div className="text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">QA summary</div>
-        <div className="mt-3 grid gap-2 text-xs text-mk-ash sm:grid-cols-2 lg:grid-cols-1">
+        <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">QA summary</div>
+        <div className="mt-3 grid gap-2 text-xs text-slate-400 sm:grid-cols-2 lg:grid-cols-1">
           <div>{sessions.length} snapshots reviewed</div>
           <div>{prewarmed} page-load prewarms</div>
           <div>{connected} sessions reached live audio</div>
@@ -2396,8 +2469,8 @@ function VoiceQaRollup({ sessions }: { sessions: VoiceSessionRow[] }) {
       </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[520px] text-left text-xs">
-          <thead className="text-mk-off-black/55">
-            <tr className="border-b border-mk-ash/15">
+          <thead className="text-slate-500">
+            <tr className="border-b border-white/10">
               <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Variant</th>
               <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Profile</th>
               <th className="py-2 pr-3 font-semibold uppercase tracking-[0.12em]">Model cell</th>
@@ -2413,13 +2486,13 @@ function VoiceQaRollup({ sessions }: { sessions: VoiceSessionRow[] }) {
               <th className="py-2 font-semibold uppercase tracking-[0.12em]">Audio p50/p95</th>
             </tr>
           </thead>
-          <tbody className="text-mk-ash">
+          <tbody className="text-slate-400">
             {variantRows.map((row) => (
               <tr
-                className="border-b border-mk-ash/10 last:border-0"
+                className="border-b border-white/5 last:border-0"
                 key={`${row.runtimeProfile}:${row.modelCell}:${row.reasoningCell}:${row.variant}:${row.voice}`}
               >
-                <td className="py-2 pr-3 font-medium text-mk-off-black">{row.variant}</td>
+                <td className="py-2 pr-3 font-medium text-slate-100">{row.variant}</td>
                 <td className="py-2 pr-3">{row.runtimeProfile}</td>
                 <td className="py-2 pr-3">{row.modelCell}</td>
                 <td className="py-2 pr-3">{row.reasoningCell}</td>
@@ -2427,9 +2500,7 @@ function VoiceQaRollup({ sessions }: { sessions: VoiceSessionRow[] }) {
                 <td className="py-2 pr-3">{row.sessions}</td>
                 <td className="py-2 pr-3">{row.submitRate}%</td>
                 <td className="py-2 pr-3">{row.connectRate}%</td>
-                <td className={row.errorSessions > 0 ? "py-2 pr-3 text-destructive" : "py-2 pr-3"}>
-                  {row.errorSessions}
-                </td>
+                <td className={row.errorSessions > 0 ? "py-2 pr-3 text-rose-300" : "py-2 pr-3"}>{row.errorSessions}</td>
                 <td className="py-2">{row.responseTokens}</td>
                 <td className="py-2">
                   {formatLatency(row.tapToLive.p50Ms)} / {formatLatency(row.tapToLive.p95Ms)}
@@ -2480,10 +2551,10 @@ function SessionLifecycle({ session }: { session: VoiceSessionRow }) {
   ];
 
   return (
-    <div className="mt-3 grid gap-2 rounded-lg border border-mk-ash/15 bg-white p-3 text-xs text-mk-ash sm:grid-cols-3 xl:grid-cols-6">
+    <div className="mt-3 grid gap-2 rounded-lg border border-white/10 bg-white/[0.04] p-3 text-xs text-slate-400 sm:grid-cols-3 xl:grid-cols-6">
       {rows.map((row) => (
         <div key={row.label}>
-          <div className="font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">{row.label}</div>
+          <div className="font-semibold uppercase tracking-[0.12em] text-slate-500">{row.label}</div>
           <div className="mt-1">{row.value}</div>
         </div>
       ))}
@@ -2511,12 +2582,12 @@ function SessionLatency({ calls }: { calls: VoiceSessionRow[] }) {
     { label: "Interrupted replies", value: String(latency.interruptedTurns) },
   ];
   return (
-    <div className="mt-3 rounded-lg border border-mk-blue/15 bg-mk-blue/5 p-3 text-xs text-mk-ash">
-      <div className="font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">Conversation latency</div>
+    <div className="mt-3 rounded-lg border border-sky-400/20 bg-sky-400/10 p-3 text-xs text-slate-400">
+      <div className="font-semibold uppercase tracking-[0.12em] text-slate-500">Conversation latency</div>
       <div className="mt-2 grid gap-2 sm:grid-cols-3 xl:grid-cols-6">
         {rows.map((row) => (
           <div key={row.label}>
-            <div className="font-semibold text-mk-off-black/70">{row.label}</div>
+            <div className="font-semibold text-slate-300">{row.label}</div>
             <div className="mt-1">{row.value}</div>
           </div>
         ))}
@@ -2550,15 +2621,33 @@ function SessionQualityFlags({ session, realErrorCount }: { session: VoiceSessio
 
 function TranscriptLog({ transcript }: { transcript: Array<{ role: string; text: string }> }) {
   return (
-    <div className="mt-4 max-h-72 overflow-y-auto rounded-lg border border-mk-ash/15 bg-white p-3">
-      <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-mk-ash">Transcript</div>
+    <div className="mt-4 max-h-72 overflow-y-auto rounded-lg border border-white/10 bg-[#0a0f1c]/60 p-3">
+      <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">Transcript</div>
       <div className="grid gap-2">
-        {transcript.map((entry) => (
-          <p className="text-xs leading-5 text-mk-ash" key={`${entry.role}:${entry.text.slice(0, 120)}`}>
-            <span className="font-semibold text-mk-off-black">{entry.role === "assistant" ? "Reka" : "Visitor"}:</span>{" "}
-            {entry.text}
-          </p>
-        ))}
+        {transcript.map((entry) => {
+          const isReka = entry.role === "assistant";
+          return (
+            <div
+              className={isReka ? "flex justify-end" : "flex justify-start"}
+              key={`${entry.role}:${entry.text.slice(0, 120)}`}
+            >
+              <div
+                className={
+                  isReka
+                    ? "max-w-[88%] rounded-2xl rounded-br-sm border border-sky-400/20 bg-sky-400/10 px-3 py-2"
+                    : "max-w-[88%] rounded-2xl rounded-bl-sm border border-white/10 bg-white/[0.05] px-3 py-2"
+                }
+              >
+                <div
+                  className={`text-[10px] font-semibold uppercase tracking-[0.12em] ${isReka ? "text-sky-300" : "text-slate-500"}`}
+                >
+                  {isReka ? "Reka" : "Visitor"}
+                </div>
+                <p className="mt-0.5 text-xs leading-5 text-slate-300">{entry.text}</p>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -2566,9 +2655,9 @@ function TranscriptLog({ transcript }: { transcript: Array<{ role: string; text:
 
 function StatusPanel({ title, detail }: { title: string; detail: string }) {
   return (
-    <Card className="border-destructive/20 bg-white shadow-sm">
+    <Card className="border-rose-400/25 bg-white/[0.04]">
       <CardHeader>
-        <CardTitle className="text-destructive">{title}</CardTitle>
+        <CardTitle className="text-rose-300">{title}</CardTitle>
         <CardDescription>{detail}</CardDescription>
       </CardHeader>
     </Card>
@@ -2577,7 +2666,9 @@ function StatusPanel({ title, detail }: { title: string; detail: string }) {
 
 function EmptyState({ label }: { label: string }) {
   return (
-    <div className="rounded-lg border border-dashed border-mk-ash/25 p-6 text-center text-sm text-mk-ash">{label}</div>
+    <div className="rounded-lg border border-dashed border-white/15 p-6 text-center text-sm text-slate-400">
+      {label}
+    </div>
   );
 }
 
@@ -2844,13 +2935,13 @@ function ConversationTranscript({ calls }: { calls: VoiceSessionRow[] }) {
   }
   return (
     <div className="grid gap-2">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-mk-ash">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
         {calls.length} calls in this conversation
       </div>
       {calls.map((call, index) => (
-        <div className="rounded-md border border-mk-ash/15 bg-mk-paper/50 p-2" key={call.reviewId}>
-          <div className="mb-1 flex flex-wrap items-center gap-2 text-[11px] text-mk-ash">
-            <span className="font-semibold text-mk-ink">Call {index + 1}</span>
+        <div className="rounded-md border border-white/10 bg-white/[0.02] p-2" key={call.reviewId}>
+          <div className="mb-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+            <span className="font-semibold text-slate-200">Call {index + 1}</span>
             <span>{formatDate(call.updatedAt)}</span>
             {call.closeReason ? <Badge tone={closeReasonTone(call.closeReason)}>{call.closeReason}</Badge> : null}
             <span>{transcriptTurnCount(call)} turns</span>
@@ -2935,7 +3026,7 @@ function _LatestEnquiriesPanel({
   const todayCount = leads.filter((lead) => isSameKualaLumpurDay(lead.createdAt, generatedAt)).length;
 
   return (
-    <Card className="scroll-mt-36 border-mk-blue/25 bg-white shadow-sm" id="latest-enquiries">
+    <Card className="scroll-mt-36 border-sky-400/25 bg-white/[0.04]" id="latest-enquiries">
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -2961,7 +3052,7 @@ function _LatestEnquiriesPanel({
         })}
         {leads.length > latest.length ? (
           <a
-            className="inline-flex min-h-10 items-center justify-center rounded-lg border border-mk-ash/20 bg-mk-paper px-4 text-sm font-semibold text-mk-off-black transition hover:border-mk-blue/40 hover:bg-white"
+            className="inline-flex min-h-10 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] px-4 text-sm font-semibold text-slate-100 transition hover:border-sky-400/40 hover:bg-white/[0.06]"
             href={adminModeHref("leads", "workflow")}
           >
             Open all {leads.length} recent enquiries
@@ -2989,17 +3080,17 @@ function LatestEnquiryCard({
 
   return (
     <article
-      className="grid gap-4 rounded-xl border border-mk-ash/15 bg-mk-paper/55 p-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]"
+      className="grid gap-4 rounded-xl border border-white/10 bg-white/[0.03] p-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]"
       data-lead-id={lead.leadId}
     >
       <div className="min-w-0">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="truncate text-base font-semibold text-mk-off-black">{lead.name || "Unnamed visitor"}</div>
-            <div className="mt-1 truncate text-sm text-mk-ash">{lead.org || "No organisation provided"}</div>
+            <div className="truncate text-base font-semibold text-slate-100">{lead.name || "Unnamed visitor"}</div>
+            <div className="mt-1 truncate text-sm text-slate-400">{lead.org || "No organisation provided"}</div>
           </div>
-          <div className="text-right text-xs text-mk-ash">
-            <div className="font-semibold text-mk-off-black">{formatRelativeAge(lead.createdAt, generatedAt)}</div>
+          <div className="text-right text-xs text-slate-400">
+            <div className="font-semibold text-slate-100">{formatRelativeAge(lead.createdAt, generatedAt)}</div>
             <div className="mt-1">{formatDate(lead.createdAt)}</div>
           </div>
         </div>
@@ -3012,25 +3103,23 @@ function LatestEnquiryCard({
           <Badge tone={notification.tone}>{notification.label}</Badge>
         </div>
 
-        <div className="mt-4 rounded-lg border border-mk-ash/15 bg-white p-3">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
-            What they want
-          </div>
-          <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-mk-off-black">
+        <div className="mt-4 rounded-lg border border-white/10 bg-white/[0.04] p-3">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">What they want</div>
+          <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-100">
             {lead.message?.trim() || "No enquiry brief was captured."}
           </p>
         </div>
 
         <div className="mt-3 flex flex-wrap gap-2 text-xs">
           <a
-            className="inline-flex min-h-8 items-center rounded-full border border-mk-blue/20 bg-white px-3 font-semibold text-mk-blue transition hover:border-mk-blue/45 hover:bg-mk-blue/5"
+            className="inline-flex min-h-8 items-center rounded-full border border-sky-400/25 bg-white/[0.04] px-3 font-semibold text-sky-300 transition hover:border-sky-400/50 hover:bg-sky-400/10"
             href={`mailto:${encodeURIComponent(lead.email)}`}
           >
             {lead.email}
           </a>
           {lead.phone ? (
             <a
-              className="inline-flex min-h-8 items-center rounded-full border border-mk-ash/20 bg-white px-3 font-semibold text-mk-off-black transition hover:border-mk-blue/40"
+              className="inline-flex min-h-8 items-center rounded-full border border-white/10 bg-white/[0.04] px-3 font-semibold text-slate-100 transition hover:border-sky-400/40"
               href={`tel:${lead.phone.replace(/[^+\d]/g, "")}`}
             >
               {lead.phone}
@@ -3038,7 +3127,7 @@ function LatestEnquiryCard({
           ) : null}
           {websiteHref ? (
             <a
-              className="inline-flex min-h-8 items-center rounded-full border border-mk-ash/20 bg-white px-3 font-semibold text-mk-off-black transition hover:border-mk-blue/40"
+              className="inline-flex min-h-8 items-center rounded-full border border-white/10 bg-white/[0.04] px-3 font-semibold text-slate-100 transition hover:border-sky-400/40"
               href={websiteHref}
               rel="noreferrer"
               target="_blank"
@@ -3048,31 +3137,31 @@ function LatestEnquiryCard({
           ) : null}
         </div>
 
-        <div className="mt-3 grid gap-2 text-xs text-mk-ash sm:grid-cols-2">
+        <div className="mt-3 grid gap-2 text-xs text-slate-400 sm:grid-cols-2">
           <div>
-            <span className="font-semibold text-mk-off-black">Enquiry type:</span> {segment.label}
+            <span className="font-semibold text-slate-100">Enquiry type:</span> {segment.label}
           </div>
           <div>
-            <span className="font-semibold text-mk-off-black">Routed to:</span> {lead.routedTo}
+            <span className="font-semibold text-slate-100">Routed to:</span> {lead.routedTo}
           </div>
         </div>
       </div>
 
       <div className="grid content-start gap-3">
         <LeadInteractionEvaluation lead={lead} voiceSession={voiceSession} />
-        <div className="rounded-lg border border-mk-ash/15 bg-white p-3 text-sm leading-6">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">Do next</div>
-          <p className="mt-1 text-mk-ash">{leadActionHint(lead)}</p>
+        <div className="rounded-lg border border-white/10 bg-white/[0.04] p-3 text-sm leading-6">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Do next</div>
+          <p className="mt-1 text-slate-400">{leadActionHint(lead)}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <a
-            className="inline-flex min-h-9 flex-1 items-center justify-center rounded-full bg-mk-off-black px-4 text-xs font-semibold text-white transition hover:bg-mk-blue"
+            className="inline-flex min-h-9 flex-1 items-center justify-center rounded-full bg-slate-100 px-4 text-xs font-semibold text-slate-900 transition hover:bg-white"
             href={`mailto:${encodeURIComponent(lead.email)}`}
           >
             Contact visitor
           </a>
           <a
-            className="inline-flex min-h-9 flex-1 items-center justify-center rounded-full border border-mk-ash/20 bg-white px-4 text-xs font-semibold text-mk-off-black transition hover:border-mk-blue/40"
+            className="inline-flex min-h-9 flex-1 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] px-4 text-xs font-semibold text-slate-100 transition hover:border-sky-400/40"
             href={adminModeHref("leads", leadAnchorId(lead))}
           >
             Open workflow
@@ -3086,9 +3175,11 @@ function LatestEnquiryCard({
 function LeadInteractionEvaluation({ lead, voiceSession }: { lead: LeadRow; voiceSession?: VoiceSessionRow }) {
   if (lead.source !== "voice") {
     return (
-      <section aria-label="Interaction evaluation" className="rounded-lg border border-mk-ash/15 bg-white p-3">
+      <section aria-label="Interaction evaluation" className="rounded-lg border border-white/10 bg-white/[0.04] p-3">
         <Badge tone="neutral">Evaluation not applicable</Badge>
-        <p className="mt-2 text-xs leading-5 text-mk-ash">Only Reka voice conversations receive interaction scores.</p>
+        <p className="mt-2 text-xs leading-5 text-slate-400">
+          Only Reka voice conversations receive interaction scores.
+        </p>
       </section>
     );
   }
@@ -3098,7 +3189,7 @@ function LeadInteractionEvaluation({ lead, voiceSession }: { lead: LeadRow; voic
     return (
       <section
         aria-label="Interaction evaluation"
-        className="rounded-lg border border-amber-700/20 bg-amber-500/10 p-3"
+        className="rounded-lg border border-amber-400/25 bg-amber-400/10 p-3"
       >
         <Badge tone="amber">Evaluation pending</Badge>
         <p className="mt-2 text-xs leading-5 text-amber-900/75">
@@ -3106,7 +3197,7 @@ function LeadInteractionEvaluation({ lead, voiceSession }: { lead: LeadRow; voic
         </p>
         {voiceSession ? (
           <a
-            className="mt-2 inline-flex text-xs font-semibold text-mk-blue hover:underline"
+            className="mt-2 inline-flex text-xs font-semibold text-sky-300 hover:underline"
             href={adminModeHref("voice", voiceSessionAnchorId(voiceSession.reviewId))}
           >
             Open voice interaction
@@ -3124,9 +3215,9 @@ function LeadInteractionEvaluation({ lead, voiceSession }: { lead: LeadRow; voic
   ];
 
   return (
-    <section aria-label="Interaction evaluation" className="rounded-lg border border-mk-blue/20 bg-white p-3">
+    <section aria-label="Interaction evaluation" className="rounded-lg border border-sky-400/25 bg-white/[0.04] p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
           Interaction evaluation
         </div>
         <Badge tone={evaluation.droppedMidTurn ? "red" : "green"}>
@@ -3136,15 +3227,13 @@ function LeadInteractionEvaluation({ lead, voiceSession }: { lead: LeadRow; voic
       <div className="mt-3 grid grid-cols-2 gap-2">
         {dimensions.map((dimension) => (
           <div
-            className="rounded-md bg-mk-paper px-2.5 py-2"
+            className="rounded-md bg-white/[0.04] px-2.5 py-2"
             data-eval-dimension={dimension.label.toLowerCase()}
             key={dimension.label}
           >
-            <div className="text-[10px] font-semibold uppercase tracking-[0.1em] text-mk-off-black/55">
-              {dimension.label}
-            </div>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">{dimension.label}</div>
             <div className="mt-1 flex items-center justify-between gap-2">
-              <span className="text-sm font-semibold text-mk-off-black">{dimension.value}/5</span>
+              <span className="text-sm font-semibold text-slate-100">{dimension.value}/5</span>
               <Badge tone={scoreTone(dimension.value, dimension.invert)}>
                 {scoreVerdict(dimension.value, dimension.invert)}
               </Badge>
@@ -3152,11 +3241,11 @@ function LeadInteractionEvaluation({ lead, voiceSession }: { lead: LeadRow; voic
           </div>
         ))}
       </div>
-      <p className="mt-2 text-[11px] leading-5 text-mk-ash">
+      <p className="mt-2 text-[11px] leading-5 text-slate-400">
         Higher is better for routing, capture, and quality. Lower is better for frustration.
       </p>
-      {evaluation.summary ? <p className="mt-2 text-xs leading-5 text-mk-ash">{evaluation.summary}</p> : null}
-      <div className="mt-2 flex flex-wrap justify-between gap-2 text-[10px] text-mk-ash">
+      {evaluation.summary ? <p className="mt-2 text-xs leading-5 text-slate-400">{evaluation.summary}</p> : null}
+      <div className="mt-2 flex flex-wrap justify-between gap-2 text-[10px] text-slate-400">
         <span>{evaluation.model}</span>
         <span>
           {evaluation.evaluatedAt ? `Evaluated ${formatDate(evaluation.evaluatedAt)}` : "Evaluation time unavailable"}
@@ -3164,7 +3253,7 @@ function LeadInteractionEvaluation({ lead, voiceSession }: { lead: LeadRow; voic
       </div>
       {voiceSession ? (
         <a
-          className="mt-2 inline-flex text-xs font-semibold text-mk-blue hover:underline"
+          className="mt-2 inline-flex text-xs font-semibold text-sky-300 hover:underline"
           href={adminModeHref("voice", voiceSessionAnchorId(voiceSession.reviewId))}
         >
           Open voice interaction
@@ -3286,11 +3375,11 @@ function RekaDiagnosisPanel({ actions, evals }: { actions: RekaFixAction[]; eval
   const weeklyDelta = latestQualityDelta(evals.trend.weekly) ?? latestQualityDelta(evals.trend.daily);
   const movementTone: AdminTone = weeklyDelta && weeklyDelta.delta >= 0 ? "green" : weeklyDelta ? "amber" : "neutral";
   return (
-    <div className="grid gap-3 rounded-lg border border-mk-ash/15 bg-white p-3">
+    <div className="grid gap-3 rounded-lg border border-white/10 bg-white/[0.04] p-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <div className="text-xs font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">Diagnosis</div>
-          <h3 className="mt-1 text-base font-semibold leading-snug text-mk-off-black">
+          <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Diagnosis</div>
+          <h3 className="mt-1 text-base font-semibold leading-snug text-slate-100">
             {bottleneck ? bottleneck.title : "No repeated failure pattern"}
           </h3>
         </div>
@@ -3298,13 +3387,13 @@ function RekaDiagnosisPanel({ actions, evals }: { actions: RekaFixAction[]; eval
           {weeklyDelta ? `${formatSignedScoreDelta(weeklyDelta.delta)} quality` : "no trend"}
         </Badge>
       </div>
-      <p className="text-xs leading-5 text-mk-ash">
+      <p className="text-xs leading-5 text-slate-400">
         {bottleneck
           ? `${bottleneck.count} evaluated sessions point to this first. Patch the runtime surface, then collect new sessions before re-scoring.`
           : "Keep the eval loop running after real sessions; the panel will promote the next repeated failure pattern."}
       </p>
       {weeklyDelta ? (
-        <div className="rounded-md bg-mk-paper px-3 py-2 text-xs leading-5 text-mk-ash">
+        <div className="rounded-md bg-white/[0.04] px-3 py-2 text-xs leading-5 text-slate-400">
           Quality moved from {weeklyDelta.from} to {weeklyDelta.to}: {weeklyDelta.current.toFixed(2)}/5 (
           {formatSignedScoreDelta(weeklyDelta.delta)}).
         </div>
@@ -3316,19 +3405,19 @@ function RekaDiagnosisPanel({ actions, evals }: { actions: RekaFixAction[]; eval
 
 function RekaFailureMix({ actions }: { actions: RekaFixAction[] }) {
   if (actions.length === 0) {
-    return <div className="rounded-md bg-mk-paper px-3 py-2 text-xs text-mk-ash">No failure mix yet.</div>;
+    return <div className="rounded-md bg-white/[0.04] px-3 py-2 text-xs text-slate-400">No failure mix yet.</div>;
   }
   const max = Math.max(...actions.map((action) => action.count), 1);
   return (
     <div className="grid gap-2">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">Failure mix</div>
+      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Failure mix</div>
       {actions.map((action) => (
         <div className="grid gap-1" key={`failure:${action.key}`}>
           <div className="flex items-center justify-between gap-2 text-xs">
-            <span className="font-semibold text-mk-off-black">{action.key}</span>
-            <span className="text-mk-ash">{action.count} examples</span>
+            <span className="font-semibold text-slate-100">{action.key}</span>
+            <span className="text-slate-400">{action.count} examples</span>
           </div>
-          <div className="h-2 overflow-hidden rounded-full bg-mk-paper">
+          <div className="h-2 overflow-hidden rounded-full bg-white/[0.04]">
             <div
               className={`h-full rounded-full ${failureBarClass(action.tone)}`}
               style={{ width: `${Math.max((action.count / max) * 100, 8)}%` }}
@@ -3341,10 +3430,10 @@ function RekaFailureMix({ actions }: { actions: RekaFixAction[] }) {
 }
 
 function failureBarClass(tone: AdminTone) {
-  if (tone === "red") return "bg-destructive";
-  if (tone === "amber") return "bg-amber-500";
-  if (tone === "green") return "bg-emerald-600";
-  return "bg-mk-blue";
+  if (tone === "red") return "bg-rose-400";
+  if (tone === "amber") return "bg-amber-400";
+  if (tone === "green") return "bg-emerald-400";
+  return "bg-sky-400";
 }
 
 function latestQualityDelta(trend: EvalAnalytics["trend"]["daily"] | EvalAnalytics["trend"]["weekly"]) {

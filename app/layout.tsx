@@ -33,6 +33,10 @@ export const metadata: Metadata = {
   title: siteMeta.title,
   description: siteMeta.description,
   alternates: { canonical: "/" },
+  // Google Search Console ownership proof; renders only when configured.
+  ...(process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION
+    ? { verification: { google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION } }
+    : {}),
   icons: {
     icon: [
       { url: "/favicon.ico", sizes: "any" },

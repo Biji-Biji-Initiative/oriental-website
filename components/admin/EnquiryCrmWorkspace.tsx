@@ -1,6 +1,7 @@
 import { ArrowUpRightIcon, Building2Icon, MailIcon, PhoneIcon, UserRoundIcon } from "lucide-react";
 import { AdminBulkAssignmentForm } from "@/components/admin/AdminBulkAssignmentForm";
 import { AdminLeadWorkflowForm } from "@/components/admin/AdminLeadWorkflowForm";
+import { AdminRunEvalsButton } from "@/components/admin/AdminRunEvalsButton";
 import { Badge } from "@/components/admin/Badge";
 import {
   buildCrmIntelligence,
@@ -109,21 +110,21 @@ export function EnquiryCrmWorkspace({
           }))}
       />
 
-      <section className="overflow-hidden rounded-2xl border border-mk-ash/20 bg-white shadow-sm" id="enquiry-table">
-        <header className="flex flex-col gap-3 border-b border-mk-ash/15 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+      <section className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04]" id="enquiry-table">
+        <header className="flex flex-col gap-3 border-b border-white/10 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-lg font-semibold tracking-tight">Enquiry pipeline</h2>
               <Badge tone="blue">{ordered.length} shown</Badge>
               {ordered.length !== totalLeads ? <Badge tone="neutral">{totalLeads} total</Badge> : null}
             </div>
-            <p className="mt-1 text-sm text-mk-ash">
+            <p className="mt-1 text-sm text-slate-400">
               Scan the customer, request, stage, ownership, delivery, and recency in one CRM view.
             </p>
           </div>
           {view === "today" && totalLeads > visible.length ? (
             <a
-              className="inline-flex h-9 items-center justify-center rounded-lg border border-mk-blue/20 bg-mk-blue/5 px-3 text-sm font-semibold text-mk-blue transition hover:border-mk-blue/40 hover:bg-mk-blue/10"
+              className="inline-flex h-9 items-center justify-center rounded-lg border border-sky-400/25 bg-sky-400/10 px-3 text-sm font-semibold text-sky-300 transition hover:border-sky-400/40 hover:bg-sky-400/10"
               href="/admin/session-review?view=leads#crm-workspace"
             >
               View all {totalLeads}
@@ -135,14 +136,14 @@ export function EnquiryCrmWorkspace({
         {visible.length === 0 ? (
           <div className="px-5 py-12 text-center">
             <p className="font-semibold">No enquiries match these filters.</p>
-            <p className="mt-1 text-sm text-mk-ash">Reset the filters to return to the complete pipeline.</p>
+            <p className="mt-1 text-sm text-slate-400">Reset the filters to return to the complete pipeline.</p>
           </div>
         ) : (
           <>
             <div className="hidden overflow-x-auto lg:block">
               <table className="w-full min-w-[1180px] border-collapse text-left text-sm" data-crm-table>
                 <caption className="sr-only">Oriental enquiries ordered newest first</caption>
-                <thead className="bg-mk-paper/90 text-[11px] font-semibold uppercase tracking-[0.11em] text-mk-off-black/55">
+                <thead className="bg-[#0a0f1c]/85 text-[11px] font-semibold uppercase tracking-[0.11em] text-slate-500">
                   <tr>
                     <th className="w-[22%] px-4 py-3" scope="col">
                       Contact
@@ -167,7 +168,7 @@ export function EnquiryCrmWorkspace({
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-mk-ash/12">
+                <tbody className="divide-y divide-white/10">
                   {visible.map((lead) => (
                     <CrmTableRow
                       filters={filters}
@@ -183,7 +184,7 @@ export function EnquiryCrmWorkspace({
               </table>
             </div>
 
-            <div className="divide-y divide-mk-ash/12 lg:hidden">
+            <div className="divide-y divide-white/10 lg:hidden">
               {visible.map((lead) => (
                 <CrmMobileRow
                   filters={filters}
@@ -227,19 +228,19 @@ function CrmMetric({
   tone: "neutral" | "blue" | "green" | "red" | "amber";
 }) {
   const toneClass = {
-    neutral: "border-mk-ash/20 bg-white",
-    blue: "border-mk-blue/20 bg-mk-blue/[0.04]",
-    green: "border-emerald-700/20 bg-emerald-700/[0.04]",
-    red: "border-destructive/20 bg-destructive/[0.04]",
-    amber: "border-amber-700/20 bg-amber-500/[0.06]",
+    neutral: "border-white/10 bg-white/[0.04]",
+    blue: "border-sky-400/25 bg-sky-400/[0.06]",
+    green: "border-emerald-400/25 bg-emerald-700/[0.04]",
+    red: "border-rose-400/25 bg-destructive/[0.04]",
+    amber: "border-amber-400/25 bg-amber-500/[0.06]",
   }[tone];
   return (
-    <div className={`rounded-xl border p-4 shadow-sm ${toneClass}`}>
+    <div className={`rounded-xl border p-4 ${toneClass}`}>
       <div className="flex items-center justify-between gap-3">
-        <span className="text-xs font-semibold uppercase tracking-[0.11em] text-mk-off-black/55">{label}</span>
-        <span className="text-2xl font-semibold tracking-tight text-mk-off-black">{value}</span>
+        <span className="text-xs font-semibold uppercase tracking-[0.11em] text-slate-500">{label}</span>
+        <span className="text-2xl font-semibold tracking-tight text-slate-100">{value}</span>
       </div>
-      <p className="mt-2 text-xs leading-5 text-mk-ash">{detail}</p>
+      <p className="mt-2 text-xs leading-5 text-slate-400">{detail}</p>
     </div>
   );
 }
@@ -267,27 +268,25 @@ function CrmIntelligencePanel({
     },
   ];
   return (
-    <section className="overflow-hidden rounded-2xl border border-mk-blue/20 bg-white shadow-sm" id="crm-intelligence">
-      <header className="border-b border-mk-ash/15 bg-gradient-to-r from-mk-blue/[0.08] via-white to-white px-4 py-5 sm:px-5">
+    <section className="overflow-hidden rounded-2xl border border-sky-400/25 bg-white/[0.04]" id="crm-intelligence">
+      <header className="border-b border-white/10 bg-gradient-to-r from-sky-400/10 via-transparent to-transparent px-4 py-5 sm:px-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-mk-blue">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-300">
               Customer intelligence
             </div>
             <h2 className="mt-1 text-xl font-semibold tracking-tight">Account portfolio &amp; ownership</h2>
-            <p className="mt-1 max-w-2xl text-sm leading-6 text-mk-ash">
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-400">
               See organizations as accounts, recognize returning contacts, catch likely duplicate submissions, and
               balance follow-up ownership.
             </p>
           </div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
             {headlineStats.map((stat) => (
-              <div className="min-w-28 rounded-lg border border-mk-ash/15 bg-white/90 px-3 py-2" key={stat.label}>
+              <div className="min-w-28 rounded-lg border border-white/10 bg-white/[0.07] px-3 py-2" key={stat.label}>
                 <div className="text-lg font-semibold tracking-tight">{stat.value}</div>
-                <div className="text-[10px] font-semibold uppercase tracking-[0.1em] text-mk-off-black/55">
-                  {stat.label}
-                </div>
-                <div className="mt-0.5 text-[10px] text-mk-ash">{stat.detail}</div>
+                <div className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">{stat.label}</div>
+                <div className="mt-0.5 text-[10px] text-slate-400">{stat.detail}</div>
               </div>
             ))}
           </div>
@@ -295,7 +294,7 @@ function CrmIntelligencePanel({
       </header>
       <div className="grid xl:grid-cols-[minmax(0,1.25fr)_minmax(380px,0.75fr)]">
         <section
-          className="min-w-0 p-4 sm:p-5 xl:border-r xl:border-mk-ash/15"
+          className="min-w-0 p-4 sm:p-5 xl:border-r xl:border-white/10"
           aria-labelledby="account-portfolio-title"
         >
           <div className="flex items-center justify-between gap-3">
@@ -303,21 +302,21 @@ function CrmIntelligencePanel({
               <h3 className="font-semibold" id="account-portfolio-title">
                 Account portfolio
               </h3>
-              <p className="mt-1 text-xs text-mk-ash">Highest-context organizations, ordered by enquiry history.</p>
+              <p className="mt-1 text-xs text-slate-400">Highest-context organizations, ordered by enquiry history.</p>
             </div>
             <Badge tone="blue">
               {intelligence.accounts.length} {intelligence.accounts.length === 1 ? "account" : "accounts"}
             </Badge>
           </div>
           {intelligence.accounts.length === 0 ? (
-            <p className="mt-4 rounded-lg bg-mk-paper p-4 text-sm text-mk-ash">
+            <p className="mt-4 rounded-lg bg-white/[0.04] p-4 text-sm text-slate-400">
               Organization context has not been captured yet.
             </p>
           ) : (
-            <div className="mt-4 overflow-x-auto rounded-xl border border-mk-ash/15">
+            <div className="mt-4 overflow-x-auto rounded-xl border border-white/10">
               <table className="w-full min-w-[660px] border-collapse text-left text-sm" data-account-table>
                 <caption className="sr-only">Oriental organization account portfolio</caption>
-                <thead className="bg-mk-paper/90 text-[10px] font-semibold uppercase tracking-[0.11em] text-mk-off-black/55">
+                <thead className="bg-[#0a0f1c]/85 text-[10px] font-semibold uppercase tracking-[0.11em] text-slate-500">
                   <tr>
                     <th className="px-3 py-2.5" scope="col">
                       Organization
@@ -336,17 +335,17 @@ function CrmIntelligencePanel({
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-mk-ash/12">
+                <tbody className="divide-y divide-white/10">
                   {intelligence.accounts.slice(0, 7).map((account) => (
-                    <tr className="bg-white hover:bg-mk-paper/50" key={account.key}>
+                    <tr className="bg-white/[0.04] hover:bg-white/[0.02]" key={account.key}>
                       <th className="px-3 py-3 font-normal" scope="row">
                         <a
-                          className="font-semibold text-mk-blue hover:underline"
+                          className="font-semibold text-sky-300 hover:underline"
                           href={portfolioHref(view, filters, account.name)}
                         >
                           {account.name}
                         </a>
-                        <div className="mt-1 text-xs text-mk-ash">
+                        <div className="mt-1 text-xs text-slate-400">
                           {account.segments
                             .slice(0, 2)
                             .map((segment) => getSegment(segment).label)
@@ -358,7 +357,7 @@ function CrmIntelligencePanel({
                       <td className="px-3 py-3 text-right">
                         <Badge tone={account.openCount > 0 ? "amber" : "green"}>{account.openCount}</Badge>
                       </td>
-                      <td className="px-3 py-3 text-xs text-mk-ash">
+                      <td className="px-3 py-3 text-xs text-slate-400">
                         {formatRelativeAge(account.latestAt, generatedAt)}
                       </td>
                     </tr>
@@ -368,22 +367,22 @@ function CrmIntelligencePanel({
             </div>
           )}
         </section>
-        <section className="min-w-0 bg-mk-paper/30 p-4 sm:p-5" aria-labelledby="owner-workload-title">
+        <section className="min-w-0 bg-white/[0.02] p-4 sm:p-5" aria-labelledby="owner-workload-title">
           <div className="flex items-center justify-between gap-3">
             <div>
               <h3 className="font-semibold" id="owner-workload-title">
                 Owner workload
               </h3>
-              <p className="mt-1 text-xs text-mk-ash">Open work, priority pressure, and stale follow-up.</p>
+              <p className="mt-1 text-xs text-slate-400">Open work, priority pressure, and stale follow-up.</p>
             </div>
             <Badge tone={intelligence.ownerWorkloads.some((row) => row.owner === "Unassigned") ? "amber" : "green"}>
               {intelligence.ownerWorkloads.length} queues
             </Badge>
           </div>
-          <div className="mt-4 overflow-x-auto rounded-xl border border-mk-ash/15 bg-white">
+          <div className="mt-4 overflow-x-auto rounded-xl border border-white/10 bg-white/[0.04]">
             <table className="w-full min-w-[360px] border-collapse text-left text-sm" data-owner-table>
               <caption className="sr-only">Oriental enquiry owner workload</caption>
-              <thead className="bg-mk-paper/90 text-[10px] font-semibold uppercase tracking-[0.11em] text-mk-off-black/55">
+              <thead className="bg-[#0a0f1c]/85 text-[10px] font-semibold uppercase tracking-[0.11em] text-slate-500">
                 <tr>
                   <th className="px-3 py-2.5" scope="col">
                     Owner
@@ -399,15 +398,15 @@ function CrmIntelligencePanel({
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-mk-ash/12">
+              <tbody className="divide-y divide-white/10">
                 {intelligence.ownerWorkloads.slice(0, 7).map((row) => (
-                  <tr className="bg-white" key={row.owner}>
+                  <tr className="bg-white/[0.04]" key={row.owner}>
                     <th className="px-3 py-3 font-normal" scope="row">
                       <a
                         className={
                           row.owner === "Unassigned"
-                            ? "font-semibold text-amber-800 hover:underline"
-                            : "font-semibold text-mk-blue hover:underline"
+                            ? "font-semibold text-amber-300 hover:underline"
+                            : "font-semibold text-sky-300 hover:underline"
                         }
                         href={portfolioHref(
                           view,
@@ -422,7 +421,7 @@ function CrmIntelligencePanel({
                     <td className="px-3 py-3 text-right font-semibold">{row.openCount}</td>
                     <td className="px-3 py-3 text-right">{row.highPriorityCount}</td>
                     <td className="px-3 py-3 text-right">
-                      <span className={row.staleCount > 0 ? "font-semibold text-amber-800" : "text-mk-ash"}>
+                      <span className={row.staleCount > 0 ? "font-semibold text-amber-300" : "text-slate-400"}>
                         {row.staleCount}
                       </span>
                     </td>
@@ -457,17 +456,17 @@ function CrmTableRow({
   const delivery = notificationStatus(lead);
   return (
     <tr
-      className={selected ? "bg-mk-blue/[0.045]" : "bg-white transition hover:bg-mk-paper/60"}
+      className={selected ? "bg-sky-400/[0.06]" : "bg-white/[0.04] transition hover:bg-white/[0.03]"}
       data-lead-id={lead.leadId}
     >
       <th className="px-4 py-3.5 align-top font-normal" scope="row">
-        <div className="font-semibold text-mk-off-black">{lead.name?.trim() || "Unnamed visitor"}</div>
-        <div className="mt-1 flex items-center gap-1.5 text-xs text-mk-ash">
+        <div className="font-semibold text-slate-100">{lead.name?.trim() || "Unnamed visitor"}</div>
+        <div className="mt-1 flex items-center gap-1.5 text-xs text-slate-400">
           <Building2Icon className="size-3.5 shrink-0" />
           <span className="truncate">{lead.org?.trim() || "Organisation not captured"}</span>
         </div>
         <a
-          className="mt-1.5 block truncate text-xs font-medium text-mk-blue hover:underline"
+          className="mt-1.5 block truncate text-xs font-medium text-sky-300 hover:underline"
           href={`mailto:${encodeURIComponent(lead.email)}`}
         >
           {lead.email}
@@ -475,15 +474,13 @@ function CrmTableRow({
         <RelationshipBadges relationship={relationship} />
       </th>
       <td className="px-4 py-3.5 align-top">
-        <p className="line-clamp-2 leading-5 text-mk-off-black">
-          {lead.message?.trim() || "No request brief captured."}
-        </p>
-        <div className="mt-2 text-xs text-mk-ash">{getSegment(lead.segment).label}</div>
+        <p className="line-clamp-2 leading-5 text-slate-100">{lead.message?.trim() || "No request brief captured."}</p>
+        <div className="mt-2 text-xs text-slate-400">{getSegment(lead.segment).label}</div>
       </td>
       <td className="px-4 py-3.5 align-top">
         <Badge tone={lead.source === "voice" ? "blue" : "neutral"}>{leadSourceLabel(lead.source)}</Badge>
-        <div className="mt-2 text-xs text-mk-ash">
-          Route: <span className="font-medium text-mk-off-black">{lead.routedTo || "Not set"}</span>
+        <div className="mt-2 text-xs text-slate-400">
+          Route: <span className="font-medium text-slate-100">{lead.routedTo || "Not set"}</span>
         </div>
       </td>
       <td className="px-4 py-3.5 align-top">
@@ -491,9 +488,9 @@ function CrmTableRow({
           <Badge tone={statusTone(status)}>{adminLeadStatusLabels[status]}</Badge>
           <Badge tone={priorityTone(priority)}>{adminLeadPriorityLabels[priority]}</Badge>
         </div>
-        <div className="mt-2 flex items-center gap-1.5 text-xs text-mk-ash">
+        <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-400">
           <UserRoundIcon className="size-3.5" />
-          <span className={lead.owner?.trim() ? "text-mk-off-black" : "font-semibold text-amber-800"}>
+          <span className={lead.owner?.trim() ? "text-slate-100" : "font-semibold text-amber-300"}>
             {lead.owner?.trim() || "Unassigned"}
           </span>
         </div>
@@ -501,16 +498,16 @@ function CrmTableRow({
       <td className="px-4 py-3.5 align-top">
         <Badge tone={delivery.tone}>{delivery.label}</Badge>
         <ClickUpTaskLink compact lead={lead} />
-        <p className="mt-2 line-clamp-2 text-xs leading-5 text-mk-ash">{deliverySummary(lead)}</p>
+        <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-400">{deliverySummary(lead)}</p>
       </td>
       <td className="px-4 py-3.5 align-top">
-        <div className="font-semibold text-mk-off-black">{formatRelativeAge(lead.createdAt, generatedAt)}</div>
-        <div className="mt-1 text-xs leading-5 text-mk-ash">{formatDate(lead.createdAt)}</div>
+        <div className="font-semibold text-slate-100">{formatRelativeAge(lead.createdAt, generatedAt)}</div>
+        <div className="mt-1 text-xs leading-5 text-slate-400">{formatDate(lead.createdAt)}</div>
       </td>
       <td className="px-4 py-3.5 text-right align-top">
         <a
           aria-label={`Open ${lead.name || lead.email} enquiry record`}
-          className="inline-flex h-8 items-center rounded-lg border border-mk-blue/20 bg-white px-3 text-xs font-semibold text-mk-blue transition hover:border-mk-blue/45 hover:bg-mk-blue/5"
+          className="inline-flex h-8 items-center rounded-lg border border-sky-400/25 bg-white/[0.04] px-3 text-xs font-semibold text-sky-300 transition hover:border-sky-400/50 hover:bg-sky-400/10"
           href={recordHref(view, filters, lead.leadId)}
         >
           Open
@@ -538,13 +535,15 @@ function CrmMobileRow({
   const status = normalizeAdminLeadStatus(lead.status);
   const priority = normalizeAdminLeadPriority(lead.priority);
   return (
-    <article className={`p-4 ${selected ? "bg-mk-blue/[0.045]" : "bg-white"}`} data-lead-id={lead.leadId}>
+    <article className={`p-4 ${selected ? "bg-sky-400/[0.06]" : "bg-white/[0.04]"}`} data-lead-id={lead.leadId}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="truncate font-semibold">{lead.name?.trim() || "Unnamed visitor"}</div>
-          <div className="mt-1 truncate text-xs text-mk-ash">{lead.org?.trim() || lead.email}</div>
+          <div className="mt-1 truncate text-xs text-slate-400">{lead.org?.trim() || lead.email}</div>
         </div>
-        <div className="shrink-0 text-right text-xs text-mk-ash">{formatRelativeAge(lead.createdAt, generatedAt)}</div>
+        <div className="shrink-0 text-right text-xs text-slate-400">
+          {formatRelativeAge(lead.createdAt, generatedAt)}
+        </div>
       </div>
       <p className="mt-3 line-clamp-2 text-sm leading-5">{lead.message?.trim() || "No request brief captured."}</p>
       <div className="mt-3 flex flex-wrap gap-1.5">
@@ -554,7 +553,7 @@ function CrmMobileRow({
       </div>
       <RelationshipBadges relationship={relationship} />
       <a
-        className="mt-3 inline-flex h-9 w-full items-center justify-center rounded-lg border border-mk-blue/20 bg-mk-blue/5 text-sm font-semibold text-mk-blue"
+        className="mt-3 inline-flex h-9 w-full items-center justify-center rounded-lg border border-sky-400/25 bg-sky-400/10 text-sm font-semibold text-sky-300"
         href={recordHref(view, filters, lead.leadId)}
       >
         Open CRM record
@@ -588,15 +587,15 @@ function CrmRecord({
   const sla = adminLeadSlaState(status, lead.nextActionAt, generatedAt);
   return (
     <section
-      className="scroll-mt-28 overflow-hidden rounded-2xl border border-mk-ash/20 bg-white shadow-sm"
+      className="scroll-mt-28 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04]"
       id="crm-record"
     >
-      <header className="border-b border-mk-ash/15 bg-gradient-to-r from-mk-blue/[0.07] via-white to-white px-4 py-5 sm:px-6">
+      <header className="border-b border-white/10 bg-gradient-to-r from-sky-400/10 via-transparent to-transparent px-4 py-5 sm:px-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.13em] text-mk-blue">Enquiry record</div>
+            <div className="text-xs font-semibold uppercase tracking-[0.13em] text-sky-300">Enquiry record</div>
             <h2 className="mt-2 text-2xl font-semibold tracking-tight">{lead.name?.trim() || "Unnamed visitor"}</h2>
-            <p className="mt-1 text-sm text-mk-ash">{lead.org?.trim() || "Organisation not captured"}</p>
+            <p className="mt-1 text-sm text-slate-400">{lead.org?.trim() || "Organisation not captured"}</p>
             <div className="mt-3 flex flex-wrap gap-2">
               <Badge tone={statusTone(status)}>{adminLeadStatusLabels[status]}</Badge>
               <Badge tone={priorityTone(priority)}>{adminLeadPriorityLabels[priority]}</Badge>
@@ -607,14 +606,14 @@ function CrmRecord({
           </div>
           <div className="flex flex-wrap gap-2">
             <a
-              className="inline-flex h-10 items-center rounded-lg bg-mk-off-black px-4 text-sm font-semibold text-white transition hover:bg-mk-blue"
+              className="inline-flex h-10 items-center rounded-lg bg-slate-100 px-4 text-sm font-semibold text-slate-900 transition hover:bg-white"
               href={`mailto:${encodeURIComponent(lead.email)}`}
             >
               <MailIcon className="mr-2 size-4" /> Email
             </a>
             {lead.phone ? (
               <a
-                className="inline-flex h-10 items-center rounded-lg border border-mk-ash/20 bg-white px-4 text-sm font-semibold transition hover:border-mk-blue/40"
+                className="inline-flex h-10 items-center rounded-lg border border-white/10 bg-white/[0.04] px-4 text-sm font-semibold transition hover:border-sky-400/40"
                 href={`tel:${lead.phone.replace(/[^+\d]/g, "")}`}
               >
                 <PhoneIcon className="mr-2 size-4" /> Call
@@ -622,7 +621,7 @@ function CrmRecord({
             ) : null}
             {website ? (
               <a
-                className="inline-flex h-10 items-center rounded-lg border border-mk-ash/20 bg-white px-4 text-sm font-semibold transition hover:border-mk-blue/40"
+                className="inline-flex h-10 items-center rounded-lg border border-white/10 bg-white/[0.04] px-4 text-sm font-semibold transition hover:border-sky-400/40"
                 href={website}
                 rel="noreferrer"
                 target="_blank"
@@ -636,15 +635,15 @@ function CrmRecord({
       </header>
 
       <div className="grid gap-0 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)]">
-        <div className="grid content-start gap-5 p-4 sm:p-6 xl:border-r xl:border-mk-ash/15">
+        <div className="grid content-start gap-5 p-4 sm:p-6 xl:border-r xl:border-white/10">
           <section>
             <SectionLabel>What they want</SectionLabel>
-            <p className="mt-2 whitespace-pre-wrap text-base leading-7 text-mk-off-black">
+            <p className="mt-2 whitespace-pre-wrap text-base leading-7 text-slate-100">
               {lead.message?.trim() || "No request brief was captured for this enquiry."}
             </p>
           </section>
 
-          <section className="rounded-xl border border-mk-ash/15 bg-mk-paper/45 p-4">
+          <section className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
             <SectionLabel>CRM data</SectionLabel>
             <dl className="mt-4 grid gap-x-5 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
               <DataField icon={<MailIcon className="size-4" />} label="Email" value={lead.email} />
@@ -671,7 +670,7 @@ function CrmRecord({
           </section>
 
           {lead.workflowNote ? (
-            <section className="rounded-xl border border-mk-blue/15 bg-mk-blue/[0.04] p-4">
+            <section className="rounded-xl border border-sky-400/20 bg-sky-400/[0.06] p-4">
               <SectionLabel>Latest workflow note</SectionLabel>
               <p className="mt-2 text-sm leading-6">{lead.workflowNote}</p>
             </section>
@@ -680,19 +679,35 @@ function CrmRecord({
           <InteractionEvidence lead={lead} voiceSession={voiceSession} />
 
           {lead.transcript.length > 0 ? (
-            <details className="rounded-xl border border-mk-ash/15 bg-white" suppressHydrationWarning>
+            <details className="rounded-xl border border-white/10 bg-white/[0.04]" suppressHydrationWarning>
               <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold marker:hidden">
                 Conversation transcript · {lead.transcript.length} turns
               </summary>
-              <div className="grid gap-3 border-t border-mk-ash/15 p-4">
-                {lead.transcript.map((turn: { role: string; text: string }) => (
-                  <div className="rounded-lg bg-mk-paper p-3 text-sm leading-6" key={`${turn.role}:${turn.text}`}>
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-mk-off-black/55">
-                      {turn.role}
+              <div className="grid gap-2 border-t border-white/10 p-4">
+                {lead.transcript.map((turn: { role: string; text: string }) => {
+                  const isReka = turn.role === "assistant";
+                  return (
+                    <div
+                      className={isReka ? "flex justify-end" : "flex justify-start"}
+                      key={`${turn.role}:${turn.text}`}
+                    >
+                      <div
+                        className={
+                          isReka
+                            ? "max-w-[88%] rounded-2xl rounded-br-sm border border-sky-400/20 bg-sky-400/10 px-3 py-2"
+                            : "max-w-[88%] rounded-2xl rounded-bl-sm border border-white/10 bg-white/[0.05] px-3 py-2"
+                        }
+                      >
+                        <div
+                          className={`text-[10px] font-semibold uppercase tracking-[0.12em] ${isReka ? "text-sky-300" : "text-slate-500"}`}
+                        >
+                          {isReka ? "Reka" : "Visitor"}
+                        </div>
+                        <p className="mt-0.5 whitespace-pre-wrap text-sm leading-6 text-slate-300">{turn.text}</p>
+                      </div>
                     </div>
-                    <p className="mt-1 whitespace-pre-wrap">{turn.text}</p>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </details>
           ) : null}
@@ -711,14 +726,14 @@ function CrmRecord({
           ) : null}
         </div>
 
-        <aside className="grid content-start gap-5 bg-mk-paper/35 p-4 sm:p-6">
+        <aside className="grid content-start gap-5 bg-white/[0.02] p-4 sm:p-6">
           <section>
             <SectionLabel>Next action</SectionLabel>
-            <p className="mt-2 text-sm font-semibold leading-6 text-mk-off-black">
+            <p className="mt-2 text-sm font-semibold leading-6 text-slate-100">
               {lead.nextActionNote?.trim() || leadActionHint(lead)}
             </p>
             {lead.nextActionAt ? (
-              <p className="mt-1 text-xs leading-5 text-mk-ash">
+              <p className="mt-1 text-xs leading-5 text-slate-400">
                 Due {formatDate(lead.nextActionAt)} · {sla.label}
               </p>
             ) : null}
@@ -737,32 +752,32 @@ function CrmRecord({
 
           <DeliveryPanel lead={lead} />
 
-          <section className="rounded-xl border border-mk-ash/15 bg-white p-4">
+          <section className="rounded-xl border border-white/10 bg-white/[0.04] p-4">
             <SectionLabel>Activity</SectionLabel>
             <div className="mt-3 grid gap-3">
               {orderedEvents.length === 0 ? (
-                <p className="text-sm leading-6 text-mk-ash">No workflow activity has been recorded yet.</p>
+                <p className="text-sm leading-6 text-slate-400">No workflow activity has been recorded yet.</p>
               ) : (
                 orderedEvents.slice(0, 8).map((event) => (
                   <div
                     className="grid grid-cols-[8px_minmax(0,1fr)] gap-3"
                     key={`${event.kind}:${event.createdAt}:${event.leadId}`}
                   >
-                    <span className="mt-1.5 size-2 rounded-full bg-mk-blue" />
+                    <span className="mt-1.5 size-2 rounded-full bg-sky-400" />
                     <div>
                       <div className="text-sm font-semibold">{eventLabel(event.kind)}</div>
-                      <div className="mt-0.5 text-xs text-mk-ash">
+                      <div className="mt-0.5 text-xs text-slate-400">
                         {event.actor} · {formatDate(event.createdAt)}
                       </div>
-                      {event.note ? <p className="mt-1 text-xs leading-5 text-mk-ash">{event.note}</p> : null}
+                      {event.note ? <p className="mt-1 text-xs leading-5 text-slate-400">{event.note}</p> : null}
                       {event.reason && event.reason !== event.note ? (
-                        <p className="mt-1 text-xs leading-5 text-mk-ash">Reason: {event.reason}</p>
+                        <p className="mt-1 text-xs leading-5 text-slate-400">Reason: {event.reason}</p>
                       ) : null}
                       {event.changes?.length ? (
                         <div className="mt-2 flex flex-wrap gap-1.5">
                           {event.changes.map((change: { field: string; before?: string; after?: string }) => (
                             <span
-                              className="rounded-full bg-mk-paper px-2 py-1 text-[10px] font-semibold text-mk-ash"
+                              className="rounded-full bg-white/[0.04] px-2 py-1 text-[10px] font-semibold text-slate-400"
                               key={`${event.createdAt}:${change.field}`}
                             >
                               {auditFieldLabel(change.field)}: {auditValue(change.field, change.before)} →{" "}
@@ -780,7 +795,7 @@ function CrmRecord({
         </aside>
       </div>
 
-      <div className="border-t border-mk-ash/15 p-4 sm:p-6">
+      <div className="border-t border-white/10 p-4 sm:p-6">
         <RelatedEnquiries
           filters={filters}
           generatedAt={generatedAt}
@@ -798,14 +813,21 @@ function InteractionEvidence({ lead, voiceSession }: { lead: LeadRow; voiceSessi
   const evaluation = voiceSession?.eval;
   if (!evaluation) {
     return (
-      <section className="rounded-xl border border-amber-700/20 bg-amber-500/[0.07] p-4">
+      <section className="rounded-xl border border-amber-400/25 bg-amber-500/[0.07] p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <SectionLabel>Reka interaction evaluation</SectionLabel>
           <Badge tone="amber">Pending</Badge>
         </div>
-        <p className="mt-2 text-sm leading-6 text-amber-950/75">
+        <p className="mt-2 text-sm leading-6 text-amber-200/75">
           The enquiry is safely stored. A 1–5 evaluation has not been persisted for this interaction yet.
         </p>
+        {lead.voiceReviewId ? (
+          <div className="mt-3">
+            <AdminRunEvalsButton compact reviewIds={[lead.voiceReviewId]}>
+              Evaluate this conversation
+            </AdminRunEvalsButton>
+          </div>
+        ) : null}
       </section>
     );
   }
@@ -816,7 +838,7 @@ function InteractionEvidence({ lead, voiceSession }: { lead: LeadRow; voiceSessi
     ["Frustration", evaluation.frustration, true],
   ] as const;
   return (
-    <section className="rounded-xl border border-mk-blue/20 bg-mk-blue/[0.035] p-4" aria-label="Interaction evaluation">
+    <section className="rounded-xl border border-sky-400/25 bg-sky-400/[0.05] p-4" aria-label="Interaction evaluation">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <SectionLabel>Reka interaction evaluation</SectionLabel>
         <Badge tone={evaluation.droppedMidTurn ? "red" : "green"}>
@@ -826,11 +848,11 @@ function InteractionEvidence({ lead, voiceSession }: { lead: LeadRow; voiceSessi
       <div className="mt-4 grid gap-2 sm:grid-cols-4">
         {scores.map(([label, value, invert]) => (
           <div
-            className="rounded-lg border border-mk-ash/12 bg-white p-3"
+            className="rounded-lg border border-white/10 bg-white/[0.04] p-3"
             data-eval-dimension={label.toLowerCase()}
             key={label}
           >
-            <div className="text-[10px] font-semibold uppercase tracking-[0.11em] text-mk-off-black/55">{label}</div>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.11em] text-slate-500">{label}</div>
             <div className="mt-2 flex items-center justify-between gap-2">
               <span className="text-xl font-semibold">{value}/5</span>
               <Badge tone={scoreTone(value, invert)}>{scoreVerdict(value, invert)}</Badge>
@@ -838,7 +860,7 @@ function InteractionEvidence({ lead, voiceSession }: { lead: LeadRow; voiceSessi
           </div>
         ))}
       </div>
-      <p className="mt-3 text-xs leading-5 text-mk-ash">
+      <p className="mt-3 text-xs leading-5 text-slate-400">
         Higher is better for routing, capture, and quality. Lower is better for frustration.
       </p>
       {evaluation.summary ? <p className="mt-2 text-sm leading-6">{evaluation.summary}</p> : null}
@@ -849,11 +871,11 @@ function InteractionEvidence({ lead, voiceSession }: { lead: LeadRow; voiceSessi
 function DataField({ icon, label, value }: { icon?: React.ReactNode; label: string; value?: string | null }) {
   return (
     <div>
-      <dt className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.11em] text-mk-off-black/55">
+      <dt className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.11em] text-slate-500">
         {icon}
         {label}
       </dt>
-      <dd className={`mt-1 break-words text-sm ${value?.trim() ? "text-mk-off-black" : "italic text-mk-ash"}`}>
+      <dd className={`mt-1 break-words text-sm ${value?.trim() ? "text-slate-100" : "italic text-slate-400"}`}>
         {value?.trim() || "Not captured"}
       </dd>
     </div>
@@ -861,7 +883,7 @@ function DataField({ icon, label, value }: { icon?: React.ReactNode; label: stri
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <div className="text-[11px] font-semibold uppercase tracking-[0.13em] text-mk-off-black/55">{children}</div>;
+  return <div className="text-[11px] font-semibold uppercase tracking-[0.13em] text-slate-500">{children}</div>;
 }
 
 function recordHref(view: EnquiryCrmWorkspaceProps["view"], filters: CrmFilters, leadId: string) {
@@ -976,9 +998,9 @@ function clickUpStatus(value: boolean | undefined) {
 }
 
 function clickUpTextClass(value: boolean | undefined) {
-  if (value === true) return "text-emerald-700";
-  if (value === false) return "text-destructive";
-  return "text-amber-800";
+  if (value === true) return "text-emerald-300";
+  if (value === false) return "text-rose-300";
+  return "text-amber-300";
 }
 
 function leadActionHint(lead: LeadRow) {
@@ -1125,11 +1147,11 @@ function RelatedEnquiries({
 }) {
   const related = relationship?.relatedLeads ?? [];
   return (
-    <section className="rounded-xl border border-mk-blue/15 bg-mk-blue/[0.025] p-4" id="related-enquiries">
+    <section className="rounded-xl border border-sky-400/20 bg-sky-400/[0.04] p-4" id="related-enquiries">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <SectionLabel>Account &amp; contact history</SectionLabel>
-          <p className="mt-1 text-sm text-mk-ash">
+          <p className="mt-1 text-sm text-slate-400">
             {related.length > 0
               ? "Previous and parallel enquiries connected by exact contact or normalized organization."
               : "This is the first captured enquiry for this contact and organization."}
@@ -1152,10 +1174,10 @@ function RelatedEnquiries({
         </div>
       </div>
       {related.length > 0 ? (
-        <div className="mt-4 overflow-x-auto rounded-lg border border-mk-ash/15 bg-white">
+        <div className="mt-4 overflow-x-auto rounded-lg border border-white/10 bg-white/[0.04]">
           <table className="w-full min-w-[720px] border-collapse text-left text-sm" data-related-table>
             <caption className="sr-only">Related enquiries for {lead.name || lead.email}</caption>
-            <thead className="bg-mk-paper/90 text-[10px] font-semibold uppercase tracking-[0.11em] text-mk-off-black/55">
+            <thead className="bg-[#0a0f1c]/85 text-[10px] font-semibold uppercase tracking-[0.11em] text-slate-500">
               <tr>
                 <th className="px-3 py-2.5" scope="col">
                   Received
@@ -1174,20 +1196,20 @@ function RelatedEnquiries({
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-mk-ash/12">
+            <tbody className="divide-y divide-white/10">
               {related.slice(0, 8).map((entry) => {
                 const status = normalizeAdminLeadStatus(entry.status);
                 return (
                   <tr key={entry.leadId}>
-                    <td className="px-3 py-3 text-xs text-mk-ash">
-                      <div className="font-medium text-mk-off-black">
+                    <td className="px-3 py-3 text-xs text-slate-400">
+                      <div className="font-medium text-slate-100">
                         {formatRelativeAge(entry.createdAt, generatedAt)}
                       </div>
                       {formatDate(entry.createdAt)}
                     </td>
                     <th className="px-3 py-3 font-normal" scope="row">
                       <div className="font-semibold">{entry.name?.trim() || entry.email}</div>
-                      <div className="mt-1 text-xs text-mk-ash">{entry.email}</div>
+                      <div className="mt-1 text-xs text-slate-400">{entry.email}</div>
                     </th>
                     <td className="max-w-64 px-3 py-3">
                       <p className="line-clamp-2 text-xs leading-5">{entry.message || "No brief captured"}</p>
@@ -1197,7 +1219,7 @@ function RelatedEnquiries({
                     </td>
                     <td className="px-3 py-3 text-right">
                       <a
-                        className="font-semibold text-mk-blue hover:underline"
+                        className="font-semibold text-sky-300 hover:underline"
                         href={relationshipRecordHref(view, filters, entry.leadId)}
                       >
                         Open
@@ -1222,15 +1244,15 @@ function DeliveryPanel({ lead }: { lead: LeadRow }) {
     ["Visitor confirmation", lead.notificationConfirmationOk],
   ] as const;
   return (
-    <section className="rounded-xl border border-mk-ash/15 bg-white p-4">
+    <section className="rounded-xl border border-white/10 bg-white/[0.04] p-4">
       <SectionLabel>Delivery</SectionLabel>
-      <p className="mt-2 text-sm leading-6 text-mk-off-black">{deliverySummary(lead)}</p>
+      <p className="mt-2 text-sm leading-6 text-slate-100">{deliverySummary(lead)}</p>
       <div className="mt-3 grid grid-cols-2 gap-2">
         {channels.map(([label, value]) => {
           const state = deliveryChannelState(value);
           return (
-            <div className="rounded-lg border border-mk-ash/12 bg-mk-paper/45 p-2.5" key={label}>
-              <div className="text-[10px] font-semibold uppercase tracking-[0.1em] text-mk-off-black/55">{label}</div>
+            <div className="rounded-lg border border-white/10 bg-white/[0.02] p-2.5" key={label}>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">{label}</div>
               <div className="mt-1">
                 <Badge tone={state.tone}>{state.label}</Badge>
               </div>
@@ -1242,9 +1264,9 @@ function DeliveryPanel({ lead }: { lead: LeadRow }) {
         <ClickUpTaskLink lead={lead} />
       </div>
       {lead.notificationSummary ? (
-        <details className="mt-3 rounded-lg border border-mk-ash/12 bg-mk-paper/35">
-          <summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-mk-ash">Provider trace</summary>
-          <p className="break-words border-t border-mk-ash/12 px-3 py-2 font-mono text-[11px] leading-5 text-mk-ash">
+        <details className="mt-3 rounded-lg border border-white/10 bg-white/[0.02]">
+          <summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-slate-400">Provider trace</summary>
+          <p className="break-words border-t border-white/10 px-3 py-2 font-mono text-[11px] leading-5 text-slate-400">
             {lead.notificationSummary}
           </p>
         </details>
@@ -1267,8 +1289,8 @@ function ClickUpTaskLink({ compact = false, lead }: { compact?: boolean; lead: L
     <a
       className={
         compact
-          ? "mt-2 inline-flex items-center text-xs font-semibold text-mk-blue hover:underline"
-          : "inline-flex h-10 items-center justify-center rounded-lg border border-mk-blue/20 bg-mk-blue/5 px-3 text-sm font-semibold text-mk-blue transition hover:border-mk-blue/40 hover:bg-mk-blue/10"
+          ? "mt-2 inline-flex items-center text-xs font-semibold text-sky-300 hover:underline"
+          : "inline-flex h-10 items-center justify-center rounded-lg border border-sky-400/25 bg-sky-400/10 px-3 text-sm font-semibold text-sky-300 transition hover:border-sky-400/40 hover:bg-sky-400/10"
       }
       href={href}
       rel="noreferrer"
