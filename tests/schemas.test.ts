@@ -335,6 +335,23 @@ describe("voice review latency schema", () => {
     ).toBe(true);
   });
 
+  it("accepts canonical clear_fields telemetry and rejects invented aliases", () => {
+    const snapshot = (name: string) => ({
+      ...request,
+      snapshot: {
+        ...request.snapshot,
+        latency: {
+          version: 1,
+          turns: [turn],
+          toolCalls: [{ name, outcome: "success", executionMs: 7 }],
+        },
+      },
+    });
+
+    expect(voiceReviewSnapshotSchema.safeParse(snapshot("clear_fields")).success).toBe(true);
+    expect(voiceReviewSnapshotSchema.safeParse(snapshot("clear_all")).success).toBe(false);
+  });
+
   it("rejects unbounded turn arrays and timing values", () => {
     expect(
       voiceReviewSnapshotSchema.safeParse({

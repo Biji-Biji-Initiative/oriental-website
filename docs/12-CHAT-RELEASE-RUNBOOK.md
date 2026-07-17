@@ -3,7 +3,7 @@ title: "Oriental Governed Release Runbook"
 type: "release_spec_and_runbook"
 status: "implemented"
 owner: "Mereka Engineering"
-last_updated: "2026-07-16"
+last_updated: "2026-07-17"
 ---
 
 # 12 — Governed Release Runbook
@@ -34,8 +34,9 @@ cannot affect the runtime image.
 - At a production promotion boundary, the proven staging candidate and
   production MUST use the same source SHA. Shared staging may move afterward
   for another controlled experiment; its live SHA must never be inferred from
-  production or a historical document. Image tags remain distinct because
-  staging may bake preview-only public flags.
+  production or a historical document. Image tags remain distinct for release
+  ownership, but the approved Mereka M nebula and entrance loader ship on both
+  canonical hosts.
 - `staging.oriental.mereka.io` and `oriental.mereka.io` are canonical. The
   `*.deploy.mereka.io` names MUST remain redirects only.
 - Cloudflare MUST remain authoritative DNS only; Coolify Traefik terminates TLS.
@@ -70,12 +71,14 @@ artifact or writing judge results, run:
 pnpm eval:voice -- --aggregate-only --limit 100
 ```
 
-This mode performs only the Convex evaluation query, excludes synthetic smoke
-rows, disables the LLM judge and Convex mutations, writes no report, and emits a
-single aggregate/gate JSON document. It omits transcripts, contact data, session
-identifiers, and identifier-bearing attention lists. `--persist` and `--out` are
-rejected in this mode. PII-free tool-call telemetry is included as overall and
-per-tool sample/outcome counts plus execution, response-to-call, and
+This mode performs only read-only Convex evaluation queries, excludes synthetic
+smoke rows, disables the LLM judge and every Convex mutation, writes no report,
+and emits a single aggregate/gate JSON document. It may use the existing
+per-session query to enrich missing historical `variant`, `voice`, and `speed`
+with bounded concurrency. It omits transcripts, contact data, session
+identifiers, and identifier-bearing attention lists. `--persist` and `--out`
+are rejected in this mode. PII-free tool-call telemetry is included as overall
+and per-tool sample/outcome counts plus execution, response-to-call, and
 response-to-result p50/p95 distributions.
 
 The command fetches and computes local/main Git state, both public health SHAs,
@@ -129,25 +132,28 @@ infisical run \
   --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
   --env staging \
   --path /deploy/oriental-website \
-  -- pnpm release:verify:voice-cell -- --model-cell candidate
+  -- pnpm release:verify:voice-cell -- --model-cell candidate --picker-mode clean
 infisical run \
   --domain https://secrets.mereka.io \
   --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
   --env prod \
   --path /deploy/oriental-website \
-  -- pnpm release:verify:voice-cell -- --model-cell control
+  -- pnpm release:verify:voice-cell -- --model-cell control --picker-mode clean
 infisical run \
   --domain https://secrets.mereka.io \
   --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
   --env prod \
   --path /deploy/oriental-website \
-  -- pnpm release:preflight -- --sha "$sha"
+  -- env NODE_ENV=production pnpm release:preflight -- --sha "$sha"
 ```
 
-Managed-environment validation is the default. This staging preview requires
-`baseline/candidate/low/adaptive` with `gpt-realtime-2.1`; production requires
-`baseline/control/low/adaptive` with `gpt-realtime-2`. Candidate staging requires
-the QA picker on; production control requires it off. `--allow-unmanaged` exists only
+Managed-environment validation is the default. The clean staging candidate
+requires `baseline/candidate/low/adaptive` with `gpt-realtime-2.1`; production
+requires `baseline/control/low/adaptive` with `gpt-realtime-2`. Both clean
+candidate and production control require the QA picker off. A separately
+declared staging audition uses `--picker-mode audition`; it cannot be promotion
+evidence.
+`--allow-unmanaged` exists only
 for testing the Git/static contract and MUST NOT be used as production release
 evidence. The fast parity command runs against both native Infisical
 environments before the full production-env preflight, preventing staging
@@ -170,6 +176,10 @@ include release docs before the first deployment.
 ## Phase 3 — Deploy dependencies and staging
 
 1. Deploy Convex first only when the reviewed diff changes schema or functions.
+   This release adds canonical `clear_fields` support to the bounded tool-name
+   validator, so its reviewed Convex functions are a required dependency.
+   Aggregate-only evaluation remains read-only and cannot perform this deploy.
+   Do not add a lossy `clear_fields` → `clear_field` application fallback.
 2. Build the distinct `staging-<sha>` image and recreate host-managed staging:
 
    ```bash
@@ -196,7 +206,10 @@ include release docs before the first deployment.
    picker is explicitly off in clean mode. Native Linux and WSL's Windows
    Tailscale client are selected automatically. `--voice-picker-mode audition`
    is an approved staging-only listening surface; its variant-tagged sessions
-   are not valid candidate-model promotion evidence.
+   are not valid candidate-model promotion evidence. For a human voice audition,
+   redeploy with that mode, verify with `--staging-picker-mode audition`, run the
+   smoke with `VOICE_SMOKE_MODE=audition`, then return staging to `clean` before
+   model comparison or promotion.
 
 3. Run the deterministic public verifier:
 
@@ -207,11 +220,11 @@ include release docs before the first deployment.
      --env staging \
      --path /deploy/oriental-website \
      -- pnpm release:verify -- --sha "$sha" --target staging \
-       --staging-model-cell candidate
+       --staging-model-cell candidate --staging-picker-mode clean
    ```
 
-4. Run `pnpm smoke:staging:voice` when voice, OpenAI configuration, WebRTC,
-   session persistence, or voice UI changed.
+4. Run `pnpm smoke:staging:voice` in the default clean mode when voice, OpenAI
+   configuration, WebRTC, session persistence, or voice UI changed.
 5. Inspect the running container—not only Infisical—for the expected revision,
    deployment environment, and voice cells.
 
@@ -260,7 +273,8 @@ OpenAI, Redis, and notification accounts.
      --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
      --env prod \
      --path /deploy/oriental-website \
-     -- pnpm release:verify -- --sha "$sha" --target both
+     -- pnpm release:verify -- --sha "$sha" --target both \
+       --staging-model-cell candidate --staging-picker-mode clean
    ```
 
    For `staging` and `both`, the verifier defaults to the established candidate

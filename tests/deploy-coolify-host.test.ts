@@ -40,7 +40,8 @@ describe("Coolify host deploy image cells", () => {
     expect(deployScript).toContain('"VOICE_MODEL_CELL": voice_model_cell');
     expect(deployScript).toContain('"VOICE_REASONING_CELL": "low"');
     expect(deployScript).toContain('"VOICE_EMAIL_CAPTURE_MODE": "adaptive"');
-    expect(deployScript).toContain('"VOICE_VARIANT_PICKER": "true" if voice_model_cell == "candidate" else "false"');
+    expect(deployScript).toContain('"VOICE_VARIANT_PICKER": "true" if voice_picker_mode == "audition" else "false"');
+    expect(deployScript).not.toContain("NEXT_PUBLIC_BRAND_MOTION_PREVIEW");
     expect(deployScript).toContain(`cp -p "$target_dir/.env" "$target_dir/.env.deploy-backup-\${timestamp}"`);
     expect(deployScript).toContain("os.replace(temporary, path)");
     expect(deployScript).not.toContain("compose.write_text");
@@ -62,7 +63,17 @@ describe("Coolify host deploy image cells", () => {
       chmodSync(resolve(directory, ".env"), 0o600);
       const result = spawnSync(
         "python3",
-        ["-", directory, "app:staging-new", sha, "staging", "candidate", "G-ABC123DEF4", "a".repeat(32)],
+        [
+          "-",
+          directory,
+          "app:staging-new",
+          sha,
+          "staging",
+          "candidate",
+          "clean",
+          "G-ABC123DEF4",
+          "a".repeat(32),
+        ],
         {
           input: python,
           encoding: "utf8",
@@ -81,6 +92,24 @@ describe("Coolify host deploy image cells", () => {
       expect(statSync(resolve(directory, "docker-compose.yaml")).mode & 0o777).toBe(0o640);
       expect(statSync(resolve(directory, ".env")).mode & 0o777).toBe(0o600);
       expect(readdirSync(directory).filter((name) => name.startsWith(".") && name !== ".env")).toEqual([]);
+
+      const audition = spawnSync(
+        "python3",
+        [
+          "-",
+          directory,
+          "app:staging-audition",
+          sha,
+          "staging",
+          "candidate",
+          "audition",
+          "G-ABC123DEF4",
+          "a".repeat(32),
+        ],
+        { input: python, encoding: "utf8" },
+      );
+      expect(audition.status, audition.stderr).toBe(0);
+      expect(readFileSync(resolve(directory, ".env"), "utf8")).toContain("VOICE_VARIANT_PICKER=true");
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
@@ -152,5 +181,25 @@ describe("Coolify host deploy image cells", () => {
     );
     expect(result.status).toBe(2);
     expect(result.stderr).toContain("Production host deployment forbids the candidate model cell");
+  });
+
+  it("rejects audition mode for every production host path", () => {
+    const result = spawnSync(
+      "bash",
+      [
+        deployPath,
+        "--target",
+        "production",
+        "--expected-current-sha",
+        "a".repeat(40),
+        "--voice-picker-mode",
+        "audition",
+        "--allow-emergency-production",
+        "b".repeat(40),
+      ],
+      { encoding: "utf8" },
+    );
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain("Production host deployment forbids voice audition mode");
   });
 });

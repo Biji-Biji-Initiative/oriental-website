@@ -27,9 +27,25 @@ describe("voice conversation continuity", () => {
 
   it("resumes a reopened active conversation without repeating the opener", () => {
     const conversationId = resolveConversationId(1_000);
-    expect(shouldResumeVoiceConversation(conversationId, resolveConversationId(2_000), 4)).toBe(true);
-    expect(shouldResumeVoiceConversation(conversationId, crypto.randomUUID(), 4)).toBe(false);
-    expect(shouldResumeVoiceConversation(conversationId, conversationId, 0)).toBe(false);
-    expect(shouldResumeVoiceConversation(conversationId, conversationId, 4, true)).toBe(false);
+    const transcriptContext = { transcriptLength: 4, hasDraftHandoff: false };
+    expect(shouldResumeVoiceConversation(conversationId, resolveConversationId(2_000), transcriptContext)).toBe(true);
+    expect(shouldResumeVoiceConversation(conversationId, crypto.randomUUID(), transcriptContext)).toBe(false);
+    expect(
+      shouldResumeVoiceConversation(conversationId, conversationId, {
+        transcriptLength: 0,
+        hasDraftHandoff: false,
+      }),
+    ).toBe(false);
+    expect(shouldResumeVoiceConversation(conversationId, conversationId, transcriptContext, true)).toBe(false);
+  });
+
+  it("resumes an edited typed-only handoff with no voice transcript", () => {
+    const conversationId = resolveConversationId(1_000);
+    expect(
+      shouldResumeVoiceConversation(conversationId, resolveConversationId(2_000), {
+        transcriptLength: 0,
+        hasDraftHandoff: true,
+      }),
+    ).toBe(true);
   });
 });

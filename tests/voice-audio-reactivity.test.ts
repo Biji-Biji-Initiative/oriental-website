@@ -21,6 +21,26 @@ describe("voice audio visual envelope", () => {
     }
   });
 
+  it("converges sustained loud room noise to an inactive visual over a long capture", () => {
+    for (const steadySignal of [0.12, 0.16, 0.2]) {
+      let state = createAudioReactivityState();
+      for (let frame = 0; frame < 7_200; frame += 1) {
+        state = updateAudioReactivity(state, steadySignal, 0, 1 / 60);
+      }
+      expect(state.noiseFloor).toBeGreaterThan(steadySignal * 0.98);
+      expect(state.gateOpen).toBe(false);
+      expect(state.level).toBe(0);
+    }
+  });
+
+  it("uses separate open and close thresholds to avoid visual chatter", () => {
+    const open = updateAudioReactivity({ level: 0.4, noiseFloor: 0.05, gateOpen: true }, 0.062, 0, 1 / 60);
+    const closed = updateAudioReactivity({ level: 0, noiseFloor: 0.05, gateOpen: false }, 0.062, 0, 1 / 60);
+
+    expect(open.gateOpen).toBe(true);
+    expect(closed.gateOpen).toBe(false);
+  });
+
   it("attacks faster than it releases and then returns to rest", () => {
     let state = createAudioReactivityState();
     state = updateAudioReactivity(state, 0.2, 0.06, 1 / 60);
@@ -36,7 +56,12 @@ describe("voice audio visual envelope", () => {
   it("computes RMS and clamps invalid input safely", () => {
     expect(timeDomainRms(new Uint8Array([128, 128, 128]))).toBe(0);
     expect(timeDomainRms(new Uint8Array([0, 255]))).toBeGreaterThan(0.99);
-    const state = updateAudioReactivity({ level: Number.NaN, noiseFloor: Number.NaN }, Number.NaN, Infinity, Infinity);
+    const state = updateAudioReactivity(
+      { level: Number.NaN, noiseFloor: Number.NaN, gateOpen: false },
+      Number.NaN,
+      Infinity,
+      Infinity,
+    );
     expect(state.level).toBe(0);
     expect(state.noiseFloor).toBeGreaterThanOrEqual(0);
   });

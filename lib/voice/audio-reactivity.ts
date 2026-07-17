@@ -1,13 +1,16 @@
 export type AudioReactivityState = {
   level: number;
   noiseFloor: number;
+  gateOpen: boolean;
 };
 
 const INITIAL_NOISE_FLOOR = 0.012;
-const MAX_NOISE_FLOOR = 0.09;
+const MAX_NOISE_FLOOR = 0.24;
+const GATE_OPEN_EXCESS = 0.02;
+const GATE_CLOSE_EXCESS = 0.008;
 
 export function createAudioReactivityState(): AudioReactivityState {
-  return { level: 0, noiseFloor: INITIAL_NOISE_FLOOR };
+  return { level: 0, noiseFloor: INITIAL_NOISE_FLOOR, gateOpen: false };
 }
 
 /**
@@ -31,11 +34,12 @@ export function updateAudioReactivity(
   // fan or HVAC hum converges back to rest instead of living above a dead zone.
   let noiseFloor = clamp(state.noiseFloor, 0, MAX_NOISE_FLOOR);
   const floorTarget = Math.min(signal, MAX_NOISE_FLOOR);
-  const floorTimeConstant = floorTarget > noiseFloor ? 4 : 2.2;
+  const floorTimeConstant = floorTarget > noiseFloor ? 5.5 : 2.2;
   noiseFloor += (floorTarget - noiseFloor) * exponentialEase(delta, floorTimeConstant);
 
-  const excess = Math.max(0, signal - noiseFloor - 0.004);
-  const gate = smoothstep(0.006, 0.028, excess);
+  const excess = Math.max(0, signal - noiseFloor);
+  const gateOpen = state.gateOpen ? excess > GATE_CLOSE_EXCESS : excess >= GATE_OPEN_EXCESS;
+  const gate = gateOpen ? smoothstep(GATE_CLOSE_EXCESS, 0.04, excess) : 0;
   const compressed = Math.sqrt(clamp01(excess / 0.22));
   const target = clamp01(gate * compressed);
   const currentLevel = clamp01(state.level);
@@ -45,6 +49,7 @@ export function updateAudioReactivity(
   return {
     level: level < 0.001 ? 0 : clamp01(level),
     noiseFloor,
+    gateOpen,
   };
 }
 

@@ -121,8 +121,9 @@ or logs.
 under `infisical run` with `--model-cell candidate` for native staging and
 `--model-cell control` for native production before the full release preflight.
 Both require baseline runtime, low reasoning, adaptive capture, and the exact
-model for the selected cell. Candidate staging requires the picker explicitly
-on; production control requires it explicitly off.
+model for the selected cell. Clean candidate evidence requires the picker
+explicitly off. A separate staging audition check adds `--picker-mode audition`
+and requires it on; production control always requires it off.
 
 Secret contract is enforced by `scripts/check-secrets.ts`.
 
@@ -148,17 +149,18 @@ Staging is available at `https://staging.oriental.mereka.io`, following the
 on the same Coolify app host under
 `/data/coolify/applications/oriental-staging`. Staging images use the distinct
 `mtrl2z6a7zvoyevxvufpntij:staging-<sha>` tag while production uses
-`mtrl2z6a7zvoyevxvufpntij:<sha>`; build-time staging previews must never mutate
-or replace a production image tag. Staging is routed through the Coolify
+`mtrl2z6a7zvoyevxvufpntij:<sha>`; the distinct tags isolate release ownership,
+while the approved Mereka M nebula and entrance loader are built identically
+for staging and production. Staging is routed through the Coolify
 Traefik network with `coolify.managed=false`, so it is host-managed rather than
 a full Coolify UI application until a dedicated Coolify staging app/API token
 is provisioned.
 The Infisical `staging` environment contains the complete application contract
-plus the explicit baseline/candidate/low/adaptive preview, staging-Sentry, and
-QA-picker-on override. The host-managed staging container
-still materializes those values
-through its host-local env file; Infisical is the canonical comparison source,
-not a runtime SDK dependency. Staging and production still share upstream
+plus the explicit baseline/candidate/low/adaptive cell and staging Sentry. The
+picker state is selected independently as clean or audition. The host-managed
+staging container still materializes those values through its host-local env
+file; Infisical is the canonical comparison source, not a runtime SDK
+dependency. Staging and production still share upstream
 Convex, SES/SMTP, Slack, Redis, and OpenAI accounts. Redis keys are separated by
 environment, and new voice snapshots carry deployment attribution, but do not
 treat staging submissions as a fully isolated data/notification sandbox until
@@ -173,11 +175,16 @@ audition is staging-only. Candidate and audition are rejected for every
 production host path. The deployer recognizes both native `tailscale` and WSL's
 `tailscale.exe` without splitting paths.
 
-Picker-enabled candidate sessions are voice auditions, not clean model-only
-evidence. Voice evals persist and group `variant`, `voice`, and `speed`, and the
-experiment validator rejects any row that changes both model and voice variant.
-Disable the picker and collect an isomorphic candidate cohort before considering
-automatic model promotion.
+Picker-enabled sessions are voice auditions, not clean model-only evidence.
+Voice evals persist `clear_fields` as the canonical clear-all tool name and
+aggregate PII-free tool latency both overall and by canonical tool name; it is
+never rewritten to the distinct single-field `clear_field` operation. Cohorts
+also retain `variant`, `voice`, and `speed`, and the experiment validator
+rejects any row that changes both model and voice variant. Aggregate-only eval
+uses read-only Convex queries and may enrich missing historical profile fields
+through the existing per-session query; it never deploys functions or writes
+sessions, judgments, or reports. Collect the clean picker-off candidate cohort
+before considering automatic model promotion.
 
 Staging rollback/removal is host-local:
 
@@ -201,11 +208,15 @@ Deploy flow:
    before it pins and reads back Coolify's commit, inspects the deployment
    record, proves `running:healthy` with a loopback health-check host, and proves
    public health; Coolify swaps traffic only after the candidate is healthy.
-7. Run `pnpm release:verify -- --sha <sha> --target both` under the managed
+7. Run `pnpm release:verify -- --sha <sha> --target both --staging-model-cell
+   candidate --staging-picker-mode clean` under the managed
    application scope. The verifier uses Playwright to prove the Search Console
    meta tag and the GA public-consent/admin-exclusion boundary.
 
-Convex function deployment is separate:
+Convex function deployment is separate. A release that adds a canonical tool
+name to the bounded session validator, including `clear_fields`, MUST deploy
+the reviewed Convex schema/functions before either web environment. Never hide
+an older function deployment by rewriting `clear_fields` to `clear_field`:
 
 ```bash
 CONVEX_DEPLOY_KEY='prod:...' pnpm exec convex deploy

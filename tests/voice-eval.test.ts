@@ -336,6 +336,49 @@ describe("deriveLatencySignals", () => {
       toolCalls: [],
     });
   });
+
+  it("aggregates canonical clear_fields telemetry without folding it into clear_field", () => {
+    const aggregate = aggregateEvals([
+      buildSessionEval(
+        session({
+          latency: {
+            version: 1,
+            turns: [],
+            toolCalls: [
+              {
+                sequence: 1,
+                name: "clear_fields",
+                outcome: "success",
+                executionMs: 8,
+                responseCreatedToCallMs: 21,
+                responseCreatedToResultMs: 29,
+              },
+              {
+                sequence: 2,
+                name: "clear_field",
+                outcome: "rejected",
+                executionMs: 4,
+              },
+            ],
+          },
+        }),
+        null,
+      ),
+    ]);
+
+    expect(aggregate.toolLatency.overall).toMatchObject({ samples: 2 });
+    expect(aggregate.toolLatency.byName.clear_fields).toMatchObject({
+      samples: 1,
+      outcomes: { success: 1, rejected: 0, failed: 0, dispatch_failed: 0 },
+      executionP50Ms: 8,
+      responseCreatedToResultP50Ms: 29,
+    });
+    expect(aggregate.toolLatency.byName.clear_field).toMatchObject({
+      samples: 1,
+      outcomes: { success: 0, rejected: 1, failed: 0, dispatch_failed: 0 },
+      executionP50Ms: 4,
+    });
+  });
 });
 
 describe("assessLatencyAutopilotGate", () => {

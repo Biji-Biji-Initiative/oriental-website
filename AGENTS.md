@@ -100,7 +100,7 @@ docs/                     # handover specs — reference, not auto-synced to cod
 | Voice A/B variants (distinct Malaysian registers: voice/speed/persona) + tuning picker (dev, or explicitly enabled staging; `/?voices=1` cannot bypass server authority) | `lib/voice/variants.ts`, `components/voice-agent/VoiceVariantPicker.tsx`; selected voice persists in localStorage/cookie |
 | Realtime protocol / transcript state machine / capture grounding | `lib/voice/realtime-events.ts` + `tests/realtime-events.test.ts` |
 | Voice UI / WebRTC wiring | `components/voice-agent/useRealtimeVoiceSession.ts`, `useVoiceRuntime.ts`, `VoiceAgentDialog.tsx`, `VoiceSessionStage.tsx` |
-| Voice orb look & motion | `components/voice-agent/VoiceSessionStage.tsx`, `.voice-orb*` in `app/globals.css`, level source in `useVoiceAudioLevel.ts` |
+| Production Mereka M motion + loader | `components/voice-agent/VoiceSessionStage.tsx`, `components/brand-motion/{NebulaM,MerekaSiteLoader}.tsx`, `.voice-orb*` / `.brand-site-loader*` in `app/globals.css`, level source in `useVoiceAudioLevel.ts` |
 | Session token + server session config | `app/api/voice/session/route.ts`, `lib/server/openai-realtime.ts` |
 | Admin session review | `app/admin/session-review/page.tsx`, `app/api/admin/*`, `components/admin/*` |
 | Admin dark theme / login / command palette | `app/admin/layout.tsx`, `app/admin/theme.css`, `components/admin/AdminLoginForm.tsx`, `components/admin/AdminCommandPalette.tsx` |
@@ -165,14 +165,15 @@ before any deployment. For runtime work:
    agent guidance in one PR.
 2. Merge once, update local `main`, and freeze the full merge SHA.
 3. Inject the production app contract from Infisical and run
-   `pnpm release:preflight -- --sha <sha>`; managed cell validation is mandatory.
+   `env NODE_ENV=production pnpm release:preflight -- --sha <sha>`; managed
+   cell validation and production-only secret checks are mandatory.
 4. Deploy/prove staging, then deploy production through the Coolify API.
-5. Run `pnpm release:verify -- --sha <sha> --target both` under the managed
-   application environment; staging defaults to the established candidate cell.
-   It proves the running revisions/cells, exact Google verification meta, GA's
-   explicit-consent boundary, and admin exclusion in Chromium. The deployers
-   themselves must first reconcile and read back the complete approved
-   Infisical application scope; production additionally proves Coolify
+5. Run `pnpm release:verify -- --sha <sha> --target both
+   --staging-model-cell candidate --staging-picker-mode clean` under the managed
+   application environment. It proves the running revisions/cells, exact Google
+   verification meta, GA's explicit-consent boundary, and admin exclusion in
+   Chromium. The deployers must first reconcile and read back the complete
+   approved Infisical scope; production additionally proves Coolify
    `running:healthy` with health ownership on `127.0.0.1`.
 
 Do not force an application rebuild for a docs/operator-only commit with no
@@ -186,8 +187,12 @@ Staging is shared. `scripts/deploy-coolify-host.sh --target staging` requires
 environment. Stop and coordinate—never overwrite an unknown staging proof.
 Model previews also require explicit `--voice-model-cell candidate`; the
 default is control and every production host path rejects candidate. Verify a
-candidate staging deployment with `--staging-model-cell candidate` while
-production remains control.
+clean candidate staging deployment with `--staging-model-cell candidate` and
+`--staging-picker-mode clean` while production remains control. The independent
+`--voice-picker-mode audition` staging option exposes the voice-register picker
+for human audition only; it is never model-promotion evidence. Production
+always rejects audition mode. The approved Mereka M nebula and entrance loader
+are normal visuals on both canonical hosts and are not experiment flags.
 `VOICE_VARIANT_PICKER=false` governs both `/api/client-config` and the actual
 browser controls. Client tuner code must fetch that runtime route and fail
 closed; query strings or local storage may hide an allowed picker but must

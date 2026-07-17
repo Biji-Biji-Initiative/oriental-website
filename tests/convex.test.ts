@@ -477,6 +477,31 @@ describe("persistVoiceReviewSnapshot", () => {
     expect(mutationSnapshot).toHaveProperty("emailCaptureMode", "adaptive");
   });
 
+  it("persists the canonical clear_fields label without a lossy clear_field alias", async () => {
+    mocks.mutation.mockResolvedValue({ ok: true, id: "review_1" });
+    const clearAllSnapshot = {
+      ...snapshot,
+      latency: {
+        ...snapshot.latency,
+        toolCalls: [
+          {
+            sequence: 2,
+            name: "clear_fields" as const,
+            outcome: "success" as const,
+            executionMs: 7,
+            responseCreatedToCallMs: 13,
+            responseCreatedToResultMs: 20,
+          },
+        ],
+      },
+    };
+
+    await expect(persistVoiceReviewSnapshot(clearAllSnapshot)).resolves.toEqual({ ok: true, id: "review_1" });
+    const mutationSnapshot = mocks.mutation.mock.calls[0]?.[1]?.snapshot;
+    expect(mutationSnapshot.latency.toolCalls).toEqual(clearAllSnapshot.latency.toolCalls);
+    expect(mutationSnapshot.latency.toolCalls[0]?.name).toBe("clear_fields");
+  });
+
   it("retries without telemetry when a pre-migration Convex rejects an unknown field", async () => {
     mocks.mutation
       .mockRejectedValueOnce(new Error("ArgumentValidationError: unexpected field `transport`"))

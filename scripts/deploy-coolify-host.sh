@@ -5,6 +5,7 @@ target=""
 sha=""
 expected_current_sha=""
 voice_model_cell="control"
+voice_picker_mode="clean"
 allow_emergency_production=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -20,17 +21,21 @@ while [[ $# -gt 0 ]]; do
       voice_model_cell="${2:-}"
       shift 2
       ;;
+    --voice-picker-mode)
+      voice_picker_mode="${2:-}"
+      shift 2
+      ;;
     --allow-emergency-production)
       allow_emergency_production=true
       shift
       ;;
     -h|--help)
-      echo "Usage: $0 --target staging|production --expected-current-sha sha [--voice-model-cell control|candidate] [--allow-emergency-production] [git-sha]"
+      echo "Usage: $0 --target staging|production --expected-current-sha sha [--voice-model-cell control|candidate] [--voice-picker-mode clean|audition] [--allow-emergency-production] [git-sha]"
       exit 0
       ;;
     *)
       if [[ -n "$sha" ]]; then
-        echo "Usage: $0 --target staging|production --expected-current-sha sha [--voice-model-cell control|candidate] [--allow-emergency-production] [git-sha]" >&2
+        echo "Usage: $0 --target staging|production --expected-current-sha sha [--voice-model-cell control|candidate] [--voice-picker-mode clean|audition] [--allow-emergency-production] [git-sha]" >&2
         exit 2
       fi
       sha="$1"
@@ -40,7 +45,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ "$target" != "staging" && "$target" != "production" ]]; then
-  echo "Usage: $0 --target staging|production --expected-current-sha sha [--voice-model-cell control|candidate] [--allow-emergency-production] [git-sha]" >&2
+  echo "Usage: $0 --target staging|production --expected-current-sha sha [--voice-model-cell control|candidate] [--voice-picker-mode clean|audition] [--allow-emergency-production] [git-sha]" >&2
   exit 2
 fi
 
@@ -50,7 +55,7 @@ if [[ -z "$sha" ]]; then
 fi
 
 if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
-  echo "Usage: $0 --target staging|production --expected-current-sha sha [--voice-model-cell control|candidate] [--allow-emergency-production] [git-sha]" >&2
+  echo "Usage: $0 --target staging|production --expected-current-sha sha [--voice-model-cell control|candidate] [--voice-picker-mode clean|audition] [--allow-emergency-production] [git-sha]" >&2
   exit 2
 fi
 
@@ -64,8 +69,18 @@ if [[ "$voice_model_cell" != "control" && "$voice_model_cell" != "candidate" ]];
   exit 2
 fi
 
+if [[ "$voice_picker_mode" != "clean" && "$voice_picker_mode" != "audition" ]]; then
+  echo "--voice-picker-mode must be clean or audition." >&2
+  exit 2
+fi
+
 if [[ "$target" == "production" && "$voice_model_cell" != "control" ]]; then
   echo "Production host deployment forbids the candidate model cell." >&2
+  exit 2
+fi
+
+if [[ "$target" == "production" && "$voice_picker_mode" != "clean" ]]; then
+  echo "Production host deployment forbids voice audition mode." >&2
   exit 2
 fi
 
@@ -140,7 +155,7 @@ if [[ "$target" == "staging" ]]; then
     | "${ssh_command[@]}" "$remote_host" "$reconcile_command"
 fi
 
-"${ssh_command[@]}" "$remote_host" "bash -s -- '$target' '$sha' '$app_uuid' '$repo_url' '$remote_cache_dir' '$prod_dir' '$staging_dir' '$expected_current_sha' '$voice_model_cell' '$ga_measurement_id' '$google_site_verification'" <<'REMOTE'
+"${ssh_command[@]}" "$remote_host" "bash -s -- '$target' '$sha' '$app_uuid' '$repo_url' '$remote_cache_dir' '$prod_dir' '$staging_dir' '$expected_current_sha' '$voice_model_cell' '$voice_picker_mode' '$ga_measurement_id' '$google_site_verification'" <<'REMOTE'
 set -euo pipefail
 
 target="$1"
@@ -152,8 +167,9 @@ prod_dir="$6"
 staging_dir="$7"
 expected_current_sha="$8"
 voice_model_cell="$9"
-ga_measurement_id="${10}"
-google_site_verification="${11}"
+voice_picker_mode="${10}"
+ga_measurement_id="${11}"
+google_site_verification="${12}"
 short="${sha:0:7}"
 mirror="${remote_cache_dir}/repo.git"
 worktrees="${remote_cache_dir}/worktrees"
@@ -199,12 +215,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-brand_motion_preview="false"
 image="${app_uuid}:${sha}"
 if [[ "$target" == "staging" ]]; then
-  brand_motion_preview="true"
-  # Staging bakes a different NEXT_PUBLIC flag. A distinct tag prevents a
-  # later compose recreation from ever resolving to the production build cell.
+  # Keep staging and production image identities isolated even though the
+  # approved visual build is now identical on both canonical hosts.
   image="${app_uuid}:staging-${sha}"
 fi
 
@@ -217,9 +231,8 @@ if [[ ! "$google_site_verification" =~ ^[A-Za-z0-9_-]{20,256}$ ]]; then
   exit 1
 fi
 
-echo "building_image=${image} brand_motion_preview=${brand_motion_preview} voice_model_cell=${voice_model_cell} analytics_configured=$([[ -n "$ga_measurement_id" ]] && echo true || echo false) search_verification_configured=$([[ -n "$google_site_verification" ]] && echo true || echo false)"
+echo "building_image=${image} voice_model_cell=${voice_model_cell} voice_picker_mode=${voice_picker_mode} analytics_configured=true search_verification_configured=true"
 DOCKER_BUILDKIT=1 docker build \
-  --build-arg "NEXT_PUBLIC_BRAND_MOTION_PREVIEW=${brand_motion_preview}" \
   --build-arg "NEXT_PUBLIC_GA_MEASUREMENT_ID=${ga_measurement_id}" \
   --build-arg "NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION=${google_site_verification}" \
   --progress=plain \
@@ -238,7 +251,7 @@ fi
 
 cp -p "$target_dir/docker-compose.yaml" "$target_dir/docker-compose.yaml.deploy-backup-${timestamp}"
 cp -p "$target_dir/.env" "$target_dir/.env.deploy-backup-${timestamp}"
-python3 - "$target_dir" "$image" "$sha" "$target" "$voice_model_cell" "$ga_measurement_id" "$google_site_verification" <<'PY'
+python3 - "$target_dir" "$image" "$sha" "$target" "$voice_model_cell" "$voice_picker_mode" "$ga_measurement_id" "$google_site_verification" <<'PY'
 from pathlib import Path
 import os
 import sys
@@ -249,8 +262,9 @@ image = sys.argv[2]
 sha = sys.argv[3]
 target = sys.argv[4]
 voice_model_cell = sys.argv[5]
-ga_measurement_id = sys.argv[6]
-google_site_verification = sys.argv[7]
+voice_picker_mode = sys.argv[6]
+ga_measurement_id = sys.argv[7]
+google_site_verification = sys.argv[8]
 
 compose = app_dir / "docker-compose.yaml"
 lines = []
@@ -278,7 +292,7 @@ if target == "staging":
         "VOICE_MODEL_CELL": voice_model_cell,
         "VOICE_REASONING_CELL": "low",
         "VOICE_EMAIL_CAPTURE_MODE": "adaptive",
-        "VOICE_VARIANT_PICKER": "true" if voice_model_cell == "candidate" else "false",
+        "VOICE_VARIANT_PICKER": "true" if voice_picker_mode == "audition" else "false",
     })
 seen = set()
 out = []

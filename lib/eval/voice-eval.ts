@@ -966,6 +966,7 @@ export function aggregateEvals(evals: SessionEval[]): EvalAggregate {
   const captureIntegrityFailures = evals.filter((entry) => entry.captureIntegrity.failed);
   const toolCalls = evals.flatMap((entry) => entry.latency.toolCalls);
   const conversationStyleFailures = evals.filter((entry) => entry.conversationStyle.failed);
+  const toolCalls = evals.flatMap((entry) => entry.latency.toolCalls);
   const worstSessions = [
     ...quotaFailures.map((entry) => ({ reviewId: entry.reviewId, reason: "OpenAI Realtime quota exhausted" })),
     ...droppedMidTurn.map((entry) => ({ reviewId: entry.reviewId, reason: "dropped mid-utterance" })),
