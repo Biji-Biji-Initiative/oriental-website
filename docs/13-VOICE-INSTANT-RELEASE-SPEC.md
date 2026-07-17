@@ -72,9 +72,11 @@ dimension, and prove the exact staged commit before promotion.
   understanding before a model response.
 - Reduced-motion mode MUST suppress visual animation without disabling audio
   activity measurement.
-- The approved Mereka M nebula MUST render on staging and production. Missing
-  WebGL or initialization failure MUST retain the canonical SVG fallback; this
-  visual is not a voice experiment. The public entrance treatment MUST be
+- The Mereka M nebula preview MUST render only on staging/local when both the
+  public build flag and exact hostname gate pass. Production MUST retain the
+  legacy orb and no Trace entrance until a separate promotion is approved.
+  Missing WebGL or initialization failure MUST retain the canonical SVG
+  fallback. The staging entrance treatment MUST be
   non-interactive, never lock scrolling, run at most once per tab for no more
   than 700 ms, and be omitted on admin/API and reduced-motion loads.
 - The visual audio envelope MUST learn sustained room noise through at least
@@ -302,15 +304,17 @@ an unperformed listening result is never a pass.
 
 ## Rollout and Rollback
 
-1. Deploy Convex schema/functions before the web commit.
+1. Deploy Convex schema/functions before the web commit only when the reviewed
+   release changes them and shared-data-plane mutation is explicitly approved.
+   The current staging-only preview performs no Convex mutation or backfill.
 2. Deploy the exact tested web commit only to
    `https://staging.oriental.mereka.io` and verify `/api/health` version.
 3. Run the dry evaluation and manual AC-12 checks without submitting a staging
    lead while staging shares the production data plane.
-4. Keep `VOICE_RUNTIME_PROFILE=baseline`, `VOICE_MODEL_CELL=control`,
-   `VOICE_REASONING_CELL=low`, and `VOICE_EMAIL_CAPTURE_MODE=adaptive`; the
-   runtime/model/reasoning candidates remain gated while adaptive capture is a
-   separately approved product policy.
+4. Keep `VOICE_RUNTIME_PROFILE=baseline`, `VOICE_MODEL_CELL=candidate`,
+   `VOICE_REASONING_CELL=low`, and `VOICE_EMAIL_CAPTURE_MODE=adaptive` on the
+   declared staging trial, resolving to `gpt-realtime-2.1`. Production remains
+   frozen at `baseline/control/gpt-realtime-2/low/adaptive` and picker off.
 5. Roll back email friction independently with `VOICE_EMAIL_CAPTURE_MODE=strict`.
    Roll back endpointing with `VOICE_RUNTIME_PROFILE=baseline`; roll back model
    or reasoning independently with their control env values. Roll back the

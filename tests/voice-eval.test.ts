@@ -17,6 +17,7 @@ import {
   mergeConversationSessions,
   parseJudgeResponse,
   piiFreeJudgeSummary,
+  resolveLatestEmailCorrection,
   type VoiceEvalSession,
   validateVoiceExperimentEvidence,
 } from "@/lib/eval/voice-eval";
@@ -544,28 +545,30 @@ describe("deriveCaptureIntegritySignals", () => {
       rejectedEmailCaptures: 1,
       unconfirmedEmailFailures: 1,
       staleEmailSubmissions: 0,
+      unattributedEmailSubmissions: 0,
       totalFailures: 3,
       failed: true,
     });
   });
 
-  it("flags a submitted stale prefill after a rejected literal email correction", () => {
+  it("flags an immutable submitted-email mismatch after a literal correction", () => {
     const signals = deriveCaptureIntegritySignals(
       session({
         submittedAt: 100,
+        submittedEmailCorrectionAttribution: "mismatched",
         captured: { name: "", email: "old@example.com", org: "", message: "" },
         transcript: [
           { role: "user", text: "My email is old@example.com." },
           { role: "user", text: "Actually, my email is new@example.com." },
         ],
-        errors: [{ code: "voice_capture_rejected", message: "capture_fields:ungrounded_identity_capture:email" }],
+        errors: [],
       }),
     );
 
     expect(signals).toMatchObject({
-      rejectedEmailCaptures: 1,
+      rejectedEmailCaptures: 0,
       staleEmailSubmissions: 1,
-      totalFailures: 2,
+      totalFailures: 1,
       failed: true,
     });
   });
@@ -980,6 +983,7 @@ describe("aggregateEvals + meetsThreshold", () => {
       rejectedEmailCaptures: 1,
       unconfirmedEmailFailures: 1,
       staleEmailSubmissions: 0,
+      unattributedEmailSubmissions: 0,
       totalFailures: 2,
     });
     expect(aggregate.worstSessions).toContainEqual({
@@ -1264,8 +1268,20 @@ describe("aggregateEvals + meetsThreshold", () => {
   });
 
   it("rejects evidence rows that confound multiple experiment dimensions", () => {
+    const control = buildSessionEval(
+      session({ reviewId: "control", voice: "coral", speed: 1.28, variant: null }),
+      null,
+    );
     const valid = buildSessionEval(
-      session({ reviewId: "runtime-only", runtimeProfile: "instant-v1", modelCell: "control", reasoningCell: "low" }),
+      session({
+        reviewId: "runtime-only",
+        runtimeProfile: "instant-v1",
+        modelCell: "control",
+        reasoningCell: "low",
+        voice: "coral",
+        speed: 1.28,
+        variant: null,
+      }),
       null,
     );
     const confounded = buildSessionEval(
@@ -1275,12 +1291,15 @@ describe("aggregateEvals + meetsThreshold", () => {
         runtimeProfile: "instant-v1",
         modelCell: "candidate",
         reasoningCell: "minimal",
+        voice: "coral",
+        speed: 1.28,
+        variant: null,
       }),
       null,
     );
 
-    expect(validateVoiceExperimentEvidence([valid])).toEqual({ ok: true, failures: [] });
-    const validation = validateVoiceExperimentEvidence([valid, confounded]);
+    expect(validateVoiceExperimentEvidence([control, valid])).toEqual({ ok: true, failures: [] });
+    const validation = validateVoiceExperimentEvidence([control, valid, confounded]);
     expect(validation.ok).toBe(false);
     expect(validation.failures[0]).toContain("runtime, model, reasoning");
   });

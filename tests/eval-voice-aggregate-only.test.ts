@@ -297,7 +297,14 @@ describe("eval-voice aggregate-only mode", () => {
       await expect(
         execFileAsync(
           resolve(repositoryRoot, "node_modules/.bin/tsx"),
-          [resolve(repositoryRoot, "scripts/eval-voice.ts"), "--aggregate-only", "--limit", "10"],
+          [
+            resolve(repositoryRoot, "scripts/eval-voice.ts"),
+            "--aggregate-only",
+            "--limit",
+            "10",
+            "--max-capture-failures",
+            "0",
+          ],
           {
             cwd,
             env: {
@@ -465,7 +472,14 @@ describe("eval-voice aggregate-only mode", () => {
       try {
         await execFileAsync(
           resolve(repositoryRoot, "node_modules/.bin/tsx"),
-          [resolve(repositoryRoot, "scripts/eval-voice.ts"), "--aggregate-only", "--limit", "10"],
+          [
+            resolve(repositoryRoot, "scripts/eval-voice.ts"),
+            "--aggregate-only",
+            "--limit",
+            "10",
+            "--max-capture-failures",
+            "0",
+          ],
           {
             cwd,
             env: {
@@ -497,7 +511,7 @@ describe("eval-voice aggregate-only mode", () => {
       expect(requests).toHaveLength(2);
       expect(requests[1]?.body).toMatchObject({
         path: "leads:adminLeadTable",
-        args: [{ ingestSecret: "test-ingest-secret", limit: 1000 }],
+        args: [{ ingestSecret: "test-ingest-secret", limit: 500 }],
       });
       expect(await readdir(cwd)).toEqual([]);
     } finally {
@@ -559,7 +573,14 @@ describe("eval-voice aggregate-only mode", () => {
       try {
         await execFileAsync(
           resolve(repositoryRoot, "node_modules/.bin/tsx"),
-          [resolve(repositoryRoot, "scripts/eval-voice.ts"), "--aggregate-only", "--limit", "10"],
+          [
+            resolve(repositoryRoot, "scripts/eval-voice.ts"),
+            "--aggregate-only",
+            "--limit",
+            "10",
+            "--max-capture-failures",
+            "0",
+          ],
           {
             cwd,
             env: {

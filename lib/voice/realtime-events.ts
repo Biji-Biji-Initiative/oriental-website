@@ -1849,6 +1849,73 @@ function hasEmailCorrectionLanguage(text: string) {
   );
 }
 
+function getExplicitCorrectedVisitorEmail(text: string) {
+  if (!hasEmailCorrectionLanguage(text)) return undefined;
+  let mentionOrder = 0;
+  const literalMentions = getEmailDecisionClauses(text).flatMap((clause) => {
+    const normalizedClause = clause
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/\p{Mark}/gu, "");
+    return getLiteralEmailMentions(clause).map((mention) => {
+      const disposition = getLiteralEmailMentionDisposition(normalizedClause, mention.start, mention.email.length);
+      const selfOwned = hasPrimaryContactOwnershipContext(clause);
+      const explicitlySelected = emailTurnSelectsTarget(clause, mention.email);
+      const selected = !(
+        disposition !== "selected" ||
+        (!selfOwned && !explicitlySelected) ||
+        hasSecondaryEmailContext(clause) ||
+        hasHistoricalEmailContext(clause) ||
+        hasExplicitNonEmailWebContext(clause) ||
+        hasThirdPartyEmailOwnershipContext(clause) ||
+        emailTurnRejectsTarget(clause, mention.email)
+      );
+      return {
+        email: mention.email,
+        disposition,
+        selected,
+        correctionClause: hasEmailCorrectionLanguage(clause),
+        order: mentionOrder++,
+      };
+    });
+  });
+  const selected = literalMentions.filter((mention) => mention.selected);
+  const distinctSelections = [...new Set(selected.map((selection) => selection.email))];
+  let selectedEmail = distinctSelections.length === 1 ? distinctSelections[0] : undefined;
+  let allowsEarlierPlainDeclarations = false;
+
+  // A later explicit correction may supersede an earlier plain declaration in
+  // the same turn. Multiple competing correction clauses remain ambiguous.
+  const correctionSelections = selected.filter((selection) => selection.correctionClause);
+  const finalSelection = selected.at(-1);
+  if (!selectedEmail && correctionSelections.length === 1 && finalSelection?.correctionClause) {
+    selectedEmail = finalSelection.email;
+    allowsEarlierPlainDeclarations = true;
+  }
+  if (!selectedEmail) return undefined;
+
+  // Every different literal in the turn must be explicitly rejected. The sole
+  // exception is an earlier plain declaration superseded by one final explicit
+  // correction, such as “My email is old@…; actually use new@…”.
+  const selectedOrder = selected.findLast((selection) => selection.email === selectedEmail)?.order ?? -1;
+  const competingMentionsAreResolved = literalMentions.every(
+    (mention) =>
+      mention.email === selectedEmail ||
+      mention.disposition === "rejected" ||
+      (allowsEarlierPlainDeclarations &&
+        mention.selected &&
+        !mention.correctionClause &&
+        mention.order < selectedOrder),
+  );
+  return competingMentionsAreResolved ? selectedEmail : undefined;
+}
+
+function hasThirdPartyEmailOwnershipContext(text: string) {
+  return /\b(?:his|her|their|someone\s+else'?s|(?:my\s+)?(?:colleague|coworker|co-worker|manager|assistant|friend|supplier|customer|client|partner)'?s|[\p{Letter}][\p{Letter}'’-]*'s)\s+(?:e-?mail|contact\s+address)\b/iu.test(
+    text,
+  );
+}
+
 function hasContextualEmailCorrection(text: string, groundedEmail: string) {
   const stronglyAnaphoricCorrection =
     /\b(?:i meant|i said)\b/i.test(text) &&

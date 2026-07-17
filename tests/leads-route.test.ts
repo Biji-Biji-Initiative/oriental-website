@@ -253,6 +253,50 @@ describe("POST /api/leads", () => {
     expect(JSON.stringify(body)).not.toMatch(/asha@example\.com|_mereka_voice_submission|[A-Za-z0-9_-]{43}/);
   });
 
+  it("rebases email authority when bounded storage removes older user turns", async () => {
+    const review = createVoiceReviewCredentials();
+    const transcript = Array.from({ length: 100 }, (_, index) => ({
+      role: "user",
+      text: `Turn ${index + 1}: ${"context ".repeat(16)}`,
+    }));
+    const authorityTurnSequence = 95;
+
+    const response = await POST(
+      request(
+        {
+          transcript,
+          voiceReviewId: review.id,
+          voiceReviewToken: review.token,
+          voiceEmailVerificationUserTurnSequence: authorityTurnSequence,
+        },
+        "198.51.100.95",
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    const persistedLead = mocks.persistLead.mock.calls[0]?.[0];
+    const retainedUserTurns = persistedLead.transcript.filter(
+      (turn: { role: string }) => turn.role === "user",
+    ).length;
+    expect(retainedUserTurns).toBeLessThan(transcript.length);
+    expect(
+      verifyVoiceSubmissionEvidence(
+        {
+          email: persistedLead.form.email,
+          leadId: persistedLead.id,
+          transcript: persistedLead.transcript,
+          utm: persistedLead.utm,
+          voiceReviewId: persistedLead.voiceReviewId,
+          voiceSessionId: persistedLead.voiceSessionId,
+        },
+        "lead-route-test",
+      ),
+    ).toMatchObject({
+      authorityTurnSequence: authorityTurnSequence - (transcript.length - retainedUserTurns),
+      provenance: "v1",
+    });
+  });
+
   it("overwrites a client-supplied reserved evidence key", async () => {
     const review = createVoiceReviewCredentials();
     const response = await POST(

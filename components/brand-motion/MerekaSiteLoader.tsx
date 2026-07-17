@@ -1,6 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import {
+  BRAND_MOTION_PREVIEW_ENABLED,
+  isBrandMotionPreviewEnabled,
+} from "@/lib/brand-motion";
 import { MerekaTraceSpinner } from "./MerekaTraceSpinner";
 
 export const MEREKA_LOADER_HOLD_MS = 450;
@@ -9,12 +13,23 @@ export const merekaLoaderSessionKey = "oriental_mereka_entrance_seen_v1";
 
 type LoaderPhase = "visible" | "leaving" | "hidden";
 
-export function shouldShowMerekaSiteLoader(pathname: string, alreadySeen: boolean, reducedMotion: boolean) {
-  return !alreadySeen && !reducedMotion && !pathname.startsWith("/admin") && !pathname.startsWith("/api");
+export function shouldShowMerekaSiteLoader(
+  pathname: string,
+  alreadySeen: boolean,
+  reducedMotion: boolean,
+  brandMotionPreview: boolean,
+) {
+  return (
+    brandMotionPreview &&
+    !alreadySeen &&
+    !reducedMotion &&
+    !pathname.startsWith("/admin") &&
+    !pathname.startsWith("/api")
+  );
 }
 
-/** Approved, non-blocking, once-per-tab public entrance treatment. */
-export function MerekaSiteLoader() {
+/** Staging-only, non-blocking, once-per-tab entrance treatment. */
+export function MerekaSiteLoader({ buildFlag = BRAND_MOTION_PREVIEW_ENABLED }: { buildFlag?: boolean } = {}) {
   const [phase, setPhase] = useState<LoaderPhase>("hidden");
 
   useEffect(() => {
@@ -26,7 +41,11 @@ export function MerekaSiteLoader() {
       return;
     }
     const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-    if (!shouldShowMerekaSiteLoader(window.location.pathname, alreadySeen, reducedMotion)) return;
+    const brandMotionPreview = isBrandMotionPreviewEnabled(
+      buildFlag,
+      window.location.hostname,
+    );
+    if (!shouldShowMerekaSiteLoader(window.location.pathname, alreadySeen, reducedMotion, brandMotionPreview)) return;
 
     try {
       window.sessionStorage.setItem(merekaLoaderSessionKey, "true");
@@ -42,7 +61,7 @@ export function MerekaSiteLoader() {
       window.clearTimeout(leaveTimer);
       window.clearTimeout(hideTimer);
     };
-  }, []);
+  }, [buildFlag]);
 
   if (phase === "hidden") return null;
 

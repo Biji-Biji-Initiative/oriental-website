@@ -120,17 +120,6 @@ export const leadRequestSchema = z
       });
     }
 
-    const userTurnCount = lead.transcript.filter((turn) => turn.role === "user").length;
-    if (
-      typeof lead.voiceEmailVerificationUserTurnSequence === "number" &&
-      lead.voiceEmailVerificationUserTurnSequence > userTurnCount
-    ) {
-      context.addIssue({
-        code: "custom",
-        message: "Email authority sequence exceeds the submitted user-turn count",
-        path: ["voiceEmailVerificationUserTurnSequence"],
-      });
-    }
   })
   .transform((lead) => {
     const transcript = boundTranscript(lead.transcript);

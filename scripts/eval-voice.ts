@@ -545,7 +545,8 @@ function printSummary(
     `capture integrity:     ${aggregate.captureIntegrity.totalFailures} failures across ` +
       `${aggregate.captureIntegrity.failedSessions} sessions ` +
       `(rejected ${aggregate.captureIntegrity.rejectedCaptures}, rejected email ${aggregate.captureIntegrity.rejectedEmailCaptures}, ` +
-      `unconfirmed email ${aggregate.captureIntegrity.unconfirmedEmailFailures}, stale email submissions ${aggregate.captureIntegrity.staleEmailSubmissions})`,
+      `unconfirmed email ${aggregate.captureIntegrity.unconfirmedEmailFailures}, stale email submissions ${aggregate.captureIntegrity.staleEmailSubmissions}, ` +
+      `unattributed email submissions ${aggregate.captureIntegrity.unattributedEmailSubmissions})`,
   );
   console.log(
     `conversation style:    ${aggregate.conversationStyle.bannedPhraseOccurrences} banned tic occurrences across ` +

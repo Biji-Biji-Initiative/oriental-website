@@ -14,12 +14,14 @@ rounds:
   impl_every_n: 1
 
 template: |
-  Review the complete staging-and-production release contract adversarially.
+  Review the complete staging-only release contract adversarially.
   Treat a production candidate or picker, clean/audition evidence confusion,
   lossy clear_fields aliasing, premature or stale email routing, clear-all PII
   restoration, model/voice confounds, unbounded GPU work, inaccessible
   responsive controls, identity ambiguity, or unsupported proof claims as
-  blockers. Post-merge exact-SHA live evidence is a later release gate, not a
+  blockers. Any production, shared-Convex, backfill, retention, or local/
+  Windows/browser-bridge Oracle path is also a blocker. Post-merge exact-SHA
+  live evidence is a later release gate, not a
   pre-merge code blocker. End with exactly `VERDICT: MERGE FOR RELEASE` or
   `VERDICT: DO NOT MERGE`.
 
@@ -30,7 +32,7 @@ template_with_impl: |
   out-of-order item IDs, clear-all, canonical clear_fields persistence and
   aggregation, production hostname precedence, clean versus audition staging
   governance, responsive/fallback behavior, attribution, and claimed test
-  evidence. Production may receive the approved visual and exact web SHA only
-  with the control model and picker off. Post-merge exact-SHA live evidence is
+  evidence. Production must remain on its existing SHA, control model, picker
+  off, legacy orb, and no Trace entrance. Post-merge exact-SHA live evidence is
   a later release gate, not a pre-merge code blocker. End with exactly
   `VERDICT: MERGE FOR RELEASE` or `VERDICT: DO NOT MERGE`.

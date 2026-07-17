@@ -70,7 +70,7 @@ describe("Mereka brand motion", () => {
 
   it("shows the public trace once per tab without ever blocking input or scrolling", () => {
     vi.useFakeTimers();
-    render(<MerekaSiteLoader />);
+    render(<MerekaSiteLoader buildFlag />);
 
     expect(screen.getByRole("status")).toHaveAttribute("data-phase", "visible");
     expect(screen.getByRole("status")).toHaveAttribute("data-input-blocking", "false");
@@ -87,10 +87,11 @@ describe("Mereka brand motion", () => {
   });
 
   it("skips the entrance on admin, repeat, and reduced-motion loads", () => {
-    expect(shouldShowMerekaSiteLoader("/", false, false)).toBe(true);
-    expect(shouldShowMerekaSiteLoader("/admin/session-review", false, false)).toBe(false);
-    expect(shouldShowMerekaSiteLoader("/", true, false)).toBe(false);
-    expect(shouldShowMerekaSiteLoader("/", false, true)).toBe(false);
+    expect(shouldShowMerekaSiteLoader("/", false, false, true)).toBe(true);
+    expect(shouldShowMerekaSiteLoader("/admin/session-review", false, false, true)).toBe(false);
+    expect(shouldShowMerekaSiteLoader("/", true, false, true)).toBe(false);
+    expect(shouldShowMerekaSiteLoader("/", false, true, true)).toBe(false);
+    expect(shouldShowMerekaSiteLoader("/", false, false, false)).toBe(false);
   });
 
   it("fails open when browser storage allows reads but rejects writes", () => {
@@ -98,7 +99,7 @@ describe("Mereka brand motion", () => {
       throw new DOMException("Storage is unavailable", "QuotaExceededError");
     });
 
-    render(<MerekaSiteLoader />);
+    render(<MerekaSiteLoader buildFlag />);
 
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
     expect(document.documentElement.style.overflow).toBe("");

@@ -35,9 +35,11 @@ cannot affect the runtime image.
   production MUST use the same source SHA. Shared staging may move afterward
   for another controlled experiment; its live SHA must never be inferred from
   production or a historical document. Image tags remain distinct for release
-  ownership, but the approved Mereka M nebula and non-blocking, once-per-tab
-  public entrance treatment ship on both canonical hosts. Admin/API and
-  reduced-motion loads omit the entrance treatment.
+  ownership. While the brand-motion preview is under staging approval, the
+  Mereka M nebula and non-blocking, once-per-tab Trace entrance require both
+  the public build flag and exact staging/local hostname. Production retains
+  the legacy orb and no Trace entrance. Admin/API and reduced-motion loads omit
+  the entrance treatment everywhere.
 - `staging.oriental.mereka.io` and `oriental.mereka.io` are canonical. The
   `*.deploy.mereka.io` names MUST remain redirects only.
 - Cloudflare MUST remain authoritative DNS only; Coolify Traefik terminates TLS.
@@ -67,6 +69,22 @@ cannot affect the runtime image.
   never imply production promotion.
 - A failed health check MUST stop the rollout. Never disable or weaken the gate
   to finish a release.
+
+### Staging-only hold
+
+When the approved release contract explicitly says staging-only, that boundary
+is stronger than the normal production-promotion phases below:
+
+- deploy only the exact merged SHA to canonical staging;
+- do not mutate production, shared Convex, DNS, or the production Infisical/Coolify application;
+- do not run a retention drain, migration, or backfill;
+- use synthetic no-submit verification because staging shares production data
+  and notification planes;
+- capture read-only before/after proof that the production SHA, runtime/model
+  cell, picker state, and legacy brand-motion surface did not change.
+
+Staging success does not authorize promotion. Production requires a new
+explicit operator decision, a fresh exact-tree review, and a new release gate.
 
 ## Context-independent takeover
 
@@ -187,20 +205,13 @@ include release docs before the first deployment.
 
 ## Phase 3 — Deploy dependencies and staging
 
-1. Deploy Convex first only when the reviewed diff changes schema or functions.
-   This release adds canonical `clear_fields` support to the bounded tool-name
-   validator and optional intake-attribution fields (`entryPoint`,
-   `entryMethod`, `submissionMethod`, and bounded per-field provenance), so its
-   reviewed Convex schema/functions are a required dependency. The additions
-   remain optional: the previous web image must still write valid rows during
-   deployment and after an application rollback. The lead mutation is
-   idempotent on the application-generated lead UUID. The web adapter may retry
-   once only after a confirmed unknown/extra-field validator rejection and must
-   reuse that UUID while stripping the forward fields; generic validation,
-   transport, timeout, and ambiguous post-commit failures are never retry
-   triggers.
-   Aggregate-only evaluation remains read-only and cannot perform this deploy.
-   Do not add a lossy `clear_fields` → `clear_field` application fallback.
+1. Deploy Convex first only when the reviewed release diff changes schema or
+   functions and the release is authorized to mutate the shared data plane.
+   A staging-only hold that explicitly forbids shared-Convex mutation skips this
+   step and must prove the web path remains backward-compatible with the live
+   data plane. Aggregate-only evaluation remains read-only and cannot perform a
+   deploy. Do not add a lossy `clear_fields` → `clear_field` application
+   fallback.
 2. Build the distinct `staging-<sha>` image and recreate host-managed staging:
 
    ```bash
@@ -248,7 +259,8 @@ include release docs before the first deployment.
    configuration, WebRTC, session persistence, or voice UI changed.
 5. Inspect the running container—not only Infisical—for the expected revision,
    deployment environment, and voice cells.
-6. Drain the bounded legacy backfill and retention sweep before trusting the
+6. For a production promotion or separately authorized data-maintenance window,
+   drain the bounded legacy backfill and retention sweep before trusting the
    admin, evaluation, SLA, or count views. The first drain intentionally applies
    the published 30/90/730-day deletion windows and is not reversed by a web
    rollback. Inspect the aggregate-only counts on every batch and continue until
@@ -280,7 +292,7 @@ include release docs before the first deployment.
 
    The 500-call guard is a runaway safety limit, not an allowed residual
    backlog. If it is reached, stop and diagnose; do not promote with hidden
-   legacy rows.
+   legacy rows. Skip this entire step during a staging-only/no-backfill hold.
 7. Prove authenticated, Convex-backed admin reads independently of `/api/health`
    and discard the response body so lead/session content does not enter the
    release log:
@@ -302,6 +314,10 @@ Do not submit a staging lead casually: staging still shares production Convex,
 OpenAI, Redis, and notification accounts.
 
 ## Phase 4 — Production
+
+Skip this phase completely when the active release contract is staging-only.
+Read-only production non-change proof remains required; no deploy, environment
+write, retention call, or other production mutation is allowed.
 
 1. Confirm staging proof and capture the current production rollback SHA.
 2. Inject the operator-only Coolify credential and run the exact-SHA deployer:

@@ -9,7 +9,7 @@ export default defineConfig({
   webServer: externalBaseUrl
     ? undefined
     : {
-        command: `pnpm exec next dev --hostname 127.0.0.1 --port ${localPort}`,
+        command: `env NEXT_PUBLIC_BRAND_MOTION_PREVIEW=true pnpm exec next dev --hostname 127.0.0.1 --port ${localPort}`,
         url: baseURL,
         reuseExistingServer: false,
         timeout: 120_000,
