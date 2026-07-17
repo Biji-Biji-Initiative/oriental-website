@@ -1,0 +1,33 @@
+name: oriental-staging-voice-perfection
+description: Ship-blocker review for the staging-only Mereka at Oriental voice experience
+
+documents:
+  readme: .apr/evidence/oriental-staging-voice-perfection.md
+  spec: .apr/specs/oriental-staging-voice-perfection.md
+  implementation: lib/voice/realtime-events.ts
+
+oracle:
+  model: "gpt-5.6-sol"
+
+rounds:
+  output_dir: .apr/rounds/oriental-staging-voice-perfection
+  impl_every_n: 1
+
+template: |
+  Review the staging-only release contract adversarially. Treat production
+  leakage, picker bypass, premature or stale email routing, clear-all PII
+  restoration, model/voice evidence confounds, unbounded GPU work, inaccessible
+  responsive controls, identity ambiguity, or unsupported proof claims as
+  blockers. Post-merge exact-SHA staging evidence is a later release gate, not
+  a pre-merge code blocker. End with exactly `VERDICT: MERGE FOR STAGING` or
+  `VERDICT: DO NOT MERGE`.
+
+template_with_impl: |
+  Review the attached implementation and evidence against the complete
+  contract. Trace typed and spoken email paths, medium versus high confidence,
+  contaminated readbacks, stale responses, out-of-order item IDs, clear-all,
+  production hostname precedence, staging picker/model governance, responsive
+  and fallback behavior, attribution, and the claimed test evidence. Do not
+  authorize production deployment. Post-merge exact-SHA staging evidence is a
+  later release gate, not a pre-merge code blocker. End with exactly
+  `VERDICT: MERGE FOR STAGING` or `VERDICT: DO NOT MERGE`.
