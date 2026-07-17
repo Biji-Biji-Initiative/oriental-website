@@ -150,8 +150,10 @@ on the same Coolify app host under
 `/data/coolify/applications/oriental-staging`. Staging images use the distinct
 `mtrl2z6a7zvoyevxvufpntij:staging-<sha>` tag while production uses
 `mtrl2z6a7zvoyevxvufpntij:<sha>`; the distinct tags isolate release ownership,
-while the approved Mereka M nebula and entrance loader are built identically
-for staging and production. Staging is routed through the Coolify
+while the approved Mereka M nebula and public entrance treatment are built
+identically for staging and production. The entrance treatment is
+non-interactive, never locks scrolling, runs once per tab for no more than 700
+ms, and is omitted on admin/API and reduced-motion loads. Staging is routed through the Coolify
 Traefik network with `coolify.managed=false`, so it is host-managed rather than
 a full Coolify UI application until a dedicated Coolify staging app/API token
 is provisioned.

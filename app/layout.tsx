@@ -69,7 +69,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${poppins.variable} ${fraunces.variable} scroll-smooth antialiased`}>
+    <html
+      lang="en"
+      className={`${poppins.variable} ${fraunces.variable} scroll-smooth antialiased`}
+      data-scroll-behavior="smooth"
+    >
       <body className="min-h-svh bg-mk-paper text-mk-off-black">
         <MerekaSiteLoader />
         {/* Warm the TLS connection the voice flow depends on while the visitor

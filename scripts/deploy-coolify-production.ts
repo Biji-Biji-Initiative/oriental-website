@@ -17,7 +17,8 @@ import {
 import {
   isManagedBuildTimeEnvironmentKey,
   type ManagedApplicationEnvironmentKey,
-  managedRuntimeEnvironmentFromEnv,
+  managedEnvironmentParityFailures,
+  managedEnvironmentReconciliationPlan,
 } from "./lib/managed-app-environment";
 import {
   CONTROL_VOICE_CELL,
@@ -26,6 +27,7 @@ import {
   RELEASE_TARGETS,
   STAGING_CANDIDATE_VOICE_CELL,
   validateHealthPayload,
+  validateManagedVoiceCell,
   validateReleaseSha,
 } from "./lib/release-governance";
 
@@ -165,32 +167,20 @@ function managedEnvironmentPayload(key: ManagedApplicationEnvironmentKey, value:
   } as const;
 }
 
-function managedEnvironmentRowMatches(
-  row: CoolifyEnvironmentVariable,
-  key: ManagedApplicationEnvironmentKey,
-  value: string,
-) {
-  const buildTime = isManagedBuildTimeEnvironmentKey(key);
-  return (
-    (row.value === value || row.real_value === value) &&
-    row.is_runtime === true &&
-    (row.is_buildtime === true || row.is_build_time === true) === buildTime
-  );
-}
-
 async function reconcileManagedApplicationEnvironment(
   baseUrl: string,
   token: string,
   applicationUuid: string,
   environment: Readonly<Record<string, string | undefined>>,
   googleExpected: GooglePublicBuildConfiguration,
+  assertCurrentProduction: () => Promise<void>,
 ) {
   const path = `applications/${applicationUuid}/envs`;
   const current = await coolifyRequest<CoolifyEnvironmentVariable[]>(baseUrl, token, path);
-  const expected = managedRuntimeEnvironmentFromEnv(environment);
-  for (const [key, value] of expected) {
+  const { expected, mutations } = managedEnvironmentReconciliationPlan(environment, current);
+  if (mutations.length > 0) await assertCurrentProduction();
+  for (const { key, value } of mutations) {
     const matches = current.filter((row) => row.key === key && row.is_preview !== true);
-    if (matches.length === 1 && matches[0] && managedEnvironmentRowMatches(matches[0], key, value)) continue;
     const payload = managedEnvironmentPayload(key, value);
     await coolifyRequest(baseUrl, token, path, {
       method: matches.length > 0 ? "PATCH" : "POST",
@@ -199,22 +189,15 @@ async function reconcileManagedApplicationEnvironment(
   }
 
   const updated = await coolifyRequest<CoolifyEnvironmentVariable[]>(baseUrl, token, path);
-  const failures: string[] = [];
-  for (const [key, value] of expected) {
-    const matches = updated.filter((row) => row.key === key && row.is_preview !== true);
-    if (matches.length !== 1) {
-      failures.push(`${key} must have exactly one production Coolify environment entry`);
-      continue;
-    }
-    if (!matches[0] || !managedEnvironmentRowMatches(matches[0], key, value)) {
-      failures.push(`${key} Coolify value or runtime/build scope does not match Infisical`);
-    }
-  }
+  const failures = managedEnvironmentParityFailures(environment, updated);
   failures.push(...coolifyGoogleEnvironmentFailures(updated, googleExpected));
   if (failures.length > 0) {
     throw new Error(`Coolify managed application environment: ${failures.join("; ")}`);
   }
-  return expected.size;
+  return {
+    managedEnvironmentKeys: expected.size,
+    retiredEnvironmentKeysCleared: mutations.filter(({ value }) => value === "").length,
+  };
 }
 
 function assertOrientalApplication(application: CoolifyApplication, uuid: string) {
@@ -283,6 +266,10 @@ async function waitForDeployment(
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  const voiceCellFailures = validateManagedVoiceCell(process.env, CONTROL_VOICE_CELL);
+  if (voiceCellFailures.length > 0) {
+    throw new Error(`production voice cell: ${voiceCellFailures.join("; ")}`);
+  }
   const token = requireEnv("COOLIFY_API_TOKEN");
   const baseUrl = process.env.COOLIFY_API_URL?.trim() || DEFAULT_API_URL;
   const applicationUuid = process.env.COOLIFY_ORIENTAL_APPLICATION_UUID?.trim() || DEFAULT_APPLICATION_UUID;
@@ -298,16 +285,25 @@ async function main() {
     { allowMissingEmailCaptureMode: true },
   );
 
-  const application = await coolifyRequest<CoolifyApplication>(baseUrl, token, `applications/${applicationUuid}`);
-  assertOrientalApplication(application, applicationUuid);
-  const managedEnvironmentKeys = await reconcileManagedApplicationEnvironment(
+  const assertCurrentProduction = async () => {
+    const current = await coolifyRequest<CoolifyApplication>(baseUrl, token, `applications/${applicationUuid}`);
+    assertOrientalApplication(current, applicationUuid);
+    assertHealthyOrientalApplication(current, args.expectedCurrentSha);
+  };
+  await assertCurrentProduction();
+  const { managedEnvironmentKeys, retiredEnvironmentKeysCleared } = await reconcileManagedApplicationEnvironment(
     baseUrl,
     token,
     applicationUuid,
     process.env,
     googleBuildEnvironment,
+    assertCurrentProduction,
   );
 
+  // Re-read the control plane immediately before changing the frozen SHA. The
+  // public health proof above cannot detect another operator moving Coolify in
+  // the interval between health verification and this mutation.
+  await assertCurrentProduction();
   await coolifyRequest(baseUrl, token, `applications/${applicationUuid}`, {
     method: "PATCH",
     body: JSON.stringify({ git_commit_sha: args.sha }),
@@ -349,6 +345,7 @@ async function main() {
         deploymentUuid,
         status: deploymentStatus(deployment),
         managedEnvironmentKeys,
+        retiredEnvironmentKeysCleared,
         coolifyApplicationStatus: "running:healthy",
         coolifyHealthCheckHost: "127.0.0.1",
         googleBuildEnvironment: "verified",

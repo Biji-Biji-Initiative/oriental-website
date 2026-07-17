@@ -191,8 +191,11 @@ clean candidate staging deployment with `--staging-model-cell candidate` and
 `--staging-picker-mode clean` while production remains control. The independent
 `--voice-picker-mode audition` staging option exposes the voice-register picker
 for human audition only; it is never model-promotion evidence. Production
-always rejects audition mode. The approved Mereka M nebula and entrance loader
-are normal visuals on both canonical hosts and are not experiment flags.
+always rejects audition mode. The approved Mereka M nebula and public entrance
+loader are normal visuals on both canonical hosts and are not experiment flags.
+The entrance treatment is non-interactive, never locks scrolling, appears at
+most once per tab, lasts no more than 700 ms, and is skipped for admin/API and
+reduced-motion loads; internal admin navigation must use the Next router.
 `VOICE_VARIANT_PICKER=false` governs both `/api/client-config` and the actual
 browser controls. Client tuner code must fetch that runtime route and fail
 closed; query strings or local storage may hide an allowed picker but must

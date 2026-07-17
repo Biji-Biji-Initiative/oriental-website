@@ -174,8 +174,8 @@ export function AnalyticsConsentSettings() {
     writeStoredConsent(next);
     setConsent(next);
     window.dispatchEvent(new CustomEvent<AnalyticsConsent>(analyticsConsentEvent, { detail: next }));
-    if (next === "denied" && window.gtag) {
-      window.gtag("consent", "update", { analytics_storage: "denied" });
+    if (window.gtag) {
+      window.gtag("consent", "update", { analytics_storage: next });
     }
     if (next === "denied") clearAnalyticsCookies();
   }

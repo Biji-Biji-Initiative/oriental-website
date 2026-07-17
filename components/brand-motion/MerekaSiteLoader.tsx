@@ -1,42 +1,48 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { MerekaTraceSpinner } from "./MerekaTraceSpinner";
 
-const LOADER_HOLD_MS = 1_150;
-const LOADER_EXIT_MS = 520;
+export const MEREKA_LOADER_HOLD_MS = 450;
+export const MEREKA_LOADER_EXIT_MS = 240;
+export const merekaLoaderSessionKey = "oriental_mereka_entrance_seen_v1";
 
 type LoaderPhase = "visible" | "leaving" | "hidden";
 
-/** Approved Mereka entrance treatment shared by staging and production. */
+export function shouldShowMerekaSiteLoader(pathname: string, alreadySeen: boolean, reducedMotion: boolean) {
+  return !alreadySeen && !reducedMotion && !pathname.startsWith("/admin") && !pathname.startsWith("/api");
+}
+
+/** Approved, non-blocking, once-per-tab public entrance treatment. */
 export function MerekaSiteLoader() {
-  const [phase, setPhase] = useState<LoaderPhase>("visible");
-  const previousOverflowRef = useRef("");
+  const [phase, setPhase] = useState<LoaderPhase>("hidden");
 
   useEffect(() => {
-    previousOverflowRef.current = document.documentElement.style.overflow;
-    document.documentElement.style.overflow = "hidden";
-    const leaveTimer = window.setTimeout(() => setPhase("leaving"), LOADER_HOLD_MS);
+    let alreadySeen = true;
+    try {
+      alreadySeen = window.sessionStorage.getItem(merekaLoaderSessionKey) === "true";
+    } catch {
+      // Hardened storage should fail open: never block access for decoration.
+      return;
+    }
+    const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    if (!shouldShowMerekaSiteLoader(window.location.pathname, alreadySeen, reducedMotion)) return;
+
+    window.sessionStorage.setItem(merekaLoaderSessionKey, "true");
+    setPhase("visible");
+    const leaveTimer = window.setTimeout(() => setPhase("leaving"), MEREKA_LOADER_HOLD_MS);
+    const hideTimer = window.setTimeout(() => setPhase("hidden"), MEREKA_LOADER_HOLD_MS + MEREKA_LOADER_EXIT_MS);
 
     return () => {
       window.clearTimeout(leaveTimer);
-      document.documentElement.style.overflow = previousOverflowRef.current;
+      window.clearTimeout(hideTimer);
     };
   }, []);
-
-  useEffect(() => {
-    if (phase !== "leaving") return;
-    const hideTimer = window.setTimeout(() => {
-      document.documentElement.style.overflow = previousOverflowRef.current;
-      setPhase("hidden");
-    }, LOADER_EXIT_MS);
-    return () => window.clearTimeout(hideTimer);
-  }, [phase]);
 
   if (phase === "hidden") return null;
 
   return (
-    <div aria-live="polite" className="brand-site-loader" data-phase={phase} role="status">
+    <div aria-live="polite" className="brand-site-loader" data-input-blocking="false" data-phase={phase} role="status">
       <div aria-hidden className="brand-site-loader__atmosphere" />
       <div className="brand-site-loader__lockup">
         <MerekaTraceSpinner className="brand-site-loader__mark" />

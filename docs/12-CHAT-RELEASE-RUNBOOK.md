@@ -35,8 +35,9 @@ cannot affect the runtime image.
   production MUST use the same source SHA. Shared staging may move afterward
   for another controlled experiment; its live SHA must never be inferred from
   production or a historical document. Image tags remain distinct for release
-  ownership, but the approved Mereka M nebula and entrance loader ship on both
-  canonical hosts.
+  ownership, but the approved Mereka M nebula and non-blocking, once-per-tab
+  public entrance treatment ship on both canonical hosts. Admin/API and
+  reduced-motion loads omit the entrance treatment.
 - `staging.oriental.mereka.io` and `oriental.mereka.io` are canonical. The
   `*.deploy.mereka.io` names MUST remain redirects only.
 - Cloudflare MUST remain authoritative DNS only; Coolify Traefik terminates TLS.
@@ -47,7 +48,9 @@ cannot affect the runtime image.
   over the encrypted fleet connection and atomically converge the host `.env`.
   The production deployer MUST reconcile and read back every approved runtime
   key from the native production application scope before changing the frozen
-  SHA. `NEXT_PUBLIC_*` keys are also build-time values. The Coolify credential
+  SHA, explicitly clear values retired from Infisical, and re-read the
+  `running:healthy` expected-current Coolify SHA immediately before every first
+  mutation boundary. `NEXT_PUBLIC_*` keys are also build-time values. The Coolify credential
   therefore needs scoped `read:sensitive`, `write`, and `deploy` access; values
   are never written to process arguments or logs.
 - Production voice MUST remain `baseline/control/low/adaptive`. A staging-only

@@ -20,6 +20,7 @@ describe("GA4 consent boundary", () => {
   afterEach(() => {
     cleanup();
     window.localStorage.clear();
+    delete window.gtag;
     delete process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID;
   });
 
@@ -48,5 +49,18 @@ describe("GA4 consent boundary", () => {
     await waitFor(() => expect(screen.queryByLabelText("Analytics privacy choices")).not.toBeInTheDocument());
     expect(window.localStorage.getItem(analyticsConsentStorageKey)).toBe("denied");
     expect(screen.queryByTestId("ga-external")).not.toBeInTheDocument();
+  });
+
+  it("explicitly grants storage again after a deny then regrant", async () => {
+    const gtag = vi.fn();
+    window.gtag = gtag;
+    const { AnalyticsConsentSettings } = await import("@/components/site/GoogleAnalytics");
+    render(<AnalyticsConsentSettings />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Turn analytics off" }));
+    fireEvent.click(screen.getByRole("button", { name: "Allow analytics" }));
+
+    expect(gtag).toHaveBeenNthCalledWith(1, "consent", "update", { analytics_storage: "denied" });
+    expect(gtag).toHaveBeenNthCalledWith(2, "consent", "update", { analytics_storage: "granted" });
   });
 });

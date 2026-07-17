@@ -48,7 +48,7 @@ describe("admin voice evaluation runner", () => {
               captureCompleteness: 5,
               conversationQuality: 4,
               frustration: 0,
-              summary: "Clear handoff.",
+              summary: "John / john@example.com / Acme had a clear handoff.",
             }),
           },
         },
@@ -79,8 +79,9 @@ describe("admin voice evaluation runner", () => {
       reviewId: "review-1",
       model: "gpt-4o-mini",
       routingCorrect: 4,
-      summary: "Clear handoff.",
+      summary: "Routing 4/5 · Capture 5/5 · Conversation 4/5 · Frustration 0/5.",
     });
+    expect(JSON.stringify(payload.evals)).not.toMatch(/John|john@example\.com|Acme/i);
     expect(payload.evals?.[0]).not.toHaveProperty("transcript");
     expect(payload.evals?.[0]).not.toHaveProperty("captured");
   });

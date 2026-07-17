@@ -2,6 +2,10 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+  managedEnvironmentParityFailures,
+  managedEnvironmentReconciliationPlan,
+} from "../scripts/lib/managed-app-environment";
+import {
   CONTROL_VOICE_CELL,
   governedVoiceCell,
   hasCloudflareEdgeHeaders,
@@ -197,6 +201,36 @@ describe("release governance", () => {
     );
   });
 
+  it("rejects a candidate production scope before credentials, Git, health, or Coolify access", () => {
+    const candidate = spawnSync(
+      "pnpm",
+      ["exec", "tsx", "scripts/deploy-coolify-production.ts", "--sha", sha, "--expected-current-sha", sha],
+      {
+        encoding: "utf8",
+        timeout: 20_000,
+        env: {
+          HOME: process.env.HOME,
+          PATH: process.env.PATH,
+          NODE_ENV: "test",
+          VOICE_RUNTIME_PROFILE: "baseline",
+          VOICE_MODEL_CELL: "candidate",
+          OPENAI_REALTIME_MODEL_CANDIDATE: "gpt-realtime-2.1",
+          VOICE_REASONING_CELL: "low",
+          VOICE_EMAIL_CAPTURE_MODE: "adaptive",
+          VOICE_VARIANT_PICKER: "true",
+        },
+      },
+    );
+
+    expect(candidate.status).toBe(1);
+    expect(candidate.stderr).toContain("production voice cell");
+    expect(candidate.stderr).toContain("VOICE_MODEL_CELL must be control");
+    expect(candidate.stderr).toContain("VOICE_VARIANT_PICKER must be explicitly false for the control cell");
+    expect(candidate.stderr).not.toContain("COOLIFY_API_TOKEN is required");
+    expect(candidate.stderr).not.toContain("health returned HTTP");
+    expect(candidate.stderr).not.toContain("Coolify ");
+  });
+
   it("uses the documented Coolify deployment trigger and validates its response identity", () => {
     expect(productionDeployer).toMatch(
       /const started = await coolifyRequest<unknown>\(\s*baseUrl,\s*token,\s*`deploy\?uuid=\$\{encodeURIComponent\(applicationUuid\)\}&force=false`,\s*\);/,
@@ -207,11 +241,36 @@ describe("release governance", () => {
 
   it("reconciles and reads back the complete managed application environment before changing the release SHA", () => {
     expect(productionDeployer).toContain("googlePublicBuildConfigurationFromEnv(process.env)");
-    expect(productionDeployer).toContain("managedRuntimeEnvironmentFromEnv(environment)");
+    expect(productionDeployer).toContain("managedEnvironmentReconciliationPlan(environment, current)");
+    expect(productionDeployer).toContain("managedEnvironmentParityFailures(environment, updated)");
     expect(productionDeployer).toContain("coolifyGoogleEnvironmentFailures(updated, googleExpected)");
     expect(productionDeployer.indexOf("await reconcileManagedApplicationEnvironment")).toBeLessThan(
       productionDeployer.indexOf("body: JSON.stringify({ git_commit_sha: args.sha })"),
     );
+    const finalCurrentAssertion = productionDeployer.lastIndexOf("await assertCurrentProduction()");
+    expect(finalCurrentAssertion).toBeGreaterThan(
+      productionDeployer.indexOf("await reconcileManagedApplicationEnvironment"),
+    );
+    expect(finalCurrentAssertion).toBeLessThan(
+      productionDeployer.indexOf("body: JSON.stringify({ git_commit_sha: args.sha })"),
+    );
+  });
+
+  it("clears a managed production value retired from Infisical and proves empty parity", () => {
+    const retiredRow = {
+      key: "CLICKUP_API_TOKEN",
+      value: "stale-live-secret",
+      is_preview: false,
+      is_runtime: true,
+      is_buildtime: false,
+    };
+    const plan = managedEnvironmentReconciliationPlan({}, [retiredRow]);
+
+    expect(plan.mutations).toContainEqual({ key: "CLICKUP_API_TOKEN", value: "" });
+    expect(managedEnvironmentParityFailures({}, [retiredRow])).toContain(
+      "CLICKUP_API_TOKEN retired Coolify value must be empty with the governed runtime/build scope",
+    );
+    expect(managedEnvironmentParityFailures({}, [{ ...retiredRow, value: "" }])).toEqual([]);
   });
 
   it("proves Coolify runtime health and loopback health-check ownership after deployment", () => {

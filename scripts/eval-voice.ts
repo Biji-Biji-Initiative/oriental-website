@@ -37,6 +37,7 @@ import {
   meetsThreshold,
   mergeConversationSessions,
   parseJudgeResponse,
+  piiFreeJudgeSummary,
   type SessionEval,
   type VoiceEvalSession,
   validateVoiceExperimentEvidence,
@@ -294,7 +295,7 @@ async function main() {
         captureCompleteness: entry.score.captureCompleteness,
         conversationQuality: entry.score.conversationQuality,
         frustration: entry.score.frustration,
-        summary: entry.score.summary,
+        summary: piiFreeJudgeSummary(entry.score),
         droppedMidTurn: entry.transport.droppedMidTurn,
         model,
       }));

@@ -22,6 +22,16 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
+test("entrance brand motion never blocks immediate public interaction", async ({ page }) => {
+  await page.goto("/");
+  const loader = page.locator(".brand-site-loader");
+  await expect(loader).toBeVisible();
+  await expect(loader).toHaveCSS("pointer-events", "none");
+  await expect.poll(() => page.evaluate(() => document.documentElement.style.overflow)).not.toBe("hidden");
+  await page.locator('header button[aria-label="Talk to Mereka"]').click({ timeout: 700 });
+  await expect(page.getByRole("dialog")).toBeVisible();
+});
+
 test("renders the Oriental microsite and opens the collaborative intake workspace", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /Reimagining/i })).toBeVisible();

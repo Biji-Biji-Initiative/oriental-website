@@ -1,6 +1,7 @@
 "use client";
 
 import { CornerDownLeftIcon, SearchIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { type KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Dialog, DialogClose, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 
@@ -99,6 +100,7 @@ function scoreItem(item: AdminPaletteItem, query: string) {
 }
 
 export function AdminCommandPalette({ items = [] }: { items?: AdminPaletteItem[] }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [shortcutHint, setShortcutHint] = useState("Ctrl K");
   const [query, setQuery] = useState("");
@@ -149,9 +151,9 @@ export function AdminCommandPalette({ items = [] }: { items?: AdminPaletteItem[]
     (item: AdminPaletteItem | undefined) => {
       if (!item) return;
       close();
-      window.location.href = item.href;
+      router.push(item.href);
     },
-    [close],
+    [close, router],
   );
 
   useEffect(() => {

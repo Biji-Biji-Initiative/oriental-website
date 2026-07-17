@@ -16,6 +16,7 @@ import {
   meetsThreshold,
   mergeConversationSessions,
   parseJudgeResponse,
+  piiFreeJudgeSummary,
   type VoiceEvalSession,
   validateVoiceExperimentEvidence,
 } from "@/lib/eval/voice-eval";
@@ -603,6 +604,21 @@ describe("parseJudgeResponse", () => {
         '{"routingCorrect":9,"captureCompleteness":3,"conversationQuality":5,"frustration":1,"summary":"x"}',
       ),
     ).toBeNull();
+  });
+});
+
+describe("piiFreeJudgeSummary", () => {
+  it("projects only numeric scores even when provider prose echoes captured PII", () => {
+    const summary = piiFreeJudgeSummary({
+      routingCorrect: 4,
+      captureCompleteness: 3,
+      conversationQuality: 5,
+      frustration: 1,
+      summary: "Jay at Manufacturers uses g@g.com.",
+    });
+
+    expect(summary).toBe("Routing 4/5 · Capture 3/5 · Conversation 5/5 · Frustration 1/5.");
+    expect(summary).not.toMatch(/Jay|Manufacturers|g@g\.com/i);
   });
 });
 

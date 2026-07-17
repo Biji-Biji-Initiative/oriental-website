@@ -745,6 +745,15 @@ export const judgeScoreSchema = z.object({
 
 export type JudgeScore = z.infer<typeof judgeScoreSchema>;
 
+/**
+ * Provider prose is untrusted because the judge sees raw QA material. Persist
+ * only this deterministic score projection so names, contact details,
+ * organisations, and transcript excerpts can never be echoed into Convex.
+ */
+export function piiFreeJudgeSummary(score: JudgeScore) {
+  return `Routing ${score.routingCorrect}/5 · Capture ${score.captureCompleteness}/5 · Conversation ${score.conversationQuality}/5 · Frustration ${score.frustration}/5.`;
+}
+
 export const JUDGE_SYSTEM_PROMPT = [
   "You are a strict QA evaluator for Reka, Mereka's Malaysian voice concierge for people interested in collaborating with Mereka at the Oriental Building.",
   "Score one transcript on a 0-5 integer scale per dimension. Be critical; reserve 5 for excellent.",
@@ -753,6 +762,7 @@ export const JUDGE_SYSTEM_PROMPT = [
   "- captureCompleteness: were useful lead details gathered without nagging, and does the final captured handoff exactly match the visitor's own words? A wrong submitted email is a critical failure.",
   "- conversationQuality: natural, concise, on-brand, no hallucinated facts or dead ends.",
   "- frustration: signals the VISITOR was frustrated/confused (0 = none, 5 = clearly frustrated).",
+  "The summary must describe quality only. Never repeat names, contact details, organisations, captured fields, or transcript excerpts.",
   'Respond with ONLY a JSON object: {"routingCorrect":int,"captureCompleteness":int,"conversationQuality":int,"frustration":int,"summary":"one sentence"}.',
 ].join("\n");
 

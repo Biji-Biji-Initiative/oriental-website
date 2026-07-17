@@ -69,6 +69,25 @@ export const DEPLOY_ONLY_APPLICATION_ENVIRONMENT_KEYS = new Set<ManagedApplicati
   "SENTRY_AUTH_TOKEN",
 ]);
 
+export const MANAGED_RUNTIME_APPLICATION_ENVIRONMENT_KEYS = MANAGED_APPLICATION_ENVIRONMENT_KEYS.filter(
+  (key) => !DEPLOY_ONLY_APPLICATION_ENVIRONMENT_KEYS.has(key),
+);
+
+export type ManagedEnvironmentSnapshotRow = {
+  key?: unknown;
+  value?: unknown;
+  real_value?: unknown;
+  is_preview?: unknown;
+  is_runtime?: unknown;
+  is_buildtime?: unknown;
+  is_build_time?: unknown;
+};
+
+export type ManagedEnvironmentMutation = {
+  key: ManagedApplicationEnvironmentKey;
+  value: string;
+};
+
 export function managedRuntimeEnvironmentFromEnv(env: Readonly<Record<string, string | undefined>>) {
   const expected = new Map<ManagedApplicationEnvironmentKey, string>();
   for (const key of MANAGED_APPLICATION_ENVIRONMENT_KEYS) {
@@ -81,4 +100,76 @@ export function managedRuntimeEnvironmentFromEnv(env: Readonly<Record<string, st
 
 export function isManagedBuildTimeEnvironmentKey(key: ManagedApplicationEnvironmentKey) {
   return key.startsWith("NEXT_PUBLIC_");
+}
+
+function managedEnvironmentRowMatches(
+  row: ManagedEnvironmentSnapshotRow,
+  key: ManagedApplicationEnvironmentKey,
+  value: string,
+) {
+  const buildTime = isManagedBuildTimeEnvironmentKey(key);
+  return (
+    (row.value === value || row.real_value === value) &&
+    row.is_runtime === true &&
+    (row.is_buildtime === true || row.is_build_time === true) === buildTime
+  );
+}
+
+/**
+ * Produce the smallest safe mutation set for the complete managed runtime
+ * scope. A key retired from Infisical is explicitly cleared if it still exists
+ * in Coolify; leaving the previous value untouched would keep a revoked secret
+ * live indefinitely.
+ */
+export function managedEnvironmentReconciliationPlan(
+  env: Readonly<Record<string, string | undefined>>,
+  rows: ManagedEnvironmentSnapshotRow[],
+) {
+  const expected = managedRuntimeEnvironmentFromEnv(env);
+  const mutations: ManagedEnvironmentMutation[] = [];
+  for (const key of MANAGED_RUNTIME_APPLICATION_ENVIRONMENT_KEYS) {
+    const value = expected.get(key);
+    const matches = rows.filter((row) => row.key === key && row.is_preview !== true);
+    if (value !== undefined) {
+      if (matches.length !== 1 || !matches[0] || !managedEnvironmentRowMatches(matches[0], key, value)) {
+        mutations.push({ key, value });
+      }
+      continue;
+    }
+    if (
+      matches.length > 0 &&
+      (matches.length !== 1 || !matches[0] || !managedEnvironmentRowMatches(matches[0], key, ""))
+    ) {
+      mutations.push({ key, value: "" });
+    }
+  }
+  return { expected, mutations };
+}
+
+/** Exact post-write parity, including proof that retired values are absent or empty. */
+export function managedEnvironmentParityFailures(
+  env: Readonly<Record<string, string | undefined>>,
+  rows: ManagedEnvironmentSnapshotRow[],
+) {
+  const expected = managedRuntimeEnvironmentFromEnv(env);
+  const failures: string[] = [];
+  for (const key of MANAGED_RUNTIME_APPLICATION_ENVIRONMENT_KEYS) {
+    const value = expected.get(key);
+    const matches = rows.filter((row) => row.key === key && row.is_preview !== true);
+    if (value === undefined && matches.length === 0) continue;
+    if (matches.length !== 1) {
+      failures.push(
+        `${key} must have ${value === undefined ? "zero or one cleared" : "exactly one"} production Coolify environment entry`,
+      );
+      continue;
+    }
+    if (!matches[0] || !managedEnvironmentRowMatches(matches[0], key, value ?? "")) {
+      failures.push(
+        value === undefined
+          ? `${key} retired Coolify value must be empty with the governed runtime/build scope`
+          : `${key} Coolify value or runtime/build scope does not match Infisical`,
+      );
+    }
+  }
+  return failures;
 }

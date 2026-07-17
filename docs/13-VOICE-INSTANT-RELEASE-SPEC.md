@@ -72,9 +72,11 @@ dimension, and prove the exact staged commit before promotion.
   understanding before a model response.
 - Reduced-motion mode MUST suppress visual animation without disabling audio
   activity measurement.
-- The approved Mereka M nebula and entrance loader MUST render on staging and
-  production. Missing WebGL, initialization failure, and reduced motion MUST
-  retain the canonical SVG fallback; this visual is not a voice experiment.
+- The approved Mereka M nebula MUST render on staging and production. Missing
+  WebGL or initialization failure MUST retain the canonical SVG fallback; this
+  visual is not a voice experiment. The public entrance treatment MUST be
+  non-interactive, never lock scrolling, run at most once per tab for no more
+  than 700 ms, and be omitted on admin/API and reduced-motion loads.
 - The visual audio envelope MUST learn sustained room noise through at least
   the 0.12–0.20 input range and use distinct open/close thresholds so steady
   noise converges inactive without gate chatter.
