@@ -8,7 +8,7 @@
   main; the following evidence-only commit does not alter runtime code.
 - `pnpm --silent ops:status --json` on 2026-07-17 reported both canonical
   environments healthy on the unchanged base SHA. Production reported
-  `baseline/control/gpt-realtime-2/low`, strict email mode, picker false.
+  `baseline/control/gpt-realtime-2/low/adaptive`, picker false.
   Staging reported `baseline/candidate/gpt-realtime-2.1/low/adaptive`, picker
   false because this candidate has not been deployed.
 - No production or staging web deployment was performed while building or
