@@ -18,6 +18,34 @@ describe("admin CRM data integrity contract", () => {
     expect(archiveMutation).not.toContain("ctx.db.delete");
   });
 
+  it("blocks ordinary workflow updates at both sides of the archive boundary before any patch", () => {
+    const workflowMutation = convexSource.slice(
+      convexSource.indexOf("export const updateLeadWorkflow"),
+      convexSource.indexOf("function auditChange"),
+    );
+    const boundaryGuard = workflowMutation.indexOf('status === "archived" || lead.status === "archived"');
+    const firstPatch = workflowMutation.indexOf("ctx.db.patch");
+
+    expect(boundaryGuard).toBeGreaterThan(-1);
+    expect(firstPatch).toBeGreaterThan(boundaryGuard);
+    expect(workflowMutation).toContain('reason: "archive_boundary"');
+  });
+
+  it("computes canonical counts independently of the bounded row window", () => {
+    const tableQuery = convexSource.slice(
+      convexSource.indexOf("export const adminLeadTable"),
+      convexSource.indexOf("export const adminLeadCounts"),
+    );
+    const countQuery = convexSource.slice(
+      convexSource.indexOf("export const adminLeadCounts"),
+      convexSource.indexOf("export const reviewDashboard"),
+    );
+
+    expect(tableQuery).toContain(".take(take)");
+    expect(countQuery).toContain('ctx.db.query("leads").collect()');
+    expect(countQuery).not.toContain(".take(");
+  });
+
   it("retains archive and restore provenance on the canonical lead", () => {
     for (const field of ["archivedAt", "archivedBy", "archiveReason", "preArchiveStatus", "restoredAt", "restoredBy"]) {
       expect(schemaSource).toContain(`${field}: v.optional`);

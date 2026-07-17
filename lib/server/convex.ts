@@ -1,5 +1,6 @@
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
+import { summarizeAdminLeads } from "@/lib/admin-lead-counts";
 import { readEnv } from "@/lib/env";
 import type {
   AdminLeadArchiveRequest,
@@ -138,16 +139,25 @@ export async function getAdminLeadTable(limit = 500) {
   const fixturePath = readEnv("ADMIN_REVIEW_DASHBOARD_FIXTURE");
   if (fixturePath && process.env.NODE_ENV !== "production") {
     const fixture = await readAdminReviewDashboardFixture(fixturePath);
-    return { ok: true as const, leads: fixture.leads.slice(0, take) };
+    return {
+      ok: true as const,
+      leads: fixture.leads.slice(0, take),
+      counts: summarizeAdminLeads(fixture.leads, fixture.generatedAt),
+    };
   }
 
   const client = createConvexClient();
   if (!client) return { ok: false as const, reason: "convex_unconfigured" };
-  const leads = await client.client.query(api.leads.adminLeadTable, {
-    ingestSecret: client.ingestSecret,
-    limit: take,
-  });
-  return { ok: true as const, leads };
+  const [leads, counts] = await Promise.all([
+    client.client.query(api.leads.adminLeadTable, {
+      ingestSecret: client.ingestSecret,
+      limit: take,
+    }),
+    client.client.query(api.leads.adminLeadCounts, {
+      ingestSecret: client.ingestSecret,
+    }),
+  ]);
+  return { ok: true as const, leads, counts };
 }
 
 export async function getAdminVoiceSession(reviewId: string) {

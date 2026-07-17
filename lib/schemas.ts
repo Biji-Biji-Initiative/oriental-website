@@ -2,7 +2,7 @@ import { z } from "zod";
 import {
   ADMIN_LEAD_OWNERS,
   ADMIN_LEAD_PRIORITIES,
-  ADMIN_LEAD_STATUSES,
+  ADMIN_WORKFLOW_LEAD_STATUSES,
   validateAdminLeadWorkflow,
 } from "@/lib/admin-workflow";
 import { SEGMENT_IDS } from "@/lib/segments";
@@ -73,7 +73,7 @@ export const adminLoginSchema = z.object({
 
 export const adminLeadWorkflowSchema = z
   .object({
-    status: z.enum(ADMIN_LEAD_STATUSES),
+    status: z.enum(ADMIN_WORKFLOW_LEAD_STATUSES),
     priority: z.enum(ADMIN_LEAD_PRIORITIES),
     owner: z.string().trim().max(80),
     note: z.string().trim().max(600).optional(),

@@ -1,5 +1,6 @@
 import { mutationGeneric, queryGeneric } from "convex/server";
 import { v } from "convex/values";
+import { summarizeAdminLeads } from "../lib/admin-lead-counts";
 import { ADMIN_LEAD_OWNERS, validateAdminLeadWorkflow } from "../lib/admin-workflow";
 
 function requireIngestSecret(ingestSecret: string) {
@@ -378,6 +379,7 @@ export const updateLeadWorkflow = mutationGeneric({
     v.object({ ok: v.literal(false), reason: v.literal("not_found") }),
     v.object({ ok: v.literal(false), reason: v.literal("conflict"), currentRevision: v.number() }),
     v.object({ ok: v.literal(false), reason: v.literal("invalid_workflow") }),
+    v.object({ ok: v.literal(false), reason: v.literal("archive_boundary") }),
   ),
   handler: async (
     ctx,
@@ -403,6 +405,10 @@ export const updateLeadWorkflow = mutationGeneric({
       .withIndex("by_lead_id", (query) => query.eq("leadId", leadId))
       .unique();
     if (!lead) return { ok: false as const, reason: "not_found" as const };
+
+    if (status === "archived" || lead.status === "archived") {
+      return { ok: false as const, reason: "archive_boundary" as const };
+    }
 
     const now = Date.now();
     const cleanOwner = owner.trim();
@@ -881,6 +887,15 @@ export const adminLeadTable = queryGeneric({
     requireIngestSecret(ingestSecret);
     const take = Math.min(Math.max(Math.floor(limit ?? 500), 1), 1000);
     return await ctx.db.query("leads").order("desc").take(take);
+  },
+});
+
+export const adminLeadCounts = queryGeneric({
+  args: { ingestSecret: v.string() },
+  handler: async (ctx, { ingestSecret }) => {
+    requireIngestSecret(ingestSecret);
+    const leads = await ctx.db.query("leads").collect();
+    return summarizeAdminLeads(leads);
   },
 });
 

@@ -909,9 +909,11 @@ function RowActions({
           <DropdownMenuItem render={<a href={lead.recordHref} />}>
             <ExternalLinkIcon /> Open complete record
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={onEdit}>
-            <UserRoundCogIcon /> Edit workflow
-          </DropdownMenuItem>
+          {!archived ? (
+            <DropdownMenuItem onClick={onEdit}>
+              <UserRoundCogIcon /> Edit workflow
+            </DropdownMenuItem>
+          ) : null}
           <DropdownMenuItem render={<a href={`mailto:${encodeURIComponent(lead.email)}`} />}>
             <MailIcon /> Email contact
           </DropdownMenuItem>

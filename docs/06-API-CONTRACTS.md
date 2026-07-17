@@ -441,13 +441,13 @@ Convex lead workflow fields and appends a `workflow_update` event to
 
 ```ts
 type AdminLeadWorkflowRequest = {
-  status: "new" | "reviewing" | "contacted" | "qualified" | "archived";
+  status: "new" | "reviewing" | "contacted" | "qualified";
   priority: "low" | "normal" | "high" | "urgent";
   owner?: string; // trim, max 80
   note?: string; // trim, max 600
   nextActionAt: number | null;
   nextActionNote?: string; // trim, max 500
-  outcomeReason?: string; // required for qualified/archived
+  outcomeReason?: string; // required for qualified
   expectedRevision: number;
   reason: string; // trim, 3-300; audit reason
 };
@@ -463,7 +463,8 @@ Errors:
 
 | HTTP | `error` | Cause |
 |---|---|---|
-| 400 | `invalid_payload` | Zod validation failed. |
+| 400 | `invalid_payload` | Zod validation failed, including any request for `archived` status. |
+| 400 | `archive_boundary` | The canonical lead is archived; restore it through the archive endpoint before editing. |
 | 401 | `missing` / `invalid` | Missing or invalid admin bearer/cookie auth. |
 | 403 | `forbidden` | The authenticated admin role lacks update permission. |
 | 404 | `not_found` | No Convex lead matched the route `leadId`. |
@@ -495,7 +496,9 @@ type AdminLeadArchiveResponse = {
 };
 ```
 
-Archive is a reversible workflow state, never a physical delete. The canonical
+Archive is a reversible workflow state, never a physical delete. Archive and
+restore transitions are exclusive to this endpoint: the ordinary workflow PATCH
+rejects both active-to-archived and archived-to-active changes. The canonical
 lead retains contact data, request, transcript, notification outcomes, ClickUp
 references, evaluations, and every prior event. Convex stores archive actor,
 timestamp, reason, and prior status. Restore returns to the recorded prior

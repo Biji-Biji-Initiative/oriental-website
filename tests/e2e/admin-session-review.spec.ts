@@ -102,6 +102,19 @@ test.describe("admin session review console", () => {
     await expect(accountHistory.getByText("Daniel Lim")).toBeVisible();
   });
 
+  test("keeps the canonical total stable while shadcn filters change visible rows", async ({ page }) => {
+    await page.goto("/admin/session-review?view=leads");
+    const workspace = page.locator("[data-admin-enquiry-table]");
+
+    await expect(workspace.getByText("3 canonical", { exact: true })).toBeVisible();
+    await workspace.getByLabel("Owner").click();
+    await page.locator('[role="listbox"]:visible').getByRole("option", { name: "Unassigned", exact: true }).click();
+
+    await expect(workspace.getByText("1 visible", { exact: true })).toBeVisible();
+    await expect(workspace.getByText("3 canonical", { exact: true })).toBeVisible();
+    await expect(workspace.getByText("Aisha Rahman").filter({ visible: true }).first()).toBeVisible();
+  });
+
   test("opens shadcn column and row action menus without leaving the CRM", async ({ page }, testInfo) => {
     await page.goto("/admin/session-review?view=leads");
     const workspace = page.locator("[data-admin-enquiry-table]");

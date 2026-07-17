@@ -9,6 +9,7 @@ import {
   type CrmSort,
   sortCrmLeads,
 } from "@/lib/admin-crm";
+import type { AdminLeadCounts } from "@/lib/admin-lead-counts";
 import {
   adminLeadPriorityLabels,
   adminLeadSlaState,
@@ -38,9 +39,9 @@ type EnquiryCrmWorkspaceProps = {
   events: LeadEventRow[];
   filters: CrmFilters;
   generatedAt: number;
+  leadCounts: AdminLeadCounts;
   leads: LeadRow[];
   selectedLeadId?: string;
-  totalLeads: number;
   view: "all" | "today" | "leads";
   voiceSessions: VoiceSessionRow[];
 };
@@ -50,9 +51,9 @@ export function EnquiryCrmWorkspace({
   events,
   filters,
   generatedAt,
+  leadCounts,
   leads,
   selectedLeadId,
-  totalLeads,
   view,
   voiceSessions,
 }: EnquiryCrmWorkspaceProps) {
@@ -61,14 +62,11 @@ export function EnquiryCrmWorkspace({
   const rowLimit = view === "today" && !hasFilters(filters) ? 12 : ordered.length;
   const visible = ordered.slice(0, rowLimit);
   const selected = ordered.find((lead) => lead.leadId === selectedLeadId) ?? visible.find(isActiveLead) ?? visible[0];
-  const todayCount = allLeads.filter((lead) => isSameKualaLumpurDay(lead.createdAt, generatedAt)).length;
-  const active = allLeads.filter(isActiveLead).length;
-  const unassigned = allLeads.filter((lead) => isActiveLead(lead) && !lead.owner?.trim()).length;
-  const important = allLeads.filter((lead) => {
-    const priority = normalizeAdminLeadPriority(lead.priority);
-    return isActiveLead(lead) && (priority === "high" || priority === "urgent");
-  }).length;
-  const clickUpGaps = allLeads.filter((lead) => lead.notificationClickUpOk !== true).length;
+  const todayCount = leadCounts.newToday;
+  const active = leadCounts.active;
+  const unassigned = leadCounts.unassignedActive;
+  const important = leadCounts.highPriorityActive;
+  const clickUpGaps = leadCounts.clickUpGaps;
 
   return (
     <section className="grid scroll-mt-32 gap-4" id="crm-workspace">
@@ -104,7 +102,7 @@ export function EnquiryCrmWorkspace({
           ...lead,
           recordHref: recordHref(view, filters, lead.leadId),
         }))}
-        totalRows={totalLeads}
+        totalRows={leadCounts.total}
       />
 
       {selected ? (
@@ -854,11 +852,6 @@ function formatRelativeAge(value: number, now: number) {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   return `${days}d ago`;
-}
-
-function isSameKualaLumpurDay(left: number, right: number) {
-  const format = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kuala_Lumpur" });
-  return format.format(new Date(left)) === format.format(new Date(right));
 }
 
 function formatList(values: string[]) {

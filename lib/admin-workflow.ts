@@ -1,4 +1,5 @@
 export const ADMIN_LEAD_STATUSES = ["new", "reviewing", "contacted", "qualified", "archived"] as const;
+export const ADMIN_WORKFLOW_LEAD_STATUSES = ["new", "reviewing", "contacted", "qualified"] as const;
 
 export const ADMIN_LEAD_PRIORITIES = ["low", "normal", "high", "urgent"] as const;
 

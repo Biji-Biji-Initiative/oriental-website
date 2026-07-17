@@ -164,16 +164,31 @@ describe("admin lead workflow schema", () => {
     }
   });
 
-  it("requires an outcome reason when closing an enquiry", () => {
+  it("rejects archive transitions from the ordinary workflow endpoint", () => {
+    expect(
+      adminLeadWorkflowSchema.safeParse({
+        status: "archived",
+        priority: "normal",
+        owner: "Gurpreet",
+        nextActionAt: null,
+        nextActionNote: "",
+        outcomeReason: "Duplicate",
+        expectedRevision: 2,
+        reason: "Close duplicate",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("requires an outcome reason when qualifying an enquiry", () => {
     const parsed = adminLeadWorkflowSchema.safeParse({
-      status: "archived",
+      status: "qualified",
       priority: "normal",
       owner: "Gurpreet",
       nextActionAt: null,
       nextActionNote: "",
       outcomeReason: "",
       expectedRevision: 2,
-      reason: "Close duplicate",
+      reason: "Qualified after review",
     });
 
     expect(parsed.success).toBe(false);

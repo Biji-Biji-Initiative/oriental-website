@@ -32,6 +32,7 @@ vi.mock("convex/browser", () => ({
 vi.mock("@/convex/_generated/api", () => ({
   api: {
     leads: {
+      adminLeadCounts: "adminLeadCounts",
       adminLeadTable: "adminLeadTable",
       archiveLeads: "archiveLeads",
       createLead: "createLead",
@@ -235,27 +236,41 @@ describe("getAdminLeadTable", () => {
     vi.clearAllMocks();
   });
 
-  it("loads a bounded canonical lead workspace independently from voice diagnostics", async () => {
-    mocks.query.mockResolvedValue([{ leadId: "lead_1" }, { leadId: "lead_2" }]);
+  it("keeps canonical totals exact when the corpus is larger than the bounded row window", async () => {
+    const rows = [{ leadId: "lead_1" }, { leadId: "lead_2" }];
+    const counts = {
+      total: 720,
+      active: 611,
+      archived: 40,
+      qualified: 69,
+      unassignedActive: 83,
+      highPriorityActive: 27,
+      clickUpGaps: 14,
+      newToday: 9,
+    };
+    mocks.query.mockImplementation((query) => Promise.resolve(query === "adminLeadTable" ? rows : counts));
 
-    await expect(getAdminLeadTable(500)).resolves.toEqual({
-      ok: true,
-      leads: [{ leadId: "lead_1" }, { leadId: "lead_2" }],
-    });
+    await expect(getAdminLeadTable(500)).resolves.toEqual({ ok: true, leads: rows, counts });
     expect(mocks.query).toHaveBeenCalledWith("adminLeadTable", {
       ingestSecret: "ingest-secret",
       limit: 500,
     });
+    expect(mocks.query).toHaveBeenCalledWith("adminLeadCounts", {
+      ingestSecret: "ingest-secret",
+    });
   });
 
-  it("caps oversized lead table requests", async () => {
-    mocks.query.mockResolvedValue([]);
+  it("caps oversized lead table requests without capping the count query", async () => {
+    mocks.query.mockImplementation((query) => Promise.resolve(query === "adminLeadTable" ? [] : { total: 2_400 }));
 
     await getAdminLeadTable(10_000);
 
     expect(mocks.query).toHaveBeenCalledWith("adminLeadTable", {
       ingestSecret: "ingest-secret",
       limit: 1000,
+    });
+    expect(mocks.query).toHaveBeenCalledWith("adminLeadCounts", {
+      ingestSecret: "ingest-secret",
     });
   });
 });

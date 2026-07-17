@@ -14,6 +14,7 @@ import { RekaQualityWorkspace } from "@/components/admin/RekaQualityWorkspace";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { type CrmSort, crmSortLabels, normalizeCrmSort } from "@/lib/admin-crm";
+import { summarizeAdminLeads } from "@/lib/admin-lead-counts";
 import {
   adminLeadPriorityLabels,
   adminLeadStatusLabels,
@@ -74,6 +75,9 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
   }
 
   const allLeads = leadTable.ok ? leadTable.leads : dashboard.data.leads;
+  const leadCounts = leadTable.ok
+    ? leadTable.counts
+    : summarizeAdminLeads(dashboard.data.leads, dashboard.data.generatedAt);
   const sessionsWithRealErrors = dashboard.data.voiceSessions.filter((session: VoiceSessionRow) =>
     session.errors.some((error: VoiceRuntimeError) => !isBenignVoiceError(error)),
   ).length;
@@ -97,7 +101,7 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
             filterActive={filterActive}
             filters={filters}
             leadCount={filteredLeads.length}
-            totalLeads={allLeads.length}
+            totalLeads={leadCounts.total}
             totalVoiceRecoverable={recoverableVoiceSessions(dashboard.data.voiceSessions).length}
             view={view}
             voiceRecoverableCount={recoverableVoiceSessions(filteredVoiceSessions).length}
@@ -108,8 +112,8 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
             filters={filters}
             generatedAt={dashboard.data.generatedAt}
             leads={filteredLeads}
+            leadCounts={leadCounts}
             selectedLeadId={selectedLeadId}
-            totalLeads={allLeads.length}
             view={showAll ? "all" : "leads"}
             voiceSessions={dashboard.data.voiceSessions}
           />
@@ -131,7 +135,7 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
           filterActive={filterActive}
           filters={filters}
           leadCount={filteredLeads.length}
-          totalLeads={dashboard.data.leads.length}
+          totalLeads={leadCounts.total}
           totalVoiceRecoverable={recoverableVoiceSessions(dashboard.data.voiceSessions).length}
           view={view}
           voiceRecoverableCount={recoverableVoiceSessions(filteredVoiceSessions).length}
