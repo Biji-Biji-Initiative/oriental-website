@@ -1,7 +1,7 @@
 # Mereka at Oriental staging-only voice and visual release contract
 
 Review the exact current integration tree based on
-`d983450c706c734fa7597f907655cf951876ced0` for merge and an exact-SHA deploy to
+`401a04f12119bd41751af172f9255bdb25bacf38` for merge and an exact-SHA deploy to
 canonical staging only. This contract does not authorize production, shared
 Convex, DNS, backfill, retention, or production Infisical/Coolify mutation.
 Production must remain on its current deployed SHA, legacy orb, no Trace

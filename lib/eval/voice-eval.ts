@@ -238,8 +238,7 @@ export function mergeConversationSessions(sessions: VoiceEvalSession[]): VoiceEv
     const mixedVoiceProfile =
       ordered.some((session) => session.mixedVoiceProfile) || new Set(ordered.map(voiceProfileKey)).size > 1;
     const mixedExperimentProfile =
-      ordered.some((session) => session.mixedExperimentProfile) ||
-      new Set(ordered.map(experimentProfileKey)).size > 1;
+      ordered.some((session) => session.mixedExperimentProfile) || new Set(ordered.map(experimentProfileKey)).size > 1;
     merged.push({
       ...head,
       // The latest call row heads the conversation, but timings and outcome span
@@ -737,10 +736,7 @@ const NEGATIVE_EMAIL_CORRECTION_CUE =
 const NEGATIVE_EMAIL_CORRECTION_SUFFIX =
   /^\s*(?:[?!,;:—–-]\s*)?(?:(?:no|sorry)\s*[,;:—–-]?\s*)?(?:is\s+(?:wrong|old|former|incorrect|not\s+(?:mine|correct))|isn't\s+(?:mine|correct)|(?:that|this|it)(?:'s|\s+(?:is|was|looks?))\s+(?:wrong|old|former|incorrect|not\s+(?:mine|correct))|not\s+(?:that|this)(?:\s+(?:one|address))?|do\s+not\s+use(?:\s+it)?|don't\s+use(?:\s+it)?|ignore(?:\s+it)?|avoid(?:\s+it)?|discard(?:\s+it)?)\b/i;
 
-export type EmailCorrectionResolution =
-  | { kind: "none" }
-  | { kind: "resolved"; email: string }
-  | { kind: "ambiguous" };
+export type EmailCorrectionResolution = { kind: "none" } | { kind: "resolved"; email: string } | { kind: "ambiguous" };
 
 type EmailMention = { email: string; start: number; end: number };
 

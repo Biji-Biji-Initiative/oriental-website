@@ -275,9 +275,7 @@ describe("POST /api/leads", () => {
 
     expect(response.status).toBe(200);
     const persistedLead = mocks.persistLead.mock.calls[0]?.[0];
-    const retainedUserTurns = persistedLead.transcript.filter(
-      (turn: { role: string }) => turn.role === "user",
-    ).length;
+    const retainedUserTurns = persistedLead.transcript.filter((turn: { role: string }) => turn.role === "user").length;
     expect(retainedUserTurns).toBeLessThan(transcript.length);
     expect(
       verifyVoiceSubmissionEvidence(

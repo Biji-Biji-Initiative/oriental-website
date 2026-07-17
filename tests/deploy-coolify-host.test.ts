@@ -36,12 +36,8 @@ describe("Coolify host deploy image cells", () => {
     expect(deployScript).toContain('brand_motion_preview="false"');
     expect(deployScript).toContain('if [[ "$target" == "staging" ]]');
     expect(deployScript).toContain('brand_motion_preview="true"');
-    expect(deployScript).toContain(
-      `--build-arg "NEXT_PUBLIC_BRAND_MOTION_PREVIEW=\${brand_motion_preview}"`,
-    );
-    expect(deployScript).toContain(
-      '"NEXT_PUBLIC_BRAND_MOTION_PREVIEW": "true" if target == "staging" else "false"',
-    );
+    expect(deployScript).toContain(`--build-arg "NEXT_PUBLIC_BRAND_MOTION_PREVIEW=\${brand_motion_preview}"`);
+    expect(deployScript).toContain('"NEXT_PUBLIC_BRAND_MOTION_PREVIEW": "true" if target == "staging" else "false"');
   });
 
   it("requires optimistic concurrency and a host lock for shared staging", () => {

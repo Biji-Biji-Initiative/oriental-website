@@ -2,8 +2,8 @@
 
 ## Exact boundary
 
-- Integration base: `d983450c706c734fa7597f907655cf951876ced0`
-  (`origin/main` when `fix/staging-voice-final` was created).
+- Integration base: `401a04f12119bd41751af172f9255bdb25bacf38`
+  (current `origin/main` after the final conflict-free rebase).
 - The branch ports the two independently reviewed hardening commits onto that
   base while preserving main's newer privacy, analytics, responsive focus, and
   tool-latency behavior.
@@ -42,8 +42,15 @@
 
 ## Executed evidence so far
 
-- Focused integration proof: 6 files, 512 tests passed.
+- Post-rebase focused integration proof: 11 files, 549 tests passed.
+- Full release-test harness: 82 files, 960 tests passed.
 - `pnpm typecheck`: Next route generation and TypeScript passed.
+- `pnpm lint`, `pnpm build`, and `git diff --check`: passed.
+- Responsive Playwright home proof: 42 desktop/mobile cases passed, including
+  the short-landscape picker/dialog, returning-microphone, email-correction,
+  and staging brand-motion paths.
+- Production performance/a11y proof: LCP 476 ms, CLS 0, 420,731 initial
+  JavaScript transfer bytes, and zero serious/critical accessibility findings.
 - Focused tests include 399 deterministic email/realtime cases, immutable
   submission evidence, bounded `--limit` evaluation, versioned prefill,
   staging/production visual gating, and the long-transcript authority-rebase

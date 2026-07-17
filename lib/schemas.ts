@@ -119,7 +119,6 @@ export const leadRequestSchema = z
         path: [!lead.voiceReviewId ? "voiceReviewId" : "voiceReviewToken"],
       });
     }
-
   })
   .transform((lead) => {
     const transcript = boundTranscript(lead.transcript);

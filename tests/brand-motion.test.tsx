@@ -12,7 +12,6 @@ import { MerekaMiniMark } from "@/components/orb/MerekaMiniMark";
 import {
   BRAND_MOTION_PREVIEW_HOST,
   isBrandMotionPreviewEnabled,
-  isBrandMotionPreviewHost,
   MEREKA_MARK_PATH,
   MEREKA_NEBULA_PARTICLE_COUNT,
   MEREKA_TRACE_DURATION_MS,
