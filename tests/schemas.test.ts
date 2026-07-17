@@ -186,8 +186,8 @@ describe("lead request schema", () => {
 });
 
 describe("admin login schema", () => {
-  it("accepts the shared admin password length", () => {
-    expect(adminLoginSchema.safeParse({ token: "Cr3ativity" }).success).toBe(true);
+  it("accepts the minimum governed token length", () => {
+    expect(adminLoginSchema.safeParse({ token: "token-1234" }).success).toBe(true);
   });
 
   it("accepts long generated admin review tokens", () => {
