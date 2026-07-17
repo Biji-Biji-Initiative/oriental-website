@@ -2,9 +2,9 @@
 
 ## Exact candidate and live boundary
 
-- Candidate implementation: `0459383d109955316bf0df93fecdb246b250024c`.
+- Candidate implementation: `d8e18b7c88a6c398b1541bdec0f8aed2b4e77f08`.
 - Base: `b0b0d83c7499ea4ed470430e8e3cfa80ab7bd68e` (`origin/main`).
-- The candidate implementation is five commits ahead and zero commits behind
+- The candidate implementation is eight commits ahead and zero commits behind
   main; the following evidence-only commit does not alter runtime code.
 - `pnpm --silent ops:status --json` on 2026-07-17 reported both canonical
   environments healthy on the unchanged base SHA. Production reported
@@ -37,7 +37,10 @@
   integrity/style counters and fully attributed experiment grouping. The
   harness enriches only missing bulk-query attribution through the already
   deployed read-only `voiceSessionByReviewId` function with bounded
-  concurrency; no shared Convex function deploy is required.
+  concurrency; no shared Convex function deploy is required. Missing, invalid,
+  or unavailable attribution now fails the evaluator closed. Experiment proof
+  requires one complete control voice-profile baseline, rejects voice/speed
+  drift even when `variant` is null, and preserves mixed-profile reconnects.
 - `lib/server/convex.ts` preserves the complete staging snapshot against the
   deployed legacy validator. The API logs canonical `clear_fields` before
   persistence, while the durable wire sample uses the compatible
@@ -47,13 +50,13 @@
 
 ## Executed evidence on the rebased candidate
 
-- `pnpm test`: 61 files, 612 tests passed.
+- `pnpm test`: 61 files, 626 tests passed.
 - Focused reducer/session/fuzz proof: 3 files, 257 tests passed.
 - `pnpm lint`: 233 files clean.
 - `pnpm typecheck`: passed.
 - `pnpm build`: passed, including Next.js route generation.
 - `pnpm test:e2e`: 38 passed; 38 token-gated admin cases skipped as designed.
-- `pnpm test:performance`: mobile performance budget passed with 480 ms LCP,
+- `pnpm test:performance`: mobile performance budget passed with 516 ms LCP,
   zero CLS, and zero serious/critical accessibility violations.
 - Managed Infisical contracts passed in both environments with production-mode
   secret validation. Staging is candidate/picker-on; production is
@@ -77,6 +80,17 @@
   typecheck passed. The integration test proves a legacy bulk row is enriched
   read-only into the exact `kl-polished/marin/1.22` experiment cell without
   writing files or exposing identifiers.
+- APR round 1 ran hermetically on canonical host `g` against exact PR head
+  `02fdab674eb0ce47a40b7a810ebaaeeaadd2efcb`, base
+  `b0b0d83c7499ea4ed470430e8e3cfa80ab7bd68e`, and complete patch SHA-256
+  `04a6642d8b38f1c9db16ee20e6aecc014e122d028644d9f1ae67b9e9ac8faff6`.
+  Its saved `VERDICT: DO NOT MERGE` identified four blockers. Commit
+  `d8e18b7c88a6c398b1541bdec0f8aed2b4e77f08` closes all four: picker and
+  submitted variants now require the canonical staging hostname; URL/storage
+  visibility authority is removed; stale submissions no longer depend on a
+  rejection event; and attribution/confound validation fails closed. The
+  post-fix focused matrix passed 78 tests, including query failure, missing
+  profile, candidate-only baseline, voice/speed drift, and mixed reconnects.
 
 ## Remaining post-merge gates
 
