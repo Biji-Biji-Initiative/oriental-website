@@ -167,10 +167,13 @@ before any deployment. For runtime work:
 3. Inject the production app contract from Infisical and run
    `pnpm release:preflight -- --sha <sha>`; managed cell validation is mandatory.
 4. Deploy/prove staging, then deploy production through the Coolify API.
-5. Run `pnpm release:verify -- --sha <sha> --target both` and inspect the
-   running containers' revision and cells. Run the verifier under the managed
-   application environment: it also proves the exact Google verification meta,
-   GA's explicit-consent boundary, and admin exclusion in Chromium.
+5. Run `pnpm release:verify -- --sha <sha> --target both` under the managed
+   application environment; staging defaults to the established candidate cell.
+   It proves the running revisions/cells, exact Google verification meta, GA's
+   explicit-consent boundary, and admin exclusion in Chromium. The deployers
+   themselves must first reconcile and read back the complete approved
+   Infisical application scope; production additionally proves Coolify
+   `running:healthy` with health ownership on `127.0.0.1`.
 
 Do not force an application rebuild for a docs/operator-only commit with no
 runtime impact. Do not create late cleanup PRs after the final-SHA freeze; if a

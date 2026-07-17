@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 const deployPath = resolve(process.cwd(), "scripts/deploy-coolify-host.sh");
 const deployScript = readFileSync(deployPath, "utf8");
+const reconcilePath = resolve(process.cwd(), "scripts/reconcile-staging-env.py");
 
 describe("Coolify host deploy image cells", () => {
   it("accepts only full immutable source SHAs", () => {
@@ -18,10 +19,10 @@ describe("Coolify host deploy image cells", () => {
   });
 
   it("passes the target environment's public analytics values into the immutable image build", () => {
-    expect(deployScript).toContain('ga_measurement_id="$(read_build_value NEXT_PUBLIC_GA_MEASUREMENT_ID)"');
-    expect(deployScript).toContain(
-      'google_site_verification="$(read_build_value NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION)"',
-    );
+    expect(deployScript).toContain(`ga_measurement_id="\${NEXT_PUBLIC_GA_MEASUREMENT_ID:-}"`);
+    expect(deployScript).toContain(`google_site_verification="\${NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION:-}"`);
+    expect(deployScript).toContain('"NEXT_PUBLIC_GA_MEASUREMENT_ID": ga_measurement_id');
+    expect(deployScript).toContain('"NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION": google_site_verification');
     expect(deployScript).toContain(`--build-arg "NEXT_PUBLIC_GA_MEASUREMENT_ID=\${ga_measurement_id}"`);
     expect(deployScript).toContain(`--build-arg "NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION=\${google_site_verification}"`);
   });
@@ -59,10 +60,14 @@ describe("Coolify host deploy image cells", () => {
       );
       chmodSync(resolve(directory, "docker-compose.yaml"), 0o640);
       chmodSync(resolve(directory, ".env"), 0o600);
-      const result = spawnSync("python3", ["-", directory, "app:staging-new", sha, "staging", "candidate"], {
-        input: python,
-        encoding: "utf8",
-      });
+      const result = spawnSync(
+        "python3",
+        ["-", directory, "app:staging-new", sha, "staging", "candidate", "G-ABC123DEF4", "a".repeat(32)],
+        {
+          input: python,
+          encoding: "utf8",
+        },
+      );
       expect(result.status, result.stderr).toBe(0);
       expect(readFileSync(resolve(directory, "docker-compose.yaml"), "utf8")).toContain("image: 'app:staging-new'");
       const env = readFileSync(resolve(directory, ".env"), "utf8");
@@ -70,10 +75,54 @@ describe("Coolify host deploy image cells", () => {
       expect(env).toContain("VOICE_MODEL_CELL=candidate");
       expect(env).toContain("VOICE_EMAIL_CAPTURE_MODE=adaptive");
       expect(env).toContain("VOICE_VARIANT_PICKER=false");
+      expect(env).toContain("NEXT_PUBLIC_GA_MEASUREMENT_ID=G-ABC123DEF4");
+      expect(env).toContain(`NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION=${"a".repeat(32)}`);
       expect(env).toContain("UNRELATED=preserved");
       expect(statSync(resolve(directory, "docker-compose.yaml")).mode & 0o777).toBe(0o640);
       expect(statSync(resolve(directory, ".env")).mode & 0o777).toBe(0o600);
       expect(readdirSync(directory).filter((name) => name.startsWith(".") && name !== ".env")).toEqual([]);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("uses the native or Windows Tailscale client without splitting executable paths", () => {
+    expect(deployScript).toContain('ssh_command=("$(command -v tailscale)" ssh)');
+    expect(deployScript).toContain('ssh_command=("$(command -v tailscale.exe)" ssh)');
+    expect(deployScript).toContain(`"\${ssh_command[@]}" "$remote_host"`);
+  });
+
+  it("streams the complete Infisical staging scope and converges managed keys atomically", () => {
+    expect(deployScript).toContain("--path /deploy/oriental-website");
+    expect(deployScript).toContain("--format dotenv");
+    expect(deployScript).toContain(`| "\${ssh_command[@]}" "$remote_host" "$reconcile_command"`);
+    expect(deployScript).toContain('"$staging_dir" "$expected_current_sha"');
+
+    const directory = mkdtempSync(resolve(tmpdir(), "oriental-env-sync-test-"));
+    try {
+      writeFileSync(resolve(directory, ".env"), "SOURCE_COMMIT=old\nOLD_MANAGED=retired\nUNRELATED=preserved\n");
+      writeFileSync(resolve(directory, ".infisical-managed-keys"), "OLD_MANAGED\n");
+      chmodSync(resolve(directory, ".env"), 0o600);
+      const result = spawnSync("python3", [reconcilePath, directory], {
+        input: "OPENAI_API_KEY='managed-value'\nNEXT_PUBLIC_GA_MEASUREMENT_ID=G-ABC123DEF4\n",
+        encoding: "utf8",
+      });
+      expect(result.status, result.stderr).toBe(0);
+      const env = readFileSync(resolve(directory, ".env"), "utf8");
+      expect(env).toContain("OPENAI_API_KEY='managed-value'");
+      expect(env).toContain("NEXT_PUBLIC_GA_MEASUREMENT_ID=G-ABC123DEF4");
+      expect(env).toContain("UNRELATED=preserved");
+      expect(env).not.toContain("OLD_MANAGED");
+      expect(statSync(resolve(directory, ".env")).mode & 0o777).toBe(0o600);
+      expect(statSync(resolve(directory, ".infisical-managed-keys")).mode & 0o777).toBe(0o600);
+
+      const moved = spawnSync("python3", [reconcilePath, directory, "b".repeat(40)], {
+        input: "OPENAI_API_KEY='new-value'\n",
+        encoding: "utf8",
+      });
+      expect(moved.status).not.toBe(0);
+      expect(moved.stderr).toContain("staging moved before Infisical reconciliation");
+      expect(readFileSync(resolve(directory, ".env"), "utf8")).toContain("OPENAI_API_KEY='managed-value'");
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }

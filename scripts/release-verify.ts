@@ -26,7 +26,7 @@ function parseArgs(argv: string[]): Args {
   let sha = "";
   let target: Args["target"] = "both";
   let checks = 5;
-  let stagingModelCell: Args["stagingModelCell"] = "control";
+  let stagingModelCell: Args["stagingModelCell"] | undefined;
   const normalizedArgv = argv.filter((argument) => argument !== "--");
   for (let index = 0; index < normalizedArgv.length; index += 1) {
     const flag = normalizedArgv[index];
@@ -62,6 +62,7 @@ function parseArgs(argv: string[]): Args {
   if (shaFailures.length > 0) throw new Error(shaFailures.join("; "));
   if (!Number.isInteger(checks) || checks < 1 || checks > 10)
     throw new Error("--checks must be an integer from 1 to 10");
+  stagingModelCell ??= target === "production" ? "control" : "candidate";
   if (target === "production" && stagingModelCell !== "control") {
     throw new Error("--staging-model-cell candidate is invalid when verifying production only");
   }

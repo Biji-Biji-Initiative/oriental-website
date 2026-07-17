@@ -99,6 +99,7 @@ describe("release governance", () => {
       NODE_OPTIONS: "--no-experimental-webstorage",
     });
     expect(packageScripts.scripts["release:preflight"]).toContain("tsx scripts/run-release-tests.ts");
+    expect(packageScripts.scripts["release:preflight"]).toContain("env NODE_ENV=production pnpm check-secrets");
   });
 
   it("provides a fast executable Infisical voice-cell parity check", () => {
@@ -150,6 +151,7 @@ describe("release governance", () => {
   it("expands the both alias before target lookup", () => {
     expect(releaseVerifier).toContain('args.target === "both" ? ["staging", "production"] : [args.target]');
     expect(releaseVerifier).toContain('name === "staging" ? governedVoiceCell(stagingModelCell) : CONTROL_VOICE_CELL');
+    expect(releaseVerifier).toContain('stagingModelCell ??= target === "production" ? "control" : "candidate"');
   });
 
   it("validates the staging promotion boundary against the candidate voice cell", () => {
@@ -173,13 +175,19 @@ describe("release governance", () => {
     expect(productionDeployer).not.toContain("/start?");
   });
 
-  it("reconciles and reads back Google public build variables before changing the release SHA", () => {
+  it("reconciles and reads back the complete managed application environment before changing the release SHA", () => {
     expect(productionDeployer).toContain("googlePublicBuildConfigurationFromEnv(process.env)");
-    expect(productionDeployer).toContain("coolifyGoogleEnvironmentPayloads(expected)");
-    expect(productionDeployer).toContain("coolifyGoogleEnvironmentFailures(updated, expected)");
-    expect(productionDeployer.indexOf("await reconcileGoogleBuildEnvironment")).toBeLessThan(
+    expect(productionDeployer).toContain("managedRuntimeEnvironmentFromEnv(environment)");
+    expect(productionDeployer).toContain("coolifyGoogleEnvironmentFailures(updated, googleExpected)");
+    expect(productionDeployer.indexOf("await reconcileManagedApplicationEnvironment")).toBeLessThan(
       productionDeployer.indexOf("body: JSON.stringify({ git_commit_sha: args.sha })"),
     );
+  });
+
+  it("proves Coolify runtime health and loopback health-check ownership after deployment", () => {
+    expect(productionDeployer).toContain('application.status !== "running:healthy"');
+    expect(productionDeployer).toContain('application.health_check_host !== "127.0.0.1"');
+    expect(productionDeployer).toContain("assertHealthyOrientalApplication(healthyApplication, args.sha)");
   });
 
   it("proves Search Console metadata and consent-gated GA on public but never admin surfaces", () => {

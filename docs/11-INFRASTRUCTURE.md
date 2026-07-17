@@ -108,14 +108,14 @@ folder through the app at runtime: an operator must reconcile the values into
 Coolify's environment-variable store, and into staging's host-local `.env`,
 before recreating containers. The app reads `process.env.*` and has no
 Infisical SDK runtime dependency. Source checks alone are insufficient; inspect
-the running container after every configuration release. The governed
-production deployer performs this reconciliation automatically for
-`NEXT_PUBLIC_GA_MEASUREMENT_ID` and
-`NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION`: it validates the managed application
-values, creates or updates the Coolify production entries, enables both build
-and runtime use, and reads back exact parity before it is allowed to change the
-release SHA. Its Coolify token needs scoped `read:sensitive`, `write`, and
-`deploy` permissions; the identifiers are never written to logs.
+the running container after every configuration release. The governed staging
+deployer streams the complete native staging export through encrypted stdin and
+atomically merges managed keys into the host `.env`. The production deployer
+creates or updates every approved runtime entry, enables `NEXT_PUBLIC_*` values
+at build time as well, and reads back exact value/scope parity before it may
+change the release SHA. Its Coolify token needs scoped `read:sensitive`,
+`write`, and `deploy` permissions; values are never written to process arguments
+or logs.
 
 `pnpm release:verify:voice-cell` is the fast, non-secret parity check. Run it
 under `infisical run` with `--model-cell candidate` for native staging and
@@ -163,12 +163,12 @@ environment, and new voice snapshots carry deployment attribution, but do not
 treat staging submissions as a fully isolated data/notification sandbox until
 dedicated staging services are provisioned.
 
-The governed host deployer renders and atomically replaces staging's `.env`,
+The governed host deployer first converges the complete staging application
+scope from Infisical, then renders and atomically replaces staging's `.env`,
 rewriting the five non-secret voice-cell values to the explicitly selected
 control or candidate model cell with the picker off, alongside the exact SHA.
-Candidate is rejected for every production host path. The deployer does not
-copy secrets or replace the full Infisical reconciliation; it prevents a stale
-or implicit experiment cell from surviving a release recreation.
+Candidate is rejected for every production host path. The deployer recognizes
+both native `tailscale` and WSL's `tailscale.exe` without splitting paths.
 
 Staging rollback/removal is host-local:
 
@@ -181,16 +181,17 @@ Deploy flow:
 
 1. PR opens → GitHub `verify` workflow runs.
 2. Merge once to `main`, run release preflight, and freeze the full SHA.
-3. Reconcile Infisical with the host-managed staging `.env`; inject both the
-   application scope and the operator-only Coolify scope for production.
+3. Inject staging's application scope for the host deployer; inject both the
+   application scope and operator-only Coolify scope for production. Each
+   deployer performs and verifies its own reconciliation.
 4. Build/prove the distinct staging image.
 5. Run `pnpm release:deploy:production` with the frozen SHA, live production
-   SHA, managed Google public values from `/deploy/oriental-website`, and the
+   SHA, the managed application values from `/deploy/oriental-website`, and the
    operator credential from Infisical `/platform/coolify`.
-6. The deployer reconciles and reads back both Google build variables before it
-   pins and reads back Coolify's commit, inspects the deployment record, and
-   proves public health; Coolify swaps traffic only after the candidate is
-   healthy.
+6. The deployer reconciles and reads back the complete approved runtime scope
+   before it pins and reads back Coolify's commit, inspects the deployment
+   record, proves `running:healthy` with a loopback health-check host, and proves
+   public health; Coolify swaps traffic only after the candidate is healthy.
 7. Run `pnpm release:verify -- --sha <sha> --target both` under the managed
    application scope. The verifier uses Playwright to prove the Search Console
    meta tag and the GA public-consent/admin-exclusion boundary.

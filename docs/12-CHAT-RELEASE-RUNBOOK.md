@@ -42,11 +42,13 @@ cannot affect the runtime image.
 - Infisical is canonical configuration. Coolify's environment-variable store
   and staging's host-local `.env` are separate materialized copies and MUST be
   compared with Infisical before release.
-- The production deployer MUST reconcile and read back the exact managed
-  `NEXT_PUBLIC_GA_MEASUREMENT_ID` and
-  `NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION` values as Coolify build-and-runtime
-  variables before changing the frozen SHA. The API credential therefore needs
-  scoped `read:sensitive`, `write`, and `deploy` access; values are never logged.
+- The staging deployer MUST stream the complete native staging Infisical export
+  over the encrypted fleet connection and atomically converge the host `.env`.
+  The production deployer MUST reconcile and read back every approved runtime
+  key from the native production application scope before changing the frozen
+  SHA. `NEXT_PUBLIC_*` keys are also build-time values. The Coolify credential
+  therefore needs scoped `read:sensitive`, `write`, and `deploy` access; values
+  are never written to process arguments or logs.
 - Production voice MUST remain `baseline/control/low/adaptive`. A staging-only
   model trial MUST be explicit, hold runtime/reasoning/capture constant, and
   never imply production promotion.
@@ -153,7 +155,10 @@ source drift from being hidden by the deployer's host-side safe defaults.
 The managed preflight deliberately runs Vitest through
 `scripts/run-release-tests.ts`, which retains only process/tooling variables and
 forces `NODE_ENV=test`. Live application secrets stay injected for
-`check-secrets`, the production build, and the final SHA/cell checks, but cannot
+the production build and final SHA/cell checks. The preflight itself forces
+`NODE_ENV=production` only for `check-secrets`, so production-only routing,
+admin, observability, notification, and Turnstile requirements cannot be
+silently skipped, while application secrets cannot
 select production React or leak notification/routing configuration into test
 fixtures.
 
@@ -169,18 +174,26 @@ include release docs before the first deployment.
 
    ```bash
    current_staging_sha="$(curl -fsS https://staging.oriental.mereka.io/api/health | jq -r .version)"
-   scripts/deploy-coolify-host.sh --target staging \
-     --expected-current-sha "$current_staging_sha" \
-     --voice-model-cell candidate "$sha"
+   infisical run \
+     --domain https://secrets.mereka.io \
+     --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
+     --env staging \
+     --path /deploy/oriental-website \
+     -- scripts/deploy-coolify-host.sh --target staging \
+       --expected-current-sha "$current_staging_sha" \
+       --voice-model-cell candidate "$sha"
    ```
 
    The script rechecks that SHA while holding the host deployment lock. If
    staging moved, stop and coordinate with its current owner; never overwrite an
-   unknown experiment. As part of the same atomic `.env` update, it materializes
-   the selected governed non-secret voice cell. Candidate is legal only for
-   staging and resolves to `baseline/candidate/low/adaptive`; every production
-   host path rejects it. The picker is explicitly off and the full secret set
-   must already be reconciled from Infisical.
+   unknown experiment. Before the build, it streams the complete native staging
+   Infisical dotenv export to the host through stdin and atomically converges
+   every managed key without exposing values or replacing Compose-owned keys.
+   It then materializes the selected governed non-secret voice cell. Candidate
+   is legal only for staging and resolves to
+   `baseline/candidate/low/adaptive`; every production host path rejects it. The
+   picker is explicitly off. Native Linux and WSL's Windows Tailscale client are
+   selected automatically.
 
 3. Run the deterministic public verifier:
 
@@ -229,11 +242,12 @@ OpenAI, Redis, and notification accounts.
    ancestor of `origin/main`. It pins Coolify's `git_commit_sha`, reads it back,
    starts the application, and refuses success unless the deployment record and
    public production health both resolve to the full frozen SHA. Before changing
-   the SHA, it validates the two Google public identifiers supplied by the
-   application scope, creates or updates their production Coolify entries, and
-   reads back exact values with build-time and runtime enabled. The deploy token
-   must include `read:sensitive`; otherwise value parity fails closed without
-   printing either identifier.
+   the SHA, it creates or updates every approved runtime key supplied by the
+   application scope and reads back exact value/scope parity. Public browser
+   keys are enabled at build time as well as runtime. After deployment it also
+   requires Coolify `running:healthy`, an enabled health check, and loopback
+   health ownership at `127.0.0.1`. The deploy token must include
+   `read:sensitive`; otherwise parity fails closed without printing values.
 3. Require terminal `finished`; do not infer success from a queued build.
 4. Verify both environments together:
 
@@ -246,13 +260,15 @@ OpenAI, Redis, and notification accounts.
      -- pnpm release:verify -- --sha "$sha" --target both
    ```
 
-   This browser-backed verifier requires Playwright Chromium (or
+   For `staging` and `both`, the verifier defaults to the established candidate
+   staging cell; `--staging-model-cell control` remains available for an
+   intentional rollback cell. This browser-backed verifier requires Playwright Chromium (or
    `PLAYWRIGHT_CHROMIUM_PATH`). It proves the exact Search Console meta tag,
    observes no GA request before consent, observes the expected GA asset only
    after clicking **Allow analytics**, and proves an already-consented admin
    surface still emits no GA request.
 
-5. Confirm Coolify reports `running:healthy`, its health-check host is
+5. Confirm the deployer's result reports Coolify `running:healthy`, its health-check host is
    `127.0.0.1`, and the production container exposes the intended runtime cells.
 6. For voice releases, rerun the dry evaluator and report `insufficient_data`
    honestly when its minimum evidence gate is not met.
@@ -304,9 +320,10 @@ early convergence and fail-closed checks, not repeated manual verification.
 
 - [x] Exact SHA, clean `main`, image-tag, health-binding, runbook, and mandatory
   managed-cell checks: `scripts/release-preflight.ts`.
-- [x] Exact staging/current-production preconditions, managed Google public
-  build-variable reconciliation/readback, immutable Coolify commit pin/readback,
-  deployment-record commit, terminal status, and post-deploy production health:
+- [x] Exact staging/current-production preconditions, full Infisical→host and
+  Infisical→Coolify runtime convergence, public build-variable readback,
+  immutable Coolify commit pin/readback, deployment-record commit, terminal
+  status, Coolify loopback-health ownership, and post-deploy public health:
   `scripts/deploy-coolify-production.ts`.
 - [x] Canonical hosts, exact health SHA, Convex presence, QA picker, DNS-only
   request path, compatibility redirects, Search Console meta, and browser-proven

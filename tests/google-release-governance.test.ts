@@ -7,6 +7,10 @@ import {
   readGoogleSiteVerification,
   validateGooglePublicBuildConfiguration,
 } from "../scripts/lib/google-release";
+import {
+  isManagedBuildTimeEnvironmentKey,
+  managedRuntimeEnvironmentFromEnv,
+} from "../scripts/lib/managed-app-environment";
 
 const expected = {
   NEXT_PUBLIC_GA_MEASUREMENT_ID: "G-ABC123DEF4",
@@ -14,6 +18,22 @@ const expected = {
 };
 
 describe("Google release governance", () => {
+  it("selects complete runtime configuration while excluding deploy-only credentials", () => {
+    const managed = managedRuntimeEnvironmentFromEnv({
+      CLICKUP_API_TOKEN: "clickup",
+      CONVEX_DEPLOY_KEY: "deploy-only",
+      COOLIFY_ORIENTAL_APPLICATION_UUID: "deploy-only",
+      NEXT_PUBLIC_GA_MEASUREMENT_ID: expected.NEXT_PUBLIC_GA_MEASUREMENT_ID,
+      SENTRY_AUTH_TOKEN: "deploy-only",
+    });
+    expect(Object.fromEntries(managed)).toEqual({
+      CLICKUP_API_TOKEN: "clickup",
+      NEXT_PUBLIC_GA_MEASUREMENT_ID: expected.NEXT_PUBLIC_GA_MEASUREMENT_ID,
+    });
+    expect(isManagedBuildTimeEnvironmentKey("NEXT_PUBLIC_GA_MEASUREMENT_ID")).toBe(true);
+    expect(isManagedBuildTimeEnvironmentKey("CLICKUP_API_TOKEN")).toBe(false);
+  });
+
   it("requires validated managed identifiers without exposing them in failures", () => {
     expect(googlePublicBuildConfigurationFromEnv(expected)).toEqual(expected);
     expect(

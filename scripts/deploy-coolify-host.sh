@@ -75,15 +75,72 @@ if [[ "$target" == "production" && "$allow_emergency_production" != "true" ]]; t
 fi
 
 remote_host="${COOLIFY_DEPLOY_HOST:-root@mereka-deploy-apps-01-sin}"
-ssh_command="${COOLIFY_SSH_COMMAND:-tailscale ssh}"
 app_uuid="${COOLIFY_ORIENTAL_APPLICATION_UUID:-mtrl2z6a7zvoyevxvufpntij}"
 repo_url="${ORIENTAL_REPO_URL:-https://github.com/Biji-Biji-Initiative/oriental-website.git}"
 remote_cache_dir="${ORIENTAL_REMOTE_BUILD_CACHE:-/data/coolify/build-cache/oriental-website}"
 prod_dir="/data/coolify/applications/${app_uuid}"
 staging_dir="/data/coolify/applications/oriental-staging"
+ga_measurement_id="${NEXT_PUBLIC_GA_MEASUREMENT_ID:-}"
+google_site_verification="${NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION:-}"
 
-# shellcheck disable=SC2086 # COOLIFY_SSH_COMMAND may intentionally include flags.
-$ssh_command "$remote_host" "bash -s -- '$target' '$sha' '$app_uuid' '$repo_url' '$remote_cache_dir' '$prod_dir' '$staging_dir' '$expected_current_sha' '$voice_model_cell'" <<'REMOTE'
+if [[ ! "$ga_measurement_id" =~ ^G-[A-Z0-9]+$ ]]; then
+  echo "NEXT_PUBLIC_GA_MEASUREMENT_ID must be supplied by the managed application environment." >&2
+  exit 1
+fi
+if [[ ! "$google_site_verification" =~ ^[A-Za-z0-9_-]{20,256}$ ]]; then
+  echo "NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION must be supplied by the managed application environment." >&2
+  exit 1
+fi
+
+declare -a ssh_command
+if [[ -n "${COOLIFY_SSH_COMMAND:-}" ]]; then
+  # Preserve the established override for conventional command names/flags.
+  read -r -a ssh_command <<<"$COOLIFY_SSH_COMMAND"
+elif command -v tailscale >/dev/null 2>&1; then
+  ssh_command=("$(command -v tailscale)" ssh)
+elif command -v tailscale.exe >/dev/null 2>&1; then
+  # Native WSL sessions commonly reach the fleet through the Windows client;
+  # the array preserves spaces in Program Files paths.
+  ssh_command=("$(command -v tailscale.exe)" ssh)
+else
+  echo "Tailscale CLI is required (tailscale or tailscale.exe)." >&2
+  exit 1
+fi
+
+if [[ "$target" == "staging" ]]; then
+  infisical_token="${INFISICAL_TOKEN:-}"
+  infisical_domain="${INFISICAL_API_URL:-https://secrets.mereka.io/api}"
+  infisical_project_id="${INFISICAL_PROJECT_ID:-}"
+  if [[ -z "$infisical_token" && -n "${INFISICAL_UA_CLIENT_ID:-}" && -n "${INFISICAL_UA_CLIENT_SECRET:-}" ]]; then
+    infisical_token="$(infisical login \
+      --method universal-auth \
+      --client-id "$INFISICAL_UA_CLIENT_ID" \
+      --client-secret "$INFISICAL_UA_CLIENT_SECRET" \
+      --domain "$infisical_domain" \
+      --plain \
+      --silent)"
+  fi
+  if [[ -z "$infisical_token" || -z "$infisical_project_id" ]]; then
+    echo "Staging deployment requires the canonical Infisical machine identity and project." >&2
+    exit 1
+  fi
+
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  reconcile_program="$(<"$script_dir/reconcile-staging-env.py")"
+  printf -v reconcile_command 'python3 -c %q %q %q' \
+    "$reconcile_program" "$staging_dir" "$expected_current_sha"
+  infisical export \
+    --token "$infisical_token" \
+    --domain "$infisical_domain" \
+    --projectId "$infisical_project_id" \
+    --env staging \
+    --path /deploy/oriental-website \
+    --format dotenv \
+    --silent \
+    | "${ssh_command[@]}" "$remote_host" "$reconcile_command"
+fi
+
+"${ssh_command[@]}" "$remote_host" "bash -s -- '$target' '$sha' '$app_uuid' '$repo_url' '$remote_cache_dir' '$prod_dir' '$staging_dir' '$expected_current_sha' '$voice_model_cell' '$ga_measurement_id' '$google_site_verification'" <<'REMOTE'
 set -euo pipefail
 
 target="$1"
@@ -95,6 +152,8 @@ prod_dir="$6"
 staging_dir="$7"
 expected_current_sha="$8"
 voice_model_cell="$9"
+ga_measurement_id="${10}"
+google_site_verification="${11}"
 short="${sha:0:7}"
 mirror="${remote_cache_dir}/repo.git"
 worktrees="${remote_cache_dir}/worktrees"
@@ -149,27 +208,12 @@ if [[ "$target" == "staging" ]]; then
   image="${app_uuid}:staging-${sha}"
 fi
 
-read_build_value() {
-  local name="$1"
-  local value
-  value="$(sed -n "s/^${name}=//p" "$target_dir/.env" | tail -1)"
-  if [[ "$value" == \"*\" && "$value" == *\" ]]; then
-    value="${value:1:${#value}-2}"
-  elif [[ "$value" == \'*\' && "$value" == *\' ]]; then
-    value="${value:1:${#value}-2}"
-  fi
-  printf '%s' "$value"
-}
-
-ga_measurement_id="$(read_build_value NEXT_PUBLIC_GA_MEASUREMENT_ID)"
-google_site_verification="$(read_build_value NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION)"
-
-if [[ -n "$ga_measurement_id" && ! "$ga_measurement_id" =~ ^G-[A-Z0-9]+$ ]]; then
-  echo "NEXT_PUBLIC_GA_MEASUREMENT_ID in the target env is malformed." >&2
+if [[ ! "$ga_measurement_id" =~ ^G-[A-Z0-9]+$ ]]; then
+  echo "NEXT_PUBLIC_GA_MEASUREMENT_ID from the managed environment is malformed." >&2
   exit 1
 fi
-if [[ -n "$google_site_verification" && ! "$google_site_verification" =~ ^[A-Za-z0-9_-]+$ ]]; then
-  echo "NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION in the target env is malformed." >&2
+if [[ ! "$google_site_verification" =~ ^[A-Za-z0-9_-]{20,256}$ ]]; then
+  echo "NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION from the managed environment is malformed." >&2
   exit 1
 fi
 
@@ -194,7 +238,7 @@ fi
 
 cp -p "$target_dir/docker-compose.yaml" "$target_dir/docker-compose.yaml.deploy-backup-${timestamp}"
 cp -p "$target_dir/.env" "$target_dir/.env.deploy-backup-${timestamp}"
-python3 - "$target_dir" "$image" "$sha" "$target" "$voice_model_cell" <<'PY'
+python3 - "$target_dir" "$image" "$sha" "$target" "$voice_model_cell" "$ga_measurement_id" "$google_site_verification" <<'PY'
 from pathlib import Path
 import os
 import sys
@@ -205,6 +249,8 @@ image = sys.argv[2]
 sha = sys.argv[3]
 target = sys.argv[4]
 voice_model_cell = sys.argv[5]
+ga_measurement_id = sys.argv[6]
+google_site_verification = sys.argv[7]
 
 compose = app_dir / "docker-compose.yaml"
 lines = []
@@ -217,7 +263,12 @@ for line in compose.read_text().splitlines():
 compose_text = "\n".join(lines) + "\n"
 
 env_path = app_dir / ".env"
-overrides = {"SOURCE_COMMIT": sha, "GIT_SHA": sha}
+overrides = {
+    "SOURCE_COMMIT": sha,
+    "GIT_SHA": sha,
+    "NEXT_PUBLIC_GA_MEASUREMENT_ID": ga_measurement_id,
+    "NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION": google_site_verification,
+}
 if target == "staging":
     # This is the non-secret governed release cell. Infisical's staging
     # environment remains canonical; the host deployment materializes the same

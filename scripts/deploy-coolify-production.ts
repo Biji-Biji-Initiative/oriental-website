@@ -11,10 +11,14 @@ import {
 import {
   type CoolifyEnvironmentVariable,
   coolifyGoogleEnvironmentFailures,
-  coolifyGoogleEnvironmentPayloads,
   type GooglePublicBuildConfiguration,
   googlePublicBuildConfigurationFromEnv,
 } from "./lib/google-release";
+import {
+  isManagedBuildTimeEnvironmentKey,
+  type ManagedApplicationEnvironmentKey,
+  managedRuntimeEnvironmentFromEnv,
+} from "./lib/managed-app-environment";
 import {
   CONTROL_VOICE_CELL,
   type GovernedVoiceCell,
@@ -39,6 +43,9 @@ type CoolifyApplication = {
   git_branch?: unknown;
   git_commit_sha?: unknown;
   git_repository?: unknown;
+  health_check_enabled?: unknown;
+  health_check_host?: unknown;
+  status?: unknown;
   uuid?: unknown;
 };
 
@@ -145,27 +152,69 @@ async function coolifyRequest<T>(baseUrl: string, token: string, path: string, i
   return (text ? JSON.parse(text) : undefined) as T;
 }
 
-async function reconcileGoogleBuildEnvironment(
+function managedEnvironmentPayload(key: ManagedApplicationEnvironmentKey, value: string) {
+  return {
+    key,
+    value,
+    is_preview: false,
+    is_literal: false,
+    is_multiline: value.includes("\n"),
+    is_shown_once: false,
+    is_runtime: true,
+    is_buildtime: isManagedBuildTimeEnvironmentKey(key),
+  } as const;
+}
+
+function managedEnvironmentRowMatches(
+  row: CoolifyEnvironmentVariable,
+  key: ManagedApplicationEnvironmentKey,
+  value: string,
+) {
+  const buildTime = isManagedBuildTimeEnvironmentKey(key);
+  return (
+    (row.value === value || row.real_value === value) &&
+    row.is_runtime === true &&
+    (row.is_buildtime === true || row.is_build_time === true) === buildTime
+  );
+}
+
+async function reconcileManagedApplicationEnvironment(
   baseUrl: string,
   token: string,
   applicationUuid: string,
-  expected: GooglePublicBuildConfiguration,
+  environment: Readonly<Record<string, string | undefined>>,
+  googleExpected: GooglePublicBuildConfiguration,
 ) {
   const path = `applications/${applicationUuid}/envs`;
   const current = await coolifyRequest<CoolifyEnvironmentVariable[]>(baseUrl, token, path);
-  for (const payload of coolifyGoogleEnvironmentPayloads(expected)) {
-    const exists = current.some((row) => row.key === payload.key && row.is_preview !== true);
+  const expected = managedRuntimeEnvironmentFromEnv(environment);
+  for (const [key, value] of expected) {
+    const matches = current.filter((row) => row.key === key && row.is_preview !== true);
+    if (matches.length === 1 && matches[0] && managedEnvironmentRowMatches(matches[0], key, value)) continue;
+    const payload = managedEnvironmentPayload(key, value);
     await coolifyRequest(baseUrl, token, path, {
-      method: exists ? "PATCH" : "POST",
+      method: matches.length > 0 ? "PATCH" : "POST",
       body: JSON.stringify(payload),
     });
   }
 
   const updated = await coolifyRequest<CoolifyEnvironmentVariable[]>(baseUrl, token, path);
-  const failures = coolifyGoogleEnvironmentFailures(updated, expected);
-  if (failures.length > 0) {
-    throw new Error(`Coolify Google build environment: ${failures.join("; ")}`);
+  const failures: string[] = [];
+  for (const [key, value] of expected) {
+    const matches = updated.filter((row) => row.key === key && row.is_preview !== true);
+    if (matches.length !== 1) {
+      failures.push(`${key} must have exactly one production Coolify environment entry`);
+      continue;
+    }
+    if (!matches[0] || !managedEnvironmentRowMatches(matches[0], key, value)) {
+      failures.push(`${key} Coolify value or runtime/build scope does not match Infisical`);
+    }
   }
+  failures.push(...coolifyGoogleEnvironmentFailures(updated, googleExpected));
+  if (failures.length > 0) {
+    throw new Error(`Coolify managed application environment: ${failures.join("; ")}`);
+  }
+  return expected.size;
 }
 
 function assertOrientalApplication(application: CoolifyApplication, uuid: string) {
@@ -173,6 +222,16 @@ function assertOrientalApplication(application: CoolifyApplication, uuid: string
   if (application.git_branch !== "main") throw new Error("Coolify application git_branch must be main");
   if (typeof application.git_repository !== "string" || !application.git_repository.includes("oriental-website")) {
     throw new Error("Coolify application repository must be oriental-website");
+  }
+}
+
+function assertHealthyOrientalApplication(application: CoolifyApplication, expectedSha: string) {
+  if (application.git_commit_sha !== expectedSha)
+    throw new Error("Coolify application commit does not match release SHA");
+  if (application.status !== "running:healthy") throw new Error("Coolify application must report running:healthy");
+  if (application.health_check_enabled !== true) throw new Error("Coolify application health check must be enabled");
+  if (application.health_check_host !== "127.0.0.1") {
+    throw new Error("Coolify application health-check host must be 127.0.0.1");
   }
 }
 
@@ -241,7 +300,13 @@ async function main() {
 
   const application = await coolifyRequest<CoolifyApplication>(baseUrl, token, `applications/${applicationUuid}`);
   assertOrientalApplication(application, applicationUuid);
-  await reconcileGoogleBuildEnvironment(baseUrl, token, applicationUuid, googleBuildEnvironment);
+  const managedEnvironmentKeys = await reconcileManagedApplicationEnvironment(
+    baseUrl,
+    token,
+    applicationUuid,
+    process.env,
+    googleBuildEnvironment,
+  );
 
   await coolifyRequest(baseUrl, token, `applications/${applicationUuid}`, {
     method: "PATCH",
@@ -266,6 +331,13 @@ async function main() {
     args.pollIntervalMs,
     args.timeoutMs,
   );
+  const healthyApplication = await coolifyRequest<CoolifyApplication>(
+    baseUrl,
+    token,
+    `applications/${applicationUuid}`,
+  );
+  assertOrientalApplication(healthyApplication, applicationUuid);
+  assertHealthyOrientalApplication(healthyApplication, args.sha);
   await readPublicHealth(RELEASE_TARGETS.production.origin, args.sha, "new production", CONTROL_VOICE_CELL);
   process.stdout.write(
     `${JSON.stringify(
@@ -276,6 +348,9 @@ async function main() {
         applicationUuid,
         deploymentUuid,
         status: deploymentStatus(deployment),
+        managedEnvironmentKeys,
+        coolifyApplicationStatus: "running:healthy",
+        coolifyHealthCheckHost: "127.0.0.1",
         googleBuildEnvironment: "verified",
       },
       null,

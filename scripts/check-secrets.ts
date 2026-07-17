@@ -1,6 +1,7 @@
 import { hasShellEscapedQuoteWrapper, unwrapEnvValue } from "../lib/env";
 import { isAllowedAdminEvalModel } from "../lib/eval/admin-models";
 import { activeVoiceExperimentDimensions } from "../lib/voice/experiments";
+import { MANAGED_APPLICATION_ENVIRONMENT_KEYS } from "./lib/managed-app-environment";
 
 const required = [
   "OPENAI_API_KEY",
@@ -29,42 +30,6 @@ const adminRequired = ["ADMIN_REVIEW_TOKEN"];
 const opsAlertRequired = ["OPS_ALERT_SLACK_CHANNEL_ID"];
 const clickUpRequired = ["CLICKUP_API_TOKEN", "CLICKUP_LIST_ID"];
 
-const managedEnvironment = [
-  ...required,
-  ...smtpRequired,
-  ...sesRequired,
-  ...slackRequired,
-  ...sentryRequired,
-  ...adminRequired,
-  ...opsAlertRequired,
-  ...clickUpRequired,
-  "NEXT_PUBLIC_TURNSTILE_SITE_KEY",
-  "OPENAI_REALTIME_MODEL_CANDIDATE",
-  "OPENAI_REALTIME_VOICE",
-  "OPENAI_REALTIME_SPEED",
-  "OPENAI_REALTIME_TRANSCRIPTION_MODEL",
-  "VOICE_RUNTIME_PROFILE",
-  "VOICE_MODEL_CELL",
-  "VOICE_REASONING_CELL",
-  "VOICE_EMAIL_CAPTURE_MODE",
-  "VOICE_VARIANT_PICKER",
-  "VOICE_MAX_DURATION_MS",
-  "VOICE_IDLE_TIMEOUT_MS",
-  "VOICE_IDLE_GOODBYE_GRACE_MS",
-  "REDIS_URL",
-  "SENTRY_ENVIRONMENT",
-  "NEXT_PUBLIC_SENTRY_ENVIRONMENT",
-  "SES_REPLY_TO",
-  "TEAM_NOTIFICATION_EMAIL",
-  "TEAM_NOTIFICATION_CC_EMAILS",
-  "COOLIFY_ORIENTAL_APPLICATION_UUID",
-  "CONVEX_DEPLOY_KEY",
-  "SENTRY_AUTH_TOKEN",
-  "EVAL_JUDGE_MODEL",
-  "NEXT_PUBLIC_GA_MEASUREMENT_ID",
-  "NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION",
-];
-
 const supportedRealtimeVoices = new Set([
   "alloy",
   "ash",
@@ -83,7 +48,7 @@ if (!process.env.INFISICAL_TOKEN && !process.env.CONVEX_DEPLOY_KEY && process.en
   process.exit(0);
 }
 
-const malformed = [...new Set(managedEnvironment)].filter((name) => hasShellEscapedQuoteWrapper(process.env[name]));
+const malformed = MANAGED_APPLICATION_ENVIRONMENT_KEYS.filter((name) => hasShellEscapedQuoteWrapper(process.env[name]));
 if (malformed.length > 0) {
   console.error(`Malformed shell-escaped environment variables: ${malformed.join(", ")}`);
   process.exit(1);
