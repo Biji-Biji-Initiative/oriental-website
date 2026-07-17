@@ -24,6 +24,19 @@ deployment-governance patch as one exact-tree merge gate.
   stale-response protection, deterministic clear-all behavior, and the durable
   lead truth boundary. `clear_fields` MUST remain the canonical schema,
   persistence, and aggregate-telemetry label; no lossy alias is permitted.
+- Email capture MUST keep one visible editor beside the voice controls on
+  mobile/short-landscape, place email first in desktop DOM/tab order, require
+  only a valid email for routing, preserve focus across the 1024px layout
+  boundary, and never present an invalid or medium-confidence address as
+  confirmed. Voice-command submission MUST require a valid signed voice-review
+  credential; Turnstile alone is not an equivalent proof.
+- Intake analytics MUST distinguish first explicit CTA surface, open method,
+  submit method, and fixed per-field voice/manual/mixed provenance without
+  sending values, transcripts, identifiers, URLs, timestamps, or free text.
+  Every conversion and funnel event MUST share the same explicit-consent check,
+  event-specific type contract, bounded runtime allowlist, and post-withdrawal
+  fail-closed behavior. Server persistence MUST reject impossible source and
+  submission-method combinations.
 - Tool timing MUST remain PII-free and aggregate execution, response-to-call,
   and response-to-result latency overall and by canonical tool. It MUST NOT
   weaken durable routing or expose arguments, contact data, IDs, transcripts,
@@ -44,6 +57,11 @@ deployment-governance patch as one exact-tree merge gate.
   `gpt-realtime-2.1` candidate is not promotion evidence until clean runtime
   samples and human Malaysian quality evidence satisfy the documented gates.
   Known upstream Realtime quota failures MUST be reported honestly.
+- Scheduled evaluation and ownership-SLA operations MUST use the canonical
+  production host, valid API limits, the governed admin credential, and
+  machine-checkable responses. Evaluation auto-on-close MUST be part of the
+  managed environment contract, retain bounded cost/concurrency controls, and
+  expose no transcript or captured-field content in workflow output or logs.
 
 ## Review request
 

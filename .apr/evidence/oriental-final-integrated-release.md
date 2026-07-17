@@ -4,12 +4,13 @@
 
 - Review base: `b0b0d83c7499ea4ed470430e8e3cfa80ab7bd68e`
 - Integrated implementation head before this evidence update:
-  `69b793f50154b8f30b3179504e06f72382f99c64`
-- Integrated implementation tree: `34795c295a2049fce6168442458579d08f0da50a`
-- Scope: 106 files, 5,821 insertions and 854 deletions spanning the admin
+  `c8103c6d1b138479a88e520b65a71d032a3017c9`
+- Integrated implementation tree: `c625b86da54303a1644f5115c7788c082d730d24`
+- Scope: 144 files, 8,783 insertions and 1,053 deletions spanning the admin
   console, safe evaluation, consented analytics, Google release wiring,
   responsive voice UI, reactive brand motion, capture correctness, PII-free
-  tool telemetry, managed-environment convergence, and release verification.
+  tool and intake-attribution telemetry, managed-environment convergence,
+  scheduled analytics operations, and release verification.
 - This document is evidence-only. APR MUST inspect the checked-out exact tree;
   no staging or production mutation is claimed by this pre-merge gate.
 
@@ -28,12 +29,24 @@
   displayed summary is deterministically reconstructed from numeric scores, so
   an echoed name, email, organisation, captured value, or transcript excerpt
   cannot reach Convex. Errors are returned and logged as aggregate categories.
+- Auto-evaluation on verified session close uses the same bounded runner, while
+  explicit force/targeted rescoring remains deliberate. The managed environment
+  owns `EVAL_AUTO_ON_CLOSE`. A canonical-host GitHub workflow invokes a valid
+  12-session maximum nightly and an authenticated ownership-SLA sweep hourly;
+  network failures fail the job and the expected `no_sessions` result remains
+  machine-readable.
 - GA validates its public identifier and loads only after Allow analytics.
   Denial remains fail-closed; withdrawal denies future collection and attempts
   `_ga`/`_ga_*` cleanup, and a later regrant explicitly restores
   `analytics_storage: granted`. Page locations omit query/fragment data, public
   tracking excludes admin/API paths, and the bilingual privacy page provides a
   persistent consent-revision path.
+- Funnel and conversion events now use one client pipeline. Event-specific
+  TypeScript maps and runtime allowlists accept only bounded entry/submit
+  categories, segment/variant labels, and 0..6 counters. A retained `gtag`
+  function cannot emit after consent withdrawal, and runtime tests prove that
+  email-shaped, free-form, cross-event, and invalid-category parameters are
+  discarded.
 - Docker, direct-host staging, and Coolify production all receive the validated
   public Google identifiers at build time. The deterministic verifier proves
   site-verification metadata, no pre-consent GA request, exactly one expected
@@ -57,6 +70,19 @@
   prior verification immediately. Typed mutation invalidates stale model
   responses. Clear-all uses `clear_fields` through tool definition, reducer,
   schema, bounded validator, Convex persistence, and aggregate reporting.
+- Mobile and short-landscape layouts expose one email editor beside the voice
+  action; desktop places the same logical field first in DOM/tab order. Focus
+  transfers deterministically across the 1024px boundary, a valid email is the
+  only routing requirement, and invalid/pending/confirmed states use truthful
+  accessible copy. Exact/high-confidence speech is usable immediately;
+  medium-confidence speech remains visible and pending for an explicit check.
+- Entry attribution locks on the first explicit logical open and ignores
+  background prewarms. Submission attribution distinguishes handoff button,
+  voice command, and email-capture button. Six fixed field-provenance records
+  retain bounded voice/manual/mixed edit, correction, and clear counts without
+  values. Server schemas reject impossible source/method pairs, and a voice
+  command must carry cryptographically valid review credentials rather than
+  substituting a Turnstile proof.
 - Browser telemetry persists only canonical tool name, outcome, and bounded
   execution/response timing samples. Aggregate-only output exposes counts and
   p50/p95 values overall/by tool while omitting IDs, arguments, contact values,
@@ -94,23 +120,27 @@
 - Convex must deploy first because this patch adds canonical `clear_fields` to
   the bounded function validator. The web application deliberately contains no
   lossy alias that could conceal an older function deployment.
+- Convex stores the optional bounded attribution record idempotently and
+  aggregates entry coverage, CTA/open/submit dimensions, cross-dimension
+  matrices, completion provenance, correction counts, and clear actions. Its
+  compatibility fallback retries only confirmed unknown-field validation
+  failures, never generic transport failures that could duplicate a write.
 
 ## Exact-tree validation
 
-- Biome: 241 files checked, no findings.
+- Biome: 251 files checked, no findings.
 - TypeScript: passed with strict project configuration.
-- Vitest: 64 files, 651 tests passed, zero failures.
-- Independent final semantic re-review: clean; its focused suites passed 80
-  tests with zero failures.
+- Vitest: 69 files, 684 tests passed, zero failures.
 - Next.js 16.2.10 production build: passed; 9 static pages generated.
 - Admin Chromium matrix: 43 passed, one intentional mobile mutation skip,
   zero unexpected and zero flaky results.
-- Responsive homepage/voice Chromium matrix: 40 passed, zero failures,
-  including immediate interaction through the non-blocking entrance treatment.
-- Performance/a11y: mobile LCP 480 ms, CLS 0, 411,217 transferred JavaScript
-  bytes, 1,412,117 decoded bytes, 14 requests, and zero serious/critical Axe
+- Responsive homepage/voice Chromium matrix: 44 passed, zero failures,
+  including email focus/correction behavior across short mobile, desktop, and
+  the 1024px layout boundary.
+- Performance/a11y: mobile LCP 500 ms, CLS 0, 415,579 transferred JavaScript
+  bytes, 1,426,149 decoded bytes, 14 requests, and zero serious/critical Axe
   violations.
-- Working tree was clean after the combined implementation validation.
+- The tested implementation commit was clean before this evidence-only update.
 
 ## Honest post-merge boundary
 
