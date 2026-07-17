@@ -22,6 +22,9 @@ template: |
   admin authorization, downstream privacy erasure, byte-safe indexed retention,
   monotonic snapshots, explicit retention drain to `hasMore=false`,
   authenticated Convex-backed admin proof, and rollback convergence. Treat
+  unified-diff hunk labels as context rather than removed lines; specifically
+  verify the full-context SLA route import. Recheck the native POST login
+  fallback and retryable partial-erasure response from the prior round. Treat
   privacy leakage, analytics before consent, weak authorization,
   unbounded evaluation spend, inaccessible or overflowing UI, misleading brand
   or experiment gates, lost capture state, misleading telemetry, weakened lead
@@ -39,7 +42,10 @@ template_with_impl: |
   fail-open browser storage. Verify principal-bound admin authorization,
   downstream privacy erasure, byte-safe indexed retention, monotonic snapshots,
   explicit retention drain to `hasMore=false`, authenticated Convex-backed
-  admin proof, and rollback convergence. Verify claims against the
+  admin proof, and rollback convergence. Treat unified-diff hunk labels as
+  context rather than removed lines; specifically verify the full-context SLA
+  route import. Recheck the native POST login fallback and retryable partial-
+  erasure response from the prior round. Verify claims against the
   checked-out implementation. Treat privacy leakage, analytics before consent,
   weak authorization, unbounded evaluation spend, inaccessible or overflowing
   UI, misleading brand or experiment gates, lost capture state, misleading

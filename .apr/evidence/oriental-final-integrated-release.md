@@ -4,19 +4,21 @@
 
 - Review base: `87362df959561702e36a188e402d91ad34d2b8be` (`origin/main`).
 - Exact implementation head before review-artifact updates:
-  `80ee5436b83e72da3843c73a8f807051b3b55651`.
-- Exact implementation tree: `ff57e28317295910dd3ec2f0fea26d9fd0137eb8`.
-- Delta from base: 179 files, 13,421 insertions, 1,465 deletions.
-- APR receives the deterministic 113-file runtime/config plus high-risk-test
-  patch at `.apr/evidence/oriental-final-implementation.patch` (504,694 bytes,
+  `992d35b1fd557c34b4d92d8570f96f925280ac9b`.
+- Exact implementation tree: `011f3d1f2d9386f648034f7d61701a3b62c04411`.
+- Runtime/config/test delta outside prose and APR artifacts: 157 files, 12,040
+  insertions, 1,271 deletions.
+- APR receives the deterministic 114-file runtime/config plus high-risk-test
+  patch at `.apr/evidence/oriental-final-implementation.patch` (511,831 bytes,
   SHA-256
-  `a6118e8ac6d09ad168ecbc994ba04a32804e7f39ba4e996d5ea5332cbdb274f2`). It
+  `c77cab32fdc096b79d345be4f80c0e1d00354819ee44716402d1d7ed92cbb10a`). It
   contains every changed runtime/config source plus focused auth, privacy,
   retention, Convex, deployment, byte-bound, and homepage browser tests. Prose,
   APR's own artifacts, and redundant lower-risk test files are omitted to stay
   within Oracle's 196K-token input limit; the release runbook and specification
-  are attached separately and the complete 752-test result remains recorded
-  below.
+  are attached separately. A full current SLA route supplement disambiguates
+  zero-context diff hunk labels, and the complete 756-test result remains
+  recorded below.
 - The feature candidate is not represented as live. Both canonical hosts run
   the auth-only safety boundary `87362df959561702e36a188e402d91ad34d2b8be`.
   The old shared admin alias was rejected with HTTP 401 on staging while the
@@ -56,7 +58,9 @@
 - Subject deletion first builds a bounded plan, requires manual confirmation
   for delivered email and unaddressable legacy mirrors, deletes addressable
   Slack messages and ClickUp tasks idempotently, and only then authorizes Convex
-  erasure. Responses, logs, and audit rows omit the subject email.
+  erasure. A saturated bounded deletion returns retryable HTTP 409 with
+  `ok=false` until the mutation reports `complete=true`; only then does the route
+  log completion. Responses, logs, and audit rows omit the subject email.
 - Voice records use `snapshotSequence` and monotonic submitted/linkage state so
   stale heartbeats cannot overwrite a final snapshot. Automatic evaluation is
   queued atomically with the accepted close snapshot and cannot consume a lease
@@ -86,7 +90,9 @@
   erasure.
 - Cookie mutations and login require same-origin `application/json`, including
   proxy-aware host/protocol validation. Login remains trusted-proxy-IP rate
-  limited. Logout is a same-origin JSON action.
+  limited. The login form retains a native POST fallback so a pre-hydration
+  submit cannot place the token in a URL; the JSON-only route rejects that
+  fallback fail-closed. Logout is a same-origin JSON action.
 - GitHub scheduled work uses only `OPS_AUTOMATION_TOKEN`. Infisical staging and
   production hold distinct admin/ops/privacy credentials plus explicit actor and
   role; GitHub's ops and transitional admin credentials were rotated without
@@ -156,7 +162,7 @@
 
 - `pnpm lint`: 272 files, no findings.
 - `pnpm typecheck`: generated route types and strict TypeScript passed.
-- `pnpm test`: 80 files, 752 tests passed.
+- `pnpm test`: 80 files, 756 tests passed.
 - `pnpm build`: optimized Next.js 16.2.10 production build passed, including
   privacy and admin retention routes.
 - Public Playwright: 44 desktop/mobile tests passed; 46 credential-gated admin

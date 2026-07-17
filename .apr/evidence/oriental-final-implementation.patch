@@ -671,10 +671,10 @@ index ec264bff497ca139b4694dbdcc5bbc8ce52d9ca9..89aac40da6c38c267fd01d080d8556f8
 +  const response = noStoreJson({ ok: true });
 diff --git a/app/api/admin/privacy/route.ts b/app/api/admin/privacy/route.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..81f6818f0574662685ee3abcdf8b60c84b097173
+index 0000000000000000000000000000000000000000..9baa6365059aa668e07a166a7b6dbe13f96a1f8e
 --- /dev/null
 +++ b/app/api/admin/privacy/route.ts
-@@ -0,0 +1,78 @@
+@@ -0,0 +1,97 @@
 +import { z } from "zod";
 +import { adminAuthFailureStatus, verifyAdminPermission } from "@/lib/server/admin-auth";
 +import { deletePersonalData, getPrivacyDeletionPlan } from "@/lib/server/convex";
@@ -741,6 +741,26 @@ index 0000000000000000000000000000000000000000..81f6818f0574662685ee3abcdf8b60c8
 +    return { ok: false as const, reason: "convex_failed" as const };
 +  });
 +  if (!result.ok) return noStoreJson({ ok: false, error: result.reason }, { status: 503 });
++  if (!result.complete) {
++    logInfo("admin_privacy_delete.incomplete", {
++      actor: auth.actor,
++      requestId: parsed.data.requestId,
++      deletedLeads: result.deleted.leads,
++      deletedVoiceSessions: result.deleted.voiceSessions,
++      deletedLeadEvents: result.deleted.leadEvents,
++      manualCopiesConfirmedDeleted: parsed.data.manualCopiesConfirmedDeleted,
++    });
++    return noStoreJson(
++      {
++        ok: false,
++        error: "deletion_incomplete",
++        retryable: true,
++        deleted: result.deleted,
++        complete: false,
++      },
++      { status: 409 },
++    );
++  }
 +
 +  logInfo("admin_privacy_delete.completed", {
 +    actor: auth.actor,
@@ -749,9 +769,8 @@ index 0000000000000000000000000000000000000000..81f6818f0574662685ee3abcdf8b60c8
 +    deletedVoiceSessions: result.deleted.voiceSessions,
 +    deletedLeadEvents: result.deleted.leadEvents,
 +    manualCopiesConfirmedDeleted: parsed.data.manualCopiesConfirmedDeleted,
-+    complete: result.complete,
 +  });
-+  return noStoreJson({ ok: true, deleted: result.deleted, complete: result.complete });
++  return noStoreJson({ ok: true, deleted: result.deleted, complete: true });
 +}
 diff --git a/app/api/admin/retention/route.ts b/app/api/admin/retention/route.ts
 new file mode 100644
@@ -1712,18 +1731,12 @@ index e0e76decc8e6156ca0c3a75fc869fb5b9822b39b..0dd81f569cc826d7a2b3e5f97d9fd717
 -        className="mt-3 inline-flex h-9 w-full items-center justify-center rounded-lg border border-sky-400/25 bg-sky-400/10 text-sm font-semibold text-sky-300"
 +        className="mt-3 inline-flex h-9 w-full items-center justify-center rounded-lg border border-sky-400/25 bg-sky-400/[0.07] text-sm font-semibold text-sky-300 transition hover:border-sky-400/50 hover:bg-sky-400/10"
 diff --git a/components/admin/AdminLoginForm.tsx b/components/admin/AdminLoginForm.tsx
-index 98e719c22cc73359b84fe6cdfd344826fa9ffee8..040f3a889affc79a16b507df17a0fa50e61b76e1 100644
+index 98e719c22cc73359b84fe6cdfd344826fa9ffee8..a63cdc2efb5f9cf4453e944950a305666c85050d 100644
 --- a/components/admin/AdminLoginForm.tsx
 +++ b/components/admin/AdminLoginForm.tsx
-@@ -117,7 +117 @@ export function AdminLoginForm({ reason }: { reason?: string }) {
+@@ -117 +117 @@ export function AdminLoginForm({ reason }: { reason?: string }) {
 -              {/* method="post" keeps the token out of the URL if a submit fires before hydration */}
--              <form
--                action="/api/admin/login"
--                className="mt-6 grid gap-5"
--                method="post"
--                onSubmit={form.handleSubmit(onSubmit)}
--              >
-+              <form className="mt-6 grid gap-5" onSubmit={form.handleSubmit(onSubmit)}>
++              {/* Native POST is a fail-closed fallback: the JSON-only API rejects it without placing the token in a URL. */}
 diff --git a/components/admin/AdminLogoutButton.tsx b/components/admin/AdminLogoutButton.tsx
 new file mode 100644
 index 0000000000000000000000000000000000000000..1f6125ac0c3460950f8378e63f4efc12c237795b
@@ -9255,12 +9268,57 @@ index 5959ce97fce3c3c52162a2573a7b293658efeb66..6f3710dcd90d51d016925c5e80af4090
 +        "leads.update",
 +      ),
 +    ).toMatchObject({ ok: true, credential: "session" });
+diff --git a/tests/admin-login-route.test.ts b/tests/admin-login-route.test.ts
+index 5af7fc3df77bad7133de8276e006d477e77b5158..a03f2f05c07c9731a85abfeaab48fd10b6476bf7 100644
+--- a/tests/admin-login-route.test.ts
++++ b/tests/admin-login-route.test.ts
+@@ -0,0 +1 @@
++import { cleanup, render } from "@testing-library/react";
+@@ -1,0 +3 @@ import { NextRequest } from "next/server";
++import { createElement } from "react";
+@@ -3,0 +6 @@ import { POST } from "@/app/api/admin/login/route";
++import { AdminLoginForm } from "@/components/admin/AdminLoginForm";
+@@ -13,0 +17,2 @@ describe("admin login route", () => {
++      ADMIN_REVIEW_ACTOR: "Test operator",
++      ADMIN_REVIEW_ROLE: "operator",
+@@ -23,0 +29 @@ describe("admin login route", () => {
++    cleanup();
+@@ -52,0 +59,23 @@ describe("admin login route", () => {
++
++  it("rejects cross-origin and non-JSON login attempts before consuming credentials", async () => {
++    const crossOrigin = await POST(
++      loginRequest("admin-review-token-123456789", "203.0.113.8", "https://attacker.test"),
++    );
++    expect(crossOrigin.status).toBe(403);
++    await expect(crossOrigin.json()).resolves.toEqual({ ok: false, error: "csrf" });
++
++    const nonJson = new NextRequest("http://localhost/api/admin/login", {
++      body: "token=admin-review-token-123456789",
++      headers: { "content-type": "application/x-www-form-urlencoded", origin: "http://localhost" },
++      method: "POST",
++    });
++    expect((await POST(nonJson)).status).toBe(403);
++  });
++
++  it("uses a native POST fallback so pre-hydration submits cannot put the token in the URL", () => {
++    const { container } = render(createElement(AdminLoginForm, {}));
++    const form = container.querySelector("form");
++
++    expect(form).toHaveAttribute("method", "post");
++    expect(form).toHaveAttribute("action", "/api/admin/login");
++  });
+@@ -55 +84 @@ describe("admin login route", () => {
+-function loginRequest(token: string, ip: string) {
++function loginRequest(token: string, ip: string, origin = "http://localhost") {
+@@ -58 +87 @@ function loginRequest(token: string, ip: string) {
+-    headers: { "content-type": "application/json", "x-forwarded-for": ip },
++    headers: { "content-type": "application/json", origin, "x-forwarded-for": ip },
 diff --git a/tests/admin-privacy-route.test.ts b/tests/admin-privacy-route.test.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..019e10e27d3bcb88f007d67aee6d571c15b3f937
+index 0000000000000000000000000000000000000000..a49df229d3118e759b4ad2325ed85c422e1c2e77
 --- /dev/null
 +++ b/tests/admin-privacy-route.test.ts
-@@ -0,0 +1,127 @@
+@@ -0,0 +1,146 @@
 +import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 +import { DELETE } from "@/app/api/admin/privacy/route";
 +import { deletePersonalData, getPrivacyDeletionPlan } from "@/lib/server/convex";
@@ -9337,6 +9395,25 @@ index 0000000000000000000000000000000000000000..019e10e27d3bcb88f007d67aee6d571c
 +      retryable: true,
 +    });
 +    expect(deleteMock).not.toHaveBeenCalled();
++  });
++
++  it("returns a retryable non-success when bounded erasure has more matching rows", async () => {
++    deleteMock.mockResolvedValue({
++      ok: true,
++      deleted: { leads: 2, leadEvents: 8, voiceSessions: 24 },
++      complete: false,
++    });
++
++    const response = await DELETE(request(body));
++
++    expect(response.status).toBe(409);
++    await expect(response.json()).resolves.toEqual({
++      ok: false,
++      error: "deletion_incomplete",
++      retryable: true,
++      deleted: { leads: 2, leadEvents: 8, voiceSessions: 24 },
++      complete: false,
++    });
 +  });
 +
 +  it("requires explicit confirmation that unaddressable copies were deleted", async () => {
@@ -10751,3 +10828,95 @@ index 7aa3c0d9d170db0300652645901f4f4bb2001409..89674cd7c6a26bb399195fc5170f4546
 +  expect(leadPosts).toBe(0);
 +});
 +
+
+===== REVIEW SUPPLEMENT: CURRENT app/api/admin/sla-check/route.ts =====
+import { z } from "zod";
+import { adminAuthFailureStatus, verifyAdminPermission } from "@/lib/server/admin-auth";
+import { getAdminLeadSlaSnapshot } from "@/lib/server/convex";
+import { logInfo, logWarn } from "@/lib/server/logger";
+import { sendOpsAlert } from "@/lib/server/ops-alerts";
+import { noStoreJson } from "@/lib/server/security";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const requestSchema = z.object({
+  maxUnownedHours: z.number().min(1).max(72).optional(),
+});
+
+/**
+ * Operational SLA sweep, designed for an hourly cron. Alerts the ops Slack
+ * channel (throttled + fingerprinted by ops-alerts) when leads are unowned
+ * beyond the window or notifications have failed, so breaches surface without
+ * anyone watching the console.
+ */
+export async function POST(request: Request) {
+  const auth = verifyAdminPermission(request, "ops.sla_check");
+  if (!auth.ok) {
+    return noStoreJson({ ok: false, error: auth.reason }, { status: adminAuthFailureStatus(auth) });
+  }
+
+  const body = await request.json().catch(() => null);
+  const parsed = requestSchema.safeParse(body ?? {});
+  if (!parsed.success) return noStoreJson({ ok: false, error: "invalid_request" }, { status: 400 });
+  const maxUnownedMs = (parsed.data.maxUnownedHours ?? 4) * 60 * 60 * 1000;
+
+  const snapshot = await getAdminLeadSlaSnapshot(maxUnownedMs).catch((error) => {
+    logWarn("admin_sla.convex_failed", { error: error instanceof Error ? error.message : "unknown" });
+    return { ok: false as const, reason: "convex_failed" };
+  });
+  if (!snapshot.ok) return noStoreJson({ ok: false, error: snapshot.reason }, { status: 503 });
+
+  const { generatedAt: now, activeLeads, unownedBreaches, failedNotifications } = snapshot.data;
+
+  let alerted = false;
+  if (unownedBreaches.count > 0 || failedNotifications.count > 0) {
+    const worstAgeH = unownedBreaches.oldestCreatedAt ? (now - unownedBreaches.oldestCreatedAt) / 3_600_000 : 0;
+    const result = await sendOpsAlert({
+      event: "lead_sla_breach",
+      severity: failedNotifications.count > 0 ? "error" : "warning",
+      summary:
+        `${formatSlaCount(unownedBreaches)} lead(s) unowned beyond ${Math.round(maxUnownedMs / 3_600_000)}h` +
+        `${
+          failedNotifications.count > 0 ? ` · ${formatSlaCount(failedNotifications)} failed notification(s)` : ""
+        } — ` +
+        "assign owners in the admin console.",
+      meta: {
+        unowned: unownedBreaches.count,
+        unownedCountIsLowerBound: unownedBreaches.truncated,
+        failedNotifications: failedNotifications.count,
+        failedNotificationCountIsLowerBound: failedNotifications.truncated,
+        oldestUnownedHours: Math.round(worstAgeH * 10) / 10,
+        console: "https://oriental.mereka.io/admin/session-review?view=leads&sort=attention",
+      },
+      fingerprint: `unowned=${formatSlaCount(unownedBreaches)}:` + `failed=${formatSlaCount(failedNotifications)}`,
+    });
+    alerted = result.ok === true;
+  }
+
+  logInfo("admin_sla.checked", {
+    actor: auth.actor,
+    unowned: unownedBreaches.count,
+    unownedCountIsLowerBound: unownedBreaches.truncated,
+    failedNotifications: failedNotifications.count,
+    failedNotificationCountIsLowerBound: failedNotifications.truncated,
+    alerted,
+  });
+  return noStoreJson({
+    ok: true,
+    unownedBreaches: unownedBreaches.count,
+    failedNotifications: failedNotifications.count,
+    activeLeads: activeLeads.count,
+    truncated: {
+      unownedBreaches: unownedBreaches.truncated,
+      failedNotifications: failedNotifications.truncated,
+      activeLeads: activeLeads.truncated,
+    },
+    alerted,
+  });
+}
+
+function formatSlaCount(metric: { count: number; truncated: boolean }) {
+  return `${metric.count}${metric.truncated ? "+" : ""}`;
+}
+===== END REVIEW SUPPLEMENT =====
