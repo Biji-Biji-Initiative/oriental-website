@@ -424,8 +424,9 @@ Production errors:
 
 ### `POST /api/admin/login`
 
-Validates `ADMIN_REVIEW_TOKEN` and sets the signed `oriental_admin` HTTP-only
-cookie scoped to `/admin`.
+Validates `ADMIN_REVIEW_TOKEN` and sets the signed `oriental_admin` HTTP-only,
+SameSite=Lax cookie with `Path=/`, so the same session authenticates both the
+`/admin` UI and `/api/admin/*` routes. Production cookies also set `Secure`.
 
 ### `GET /api/admin/review`
 

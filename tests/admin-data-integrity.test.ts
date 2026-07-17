@@ -42,6 +42,10 @@ describe("admin CRM data integrity contract", () => {
     );
 
     expect(tableQuery).toContain(".take(take)");
+    expect(countQuery).toContain("requireIngestSecret(ingestSecret)");
+    expect(countQuery.indexOf("requireIngestSecret(ingestSecret)")).toBeLessThan(
+      countQuery.indexOf('ctx.db.query("leads").collect()'),
+    );
     expect(countQuery).toContain('ctx.db.query("leads").collect()');
     expect(countQuery).not.toContain(".take(");
   });

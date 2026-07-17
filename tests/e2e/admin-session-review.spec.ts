@@ -23,6 +23,31 @@ test.describe("admin session review console", () => {
     await expect(page.getByRole("heading", { name: "Enquiry CRM" })).toBeVisible();
   });
 
+  test("uses the real root-scoped login cookie for protected admin mutations", async ({ context, page }) => {
+    await context.clearCookies();
+    const login = await context.request.post("/api/admin/login", {
+      data: { token: adminPassword },
+    });
+    expect(login.status()).toBe(200);
+
+    const cookie = (await context.cookies()).find(({ name }) => name === adminCookieName);
+    expect(cookie?.httpOnly).toBe(true);
+    expect(cookie?.path).toBe("/");
+    expect(cookie?.sameSite).toBe("Lax");
+
+    const protectedMutation = await context.request.patch("/api/admin/leads/lead-cookie-proof", {
+      data: { status: "archived" },
+    });
+    expect(protectedMutation.status()).toBe(400);
+    await expect(protectedMutation.json()).resolves.toMatchObject({
+      ok: false,
+      error: "invalid_payload",
+    });
+
+    await page.goto("/admin/session-review?view=leads");
+    await expect(page.getByRole("heading", { name: "Enquiry CRM" })).toBeVisible();
+  });
+
   test("turns the default overview into an executive enquiry command center", async ({ page }, testInfo) => {
     const command = page.locator("[data-command-center]");
     await expect(
