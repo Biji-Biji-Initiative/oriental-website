@@ -7,7 +7,14 @@ import {
   deploymentFinished,
   deploymentStatus,
 } from "./lib/coolify-release";
-import { RELEASE_TARGETS, validateHealthPayload, validateReleaseSha } from "./lib/release-governance";
+import {
+  CONTROL_VOICE_CELL,
+  type GovernedVoiceCell,
+  RELEASE_TARGETS,
+  STAGING_CANDIDATE_VOICE_CELL,
+  validateHealthPayload,
+  validateReleaseSha,
+} from "./lib/release-governance";
 
 const DEFAULT_API_URL = "https://app.coolify.io/api/v1/";
 const DEFAULT_APPLICATION_UUID = "mtrl2z6a7zvoyevxvufpntij";
@@ -97,11 +104,16 @@ async function fetchWithTimeout(url: URL | string, init?: RequestInit) {
   }
 }
 
-async function readPublicHealth(origin: string, expectedSha: string, label: string) {
+async function readPublicHealth(
+  origin: string,
+  expectedSha: string,
+  label: string,
+  expectedVoiceCell: GovernedVoiceCell,
+) {
   const response = await fetchWithTimeout(`${origin}/api/health`);
   if (!response.ok) throw new Error(`${label} health returned HTTP ${response.status}`);
   const payload: unknown = await response.json();
-  const failures = validateHealthPayload(payload, expectedSha);
+  const failures = validateHealthPayload(payload, expectedSha, expectedVoiceCell);
   if (failures.length > 0) throw new Error(`${label} health: ${failures.join("; ")}`);
 }
 
@@ -184,8 +196,13 @@ async function main() {
   const applicationUuid = process.env.COOLIFY_ORIENTAL_APPLICATION_UUID?.trim() || DEFAULT_APPLICATION_UUID;
 
   assertFrozenMainCommit(args.sha);
-  await readPublicHealth(RELEASE_TARGETS.staging.origin, args.sha, "staging candidate");
-  await readPublicHealth(RELEASE_TARGETS.production.origin, args.expectedCurrentSha, "current production");
+  await readPublicHealth(RELEASE_TARGETS.staging.origin, args.sha, "staging candidate", STAGING_CANDIDATE_VOICE_CELL);
+  await readPublicHealth(
+    RELEASE_TARGETS.production.origin,
+    args.expectedCurrentSha,
+    "current production",
+    CONTROL_VOICE_CELL,
+  );
 
   const application = await coolifyRequest<CoolifyApplication>(baseUrl, token, `applications/${applicationUuid}`);
   assertOrientalApplication(application, applicationUuid);
@@ -216,7 +233,7 @@ async function main() {
     args.pollIntervalMs,
     args.timeoutMs,
   );
-  await readPublicHealth(RELEASE_TARGETS.production.origin, args.sha, "new production");
+  await readPublicHealth(RELEASE_TARGETS.production.origin, args.sha, "new production", CONTROL_VOICE_CELL);
   process.stdout.write(
     `${JSON.stringify(
       {
