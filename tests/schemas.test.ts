@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  adminLeadArchiveSchema,
   adminLeadBulkAssignmentSchema,
   adminLeadWorkflowSchema,
   adminLoginSchema,
@@ -181,6 +182,38 @@ describe("admin lead workflow schema", () => {
         "Qualified and archived enquiries need an outcome reason.",
       );
     }
+  });
+});
+
+describe("admin lead archive schema", () => {
+  it("accepts a revision-checked restore with an audit reason", () => {
+    expect(
+      adminLeadArchiveSchema.safeParse({
+        action: "restore",
+        leads: [
+          { leadId: "lead_1", expectedRevision: 2 },
+          { leadId: "lead_2", expectedRevision: 7 },
+        ],
+        reason: "New customer context received",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects duplicate records and missing reasons", () => {
+    const duplicateLeads = [
+      { leadId: "lead_1", expectedRevision: 2 },
+      { leadId: "lead_1", expectedRevision: 2 },
+    ];
+    expect(
+      adminLeadArchiveSchema.safeParse({ action: "archive", leads: duplicateLeads, reason: "Duplicate" }).success,
+    ).toBe(false);
+    expect(
+      adminLeadArchiveSchema.safeParse({
+        action: "archive",
+        leads: [{ leadId: "lead_1", expectedRevision: 2 }],
+        reason: "",
+      }).success,
+    ).toBe(false);
   });
 });
 

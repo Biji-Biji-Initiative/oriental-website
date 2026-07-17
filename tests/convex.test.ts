@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  archiveAdminLeads,
   bulkAssignAdminLeads,
+  getAdminLeadTable,
   getAdminReviewDashboard,
   getAdminVoiceSession,
   persistLead,
@@ -30,6 +32,8 @@ vi.mock("convex/browser", () => ({
 vi.mock("@/convex/_generated/api", () => ({
   api: {
     leads: {
+      adminLeadTable: "adminLeadTable",
+      archiveLeads: "archiveLeads",
       createLead: "createLead",
       bulkAssignLeads: "bulkAssignLeads",
       recordLeadNotification: "recordLeadNotification",
@@ -183,6 +187,75 @@ describe("persistLead", () => {
       reason: "Morning intake allocation",
       actor: "Gurpreet",
       requestId: "request_bulk_1",
+    });
+  });
+
+  it("applies atomic reversible archives through Convex", async () => {
+    mocks.mutation.mockResolvedValue({ ok: true, count: 2 });
+
+    await expect(
+      archiveAdminLeads(
+        {
+          action: "archive",
+          leads: [
+            { leadId: "lead_1", expectedRevision: 1 },
+            { leadId: "lead_2", expectedRevision: 4 },
+          ],
+          reason: "Duplicate submissions",
+        },
+        { actor: "Nadia", requestId: "request_archive_1" },
+      ),
+    ).resolves.toEqual({ ok: true, count: 2 });
+
+    expect(mocks.mutation).toHaveBeenCalledWith("archiveLeads", {
+      ingestSecret: "ingest-secret",
+      action: "archive",
+      leads: [
+        { leadId: "lead_1", expectedRevision: 1 },
+        { leadId: "lead_2", expectedRevision: 4 },
+      ],
+      reason: "Duplicate submissions",
+      actor: "Nadia",
+      requestId: "request_archive_1",
+    });
+  });
+});
+
+describe("getAdminLeadTable", () => {
+  beforeEach(() => {
+    process.env = {
+      ...originalEnv,
+      CONVEX_URL: "https://convex.example",
+      CONVEX_INGEST_SECRET: "ingest-secret",
+    };
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+    vi.clearAllMocks();
+  });
+
+  it("loads a bounded canonical lead workspace independently from voice diagnostics", async () => {
+    mocks.query.mockResolvedValue([{ leadId: "lead_1" }, { leadId: "lead_2" }]);
+
+    await expect(getAdminLeadTable(500)).resolves.toEqual({
+      ok: true,
+      leads: [{ leadId: "lead_1" }, { leadId: "lead_2" }],
+    });
+    expect(mocks.query).toHaveBeenCalledWith("adminLeadTable", {
+      ingestSecret: "ingest-secret",
+      limit: 500,
+    });
+  });
+
+  it("caps oversized lead table requests", async () => {
+    mocks.query.mockResolvedValue([]);
+
+    await getAdminLeadTable(10_000);
+
+    expect(mocks.query).toHaveBeenCalledWith("adminLeadTable", {
+      ingestSecret: "ingest-secret",
+      limit: 1000,
     });
   });
 });

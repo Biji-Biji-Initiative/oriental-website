@@ -1,5 +1,5 @@
-import { ArrowUpRightIcon, Building2Icon, MailIcon, PhoneIcon, UserRoundIcon } from "lucide-react";
-import { AdminBulkAssignmentForm } from "@/components/admin/AdminBulkAssignmentForm";
+import { ArrowUpRightIcon, Building2Icon, MailIcon, PhoneIcon } from "lucide-react";
+import { AdminEnquiryDataTable } from "@/components/admin/AdminEnquiryDataTable";
 import { AdminLeadWorkflowForm } from "@/components/admin/AdminLeadWorkflowForm";
 import { Badge } from "@/components/admin/Badge";
 import {
@@ -97,108 +97,15 @@ export function EnquiryCrmWorkspace({
 
       <CrmIntelligencePanel filters={filters} generatedAt={generatedAt} intelligence={intelligence} view={view} />
 
-      <AdminBulkAssignmentForm
-        leads={ordered
-          .filter(isActiveLead)
-          .slice(0, 50)
-          .map((lead) => ({
-            leadId: lead.leadId,
-            label: lead.name?.trim() || lead.email,
-            meta: `${lead.org?.trim() || "No organisation"} · ${lead.owner?.trim() || "Unassigned"}`,
-            revision: lead.workflowRevision ?? 0,
-          }))}
+      <AdminEnquiryDataTable
+        generatedAt={generatedAt}
+        initialStatusScope={filters.status || "active"}
+        rows={ordered.map((lead) => ({
+          ...lead,
+          recordHref: recordHref(view, filters, lead.leadId),
+        }))}
+        totalRows={totalLeads}
       />
-
-      <section className="overflow-hidden rounded-2xl border border-mk-ash/20 bg-white shadow-sm" id="enquiry-table">
-        <header className="flex flex-col gap-3 border-b border-mk-ash/15 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-lg font-semibold tracking-tight">Enquiry pipeline</h2>
-              <Badge tone="blue">{ordered.length} shown</Badge>
-              {ordered.length !== totalLeads ? <Badge tone="neutral">{totalLeads} total</Badge> : null}
-            </div>
-            <p className="mt-1 text-sm text-mk-ash">
-              Scan the customer, request, stage, ownership, delivery, and recency in one CRM view.
-            </p>
-          </div>
-          {view === "today" && totalLeads > visible.length ? (
-            <a
-              className="inline-flex h-9 items-center justify-center rounded-lg border border-mk-blue/20 bg-mk-blue/5 px-3 text-sm font-semibold text-mk-blue transition hover:border-mk-blue/40 hover:bg-mk-blue/10"
-              href="/admin/session-review?view=leads#crm-workspace"
-            >
-              View all {totalLeads}
-              <ArrowUpRightIcon className="ml-1.5 size-4" />
-            </a>
-          ) : null}
-        </header>
-
-        {visible.length === 0 ? (
-          <div className="px-5 py-12 text-center">
-            <p className="font-semibold">No enquiries match these filters.</p>
-            <p className="mt-1 text-sm text-mk-ash">Reset the filters to return to the complete pipeline.</p>
-          </div>
-        ) : (
-          <>
-            <div className="hidden overflow-x-auto lg:block">
-              <table className="w-full min-w-[1180px] border-collapse text-left text-sm" data-crm-table>
-                <caption className="sr-only">Oriental enquiries ordered newest first</caption>
-                <thead className="bg-mk-paper/90 text-[11px] font-semibold uppercase tracking-[0.11em] text-mk-off-black/55">
-                  <tr>
-                    <th className="w-[22%] px-4 py-3" scope="col">
-                      Contact
-                    </th>
-                    <th className="w-[27%] px-4 py-3" scope="col">
-                      Request
-                    </th>
-                    <th className="w-[13%] px-4 py-3" scope="col">
-                      Source &amp; route
-                    </th>
-                    <th className="w-[15%] px-4 py-3" scope="col">
-                      Pipeline
-                    </th>
-                    <th className="w-[11%] px-4 py-3" scope="col">
-                      Delivery
-                    </th>
-                    <th className="w-[9%] px-4 py-3" scope="col">
-                      Received
-                    </th>
-                    <th className="px-4 py-3 text-right" scope="col">
-                      Record
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-mk-ash/12">
-                  {visible.map((lead) => (
-                    <CrmTableRow
-                      filters={filters}
-                      generatedAt={generatedAt}
-                      key={lead.leadId}
-                      lead={lead}
-                      relationship={intelligence.relationships.get(lead.leadId)}
-                      selected={selected?.leadId === lead.leadId}
-                      view={view}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="divide-y divide-mk-ash/12 lg:hidden">
-              {visible.map((lead) => (
-                <CrmMobileRow
-                  filters={filters}
-                  generatedAt={generatedAt}
-                  key={`mobile:${lead.leadId}`}
-                  lead={lead}
-                  relationship={intelligence.relationships.get(lead.leadId)}
-                  selected={selected?.leadId === lead.leadId}
-                  view={view}
-                />
-              ))}
-            </div>
-          </>
-        )}
-      </section>
 
       {selected ? (
         <CrmRecord
@@ -434,132 +341,6 @@ function CrmIntelligencePanel({
         </section>
       </div>
     </section>
-  );
-}
-
-function CrmTableRow({
-  filters,
-  generatedAt,
-  lead,
-  relationship,
-  selected,
-  view,
-}: {
-  filters: CrmFilters;
-  generatedAt: number;
-  lead: LeadRow;
-  relationship?: CrmRelationshipSummary<LeadRow>;
-  selected: boolean;
-  view: EnquiryCrmWorkspaceProps["view"];
-}) {
-  const status = normalizeAdminLeadStatus(lead.status);
-  const priority = normalizeAdminLeadPriority(lead.priority);
-  const delivery = notificationStatus(lead);
-  return (
-    <tr
-      className={selected ? "bg-mk-blue/[0.045]" : "bg-white transition hover:bg-mk-paper/60"}
-      data-lead-id={lead.leadId}
-    >
-      <th className="px-4 py-3.5 align-top font-normal" scope="row">
-        <div className="font-semibold text-mk-off-black">{lead.name?.trim() || "Unnamed visitor"}</div>
-        <div className="mt-1 flex items-center gap-1.5 text-xs text-mk-ash">
-          <Building2Icon className="size-3.5 shrink-0" />
-          <span className="truncate">{lead.org?.trim() || "Organisation not captured"}</span>
-        </div>
-        <a
-          className="mt-1.5 block truncate text-xs font-medium text-mk-blue hover:underline"
-          href={`mailto:${encodeURIComponent(lead.email)}`}
-        >
-          {lead.email}
-        </a>
-        <RelationshipBadges relationship={relationship} />
-      </th>
-      <td className="px-4 py-3.5 align-top">
-        <p className="line-clamp-2 leading-5 text-mk-off-black">
-          {lead.message?.trim() || "No request brief captured."}
-        </p>
-        <div className="mt-2 text-xs text-mk-ash">{getSegment(lead.segment).label}</div>
-      </td>
-      <td className="px-4 py-3.5 align-top">
-        <Badge tone={lead.source === "voice" ? "blue" : "neutral"}>{leadSourceLabel(lead.source)}</Badge>
-        <div className="mt-2 text-xs text-mk-ash">
-          Route: <span className="font-medium text-mk-off-black">{lead.routedTo || "Not set"}</span>
-        </div>
-      </td>
-      <td className="px-4 py-3.5 align-top">
-        <div className="flex flex-wrap gap-1.5">
-          <Badge tone={statusTone(status)}>{adminLeadStatusLabels[status]}</Badge>
-          <Badge tone={priorityTone(priority)}>{adminLeadPriorityLabels[priority]}</Badge>
-        </div>
-        <div className="mt-2 flex items-center gap-1.5 text-xs text-mk-ash">
-          <UserRoundIcon className="size-3.5" />
-          <span className={lead.owner?.trim() ? "text-mk-off-black" : "font-semibold text-amber-800"}>
-            {lead.owner?.trim() || "Unassigned"}
-          </span>
-        </div>
-      </td>
-      <td className="px-4 py-3.5 align-top">
-        <Badge tone={delivery.tone}>{delivery.label}</Badge>
-        <ClickUpTaskLink compact lead={lead} />
-        <p className="mt-2 line-clamp-2 text-xs leading-5 text-mk-ash">{deliverySummary(lead)}</p>
-      </td>
-      <td className="px-4 py-3.5 align-top">
-        <div className="font-semibold text-mk-off-black">{formatRelativeAge(lead.createdAt, generatedAt)}</div>
-        <div className="mt-1 text-xs leading-5 text-mk-ash">{formatDate(lead.createdAt)}</div>
-      </td>
-      <td className="px-4 py-3.5 text-right align-top">
-        <a
-          aria-label={`Open ${lead.name || lead.email} enquiry record`}
-          className="inline-flex h-8 items-center rounded-lg border border-mk-blue/20 bg-white px-3 text-xs font-semibold text-mk-blue transition hover:border-mk-blue/45 hover:bg-mk-blue/5"
-          href={recordHref(view, filters, lead.leadId)}
-        >
-          Open
-        </a>
-      </td>
-    </tr>
-  );
-}
-
-function CrmMobileRow({
-  filters,
-  generatedAt,
-  lead,
-  relationship,
-  selected,
-  view,
-}: {
-  filters: CrmFilters;
-  generatedAt: number;
-  lead: LeadRow;
-  relationship?: CrmRelationshipSummary<LeadRow>;
-  selected: boolean;
-  view: EnquiryCrmWorkspaceProps["view"];
-}) {
-  const status = normalizeAdminLeadStatus(lead.status);
-  const priority = normalizeAdminLeadPriority(lead.priority);
-  return (
-    <article className={`p-4 ${selected ? "bg-mk-blue/[0.045]" : "bg-white"}`} data-lead-id={lead.leadId}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="truncate font-semibold">{lead.name?.trim() || "Unnamed visitor"}</div>
-          <div className="mt-1 truncate text-xs text-mk-ash">{lead.org?.trim() || lead.email}</div>
-        </div>
-        <div className="shrink-0 text-right text-xs text-mk-ash">{formatRelativeAge(lead.createdAt, generatedAt)}</div>
-      </div>
-      <p className="mt-3 line-clamp-2 text-sm leading-5">{lead.message?.trim() || "No request brief captured."}</p>
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        <Badge tone={statusTone(status)}>{adminLeadStatusLabels[status]}</Badge>
-        <Badge tone={priorityTone(priority)}>{adminLeadPriorityLabels[priority]}</Badge>
-        <Badge tone={lead.owner?.trim() ? "green" : "amber"}>{lead.owner?.trim() || "Unassigned"}</Badge>
-      </div>
-      <RelationshipBadges relationship={relationship} />
-      <a
-        className="mt-3 inline-flex h-9 w-full items-center justify-center rounded-lg border border-mk-blue/20 bg-mk-blue/5 text-sm font-semibold text-mk-blue"
-        href={recordHref(view, filters, lead.leadId)}
-      >
-        Open CRM record
-      </a>
-    </article>
   );
 }
 
@@ -1084,30 +865,6 @@ function formatList(values: string[]) {
   if (values.length <= 1) return values[0] ?? "";
   if (values.length === 2) return `${values[0]} and ${values[1]}`;
   return `${values.slice(0, -1).join(", ")}, and ${values.at(-1)}`;
-}
-
-function RelationshipBadges({ relationship }: { relationship?: CrmRelationshipSummary<LeadRow> }) {
-  if (
-    !relationship ||
-    (relationship.contactEnquiryCount <= 1 &&
-      relationship.accountEnquiryCount <= 1 &&
-      relationship.possibleDuplicateCount === 0)
-  ) {
-    return null;
-  }
-  return (
-    <div className="mt-2 flex flex-wrap gap-1.5">
-      {relationship.contactEnquiryCount > 1 ? (
-        <Badge tone="blue">Repeat contact · {relationship.contactEnquiryCount}</Badge>
-      ) : null}
-      {relationship.accountEnquiryCount > 1 ? (
-        <Badge tone="neutral">Account · {relationship.accountEnquiryCount}</Badge>
-      ) : null}
-      {relationship.possibleDuplicateCount > 0 ? (
-        <Badge tone="amber">Check duplicate · +{relationship.possibleDuplicateCount}</Badge>
-      ) : null}
-    </div>
-  );
 }
 
 function RelatedEnquiries({

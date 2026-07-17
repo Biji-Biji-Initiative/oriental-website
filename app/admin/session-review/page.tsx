@@ -22,7 +22,7 @@ import {
 } from "@/lib/admin-workflow";
 import { getSegment } from "@/lib/segments";
 import { adminCookieName, verifyAdminSessionCookie } from "@/lib/server/admin-auth";
-import { getAdminReviewDashboard } from "@/lib/server/convex";
+import { getAdminLeadTable, getAdminReviewDashboard } from "@/lib/server/convex";
 import { isBenignVoiceError, type VoiceRuntimeError } from "@/lib/voice/realtime-events";
 
 export const dynamic = "force-dynamic";
@@ -58,7 +58,10 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
   const auth = verifyAdminSessionCookie(cookieStore.get(adminCookieName)?.value);
   if (!auth.ok) return <AdminLoginForm reason={auth.reason} />;
 
-  const dashboard = await getAdminReviewDashboard(75).catch(() => ({ ok: false as const, reason: "convex_failed" }));
+  const [dashboard, leadTable] = await Promise.all([
+    getAdminReviewDashboard(100).catch(() => ({ ok: false as const, reason: "convex_failed" })),
+    getAdminLeadTable(500).catch(() => ({ ok: false as const, reason: "convex_failed" })),
+  ]);
   if (!dashboard.ok) {
     return (
       <AdminShell>
@@ -70,10 +73,11 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
     );
   }
 
+  const allLeads = leadTable.ok ? leadTable.leads : dashboard.data.leads;
   const sessionsWithRealErrors = dashboard.data.voiceSessions.filter((session: VoiceSessionRow) =>
     session.errors.some((error: VoiceRuntimeError) => !isBenignVoiceError(error)),
   ).length;
-  const filteredLeads = filterLeads(dashboard.data.leads, filters);
+  const filteredLeads = filterLeads(allLeads, filters);
   const filteredVoiceSessions = filterVoiceSessions(dashboard.data.voiceSessions, filters.q);
   const showAll = view === "all";
   const showToday = showAll || view === "today";
@@ -93,19 +97,19 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
             filterActive={filterActive}
             filters={filters}
             leadCount={filteredLeads.length}
-            totalLeads={dashboard.data.leads.length}
+            totalLeads={allLeads.length}
             totalVoiceRecoverable={recoverableVoiceSessions(dashboard.data.voiceSessions).length}
             view={view}
             voiceRecoverableCount={recoverableVoiceSessions(filteredVoiceSessions).length}
           />
           <EnquiryCrmWorkspace
-            allLeads={dashboard.data.leads}
+            allLeads={allLeads}
             events={dashboard.data.leadEvents}
             filters={filters}
             generatedAt={dashboard.data.generatedAt}
             leads={filteredLeads}
             selectedLeadId={selectedLeadId}
-            totalLeads={dashboard.data.leads.length}
+            totalLeads={allLeads.length}
             view={showAll ? "all" : "leads"}
             voiceSessions={dashboard.data.voiceSessions}
           />
