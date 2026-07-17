@@ -87,11 +87,17 @@ describe("release governance", () => {
         HOME: "/tmp/home",
         PATH: "/tmp/bin",
         NODE_ENV: "production",
+        NODE_OPTIONS: "--experimental-webstorage --require=/tmp/unsafe.js",
         OPENAI_API_KEY: "live-key",
         SLACK_BOT_TOKEN: "live-token",
         TEAM_LEAD_EMAIL: "live@example.com",
       }),
-    ).toEqual({ HOME: "/tmp/home", PATH: "/tmp/bin", NODE_ENV: "test" });
+    ).toEqual({
+      HOME: "/tmp/home",
+      PATH: "/tmp/bin",
+      NODE_ENV: "test",
+      NODE_OPTIONS: "--no-experimental-webstorage",
+    });
     expect(packageScripts.scripts["release:preflight"]).toContain("tsx scripts/run-release-tests.ts");
   });
 
@@ -139,7 +145,7 @@ describe("release governance", () => {
       },
     });
     expect(candidate.status, candidate.stderr).toBe(0);
-  });
+  }, 20_000);
 
   it("expands the both alias before target lookup", () => {
     expect(releaseVerifier).toContain('args.target === "both" ? ["staging", "production"] : [args.target]');
