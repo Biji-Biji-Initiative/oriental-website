@@ -130,6 +130,12 @@ for testing the Git/static contract and MUST NOT be used as production release
 evidence. The fast parity command runs against both native Infisical
 environments before the full production-env preflight, preventing staging
 source drift from being hidden by the deployer's host-side safe defaults.
+The managed preflight deliberately runs Vitest through
+`scripts/run-release-tests.ts`, which retains only process/tooling variables and
+forces `NODE_ENV=test`. Live application secrets stay injected for
+`check-secrets`, the production build, and the final SHA/cell checks, but cannot
+select production React or leak notification/routing configuration into test
+fixtures.
 
 Once preflight passes, the SHA is frozen. Any runtime code, Docker, config, spec,
 or runbook correction invalidates the freeze and restarts at Phase 1. Do not

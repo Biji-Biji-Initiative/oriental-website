@@ -11,11 +11,13 @@ import {
   validateReleaseSha,
   validateReleaseStaticContracts,
 } from "../scripts/lib/release-governance";
+import { releaseTestEnv } from "../scripts/lib/release-test-env";
 
 const sha = "bb8e2673e5f129f342fba78f3eb653a54de8763b";
 const releasePreflight = readFileSync("scripts/release-preflight.ts", "utf8");
 const releaseVerifier = readFileSync("scripts/release-verify.ts", "utf8");
 const stagingVoiceSmoke = readFileSync("scripts/smoke-staging-voice.ts", "utf8");
+const packageScripts = JSON.parse(readFileSync("package.json", "utf8")) as { scripts: Record<string, string> };
 
 describe("release governance", () => {
   it("pins canonical and compatibility-only hostnames", () => {
@@ -76,6 +78,20 @@ describe("release governance", () => {
       'const args: Args = { managedEnv: true, modelCell: "control", voiceCellOnly: false }',
     );
     expect(releasePreflight).toContain('--allow-unmanaged"');
+  });
+
+  it("scrubs managed application secrets and production mode before preflight tests", () => {
+    expect(
+      releaseTestEnv({
+        HOME: "/tmp/home",
+        PATH: "/tmp/bin",
+        NODE_ENV: "production",
+        OPENAI_API_KEY: "live-key",
+        SLACK_BOT_TOKEN: "live-token",
+        TEAM_LEAD_EMAIL: "live@example.com",
+      }),
+    ).toEqual({ HOME: "/tmp/home", PATH: "/tmp/bin", NODE_ENV: "test" });
+    expect(packageScripts.scripts["release:preflight"]).toContain("tsx scripts/run-release-tests.ts");
   });
 
   it("provides a fast executable Infisical voice-cell parity check", () => {
