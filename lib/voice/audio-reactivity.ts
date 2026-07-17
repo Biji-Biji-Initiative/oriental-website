@@ -4,7 +4,10 @@ export type AudioReactivityState = {
 };
 
 const INITIAL_NOISE_FLOOR = 0.012;
-const MAX_NOISE_FLOOR = 0.09;
+// This floor lives in the gain-adjusted visual domain. Let it learn the full
+// bounded analyser range: any lower ceiling creates a band of valid steady
+// signals that can pin the orb permanently above its gate.
+const MAX_NOISE_FLOOR = 1;
 
 export function createAudioReactivityState(): AudioReactivityState {
   return { level: 0, noiseFloor: INITIAL_NOISE_FLOOR };
@@ -30,6 +33,10 @@ export function updateAudioReactivity(
   // attacks the visual envelope much faster than this floor can rise, while a
   // fan or HVAC hum converges back to rest instead of living above a dead zone.
   let noiseFloor = clamp(state.noiseFloor, 0, MAX_NOISE_FLOOR);
+  // A learned floor from a louder environment must not mask later quiet speech.
+  // Rebase below a materially lower signal; slow upward learning will classify
+  // it as new steady room tone if it persists.
+  if (signal + 0.012 < noiseFloor && signal < noiseFloor * 0.82) noiseFloor = signal * 0.5;
   const floorTarget = Math.min(signal, MAX_NOISE_FLOOR);
   const floorTimeConstant = floorTarget > noiseFloor ? 4 : 2.2;
   noiseFloor += (floorTarget - noiseFloor) * exponentialEase(delta, floorTimeConstant);

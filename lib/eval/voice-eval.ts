@@ -23,6 +23,8 @@ import { isVoiceAvailabilityFailure } from "../voice/realtime-call-failure";
 
 export type EvalTranscriptTurn = { role: string; text: string };
 
+export type SubmittedEmailCorrectionAttribution = "matched" | "mismatched";
+
 export type EvalTransport = {
   /** Folded evidence that any call segment ended abnormally mid-utterance. */
   droppedMidTurn?: boolean;
@@ -90,6 +92,8 @@ export type VoiceEvalSession = {
   variant?: string | null;
   /** Evaluation-only marker: call segments in one conversation used different render profiles. */
   mixedVoiceProfile?: boolean;
+  /** Evaluation-only marker: reconnects crossed any complete experiment-profile boundary. */
+  mixedExperimentProfile?: boolean;
   transcript: EvalTranscriptTurn[];
   captured?: {
     name: string;
@@ -104,6 +108,8 @@ export type VoiceEvalSession = {
   latency?: EvalLatency;
   routeRequested: boolean;
   submittedAt?: number | null;
+  /** PII-free comparison against the immutable email stored on the routed lead. */
+  submittedEmailCorrectionAttribution?: SubmittedEmailCorrectionAttribution;
   /** Review ids of the call segments folded into this conversation (if merged). */
   callReviewIds?: string[];
   /** Close reasons from every call segment, retained across conversation folding. */
@@ -202,7 +208,10 @@ export function mergeConversationSessions(sessions: VoiceEvalSession[]): VoiceEv
       ? { ...foldedTransport, droppedMidTurn: Boolean(foldedTransport.droppedMidTurn || droppedMidTurn) }
       : null;
     const latency = foldEvalLatency(ordered);
-    const mixedVoiceProfile = new Set(ordered.map(voiceProfileKey)).size > 1;
+    const mixedVoiceProfile =
+      ordered.some((session) => session.mixedVoiceProfile) || new Set(ordered.map(voiceProfileKey)).size > 1;
+    const mixedExperimentProfile =
+      ordered.some((session) => session.mixedExperimentProfile) || new Set(ordered.map(experimentProfileKey)).size > 1;
     merged.push({
       ...head,
       // The latest call row heads the conversation, but timings and outcome span
@@ -220,6 +229,7 @@ export function mergeConversationSessions(sessions: VoiceEvalSession[]): VoiceEv
       transport,
       latency,
       mixedVoiceProfile,
+      mixedExperimentProfile,
       activationAttempted: ordered.some((session) => session.activationAttempted === true),
       routeRequested: ordered.some((s) => s.routeRequested),
       callReviewIds: ordered.map((s) => s.reviewId),
@@ -631,6 +641,7 @@ export type CaptureIntegritySignals = {
   rejectedEmailCaptures: number;
   unconfirmedEmailFailures: number;
   staleEmailSubmissions: number;
+  unattributedEmailSubmissions: number;
   totalFailures: number;
   failed: boolean;
 };
@@ -641,16 +652,24 @@ export function deriveCaptureIntegritySignals(session: VoiceEvalSession): Captur
     (error) => error.code === "voice_capture_rejected" && /(?:^|:)email(?:$|:)/i.test(error.message),
   ).length;
   const unconfirmedEmailFailures = session.errors.filter((error) => error.code === "voice_email_unconfirmed").length;
-  const correctedEmail = lastLiteralEmailCorrection(session);
-  const submittedEmail = session.captured?.email.trim().toLowerCase() ?? "";
+  const correction = resolveLatestEmailCorrection(session.transcript);
   const submitted = typeof session.submittedAt === "number" || Boolean(session.leadId);
-  const staleEmailSubmissions = submitted && correctedEmail !== null && submittedEmail !== correctedEmail ? 1 : 0;
-  const totalFailures = rejectedCaptures + unconfirmedEmailFailures + staleEmailSubmissions;
+  const hasSubmissionCorrectionEvidence = submitted && correction.kind !== "none";
+  const staleEmailSubmissions =
+    correction.kind === "resolved" && session.submittedEmailCorrectionAttribution === "mismatched" ? 1 : 0;
+  const unattributedEmailSubmissions =
+    hasSubmissionCorrectionEvidence &&
+    (correction.kind === "ambiguous" || typeof session.submittedEmailCorrectionAttribution === "undefined")
+      ? 1
+      : 0;
+  const totalFailures =
+    rejectedCaptures + unconfirmedEmailFailures + staleEmailSubmissions + unattributedEmailSubmissions;
   return {
     rejectedCaptures,
     rejectedEmailCaptures,
     unconfirmedEmailFailures,
     staleEmailSubmissions,
+    unattributedEmailSubmissions,
     totalFailures,
     failed: totalFailures > 0,
   };
@@ -658,17 +677,95 @@ export function deriveCaptureIntegritySignals(session: VoiceEvalSession): Captur
 
 const EVAL_EMAIL_PATTERN =
   /[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+/gi;
+const SPOKEN_EMAIL_PATTERN =
+  /[A-Z0-9]+(?:\s+(?:dot|point|underscore|dash|hyphen|plus)\s+[A-Z0-9]+)*\s+at(?:\s+sign)?\s+[A-Z0-9]+(?:\s+(?:dot|point|dash|hyphen)\s+[A-Z0-9]+)+/gi;
+const VALID_RESOLVED_EMAIL_PATTERN =
+  /^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+$/i;
 
-/** Return only the latest literal address from an explicit visitor correction. */
-function lastLiteralEmailCorrection(session: VoiceEvalSession): string | null {
-  for (let index = session.transcript.length - 1; index >= 0; index -= 1) {
-    const turn = session.transcript[index];
-    if (turn?.role !== "user" || !EXPLICIT_CORRECTION_PATTERN.test(turn.text)) continue;
-    const matches = [...turn.text.matchAll(EVAL_EMAIL_PATTERN)];
-    const last = matches.at(-1)?.[0];
-    if (last) return last.toLowerCase();
+const POSITIVE_EMAIL_CORRECTION_CUE =
+  /(?:^|[\s,;:(-])(?:please\s+)?(?:use|prefer|go\s+with|my\s+email(?:\s+address)?\s+is|the\s+(?:correct\s+)?email(?:\s+address)?\s+is|email(?:\s+address)?\s+is|(?:it|that)(?:'s|\s+is)|should\s+be|correct(?:\s+email(?:\s+address)?)?\s+is)\s*[:=-]?\s*$/i;
+const NEGATIVE_EMAIL_CORRECTION_CUE =
+  /(?:^|[\s,;:(-])(?:please\s+)?(?:do\s+not\s+use|don't\s+use|ignore|avoid|discard|forget|instead\s+of|rather\s+than|is\s+not|isn't|not|never|wrong|old|former)\s*(?:(?:my|the|that|this)\s+)?(?:(?:email|address)\s*)?[:=-]?\s*$/i;
+const NEGATIVE_EMAIL_CORRECTION_SUFFIX =
+  /^\s*(?:[?!,;:—–-]\s*)?(?:(?:no|sorry)\s*[,;:—–-]?\s*)?(?:is\s+(?:wrong|old|former|incorrect|not\s+(?:mine|correct))|isn't\s+(?:mine|correct)|(?:that|this|it)(?:'s|\s+(?:is|was|looks?))\s+(?:wrong|old|former|incorrect|not\s+(?:mine|correct))|not\s+(?:that|this)(?:\s+(?:one|address))?|do\s+not\s+use(?:\s+it)?|don't\s+use(?:\s+it)?|ignore(?:\s+it)?|avoid(?:\s+it)?|discard(?:\s+it)?)\b/i;
+
+export type EmailCorrectionResolution = { kind: "none" } | { kind: "resolved"; email: string } | { kind: "ambiguous" };
+
+type EmailMention = { email: string; start: number; end: number };
+
+function spokenEmailMention(match: RegExpMatchArray): EmailMention | null {
+  const start = match.index ?? 0;
+  const email = match[0]
+    .toLowerCase()
+    .replace(/\s+(?:at)(?:\s+sign)?\s+/u, "@")
+    .replace(/\s+(?:dot|point)\s+/gu, ".")
+    .replace(/\s+underscore\s+/gu, "_")
+    .replace(/\s+(?:dash|hyphen)\s+/gu, "-")
+    .replace(/\s+plus\s+/gu, "+");
+  if (!VALID_RESOLVED_EMAIL_PATTERN.test(email)) return null;
+  return { email, start, end: start + match[0].length };
+}
+
+function emailMentions(text: string): EmailMention[] {
+  const literal = [...text.matchAll(EVAL_EMAIL_PATTERN)].map((match) => {
+    const start = match.index ?? 0;
+    return { email: match[0].toLowerCase(), start, end: start + match[0].length };
+  });
+  const spoken = [...text.matchAll(SPOKEN_EMAIL_PATTERN)].flatMap((match) => {
+    const mention = spokenEmailMention(match);
+    return mention ? [mention] : [];
+  });
+  return [...literal, ...spoken].sort((left, right) => left.start - right.start);
+}
+
+/** Resolve replacement wording without assuming the last address is the intended one. */
+function resolveEmailCorrectionTurn(text: string): EmailCorrectionResolution {
+  const matches = emailMentions(text);
+  if (matches.length === 0) return { kind: "none" };
+
+  const distinctEmails = [...new Set(matches.map((match) => match.email))];
+  if (distinctEmails.length === 1) {
+    const email = distinctEmails[0];
+    const mention = matches[0];
+    if (!email || !mention) return { kind: "none" };
+    const rejected =
+      NEGATIVE_EMAIL_CORRECTION_CUE.test(text.slice(0, mention.start)) ||
+      NEGATIVE_EMAIL_CORRECTION_SUFFIX.test(text.slice(mention.end));
+    return rejected ? { kind: "ambiguous" } : { kind: "resolved", email };
   }
-  return null;
+
+  const cues = matches.map((match, index) => {
+    const previousEnd = index === 0 ? 0 : (matches[index - 1]?.end ?? 0);
+    const prefix = text.slice(previousEnd, match.start);
+    return {
+      email: match.email,
+      positive: POSITIVE_EMAIL_CORRECTION_CUE.test(prefix),
+      negative: NEGATIVE_EMAIL_CORRECTION_CUE.test(prefix),
+    };
+  });
+  const selectedEmails = new Set(cues.filter((cue) => cue.positive && !cue.negative).map((cue) => cue.email));
+  const rejectedEmails = new Set(cues.filter((cue) => cue.negative).map((cue) => cue.email));
+  if (selectedEmails.size === 1) {
+    const selectedEmail = [...selectedEmails][0];
+    if (!selectedEmail) return { kind: "ambiguous" };
+    const everyOtherEmailIsRejected = distinctEmails.every(
+      (email) => email === selectedEmail || rejectedEmails.has(email),
+    );
+    if (everyOtherEmailIsRejected) return { kind: "resolved", email: selectedEmail };
+  }
+
+  return { kind: "ambiguous" };
+}
+
+/** Resolve the latest explicit visitor correction, including conservative spoken forms. */
+export function resolveLatestEmailCorrection(transcript: EvalTranscriptTurn[]): EmailCorrectionResolution {
+  for (let index = transcript.length - 1; index >= 0; index -= 1) {
+    const turn = transcript[index];
+    if (turn?.role !== "user" || !EXPLICIT_CORRECTION_PATTERN.test(turn.text)) continue;
+    const resolution = resolveEmailCorrectionTurn(turn.text);
+    if (resolution.kind !== "none") return resolution;
+  }
+  return { kind: "none" };
 }
 
 export type ConversationStyleSignals = {
@@ -814,6 +911,7 @@ export type SessionEval = {
   speed: number | null;
   variant: string | null;
   mixedVoiceProfile: boolean;
+  mixedExperimentProfile: boolean;
   transport: TransportSignals;
   latency: LatencySignals;
   captureIntegrity: CaptureIntegritySignals;
@@ -840,6 +938,7 @@ export function buildSessionEval(session: VoiceEvalSession, score: JudgeScore | 
     speed: session.speed ?? null,
     variant: session.variant ?? null,
     mixedVoiceProfile: session.mixedVoiceProfile ?? false,
+    mixedExperimentProfile: session.mixedExperimentProfile ?? false,
     transport: deriveTransportSignals(session),
     latency: deriveLatencySignals(session),
     captureIntegrity: deriveCaptureIntegritySignals(session),
@@ -885,6 +984,7 @@ export type EvalAggregate = {
     rejectedEmailCaptures: number;
     unconfirmedEmailFailures: number;
     staleEmailSubmissions: number;
+    unattributedEmailSubmissions: number;
     totalFailures: number;
   };
   conversationStyle: {
@@ -995,6 +1095,10 @@ export function aggregateEvals(evals: SessionEval[]): EvalAggregate {
       rejectedEmailCaptures: evals.reduce((sum, entry) => sum + entry.captureIntegrity.rejectedEmailCaptures, 0),
       unconfirmedEmailFailures: evals.reduce((sum, entry) => sum + entry.captureIntegrity.unconfirmedEmailFailures, 0),
       staleEmailSubmissions: evals.reduce((sum, entry) => sum + entry.captureIntegrity.staleEmailSubmissions, 0),
+      unattributedEmailSubmissions: evals.reduce(
+        (sum, entry) => sum + entry.captureIntegrity.unattributedEmailSubmissions,
+        0,
+      ),
       totalFailures: evals.reduce((sum, entry) => sum + entry.captureIntegrity.totalFailures, 0),
     },
     conversationStyle: {
@@ -1029,6 +1133,7 @@ function countBy<T, K extends string>(items: T[], keys: readonly K[], pick: (ite
 export function aggregateEvalsByRuntimeProfile(evals: SessionEval[]): Record<string, EvalAggregate> {
   const groups = new Map<string, SessionEval[]>();
   for (const entry of evals) {
+    if (entry.mixedExperimentProfile || entry.mixedVoiceProfile) continue;
     const group = groups.get(entry.runtimeProfile);
     if (group) group.push(entry);
     else groups.set(entry.runtimeProfile, [entry]);
@@ -1039,6 +1144,7 @@ export function aggregateEvalsByRuntimeProfile(evals: SessionEval[]): Record<str
 export function aggregateEvalsByExperimentCell(evals: SessionEval[]): Record<string, EvalAggregate> {
   const groups = new Map<string, SessionEval[]>();
   for (const entry of evals) {
+    if (entry.mixedExperimentProfile || entry.mixedVoiceProfile) continue;
     const variant = entry.variant ?? "env-default";
     const voice = entry.voice ?? "unknown-voice";
     const speed = entry.speed ?? "unknown-speed";
@@ -1063,6 +1169,7 @@ export function validateVoiceExperimentEvidence(evals: SessionEval[]): VoiceExpe
           entry.reasoningCell === "low" &&
           entry.variant === null &&
           !entry.mixedVoiceProfile &&
+          !entry.mixedExperimentProfile &&
           entry.voice !== null &&
           entry.speed !== null,
       )
@@ -1070,6 +1177,13 @@ export function validateVoiceExperimentEvidence(evals: SessionEval[]): VoiceExpe
   );
   const controlVoiceProfile = controlVoiceProfiles.size === 1 ? [...controlVoiceProfiles][0] : null;
   const failures = evals.flatMap((entry) => {
+    if (entry.mixedExperimentProfile) {
+      return [`${entry.reviewId} spans multiple complete experiment profiles across reconnects`];
+    }
+    if (entry.mixedVoiceProfile) {
+      return [`${entry.reviewId} spans multiple voice profiles across reconnects`];
+    }
+
     const missingAttribution = [
       entry.voice === null ? "voice" : null,
       entry.speed === null ? "speed" : null,
@@ -1087,9 +1201,6 @@ export function validateVoiceExperimentEvidence(evals: SessionEval[]): VoiceExpe
       }
       if (voiceProfileKey(entry) !== controlVoiceProfile) activeDimensions.push("voice profile");
     }
-    if (entry.mixedVoiceProfile && !activeDimensions.includes("voice profile")) {
-      activeDimensions.push("voice profile");
-    }
     return activeDimensions.length > 1
       ? [
           `${entry.reviewId} varies multiple experiment dimensions: ${activeDimensions.join(", ")} ` +
@@ -1102,6 +1213,29 @@ export function validateVoiceExperimentEvidence(evals: SessionEval[]): VoiceExpe
 
 function voiceProfileKey(entry: { voice?: string | null; speed?: number | null; variant?: string | null }) {
   return `${entry.variant ?? "env-default"}\u0000${entry.voice ?? "__missing__"}\u0000${entry.speed ?? "__missing__"}`;
+}
+
+function experimentProfileKey(
+  entry: Pick<
+    VoiceEvalSession,
+    | "deploymentEnvironment"
+    | "runtimeProfile"
+    | "inputPolicy"
+    | "modelCell"
+    | "reasoningCell"
+    | "variant"
+    | "voice"
+    | "speed"
+  >,
+) {
+  return [
+    entry.deploymentEnvironment ?? "__missing_environment__",
+    entry.runtimeProfile ?? "__missing_runtime__",
+    entry.inputPolicy ?? "__missing_input_policy__",
+    entry.modelCell ?? "__missing_model_cell__",
+    entry.reasoningCell ?? "__missing_reasoning_cell__",
+    voiceProfileKey(entry),
+  ].join("\u0000");
 }
 
 export type EvalThresholds = {

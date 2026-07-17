@@ -267,7 +267,7 @@ async function sendClickUpTask(lead: StoredLead): Promise<NotificationResult> {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      name: `Oriental lead: ${lead.form.name || lead.form.email} · ${segment.label} · ${lead.id.slice(0, 8)}`,
+      name: `Mereka at Oriental lead: ${lead.form.name || lead.form.email} · ${segment.label} · ${lead.id.slice(0, 8)}`,
       markdown_content: buildClickUpTaskMarkdown(lead),
       tags: uniqueClickUpTags(["oriental", lead.source, segment.id]),
       notify_all: false,
@@ -309,7 +309,7 @@ function buildClickUpTaskMarkdown(lead: StoredLead) {
     .map((turn) => `- **${turn.role === "assistant" ? "Reka" : "Visitor"}:** ${turn.text}`)
     .join("\n");
   return [
-    `## New Oriental Building lead`,
+    `## New Mereka at Oriental lead`,
     ``,
     `**Lead ID:** ${lead.id}`,
     `**Segment:** ${segment.label} (${segment.id})`,

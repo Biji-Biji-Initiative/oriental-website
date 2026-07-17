@@ -138,6 +138,239 @@ describe("eval-voice aggregate-only mode", () => {
     }
   });
 
+  it("joins immutable submitted email evidence and hard-gates its PII-free mismatch by default", async () => {
+    const requests: Array<{ body: Record<string, unknown> }> = [];
+    const submittedSession = voiceSession({
+      leadId: "private-lead-id",
+      submittedAt: 100,
+      voice: "coral",
+      speed: 1.28,
+      variant: null,
+      captured: { name: "Private", email: "mutable@example.com", org: "", message: "" },
+      transcript: [{ role: "user", text: "Actually use new dot address at example dot com." }],
+    });
+    const server = createServer((request, response) => {
+      let body = "";
+      request.setEncoding("utf8");
+      request.on("data", (chunk) => {
+        body += chunk;
+      });
+      request.on("end", () => {
+        const parsedBody = JSON.parse(body) as Record<string, unknown>;
+        requests.push({ body: parsedBody });
+        const value =
+          parsedBody.path === "leads:adminLeadTable"
+            ? [{ leadId: "private-lead-id", email: "old@example.com" }]
+            : [submittedSession];
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ status: "success", value }));
+      });
+    });
+    await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("mock Convex server did not bind a port");
+    const cwd = await mkdtemp(resolve(tmpdir(), "oriental-voice-audit-attribution-"));
+    temporaryDirectories.push(cwd);
+    const repositoryRoot = resolve(import.meta.dirname, "..");
+
+    try {
+      let stdout = "";
+      try {
+        await execFileAsync(
+          resolve(repositoryRoot, "node_modules/.bin/tsx"),
+          [resolve(repositoryRoot, "scripts/eval-voice.ts"), "--aggregate-only", "--limit", "10"],
+          {
+            cwd,
+            env: {
+              ...process.env,
+              CONVEX_URL: `http://127.0.0.1:${address.port}`,
+              CONVEX_INGEST_SECRET: "test-ingest-secret",
+            },
+          },
+        );
+        throw new Error("expected capture-integrity gate to fail");
+      } catch (error) {
+        const failure = error as { code?: number; stdout?: string };
+        expect(failure.code).toBe(2);
+        stdout = failure.stdout ?? "";
+      }
+
+      const report = JSON.parse(stdout) as {
+        aggregate: { captureIntegrity: { staleEmailSubmissions: number; unattributedEmailSubmissions: number } };
+        gate: { ok: boolean; failures: string[] };
+      };
+      expect(report.aggregate.captureIntegrity).toMatchObject({
+        staleEmailSubmissions: 1,
+        unattributedEmailSubmissions: 0,
+      });
+      expect(report.gate).toEqual({ ok: false, failures: ["captureIntegrityFailures 1 > 0"] });
+      expect(JSON.stringify(report)).not.toMatch(
+        /private-lead-id|mutable@example\.com|old@example\.com|new dot address at example dot com/i,
+      );
+      expect(requests).toHaveLength(2);
+      expect(requests[1]?.body).toMatchObject({
+        path: "leads:adminLeadTable",
+        args: [{ ingestSecret: "test-ingest-secret", limit: 1000 }],
+      });
+      expect(await readdir(cwd)).toEqual([]);
+    } finally {
+      await new Promise<void>((resolveClose, rejectClose) =>
+        server.close((error) => (error ? rejectClose(error) : resolveClose())),
+      );
+    }
+  });
+
+  it("hard-gates an anaphorically rejected submitted address without querying or exposing lead PII", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const rejectedSession = voiceSession({
+      leadId: "private-rejected-lead-id",
+      submittedAt: 100,
+      voice: "coral",
+      speed: 1.28,
+      variant: null,
+      captured: { name: "Private", email: "private-rejected@example.com", org: "", message: "" },
+      transcript: [{ role: "user", text: "Actually private-rejected@example.com, not that one." }],
+    });
+    const server = createServer((request, response) => {
+      let body = "";
+      request.setEncoding("utf8");
+      request.on("data", (chunk) => {
+        body += chunk;
+      });
+      request.on("end", () => {
+        const parsedBody = JSON.parse(body) as Record<string, unknown>;
+        requests.push(parsedBody);
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ status: "success", value: [rejectedSession] }));
+      });
+    });
+    await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("mock Convex server did not bind a port");
+    const cwd = await mkdtemp(resolve(tmpdir(), "oriental-voice-audit-rejected-address-"));
+    temporaryDirectories.push(cwd);
+    const repositoryRoot = resolve(import.meta.dirname, "..");
+
+    try {
+      let stdout = "";
+      try {
+        await execFileAsync(
+          resolve(repositoryRoot, "node_modules/.bin/tsx"),
+          [resolve(repositoryRoot, "scripts/eval-voice.ts"), "--aggregate-only", "--limit", "10"],
+          {
+            cwd,
+            env: {
+              ...process.env,
+              CONVEX_URL: `http://127.0.0.1:${address.port}`,
+              CONVEX_INGEST_SECRET: "test-ingest-secret",
+            },
+          },
+        );
+        throw new Error("expected rejected-address evidence gate to fail");
+      } catch (error) {
+        const failure = error as { code?: number; stdout?: string };
+        expect(failure.code).toBe(2);
+        stdout = failure.stdout ?? "";
+      }
+
+      const report = JSON.parse(stdout) as {
+        aggregate: { captureIntegrity: { staleEmailSubmissions: number; unattributedEmailSubmissions: number } };
+        gate: { ok: boolean; failures: string[] };
+      };
+      expect(report.aggregate.captureIntegrity).toMatchObject({
+        staleEmailSubmissions: 0,
+        unattributedEmailSubmissions: 1,
+      });
+      expect(report.gate).toEqual({ ok: false, failures: ["captureIntegrityFailures 1 > 0"] });
+      expect(requests).toHaveLength(1);
+      expect(requests[0]).toMatchObject({ path: "leads:voiceSessionsForEval" });
+      expect(JSON.stringify(report)).not.toMatch(
+        /private-rejected-lead-id|private-rejected@example\.com|not that one/i,
+      );
+      expect(await readdir(cwd)).toEqual([]);
+    } finally {
+      await new Promise<void>((resolveClose, rejectClose) =>
+        server.close((error) => (error ? rejectClose(error) : resolveClose())),
+      );
+    }
+  });
+
+  it.each([
+    "query-error",
+    "missing-join",
+  ] as const)("fails closed generically when submitted-email attribution has a %s", async (failureMode) => {
+    const submittedSession = voiceSession({
+      leadId: "private-lead-id",
+      submittedAt: 100,
+      voice: "coral",
+      speed: 1.28,
+      variant: null,
+      transcript: [{ role: "user", text: "Actually use private dot address at example dot com." }],
+    });
+    const server = createServer((request, response) => {
+      let body = "";
+      request.setEncoding("utf8");
+      request.on("data", (chunk) => {
+        body += chunk;
+      });
+      request.on("end", () => {
+        const parsedBody = JSON.parse(body) as Record<string, unknown>;
+        response.writeHead(200, { "content-type": "application/json" });
+        if (parsedBody.path !== "leads:adminLeadTable") {
+          response.end(JSON.stringify({ status: "success", value: [submittedSession] }));
+        } else if (failureMode === "query-error") {
+          response.end(JSON.stringify({ status: "error", errorMessage: "private upstream attribution error" }));
+        } else {
+          response.end(JSON.stringify({ status: "success", value: [] }));
+        }
+      });
+    });
+    await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("mock Convex server did not bind a port");
+    const cwd = await mkdtemp(resolve(tmpdir(), `oriental-voice-audit-${failureMode}-`));
+    temporaryDirectories.push(cwd);
+    const repositoryRoot = resolve(import.meta.dirname, "..");
+
+    try {
+      let stderr = "";
+      try {
+        await execFileAsync(
+          resolve(repositoryRoot, "node_modules/.bin/tsx"),
+          [resolve(repositoryRoot, "scripts/eval-voice.ts"), "--aggregate-only", "--limit", "10"],
+          {
+            cwd,
+            env: {
+              ...process.env,
+              CONVEX_URL: `http://127.0.0.1:${address.port}`,
+              CONVEX_INGEST_SECRET: "test-ingest-secret",
+            },
+          },
+        );
+        throw new Error("expected submitted-email attribution to fail");
+      } catch (error) {
+        stderr = String((error as { stderr?: string }).stderr ?? "");
+      }
+
+      expect(stderr).toContain(
+        failureMode === "query-error"
+          ? "Submitted email attribution query failed; capture-integrity evidence is unavailable."
+          : "Submitted email attribution is incomplete; capture-integrity evidence is unavailable.",
+      );
+      expect(stderr).not.toMatch(
+        /private-lead-id|private dot address at example dot com|private upstream attribution error/i,
+      );
+      expect(await readdir(cwd)).toEqual([]);
+    } finally {
+      await new Promise<void>((resolveClose, rejectClose) =>
+        server.close((error) => (error ? rejectClose(error) : resolveClose())),
+      );
+    }
+  });
+
   it("fails closed without exposing identifiers when profile enrichment is incomplete", async () => {
     const server = createServer((request, response) => {
       let body = "";

@@ -64,7 +64,7 @@ describe("notification payload builders", () => {
   it("builds owner email copy with routing metadata and transcript context", () => {
     const notification = buildOwnerNotification(lead());
 
-    expect(notification.subject).toBe("[Oriental] Technology lead from CogWorks <script>");
+    expect(notification.subject).toBe("[Mereka at Oriental] Technology lead from CogWorks <script>");
     expect(notification.text).toContain("Lead ID: lead_123");
     expect(notification.text).toContain("Source: Voice workspace");
     expect(notification.text).toContain("Segment: Technology (technology)");
@@ -86,10 +86,10 @@ describe("notification payload builders", () => {
     const payload = buildSlackPayload(lead());
     const body = JSON.stringify(payload);
 
-    expect(payload.text).toBe("New Oriental lead for Gurpreet: Alex Tan from CogWorks <script>");
+    expect(payload.text).toBe("New Mereka at Oriental lead for Gurpreet: Alex Tan from CogWorks <script>");
     expect(payload.blocks[0]).toMatchObject({
       type: "header",
-      text: { type: "plain_text", text: "New Oriental lead · Technology" },
+      text: { type: "plain_text", text: "New Mereka at Oriental lead · Technology" },
     });
     expect(body).toContain("<mailto:alex@example.com|alex@example.com>");
     expect(body).toContain("Technology · Voice workspace · Lead lead_123");
@@ -376,7 +376,8 @@ describe("notifyClickUp", () => {
     );
     const init = fetchMock.mock.calls[0]?.[1];
     const payload = JSON.parse(String(init?.body));
-    expect(payload.name).toBe("Oriental lead: Alex Tan · Technology · lead_123");
+    expect(payload.name).toBe("Mereka at Oriental lead: Alex Tan · Technology · lead_123");
+    expect(payload.markdown_content).toContain("## New Mereka at Oriental lead");
     expect(payload.markdown_content).toContain("**Lead ID:** lead_123");
     expect(payload.markdown_content).toContain("### Voice transcript");
     expect(payload.tags).toEqual(["oriental", "voice", "technology"]);
