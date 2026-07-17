@@ -60,6 +60,12 @@ export type VoiceRuntimeState = {
   activeResponseTranscriptBinding?: { pending: boolean; itemId?: string };
   activeResponseStaleForEmail?: boolean;
   emailGroundingAwaitingTranscript?: { value: string; userTurnCount: number; itemId?: string };
+  /** Legacy untagged transcriptions committed before clear-all. */
+  ignoredPendingTranscripts?: number;
+  /** Tagged transcriptions committed before clear-all that must not restore erased PII. */
+  ignoredUserTranscriptIds?: string[];
+  /** After clear-all, accept only uniquely tagged transcriptions seen in a new commit event. */
+  requireCommittedUserTranscriptIds?: boolean;
   activeResponse?: boolean;
   /** Streaming caption of what the assistant is saying right now. */
   assistantDraft?: string;
@@ -102,8 +108,8 @@ export type RealtimeServerEvent = {
   type?: string;
   delta?: string;
   transcript?: string;
-  event_id?: string;
   item_id?: string;
+  event_id?: string;
   error?: { message?: string; code?: string; event_id?: string };
   rate_limits?: Array<Record<string, unknown>>;
   usage?: RealtimeUsage;
@@ -160,7 +166,7 @@ export function isVoiceCaptureIntegrityIssue(error: VoiceRuntimeError): boolean 
 
 /** Record a message the visitor typed into the live chat as a user transcript turn. */
 export function appendTypedUserMessage(state: VoiceRuntimeState, text: string): VoiceRuntimeState {
-  return applyTentativeEmail(appendTranscript(state, "user", text), text, "typed");
+  return applyUserEmailUpdate(appendTranscript(state, "user", text), text, "typed");
 }
 
 export function confirmedEmailVerification(
@@ -192,6 +198,31 @@ export function reduceRealtimeServerEvent(
     : current;
   state = invalidateSupersededEmailVerification(state);
   const eventTranscript = asString(event.transcript);
+  const settlesUserTranscription =
+    event.type === "conversation.item.input_audio_transcription.completed" ||
+    event.type === "conversation.item.input_audio_transcription.failed";
+  const settledTranscriptId = asString(event.item_id);
+  const pendingTranscriptIds = state.pendingUserTranscriptIds ?? [];
+  const ignoredTranscriptIds = state.ignoredUserTranscriptIds ?? [];
+  const settlesPendingId = Boolean(settledTranscriptId && pendingTranscriptIds.includes(settledTranscriptId));
+  const ignoresSettledId = Boolean(settledTranscriptId && ignoredTranscriptIds.includes(settledTranscriptId));
+  const ignoresUnknownSettledId = Boolean(
+    settlesUserTranscription &&
+      state.requireCommittedUserTranscriptIds &&
+      settledTranscriptId &&
+      !settlesPendingId &&
+      !ignoresSettledId,
+  );
+  const ignoresLegacySettledTranscript =
+    settlesUserTranscription &&
+    !settledTranscriptId &&
+    (Boolean(state.requireCommittedUserTranscriptIds) || (state.ignoredPendingTranscripts ?? 0) > 0);
+  const settlesLegacyPendingTranscript =
+    settlesUserTranscription &&
+    !settledTranscriptId &&
+    !ignoresLegacySettledTranscript &&
+    (state.pendingUserTranscripts ?? 0) > 0;
+  const ignoreSettledTranscription = ignoresSettledId || ignoresUnknownSettledId || ignoresLegacySettledTranscript;
 
   if (event.type === "response.output_audio_transcript.delta") {
     const delta = asString(event.delta);
@@ -205,29 +236,49 @@ export function reduceRealtimeServerEvent(
   }
 
   if (event.type === "input_audio_buffer.committed") {
+    const committedTranscriptId = asString(event.item_id);
+    const duplicateOrIgnoredId = Boolean(
+      committedTranscriptId &&
+        [...(state.pendingUserTranscriptIds ?? []), ...(state.ignoredUserTranscriptIds ?? [])].includes(
+          committedTranscriptId,
+        ),
+    );
+    const unsafeUntaggedCommit = Boolean(state.requireCommittedUserTranscriptIds && !committedTranscriptId);
+    if (!duplicateOrIgnoredId && !unsafeUntaggedCommit) {
+      state = {
+        ...state,
+        pendingUserTranscripts: (state.pendingUserTranscripts ?? 0) + 1,
+        ...(committedTranscriptId
+          ? { pendingUserTranscriptIds: [...(state.pendingUserTranscriptIds ?? []), committedTranscriptId] }
+          : {}),
+      };
+    }
+  }
+
+  if (settlesUserTranscription) {
     state = {
       ...state,
-      pendingUserTranscripts: (state.pendingUserTranscripts ?? 0) + 1,
-      ...(event.item_id
-        ? { pendingUserTranscriptIds: [...(state.pendingUserTranscriptIds ?? []), event.item_id] }
-        : {}),
+      pendingUserTranscripts:
+        settlesPendingId || settlesLegacyPendingTranscript
+          ? Math.max(0, (state.pendingUserTranscripts ?? 0) - 1)
+          : state.pendingUserTranscripts,
+      pendingUserTranscriptIds: settledTranscriptId
+        ? pendingTranscriptIds.filter((id) => id !== settledTranscriptId)
+        : pendingTranscriptIds,
+      ignoredPendingTranscripts: ignoresLegacySettledTranscript
+        ? Math.max(0, (state.ignoredPendingTranscripts ?? 0) - 1)
+        : state.ignoredPendingTranscripts,
+      // Keep tagged tombstones for the rest of this voice session. A duplicate
+      // completion or a protocol-invalid ID reuse must never restore cleared PII.
+      ignoredUserTranscriptIds: ignoredTranscriptIds,
     };
   }
 
   if (
-    event.type === "conversation.item.input_audio_transcription.completed" ||
-    event.type === "conversation.item.input_audio_transcription.failed"
+    event.type === "conversation.item.input_audio_transcription.completed" &&
+    eventTranscript &&
+    !ignoreSettledTranscription
   ) {
-    state = {
-      ...state,
-      pendingUserTranscripts: Math.max(0, (state.pendingUserTranscripts ?? 0) - 1),
-      ...(event.item_id
-        ? { pendingUserTranscriptIds: (state.pendingUserTranscriptIds ?? []).filter((id) => id !== event.item_id) }
-        : {}),
-    };
-  }
-
-  if (event.type === "conversation.item.input_audio_transcription.completed" && eventTranscript) {
     const completionPredatesVerification = Boolean(
       event.item_id && state.emailVerificationIgnoredTranscriptIds?.includes(event.item_id),
     );
@@ -352,7 +403,9 @@ function applyFunctionCall(
       }
       const capture = applyCaptureField(args, next.captured, next.transcript, transcriptionPendingForCapture(next));
       if (!capture.ok) {
-        output = capture.output;
+        const invalidated = invalidateRejectedEmailReplacement(next, args);
+        next = invalidated.state;
+        output = emailCaptureRecovery(capture.output, toCapturedKey(args.key) === "email", invalidated.invalidated);
         break;
       }
       next = applyCaptureResult(next, capture);
@@ -385,6 +438,7 @@ function applyFunctionCall(
       const applied: Array<{ key: keyof CapturedLead; mode: "append" | "replace" }> = [];
       let emailConfidence: VoiceEmailCaptureConfidence | undefined;
       let emailTranscriptionPending = false;
+      let emailInvalidated = false;
       const rejected: Array<{ index: number; output: Record<string, unknown> }> = [];
       let duplicateFailure: { index: number; output: Record<string, unknown> } | null = null;
       for (const [index, field] of fields.entries()) {
@@ -403,6 +457,14 @@ function applyFunctionCall(
         );
         if (!capture.ok) {
           rejected.push({ index, output: capture.output });
+          if (key === "email") {
+            const invalidated = invalidateRejectedEmailReplacement(
+              { ...next, captured },
+              fieldArgs as Record<string, unknown>,
+            );
+            captured = invalidated.state.captured;
+            emailInvalidated ||= invalidated.invalidated;
+          }
           continue;
         }
         captured = capture.captured;
@@ -425,25 +487,32 @@ function applyFunctionCall(
       next = {
         ...next,
         captured,
-        ...(emailApplied
+        ...(emailInvalidated
           ? {
-              emailVerification: spokenEmailVerification(
-                captured.email,
-                next.emailVerification,
-                next.emailCaptureMode,
-                emailConfidence,
-              ),
-              emailVerificationUserTurnSequence: countUserTurns(next.transcript),
+              emailVerification: undefined,
+              emailVerificationUserTurnSequence: undefined,
               emailVerificationIgnoredTranscriptIds: undefined,
-              emailGroundingAwaitingTranscript: emailTranscriptionPending
-                ? {
-                    value: captured.email,
-                    userTurnCount: countUserTurns(next.transcript),
-                    itemId: pendingTranscriptIdForCapture(next),
-                  }
-                : undefined,
+              emailGroundingAwaitingTranscript: undefined,
             }
-          : {}),
+          : emailApplied
+            ? {
+                emailVerification: spokenEmailVerification(
+                  captured.email,
+                  next.emailVerification,
+                  next.emailCaptureMode,
+                  emailConfidence,
+                ),
+                emailVerificationUserTurnSequence: countUserTurns(next.transcript),
+                emailVerificationIgnoredTranscriptIds: undefined,
+                emailGroundingAwaitingTranscript: emailTranscriptionPending
+                  ? {
+                      value: captured.email,
+                      userTurnCount: countUserTurns(next.transcript),
+                      itemId: pendingTranscriptIdForCapture(next),
+                    }
+                  : undefined,
+              }
+            : {}),
       };
       output =
         rejected.length > 0
@@ -454,7 +523,16 @@ function applyFunctionCall(
               rejectedFields: rejected,
               detail: rejected[0]?.output,
               captured,
-              retry: "Keep the accepted fields. Retry or clarify only the rejected fields.",
+              retry: rejected.some((entry) => entry.output.key === "email")
+                ? "Keep accepted fields. Highlight the visible email field now; do not request another spoken spelling."
+                : "Keep the accepted fields. Retry or clarify only the rejected fields.",
+              ...(rejected.some((entry) => entry.output.key === "email")
+                ? {
+                    nextAction:
+                      "Tell the visitor the email field is ready for typing, then continue their idea without focusing on email.",
+                    previousEmailInvalidated: emailInvalidated,
+                  }
+                : {}),
               ...(emailApplied ? emailConfirmationInstructions(next) : {}),
             }
           : {
@@ -520,6 +598,39 @@ function applyFunctionCall(
       } else {
         output = { ok: false, error: "invalid_field" };
       }
+      break;
+    }
+    case "clear_fields": {
+      if (args.scope !== "all") {
+        output = { ok: false, error: "invalid_clear_scope" };
+        break;
+      }
+      const clearedFields = CAPTURED_LEAD_KEYS.filter((key) => Boolean(next.captured[key].trim()));
+      const pendingUserTranscriptIds = next.pendingUserTranscriptIds ?? [];
+      const ignoredPendingTranscripts = Math.max(
+        0,
+        (next.pendingUserTranscripts ?? 0) - pendingUserTranscriptIds.length,
+      );
+      next = {
+        ...next,
+        captured: { ...emptyCapturedLead },
+        emailVerification: undefined,
+        emailVerificationUserTurnSequence: undefined,
+        emailVerificationIgnoredTranscriptIds: undefined,
+        emailGroundingAwaitingTranscript: undefined,
+        routeRequested: false,
+        transcript: [],
+        assistantDraft: "",
+        pendingUserTranscripts: 0,
+        pendingUserTranscriptIds: [],
+        ignoredPendingTranscripts,
+        ignoredUserTranscriptIds: [
+          ...(next.ignoredUserTranscriptIds ?? []),
+          ...pendingUserTranscriptIds.filter((id) => !(next.ignoredUserTranscriptIds ?? []).includes(id)),
+        ].slice(-100),
+        requireCommittedUserTranscriptIds: true,
+      };
+      output = { ok: true, cleared: true, clearedFields, captured: next.captured };
       break;
     }
     case "summarise_lead": {
@@ -633,20 +744,26 @@ function appendTranscript(
   return { ...state, transcript: [...state.transcript, { role, text: trimmed }] };
 }
 
-function applyTentativeEmail(state: VoiceRuntimeState, text: string, source: "speech" | "typed"): VoiceRuntimeState {
-  if (state.captured.email.trim()) {
-    return emailCorrectionInvalidates(text, state.captured.email)
-      ? {
-          ...state,
-          emailVerification: undefined,
-          emailVerificationUserTurnSequence: undefined,
-          emailVerificationIgnoredTranscriptIds: undefined,
-          emailGroundingAwaitingTranscript: undefined,
-        }
-      : state;
+function applyUserEmailUpdate(state: VoiceRuntimeState, text: string, source: "speech" | "typed"): VoiceRuntimeState {
+  const currentEmail = state.captured.email.trim();
+  const correctedLiteral = hasEmailCorrectionLanguage(text) ? getLiteralEmailMentions(text).at(-1)?.email : undefined;
+  const email = correctedLiteral ?? extractExplicitVisitorEmail(text);
+  if (!email) {
+    if (!currentEmail || (!hasOwnedEmailReplacementIntent(text) && !hasShortContextualEmailCorrection(state, text))) {
+      return state;
+    }
+    return {
+      ...state,
+      captured: { ...state.captured, email: "" },
+      emailVerification: undefined,
+      emailVerificationUserTurnSequence: undefined,
+      emailVerificationIgnoredTranscriptIds: undefined,
+      emailGroundingAwaitingTranscript: undefined,
+      activeResponseStaleForEmail:
+        source === "typed" && state.activeResponse ? true : state.activeResponseStaleForEmail,
+    };
   }
-  const email = extractExplicitVisitorEmail(text);
-  if (!email) return state;
+  if (email.toLowerCase() === currentEmail.toLowerCase()) return state;
   const adaptiveSpeech = source === "speech" && state.emailCaptureMode === "adaptive";
   return {
     ...state,
@@ -680,7 +797,7 @@ function reconcileCompletedEmailTranscription(
     ) {
       return state;
     }
-    return applyTentativeEmail(state, text, "speech");
+    return applyUserEmailUpdate(state, text, "speech");
   }
   const matchesAwaitedTranscript = awaiting.itemId
     ? completedItemId === awaiting.itemId
@@ -692,12 +809,11 @@ function reconcileCompletedEmailTranscription(
     emailGroundingAwaitingTranscript: undefined,
     emailVerificationUserTurnSequence: countUserTurns(state.transcript),
   };
-  const canonicalText = canonicalizeEmailSpeech(text);
   const hasEmailCue = /@|\b(?:e-?mail|email address)\b|\b(?:at|dot|point|underscore|dash|hyphen|plus)\b/i.test(text);
-  const maxAsrEdits = Math.min(3, Math.max(1, Math.floor(email.length * 0.18)));
+  const maxAsrEdits = email.length >= 10 ? Math.min(3, Math.max(1, Math.floor(email.length * 0.18))) : 0;
+  const exactPendingCapture = turnContainsExactEmail(text, email);
   const supportsPendingCapture =
-    turnContainsExactEmail(text, email) ||
-    (hasEmailCue && approxSubstringDistance(canonicalText, email) <= maxAsrEdits);
+    exactPendingCapture || (hasEmailCue && spokenEmailSubstitutionDistance(text, email) <= maxAsrEdits);
   const explicitlySupersedesPendingCapture =
     emailTurnRejectsTarget(text, email) ||
     (hasContextualEmailCorrection(text, email) && hasEmailCorrectionLanguage(text)) ||
@@ -710,7 +826,18 @@ function reconcileCompletedEmailTranscription(
       emailVerificationIgnoredTranscriptIds: undefined,
     };
   }
-  if (supportsPendingCapture) return settled;
+  if (supportsPendingCapture) {
+    const confidence: VoiceEmailCaptureConfidence = exactPendingCapture ? "high" : "medium";
+    return {
+      ...settled,
+      emailVerification: spokenEmailVerification(
+        email,
+        settled.emailVerification,
+        settled.emailCaptureMode,
+        confidence,
+      ),
+    };
+  }
   return emailCorrectionInvalidates(text, email)
     ? {
         ...settled,
@@ -848,6 +975,8 @@ function literalClauseRejectsDifferentAddress(text: string, currentEmail: string
 function emailClauseAffirmsAddress(text: string) {
   return /\b(?:yes|correct|right|that'?s\s+(?:correct|right)|it\s+is)\b/i.test(text);
 }
+
+const CAPTURED_LEAD_KEYS = Object.keys(emptyCapturedLead) as Array<keyof CapturedLead>;
 
 function accumulateUsage(
   state: VoiceRuntimeState,
@@ -1057,10 +1186,15 @@ function spokenEmailVerification(
   ) {
     return existing;
   }
-  if (mode === "adaptive") {
+  if (mode === "adaptive" && confidence === "high") {
     return { value: email.trim(), source: "speech", status: "confirmed", confidence: confidence ?? "medium" };
   }
-  return { value: email.trim(), source: "speech", status: "pending" };
+  return {
+    value: email.trim(),
+    source: "speech",
+    status: "pending",
+    ...(mode === "adaptive" && confidence ? { confidence } : {}),
+  };
 }
 
 function applyCaptureField(
@@ -1203,7 +1337,17 @@ function validateEmailCaptureGrounding(
   transcriptionPending: boolean,
 ): { ok: true; emailConfidence: VoiceEmailCaptureConfidence } | { ok: false; error: string } {
   const email = value.trim().toLowerCase();
-  if (!turnContainsExactEmail(evidence, email)) return { ok: false, error: "ungrounded_identity_capture" };
+  // Very short addresses have no room for approximate matching: changing one
+  // character can change the mailbox or domain completely (g@b.com != g@g.com).
+  const maxAsrEdits = email.length >= 10 ? Math.min(3, Math.max(1, Math.floor(email.length * 0.18))) : 0;
+  const evidenceLiteralEmails = getLiteralEmailMentions(evidence);
+  const evidenceHasEmailCue = containsSpokenEmailShape(evidence) || /@|\be-?mail\b/i.test(evidence);
+  const evidenceSupportsEmail =
+    evidenceLiteralEmails.length > 0
+      ? evidenceLiteralEmails.some((mention) => mention.email === email)
+      : turnContainsExactEmail(evidence, email) ||
+        (evidenceHasEmailCue && spokenEmailSubstitutionDistance(evidence, email) <= maxAsrEdits);
+  if (!evidenceSupportsEmail) return { ok: false, error: "ungrounded_identity_capture" };
 
   // A typed turn and a trailing microphone transcription can race each other.
   // Accept an exact recent match unless a newer user turn carries another
@@ -1211,12 +1355,21 @@ function validateEmailCaptureGrounding(
   // an old address override a genuine correction.
   const recentUserTurns = transcript.filter((entry) => entry.role === "user").slice(-6);
   const recentUserText = recentUserTurns.at(-1)?.text ?? "";
-  const canonicalUserText = canonicalizeEmailSpeech(recentUserText);
+  const completedTurnsCarryEmailDecision = recentUserTurns.some(
+    (entry) =>
+      getLiteralEmailMentions(entry.text).length > 0 ||
+      containsSpokenEmailShape(entry.text) ||
+      hasContextualEmailCorrection(entry.text, email),
+  );
+  if (transcriptionPending && !completedTurnsCarryEmailDecision) {
+    return { ok: true, emailConfidence: "medium" };
+  }
   const hasEmailCue = /@|\b(?:e-?mail|email address)\b|\b(?:at|dot|point|underscore|dash|hyphen|plus)\b/i.test(
     recentUserText,
   );
-  const maxAsrEdits = Math.min(3, Math.max(1, Math.floor(email.length * 0.18)));
-  const boundedAsrSupport = hasEmailCue && approxSubstringDistance(canonicalUserText, email) <= maxAsrEdits;
+  const recentLiteralEmails = getLiteralEmailMentions(recentUserText);
+  const spokenSubstitutionDistance = spokenEmailSubstitutionDistance(recentUserText, email);
+  const boundedAsrSupport = hasEmailCue && spokenSubstitutionDistance <= maxAsrEdits;
   if (turnContainsExactEmail(recentUserText, email) && !supersedesRecentEmailGrounding(recentUserText, email)) {
     return { ok: true, emailConfidence: transcriptionPending ? "medium" : "high" };
   }
@@ -1243,12 +1396,20 @@ function validateEmailCaptureGrounding(
   ) {
     return { ok: false, error: "ungrounded_identity_capture" };
   }
-  if (!turnContainsExactEmail(recentUserText, email) && hasEmbeddedEmailCollision(recentUserText, email)) {
+  if (
+    !turnContainsExactEmail(recentUserText, email) &&
+    hasEmbeddedEmailCollision(recentUserText, email) &&
+    spokenSubstitutionDistance > maxAsrEdits
+  ) {
     // Do not treat an address embedded in another address as ASR drift:
     // a@example.com and qa@example.com are different (including spoken forms).
     return { ok: false, error: "ungrounded_identity_capture" };
   }
-  if (transcriptionPending) return { ok: true, emailConfidence: "medium" };
+  if (recentLiteralEmails.length > 0 && !recentLiteralEmails.some((mention) => mention.email === email)) {
+    // A literal address is exact user input, never an ASR candidate. Do not
+    // auto-correct one valid mailbox into another valid mailbox.
+    return { ok: false, error: "ungrounded_identity_capture" };
+  }
 
   // Allow a small ASR spelling disagreement only when the latest turn clearly
   // contains email structure. Adaptive mode records this as medium confidence;
@@ -1280,6 +1441,72 @@ function hasContextualEmailCorrection(text: string, groundedEmail: string) {
     /\b(?:e-?mail(?:\s+address)?|local\s+part|domain|inbox|at\s+sign)\b/i.test(text) ||
     /\b(?:at)\b[^.!?]{0,80}\b(?:dot|point)\b/i.test(text);
   return stronglyAnaphoricCorrection || (hasEmailContext && hasEmailCorrectionLanguage(text));
+}
+
+function hasOwnedEmailReplacementIntent(text: string) {
+  const declaresOwnedEmail = /\b(?:my|use|change|replace|update)\s+(?:e-?mail|email address)\b/i.test(text);
+  return containsSpokenEmailShape(text) && (declaresOwnedEmail || hasEmailCorrectionLanguage(text));
+}
+
+function hasShortContextualEmailCorrection(state: VoiceRuntimeState, text: string) {
+  if (!/^(?:(?:sorry|no)[,.]?\s*)?i\s+(?:meant|said)\s+[\p{Letter}\p{Number}._+-]+[.!]?$/iu.test(text.trim())) {
+    return false;
+  }
+  const previousUserTurn = state.transcript
+    .filter((entry) => entry.role === "user")
+    .slice(0, -1)
+    .at(-1)?.text;
+  return Boolean(
+    previousUserTurn && (containsSpokenEmailShape(previousUserTurn) || /@|\be-?mail\b/i.test(previousUserTurn)),
+  );
+}
+
+function invalidateRejectedEmailReplacement(
+  state: VoiceRuntimeState,
+  args: Record<string, unknown>,
+): { state: VoiceRuntimeState; invalidated: boolean } {
+  if (toCapturedKey(args.key) !== "email") return { state, invalidated: false };
+  const attempted = typeof args.value === "string" ? args.value.trim().toLowerCase() : "";
+  const current = state.captured.email.trim().toLowerCase();
+  if (!current || !isLikelyEmail(attempted) || attempted === current) return { state, invalidated: false };
+
+  const evidence = typeof args.evidence === "string" ? args.evidence.trim() : "";
+  const latestUserText = state.transcript.filter((entry) => entry.role === "user").at(-1)?.text ?? "";
+  const pendingNativeAudio = (state.pendingUserTranscripts ?? 0) > 0 && containsSpokenEmailShape(evidence);
+  const groundedReplacement =
+    turnContainsExactEmail(latestUserText, attempted) ||
+    textApproximatelySupportsEmail(latestUserText, attempted) ||
+    pendingNativeAudio;
+  if (!groundedReplacement) return { state, invalidated: false };
+
+  return {
+    state: {
+      ...state,
+      captured: { ...state.captured, email: "" },
+      emailVerification: undefined,
+    },
+    invalidated: true,
+  };
+}
+
+function textApproximatelySupportsEmail(text: string, email: string) {
+  if (!hasOwnedEmailReplacementIntent(text)) return false;
+  const maxEdits = email.length >= 10 ? Math.min(3, Math.max(1, Math.floor(email.length * 0.18))) : 0;
+  return spokenEmailSubstitutionDistance(text, email) <= maxEdits;
+}
+
+function emailCaptureRecovery(
+  output: Record<string, unknown>,
+  isEmail: boolean,
+  previousEmailInvalidated: boolean,
+): Record<string, unknown> {
+  if (!isEmail) return output;
+  return {
+    ...output,
+    previousEmailInvalidated,
+    nextAction:
+      "Tell the visitor the visible email field is ready for typing, then continue their idea. Do not ask for another spoken spelling.",
+  };
 }
 
 function containsSpokenEmailShape(text: string) {
@@ -1535,6 +1762,24 @@ function turnContainsExactEmail(text: string, groundedEmail: string) {
   return findExactEmailTokenWindow(text, target) !== undefined;
 }
 
+/**
+ * Approximate only a complete spoken address of the same length. This permits
+ * ASR substitutions ("asia" for "asha") but never prefix/suffix edits that
+ * could silently change one valid mailbox into another.
+ */
+function spokenEmailSubstitutionDistance(text: string, groundedEmail: string) {
+  const tokens = getEmailSpeechTokens(text);
+  let best = Number.POSITIVE_INFINITY;
+  for (let start = 0; start < tokens.length; start += 1) {
+    for (let end = start + 1; end <= Math.min(tokens.length, start + 18); end += 1) {
+      const candidate = canonicalizeEmailSpeech(tokens.slice(start, end).join(" "));
+      if (candidate.length !== groundedEmail.length || !isLikelyEmail(candidate)) continue;
+      best = Math.min(best, fullEditDistance(candidate, groundedEmail));
+    }
+  }
+  return best;
+}
+
 function getEmailSpeechTokens(text: string) {
   return (
     text
@@ -1570,10 +1815,16 @@ function findExactEmailTokenWindow(text: string, groundedEmail: string, minimumS
     for (let end = start + 1; end <= Math.min(tokens.length, start + 18); end += 1) {
       if (canonicalizeEmailSpeech(tokens.slice(start, end).join(" ")) !== groundedEmail) continue;
       const previousToken = tokens[start - 1]?.toLowerCase();
+      const targetLocalPart = groundedEmail.split("@")[0] ?? "";
+      const repeatedInitialBeforeFullSpelling =
+        previousToken !== undefined &&
+        targetLocalPart.length >= 4 &&
+        previousToken === targetLocalPart[0]?.toLowerCase();
       const startsInsideSpelledLocalPart =
         previousToken !== undefined &&
         (/^[\p{Letter}\p{Number}]$/u.test(previousToken) ||
-          /^(?:dot|point|underscore|dash|hyphen|plus)$/.test(previousToken));
+          /^(?:dot|point|underscore|dash|hyphen|plus)$/.test(previousToken)) &&
+        !repeatedInitialBeforeFullSpelling;
       if (!startsInsideSpelledLocalPart) return { start, end, tokens };
     }
   }
@@ -1662,7 +1913,7 @@ function fullEditDistance(left: string, right: string) {
 }
 
 function canonicalizeEmailSpeech(value: string): string {
-  return value
+  return collapseHyphenSeparatedLetterRun(value)
     .toLowerCase()
     .normalize("NFKD")
     .replace(/\p{Mark}/gu, "")
@@ -1673,6 +1924,13 @@ function canonicalizeEmailSpeech(value: string): string {
     .replace(/\b(dash|hyphen)\b/gu, " - ")
     .replace(/\b(plus)\b/gu, " + ")
     .replace(/[^\p{Letter}\p{Number}@._+-]+/gu, "");
+}
+
+function collapseHyphenSeparatedLetterRun(value: string) {
+  return value.replace(
+    /(^|[^\p{Letter}\p{Number}])((?:[\p{Letter}\p{Number}]-){1,}[\p{Letter}\p{Number}])(?=$|[^\p{Letter}\p{Number}])/gu,
+    (_match, prefix: string, run: string) => `${prefix}${run.replaceAll("-", "")}`,
+  );
 }
 
 function confirmCapturedEmail(
@@ -1694,10 +1952,7 @@ function confirmCapturedEmail(
   const readbackBeforeConfirmation = state.transcript
     .slice(0, latestUserIndex)
     .findLast((entry) => entry.role === "assistant")?.text;
-  if (
-    !readbackBeforeConfirmation ||
-    !canonicalizeEmailSpeech(readbackBeforeConfirmation).includes(email.toLowerCase())
-  ) {
+  if (!readbackBeforeConfirmation || !hasExactEmailReadback(readbackBeforeConfirmation, email)) {
     return { ok: false, output: { ok: false, error: "email_readback_missing", key: "email" } };
   }
   const latestUser = state.transcript.at(latestUserIndex)?.text ?? "";
@@ -1708,6 +1963,50 @@ function confirmCapturedEmail(
     return { ok: false, output: { ok: false, error: "ungrounded_email_confirmation", key: "email" } };
   }
   return { ok: true, verification: { value: email, source: "speech", status: "confirmed" } };
+}
+
+/**
+ * Accept the model's normal conversational wrapper, but require the address
+ * inside it to be the whole read-back value. A substring check is unsafe here:
+ * `x sora dot kim ...` and `sora dot kim ... x` are different addresses.
+ */
+function hasExactEmailReadback(text: string, email: string): boolean {
+  const candidates = [text, ...text.split(/(?:[!?]+|[.;]+\s+(?=[A-Z]))\s*/u)];
+
+  return candidates.some((value) => {
+    const stripTrailingContext = (candidate: string) =>
+      candidate
+        .replace(
+          /[,.!;:\-–—\s]*(?:(?:is|was)\s+that(?:\s+exactly)?\s+(?:right|correct)|did\s+i\s+(?:get|hear|capture)\s+that\s+(?:right|correct)|have\s+i\s+got\s+that\s+(?:right|correct)|(?:right|correct))\s*[?.!]*$/iu,
+          "",
+        )
+        .replace(/[\s"'“”‘’\])}.!?,;:]+$/u, "")
+        .trim();
+    let candidate = stripTrailingContext(value.trim());
+    // Test the untouched address first: valid local parts such as
+    // right@example.com and confirm@example.com are not wrapper prose.
+    if (candidate && canonicalizeEmailSpeech(candidate) === email.trim().toLowerCase()) return true;
+
+    let previous = "";
+    while (candidate && candidate !== previous) {
+      previous = candidate;
+      candidate = candidate
+        .replace(/^[\s"'“”‘’([{]+/u, "")
+        .replace(/^(?:okay|ok|alright|right|great|perfect|thanks|thank you|got it|so|and)[.!,:;\-–—\s]+/iu, "")
+        .replace(
+          /^(?:just\s+)?(?:to\s+)?confirm(?:ing)?(?:\s+(?:your|the))?(?:\s+(?:e-?mail|address)(?:\s+address)?)?(?:\s+(?:is|as))?[,:;\-–—\s]+/iu,
+          "",
+        )
+        .replace(
+          /^(?:i\s+(?:heard|have|got|captured|wrote\s+down)|i\s+have\s+your\s+(?:e-?mail|address)(?:\s+address)?\s+as|your\s+(?:e-?mail|address)(?:\s+address)?\s+(?:is|was)|the\s+(?:e-?mail|address)(?:\s+address)?\s+(?:is|was)|the\s+address\s+i\s+heard\s+(?:is|was)|that(?:'s|\s+is|\s+was)|let\s+me\s+read\s+(?:that|it)\s+back(?:\s+as)?|i(?:'ll|\s+will)\s+read\s+(?:that|it)\s+back(?:\s+as)?)[,:;\-–—\s]+/iu,
+          "",
+        );
+      candidate = stripTrailingContext(candidate);
+      if (candidate && canonicalizeEmailSpeech(candidate) === email.trim().toLowerCase()) return true;
+    }
+
+    return Boolean(candidate) && canonicalizeEmailSpeech(candidate) === email.trim().toLowerCase();
+  });
 }
 
 const EXPLICIT_EMAIL_CONFIRMATIONS = new Set([
@@ -1859,16 +2158,30 @@ function recordObservableToolFailure(
   output: Record<string, unknown>,
 ): VoiceRuntimeState {
   if (output.ok !== false) return state;
-  const detail = output.detail && typeof output.detail === "object" ? (output.detail as Record<string, unknown>) : null;
-  const error = typeof detail?.error === "string" ? detail.error : typeof output.error === "string" ? output.error : "";
-  if (!OBSERVABLE_TOOL_FAILURES.has(error)) return state;
-  const key = typeof detail?.key === "string" ? detail.key : typeof output.key === "string" ? output.key : undefined;
-  const issue: VoiceRuntimeError = {
-    eventId: item.call_id,
-    code: error === "unconfirmed_required_fields" ? "voice_email_unconfirmed" : "voice_capture_rejected",
-    message: [item.name ?? "unknown_tool", error, key].filter(Boolean).join(":"),
-  };
-  return { ...state, errors: [...(state.errors ?? []), issue].slice(-20) };
+  const rejectedDetails = Array.isArray(output.rejectedFields)
+    ? output.rejectedFields.flatMap((entry) => {
+        if (!entry || typeof entry !== "object") return [];
+        const detail = (entry as { output?: unknown }).output;
+        return detail && typeof detail === "object" ? [detail as Record<string, unknown>] : [];
+      })
+    : [];
+  const fallbackDetail =
+    output.detail && typeof output.detail === "object" ? (output.detail as Record<string, unknown>) : output;
+  const details = rejectedDetails.length > 0 ? rejectedDetails : [fallbackDetail];
+  const issues = details.flatMap((detail): VoiceRuntimeError[] => {
+    const error =
+      typeof detail.error === "string" ? detail.error : typeof output.error === "string" ? output.error : "";
+    if (!OBSERVABLE_TOOL_FAILURES.has(error)) return [];
+    const key = typeof detail.key === "string" ? detail.key : typeof output.key === "string" ? output.key : undefined;
+    return [
+      {
+        eventId: item.call_id,
+        code: error === "unconfirmed_required_fields" ? "voice_email_unconfirmed" : "voice_capture_rejected",
+        message: [item.name ?? "unknown_tool", error, key].filter(Boolean).join(":"),
+      },
+    ];
+  });
+  return issues.length > 0 ? { ...state, errors: [...(state.errors ?? []), ...issues].slice(-20) } : state;
 }
 
 function getMissingFields(captured: CapturedLead) {

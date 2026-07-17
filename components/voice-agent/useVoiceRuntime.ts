@@ -31,6 +31,8 @@ type UseVoiceRuntimeArgs = {
   onToolDuration: (sample: { at: number; durationMs: number; name: VoiceToolName; outcome: VoiceToolOutcome }) => void;
   /** Brings the editable fallback into view after repeated capture trouble. */
   onCaptureNeedsAttention?: (key: keyof CapturedLead) => void;
+  /** Revokes browser-local handoff memory after a successful clear-all tool call. */
+  onClearFields?: () => void;
 };
 
 /**
@@ -45,6 +47,7 @@ export function useVoiceRuntime({
   onEndVoice,
   onToolDuration,
   onCaptureNeedsAttention,
+  onClearFields,
 }: UseVoiceRuntimeArgs) {
   const [segment, setSegment] = useState<SegmentId>(initialSegment);
   const [captured, setCaptured] = useState<CapturedLead>({ ...emptyCapturedLead, email: prefillEmail ?? "" });
@@ -61,8 +64,8 @@ export function useVoiceRuntime({
     emailVerification,
     emailVerificationUserTurnSequence: 0,
   });
-  const callbacksRef = useRef({ submitLead, onEndVoice, onToolDuration, onCaptureNeedsAttention });
-  callbacksRef.current = { submitLead, onEndVoice, onToolDuration, onCaptureNeedsAttention };
+  const callbacksRef = useRef({ submitLead, onEndVoice, onToolDuration, onCaptureNeedsAttention, onClearFields });
+  callbacksRef.current = { submitLead, onEndVoice, onToolDuration, onCaptureNeedsAttention, onClearFields };
   // The model retries a rejected capture on its own; only bother the visitor
   // when the same field keeps failing.
   const ungroundedRejectionsRef = useRef(0);
@@ -186,20 +189,35 @@ export function useVoiceRuntime({
       }
       for (const command of reduced.commands) {
         if (command.type === "function_result") {
+          const toolName = toolNameForCall(serverEvent, command.callId);
           const detail =
             command.output.detail && typeof command.output.detail === "object"
               ? (command.output.detail as Record<string, unknown>)
               : null;
-          const rejectedKey = toCapturedLeadKey(detail?.key ?? command.output.key) ?? "email";
+          const rejectedBatchKeys = Array.isArray(command.output.rejectedFields)
+            ? command.output.rejectedFields.flatMap((entry) => {
+                if (!entry || typeof entry !== "object") return [];
+                const output = (entry as { output?: unknown }).output;
+                if (!output || typeof output !== "object") return [];
+                const key = toCapturedLeadKey((output as Record<string, unknown>).key);
+                return key ? [key] : [];
+              })
+            : [];
+          const rejectedKey = rejectedBatchKeys.includes("email")
+            ? "email"
+            : (toCapturedLeadKey(detail?.key ?? command.output.key) ?? "email");
           if (
             command.output.error === "ungrounded_identity_capture" ||
             detail?.error === "ungrounded_identity_capture" ||
             command.output.error === "invalid_email"
           ) {
             ungroundedRejectionsRef.current += 1;
-            if (ungroundedRejectionsRef.current >= 2) {
-              toast.warning("Reka didn't catch one detail.", {
-                description: "Say it once more, or type it straight into the handoff panel.",
+            if (rejectedKey === "email" || ungroundedRejectionsRef.current >= 2) {
+              toast.warning(rejectedKey === "email" ? "Please type the email once." : "Reka didn't catch one detail.", {
+                description:
+                  rejectedKey === "email"
+                    ? "The email field is highlighted. Reka can keep discussing your idea while you edit it."
+                    : "Say it once more, or type it straight into the handoff panel.",
                 id: voiceToastIds.captureWarning,
               });
               callbacksRef.current.onCaptureNeedsAttention?.(rejectedKey);
@@ -212,14 +230,11 @@ export function useVoiceRuntime({
             });
             callbacksRef.current.onCaptureNeedsAttention?.("email");
           }
+          if (toolName === "clear_fields" && command.output.cleared === true) {
+            callbacksRef.current.onClearFields?.();
+          }
           const sent = sendRealtimeCommand(channel, command);
-          reportTool(
-            callbacksRef.current.onToolDuration,
-            toolNameForCall(serverEvent, command.callId),
-            toolStartedAt,
-            command.output,
-            sent,
-          );
+          reportTool(callbacksRef.current.onToolDuration, toolName, toolStartedAt, command.output, sent);
         }
         if (command.type === "submit_voice") submitVoiceCommand(channel, command, reduced.state, toolStartedAt);
         if (command.type === "end_voice") callbacksRef.current.onEndVoice();

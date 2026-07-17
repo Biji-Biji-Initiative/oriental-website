@@ -8,7 +8,10 @@ import {
 describe("voice dialogue activation copy", () => {
   it("uses the reviewed one-sentence opener", () => {
     const instruction = openingVoiceInstruction(false);
-    expect(instruction).toContain("Hi, I'm Reka. What would you like to build at Oriental?");
+    expect(instruction).toContain(
+      "Hi, I'm Reka from Mereka. What would you like to build with us at Oriental Building?",
+    );
+    expect(instruction).toContain("Mereka is the organisation; Oriental Building is its future location");
     expect(instruction).toContain("exactly one opening sentence");
   });
 

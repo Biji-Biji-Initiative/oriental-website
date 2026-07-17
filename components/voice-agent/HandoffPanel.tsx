@@ -248,7 +248,7 @@ export function HandoffPanel({
             render={({ field }) => (
               <FormItem>
                 <FormLabel className="text-white/78">
-                  What would you bring to Oriental? <span className="text-white/40">· optional</span>
+                  What would you build with Mereka? <span className="text-white/40">· optional</span>
                 </FormLabel>
                 <FormControl>
                   <Textarea

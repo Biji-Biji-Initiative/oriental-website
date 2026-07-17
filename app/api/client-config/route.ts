@@ -14,14 +14,19 @@ function gaMeasurementId() {
   return GA_MEASUREMENT_ID_PATTERN.test(value) ? value : null;
 }
 
-export async function GET() {
+export async function GET(request?: Request) {
+  const configuredEnvironment = process.env.APP_ENV ?? process.env.SENTRY_ENVIRONMENT;
+  const hostname = request ? new URL(request.url).hostname.toLowerCase() : "";
+  const staging =
+    hostname === "staging.oriental.mereka.io" ||
+    (hostname !== "oriental.mereka.io" && configuredEnvironment === "staging");
   return Response.json(
     {
       turnstileSiteKey: null,
       gaMeasurementId: gaMeasurementId(),
       // Variant selection is a QA tool, not a production default. Keeping it
       // opt-in prevents voice/persona changes from contaminating latency trials.
-      voiceVariantPicker: process.env.VOICE_VARIANT_PICKER === "true",
+      voiceVariantPicker: staging && process.env.VOICE_VARIANT_PICKER === "true",
     },
     { headers: { "Cache-Control": "no-store" } },
   );

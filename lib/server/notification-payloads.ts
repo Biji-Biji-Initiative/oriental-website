@@ -40,7 +40,7 @@ export function buildOwnerNotification(lead: StoredLead): OwnerNotification {
   if (lead.form.website) rows.push(["Website / Socials", lead.form.website]);
   const subject = `[Oriental] ${segment.label} lead from ${lead.form.org || lead.form.name || "a new partner"}`;
   const text = [
-    "New Oriental partner intake",
+    "New Mereka at Oriental partner intake",
     "",
     ...rows.map(([label, value]) => `${label}: ${value}`),
     "",

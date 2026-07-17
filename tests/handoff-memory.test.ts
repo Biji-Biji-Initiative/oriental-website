@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { recallHandoff, rememberHandoff } from "@/lib/voice/handoff-memory";
+import { forgetHandoff, recallHandoff, rememberHandoff } from "@/lib/voice/handoff-memory";
 
 const STORAGE_KEY = "oriental.last-handoff.v1";
 
@@ -44,6 +44,12 @@ describe("handoff memory", () => {
     window.localStorage.setItem(STORAGE_KEY, "not-json{");
     expect(recallHandoff()).toBeNull();
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ name: 42, savedAt: "yes" }));
+    expect(recallHandoff()).toBeNull();
+  });
+
+  it("forgets a previously submitted identity on clear-all", () => {
+    rememberHandoff({ name: "Aisyah", email: "aisyah@example.com", org: "Mereka" }, "other");
+    forgetHandoff();
     expect(recallHandoff()).toBeNull();
   });
 
