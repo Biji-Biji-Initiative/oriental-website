@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { POST } from "@/app/api/admin/evals/route";
-import { runAdminVoiceEvals } from "@/lib/server/voice-evals";
+import { resetRateLimitBucketsForTest } from "@/lib/server/rate-limit";
+import { needsAdminEvaluation, runAdminVoiceEvals } from "@/lib/server/voice-evals";
 
 vi.mock("@/lib/server/voice-evals", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/server/voice-evals")>();
@@ -22,6 +23,7 @@ describe("admin evals route", () => {
       ADMIN_REVIEW_ROLE: "operator",
       ADMIN_REVIEW_ACTOR: "Gurpreet",
     };
+    resetRateLimitBucketsForTest();
     runMock.mockResolvedValue({
       ok: true,
       model: "gpt-4o-mini",
@@ -34,6 +36,7 @@ describe("admin evals route", () => {
   });
 
   afterEach(() => {
+    resetRateLimitBucketsForTest();
     process.env = originalEnv;
     vi.clearAllMocks();
   });
@@ -68,12 +71,23 @@ describe("admin evals route", () => {
     expect(runMock).toHaveBeenCalledWith({ model: "gpt-5.6-luna", reviewIds: ["voice-critical-1"] });
   });
 
-  it("rejects malformed judge model ids before spending tokens", async () => {
-    const response = await POST(evalsRequest({ model: "not a model!!" }));
+  it("rejects every model outside the curated allowlist before spending tokens", async () => {
+    const response = await POST(evalsRequest({ model: "gpt-4.1-mini" }));
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toMatchObject({ ok: false, error: "invalid_model" });
     expect(runMock).not.toHaveBeenCalled();
+  });
+
+  it("allows only one evaluation run in each five-minute cost-control window", async () => {
+    const first = await POST(evalsRequest({ limit: 5 }));
+    const second = await POST(evalsRequest({ limit: 5 }));
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(429);
+    expect(second.headers.get("Retry-After")).toBeTruthy();
+    await expect(second.json()).resolves.toEqual({ ok: false, error: "rate_limited" });
+    expect(runMock).toHaveBeenCalledTimes(1);
   });
 
   it("rejects oversized batches", async () => {
@@ -98,6 +112,14 @@ describe("admin evals route", () => {
     const response = await POST(evalsRequest({}));
 
     expect(response.status).toBe(404);
+  });
+
+  it("does not spend tokens rescoring the same model unless a session is explicitly targeted", () => {
+    const evaluated = { reviewId: "review-1", eval: { model: "gpt-4o-mini", evaluatedAt: Date.now() } };
+
+    expect(needsAdminEvaluation(evaluated as never, "gpt-4o-mini", false)).toBe(false);
+    expect(needsAdminEvaluation(evaluated as never, "gpt-5.6-luna", false)).toBe(true);
+    expect(needsAdminEvaluation(evaluated as never, "gpt-4o-mini", true)).toBe(true);
   });
 });
 

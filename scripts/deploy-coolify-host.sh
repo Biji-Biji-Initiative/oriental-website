@@ -149,9 +149,35 @@ if [[ "$target" == "staging" ]]; then
   image="${app_uuid}:staging-${sha}"
 fi
 
-echo "building_image=${image} brand_motion_preview=${brand_motion_preview} voice_model_cell=${voice_model_cell}"
+read_build_value() {
+  local name="$1"
+  local value
+  value="$(sed -n "s/^${name}=//p" "$target_dir/.env" | tail -1)"
+  if [[ "$value" == \"*\" && "$value" == *\" ]]; then
+    value="${value:1:${#value}-2}"
+  elif [[ "$value" == \'*\' && "$value" == *\' ]]; then
+    value="${value:1:${#value}-2}"
+  fi
+  printf '%s' "$value"
+}
+
+ga_measurement_id="$(read_build_value NEXT_PUBLIC_GA_MEASUREMENT_ID)"
+google_site_verification="$(read_build_value NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION)"
+
+if [[ -n "$ga_measurement_id" && ! "$ga_measurement_id" =~ ^G-[A-Z0-9]+$ ]]; then
+  echo "NEXT_PUBLIC_GA_MEASUREMENT_ID in the target env is malformed." >&2
+  exit 1
+fi
+if [[ -n "$google_site_verification" && ! "$google_site_verification" =~ ^[A-Za-z0-9_-]+$ ]]; then
+  echo "NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION in the target env is malformed." >&2
+  exit 1
+fi
+
+echo "building_image=${image} brand_motion_preview=${brand_motion_preview} voice_model_cell=${voice_model_cell} analytics_configured=$([[ -n "$ga_measurement_id" ]] && echo true || echo false) search_verification_configured=$([[ -n "$google_site_verification" ]] && echo true || echo false)"
 DOCKER_BUILDKIT=1 docker build \
   --build-arg "NEXT_PUBLIC_BRAND_MOTION_PREVIEW=${brand_motion_preview}" \
+  --build-arg "NEXT_PUBLIC_GA_MEASUREMENT_ID=${ga_measurement_id}" \
+  --build-arg "NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION=${google_site_verification}" \
   --progress=plain \
   -t "$image" \
   "$workdir"

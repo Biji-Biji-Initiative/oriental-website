@@ -316,7 +316,12 @@ export function Footer() {
         </div>
         <div className="mt-14 flex flex-col justify-between gap-4 border-t border-white/10 pt-6 text-sm text-white/55 md:flex-row">
           <span>© 2026 · Mereka × Biji-biji Initiative</span>
-          <span>Oriental Building · A new chapter for a historic Kuala Lumpur landmark</span>
+          <span className="flex flex-wrap gap-x-4 gap-y-2">
+            <a className="underline-offset-4 hover:text-white hover:underline" href="/privacy">
+              Privacy · Privasi
+            </a>
+            <span>Oriental Building · A new chapter for a historic Kuala Lumpur landmark</span>
+          </span>
         </div>
       </div>
     </footer>

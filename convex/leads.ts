@@ -857,6 +857,7 @@ export const voiceSessionsForEval = queryGeneric({
       reasoningCell: session.reasoningCell ?? null,
       routeRequested: session.routeRequested,
       submittedAt: session.submittedAt ?? null,
+      eval: session.eval ?? null,
       createdAt: session.createdAt,
       updatedAt: session.updatedAt,
     }));

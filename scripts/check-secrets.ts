@@ -1,4 +1,5 @@
 import { hasShellEscapedQuoteWrapper, unwrapEnvValue } from "../lib/env";
+import { isAllowedAdminEvalModel } from "../lib/eval/admin-models";
 import { activeVoiceExperimentDimensions } from "../lib/voice/experiments";
 
 const required = [
@@ -163,6 +164,12 @@ if (runtimeProfile && runtimeProfile !== "baseline" && runtimeProfile !== "insta
 const modelCell = envValue("VOICE_MODEL_CELL");
 if (modelCell && modelCell !== "control" && modelCell !== "candidate") {
   console.error("VOICE_MODEL_CELL must be control or candidate.");
+  process.exit(1);
+}
+
+const evalJudgeModel = envValue("EVAL_JUDGE_MODEL");
+if (evalJudgeModel && !isAllowedAdminEvalModel(evalJudgeModel)) {
+  console.error("EVAL_JUDGE_MODEL must be one of the approved admin evaluation models.");
   process.exit(1);
 }
 

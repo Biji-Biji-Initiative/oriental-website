@@ -168,10 +168,10 @@ Walk through every user path on the staging URL:
 ## Legal / privacy
 
 - [ ] PDPA privacy notice copy approved
-- [ ] Privacy notice link visible in the voice modal footer
-- [ ] Privacy notice link in main footer
+- [x] Privacy notice link visible in the voice handoff
+- [x] Privacy notice link in main footer
 - [ ] "No recordings kept" claim verified against actual behaviour
-- [ ] Cookie-banner decision confirmed with legal; no analytics script is currently shipped
+- [x] Analytics fails closed behind explicit opt-in; legal copy approval remains a human sign-off gate
 
 ## Stakeholder sign-off
 

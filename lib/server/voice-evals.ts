@@ -2,6 +2,7 @@ import { ConvexHttpClient } from "convex/browser";
 import OpenAI from "openai";
 import { api } from "@/convex/_generated/api";
 import { readEnv } from "@/lib/env";
+import { ADMIN_EVAL_MODEL_CHOICES, DEFAULT_EVAL_JUDGE_MODEL, isAllowedAdminEvalModel } from "@/lib/eval/admin-models";
 import {
   buildJudgeUserPrompt,
   buildSessionEval,
@@ -16,26 +17,18 @@ import {
 } from "@/lib/eval/voice-eval";
 
 const JUDGE_CONCURRENCY = 3;
+const JUDGE_TIMEOUT_MS = 30_000;
 /** Hard ceiling per admin-triggered run so a single click cannot fan out unbounded model spend. */
 export const MAX_ADMIN_EVAL_SESSIONS = 50;
 
-export const DEFAULT_EVAL_JUDGE_MODEL = "gpt-4o-mini";
-
-/** Small curated list the admin UI offers; env EVAL_JUDGE_MODEL stays the default. */
-export const ADMIN_EVAL_MODEL_CHOICES = ["gpt-5.6-luna", "gpt-4o-mini"] as const;
-
-const MODEL_ID_PATTERN = /^[a-zA-Z0-9._-]{1,64}$/;
+export { ADMIN_EVAL_MODEL_CHOICES, DEFAULT_EVAL_JUDGE_MODEL };
 
 export function configuredEvalJudgeModel() {
   return readEnv("EVAL_JUDGE_MODEL")?.trim() || DEFAULT_EVAL_JUDGE_MODEL;
 }
 
-export function isValidEvalModelId(model: string) {
-  return MODEL_ID_PATTERN.test(model);
-}
-
 export type AdminEvalRunResult =
-  | { ok: false; reason: "unconfigured" | "convex_failed" | "no_sessions" }
+  | { ok: false; reason: "unconfigured" | "invalid_model" | "convex_failed" | "no_sessions" }
   | {
       ok: true;
       model: string;
@@ -62,6 +55,7 @@ export async function runAdminVoiceEvals(options: {
   if (!convexUrl || !ingestSecret || !openaiKey) return { ok: false, reason: "unconfigured" };
 
   const model = options.model?.trim() || configuredEvalJudgeModel();
+  if (!isAllowedAdminEvalModel(model)) return { ok: false, reason: "invalid_model" };
   const limit = Math.min(Math.max(options.limit ?? 25, 1), MAX_ADMIN_EVAL_SESSIONS);
   const targetReviewIds = options.reviewIds?.length ? new Set(options.reviewIds) : null;
 
@@ -85,10 +79,16 @@ export async function runAdminVoiceEvals(options: {
     if (targetReviewIds.has(session.reviewId)) return true;
     return (session.callReviewIds ?? []).some((id) => targetReviewIds.has(id));
   });
-  const judgeable = conversations.filter(isJudgeable).slice(0, limit);
+  const judgeable = conversations
+    .filter(isJudgeable)
+    .filter((session) => needsAdminEvaluation(session, model, Boolean(targetReviewIds)))
+    .slice(0, limit);
   if (judgeable.length === 0) return { ok: false, reason: "no_sessions" };
 
-  const client = new OpenAI({ apiKey: openaiKey });
+  // One bounded retry absorbs a transient provider edge failure without turning
+  // an operator click into a long retry storm. The SDK default timeout is far
+  // too long for a synchronous admin action.
+  const client = new OpenAI({ apiKey: openaiKey, maxRetries: 1, timeout: JUDGE_TIMEOUT_MS });
   const scores = new Map<string, JudgeScore | null>();
   await mapPool(judgeable, JUDGE_CONCURRENCY, async (session) => {
     scores.set(session.reviewId, await judgeSession(client, model, session));
@@ -131,6 +131,11 @@ export async function runAdminVoiceEvals(options: {
     persisted,
     failures: judgeable.length - payloads.length,
   };
+}
+
+/** Bulk runs are idempotent per judge model; an explicit target is a deliberate rescore. */
+export function needsAdminEvaluation(session: VoiceEvalSession, model: string, targeted: boolean) {
+  return targeted || session.eval?.model !== model;
 }
 
 async function judgeSession(client: OpenAI, model: string, session: VoiceEvalSession): Promise<JudgeScore | null> {

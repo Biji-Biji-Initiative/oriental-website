@@ -17,6 +17,15 @@ describe("Coolify host deploy image cells", () => {
     expect(deployScript).toMatch(/image="\$\{app_uuid\}:staging-\$\{sha\}"/);
   });
 
+  it("passes the target environment's public analytics values into the immutable image build", () => {
+    expect(deployScript).toContain('ga_measurement_id="$(read_build_value NEXT_PUBLIC_GA_MEASUREMENT_ID)"');
+    expect(deployScript).toContain(
+      'google_site_verification="$(read_build_value NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION)"',
+    );
+    expect(deployScript).toContain(`--build-arg "NEXT_PUBLIC_GA_MEASUREMENT_ID=\${ga_measurement_id}"`);
+    expect(deployScript).toContain(`--build-arg "NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION=\${google_site_verification}"`);
+  });
+
   it("requires optimistic concurrency and a host lock for shared staging", () => {
     expect(deployScript).toContain("--expected-current-sha");
     expect(deployScript).toContain('exec 9>"$target_dir/.deploy.lock"');

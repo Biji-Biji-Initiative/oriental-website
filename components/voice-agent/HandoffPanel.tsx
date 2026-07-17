@@ -305,6 +305,14 @@ export function HandoffPanel({
         </form>
       </Form>
 
+      <p className="mt-4 text-xs leading-5 text-white/45">
+        By sending, you ask the relevant team to follow up using these details. Read our{" "}
+        <a className="font-semibold text-white/70 underline underline-offset-2 hover:text-white" href="/privacy">
+          privacy notice
+        </a>
+        .
+      </p>
+
       {transcriptTurnCount > 0 ? (
         <div className="mt-5 rounded-lg border border-white/10 bg-white/[0.04] p-4">
           <div className="flex items-center justify-between gap-3">

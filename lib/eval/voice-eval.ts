@@ -99,6 +99,7 @@ export type VoiceEvalSession = {
   latency?: EvalLatency;
   routeRequested: boolean;
   submittedAt?: number | null;
+  eval?: { model: string; evaluatedAt: number } | null;
   /** Review ids of the call segments folded into this conversation (if merged). */
   callReviewIds?: string[];
   /** Close reasons from every call segment, retained across conversation folding. */

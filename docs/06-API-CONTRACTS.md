@@ -547,8 +547,11 @@ rubric from `lib/eval/voice-eval.ts` and persists the results via the
 `recordVoiceEvals` Convex mutation — the on-demand equivalent of
 `pnpm eval:voice -- --persist`. Synthetic smoke rows are excluded and
 dropped-and-resumed calls are stitched into one conversation before judging.
-The batch is hard-capped at 50 conversations per request so a single click
-cannot fan out unbounded model spend.
+The batch is hard-capped at 50 conversations per request, judge models are
+allowlisted, provider calls use a 30-second timeout with at most one retry, and
+the Redis-backed production limiter permits one run per five-minute window.
+Untargeted batches skip sessions already scored by the selected model; explicit
+`reviewIds` remain the deliberate rescore path.
 
 ```ts
 type AdminEvalsRequest = {
@@ -572,11 +575,12 @@ Errors:
 
 | HTTP | `error` | Cause |
 |---|---|---|
-| 400 | `invalid_request` / `invalid_model` | Zod validation failed or the model id is malformed. |
+| 400 | `invalid_request` / `invalid_model` | Zod validation failed or the requested model is not allowlisted. |
+| 429 | `rate_limited` | An evaluation run already started in the five-minute safety window. |
 | 401/403 | `missing` / `invalid` / `forbidden` | Auth failed or the role lacks `evals.run`. |
 | 404 | `no_sessions` | No judgeable customer sessions in the window (or targets not found). |
 | 502 | `convex_failed` | Convex query/mutation failed mid-run. |
-| 503 | `unconfigured` | `OPENAI_API_KEY` or Convex env is missing. |
+| 503 | `unconfigured` / `invalid_model` | Required env is missing or `EVAL_JUDGE_MODEL` is not allowlisted. |
 
 ## `GET /api/health`
 

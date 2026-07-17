@@ -4,6 +4,14 @@ import { usePathname } from "next/navigation";
 import Script from "next/script";
 import { useEffect, useState } from "react";
 
+const configuredMeasurementId = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID;
+const GA_MEASUREMENT_ID =
+  configuredMeasurementId && isGaMeasurementId(configuredMeasurementId) ? configuredMeasurementId : undefined;
+export const analyticsConsentStorageKey = "oriental_analytics_consent_v1";
+export const analyticsConsentEvent = "oriental:analytics-consent";
+
+type AnalyticsConsent = "granted" | "denied";
+
 declare global {
   interface Window {
     dataLayer?: unknown[];
@@ -17,39 +25,55 @@ export function shouldTrackPath(pathname: string | null | undefined) {
   return !pathname.startsWith("/admin") && !pathname.startsWith("/api");
 }
 
-const GA_MEASUREMENT_ID_PATTERN = /^G-[A-Z0-9]{4,16}$/;
+export function isAnalyticsConsent(value: string | null): value is AnalyticsConsent {
+  return value === "granted" || value === "denied";
+}
+
+export function isGaMeasurementId(value: string) {
+  return /^G-[A-Z0-9]{4,16}$/.test(value);
+}
+
+export function analyticsPageLocation(origin: string, pathname: string) {
+  return `${origin}${pathname}`;
+}
 
 /**
- * GA4 loader + SPA page_view tracking. The measurement id comes from
- * `/api/client-config` at runtime (never a NEXT_PUBLIC_ build inline), matching
- * this repo's rotatable-config contract: pages stay statically prerendered and
- * the id can change without an image rebuild. Renders nothing until the config
- * returns a valid id. Mounted inside PublicChrome so it never loads on /admin;
- * shouldTrackPath double-guards client-side navigations. `send_page_view` is
- * disabled — the pathname effect emits every page_view (including the first).
+ * Explicit-consent GA4 loader + SPA page_view tracking. The public measurement
+ * id is baked into the reviewed image and verified at the release boundary.
+ * Mounted inside PublicChrome so it never loads on /admin; shouldTrackPath
+ * double-guards client-side navigations. `send_page_view` is disabled — the
+ * pathname effect emits every page_view (including the first).
  */
 export function GoogleAnalytics() {
-  const pathname = usePathname();
-  const [measurementId, setMeasurementId] = useState<string | null>(null);
+  const [consent, setConsent] = useState<AnalyticsConsent | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
-    fetch("/api/client-config", { cache: "no-store" })
-      .then((response) => (response.ok ? response.json() : null))
-      .then((config: { gaMeasurementId?: string | null } | null) => {
-        const id = config?.gaMeasurementId ?? "";
-        if (!cancelled && GA_MEASUREMENT_ID_PATTERN.test(id)) setMeasurementId(id);
-      })
-      .catch(() => {
-        // Analytics is never worth breaking the page over.
-      });
-    return () => {
-      cancelled = true;
+    const stored = readStoredConsent();
+    setConsent(isAnalyticsConsent(stored) ? stored : null);
+
+    const syncConsent = (event: Event) => {
+      const next = (event as CustomEvent<AnalyticsConsent>).detail;
+      if (isAnalyticsConsent(next)) setConsent(next);
     };
+    window.addEventListener(analyticsConsentEvent, syncConsent);
+    return () => window.removeEventListener(analyticsConsentEvent, syncConsent);
   }, []);
 
+  if (!GA_MEASUREMENT_ID) return null;
+
+  return (
+    <>
+      {consent === "granted" ? <GoogleAnalyticsLoader /> : null}
+      {consent === null ? <AnalyticsConsentPrompt onConsent={setConsent} /> : null}
+    </>
+  );
+}
+
+function GoogleAnalyticsLoader() {
+  const pathname = usePathname();
+
   useEffect(() => {
-    if (!measurementId || !shouldTrackPath(pathname)) return;
+    if (!GA_MEASUREMENT_ID || !shouldTrackPath(pathname)) return;
     // Queue-safe: define the canonical stub if gtag.js has not loaded yet —
     // entries flush when it does. gtag.js consumes the Arguments object from
     // dataLayer, so the stub must push `arguments`, never a rest array.
@@ -60,21 +84,132 @@ export function GoogleAnalytics() {
         window.dataLayer?.push(arguments);
       };
     }
-    window.gtag("event", "page_view", { page_path: pathname, page_location: window.location.href });
-  }, [measurementId, pathname]);
-
-  if (!measurementId) return null;
+    window.gtag("event", "page_view", {
+      page_path: pathname,
+      // Never send query strings or fragments: intake links may contain context.
+      page_location: analyticsPageLocation(window.location.origin, pathname),
+    });
+  }, [pathname]);
 
   return (
     <>
-      <Script src={`https://www.googletagmanager.com/gtag/js?id=${measurementId}`} strategy="afterInteractive" />
+      <Script
+        src={`https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(GA_MEASUREMENT_ID)}`}
+        strategy="afterInteractive"
+      />
       <Script id="ga4-init" strategy="afterInteractive">
         {`window.dataLayer = window.dataLayer || [];
 function gtag(){dataLayer.push(arguments);}
 window.gtag = gtag;
 gtag('js', new Date());
-gtag('config', '${measurementId}', { send_page_view: false });`}
+gtag('config', '${GA_MEASUREMENT_ID}', {
+  send_page_view: false,
+  anonymize_ip: true,
+  allow_google_signals: false,
+  allow_ad_personalization_signals: false
+});`}
       </Script>
     </>
   );
+}
+
+function AnalyticsConsentPrompt({ onConsent }: { onConsent: (consent: AnalyticsConsent) => void }) {
+  function choose(consent: AnalyticsConsent) {
+    writeStoredConsent(consent);
+    onConsent(consent);
+  }
+
+  return (
+    <section
+      aria-label="Analytics privacy choices"
+      className="fixed right-3 bottom-3 left-3 z-[90] mx-auto max-w-2xl rounded-2xl border border-mk-off-black/15 bg-mk-paper p-4 text-mk-off-black shadow-2xl sm:right-5 sm:bottom-5 sm:left-auto sm:p-5"
+    >
+      <h2 className="text-sm font-semibold">Your privacy, your choice</h2>
+      <p className="mt-1 text-xs leading-5 text-mk-off-black/68">
+        We use optional Google Analytics only to understand public page usage. It stays off unless you allow it. Your
+        enquiry and voice handoff work without analytics.{" "}
+        <a className="font-semibold underline" href="/privacy">
+          Read the privacy notice
+        </a>
+        .
+      </p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          className="min-h-10 rounded-full bg-mk-anchor-blue px-4 text-xs font-semibold text-white"
+          onClick={() => choose("granted")}
+          type="button"
+        >
+          Allow analytics
+        </button>
+        <button
+          className="min-h-10 rounded-full border border-mk-off-black/20 px-4 text-xs font-semibold"
+          onClick={() => choose("denied")}
+          type="button"
+        >
+          Only necessary
+        </button>
+      </div>
+    </section>
+  );
+}
+
+export function AnalyticsConsentSettings() {
+  const [consent, setConsent] = useState<AnalyticsConsent | null>(null);
+
+  useEffect(() => {
+    const stored = readStoredConsent();
+    setConsent(isAnalyticsConsent(stored) ? stored : null);
+  }, []);
+
+  function update(next: AnalyticsConsent) {
+    writeStoredConsent(next);
+    setConsent(next);
+    window.dispatchEvent(new CustomEvent<AnalyticsConsent>(analyticsConsentEvent, { detail: next }));
+    if (next === "denied" && window.gtag) {
+      window.gtag("consent", "update", { analytics_storage: "denied" });
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border border-mk-off-black/12 bg-white/60 p-5" id="analytics-choices">
+      <h2 className="text-lg font-semibold">Analytics choice</h2>
+      <p className="mt-2 text-sm leading-6 text-mk-off-black/68">
+        Current choice: <strong>{consent === "granted" ? "Allowed" : consent === "denied" ? "Off" : "Not set"}</strong>.
+        You can change it at any time; turning it off stops future analytics events on this site.
+      </p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button
+          className="min-h-10 rounded-full bg-mk-anchor-blue px-4 text-sm font-semibold text-white"
+          onClick={() => update("granted")}
+          type="button"
+        >
+          Allow analytics
+        </button>
+        <button
+          className="min-h-10 rounded-full border border-mk-off-black/20 px-4 text-sm font-semibold"
+          onClick={() => update("denied")}
+          type="button"
+        >
+          Turn analytics off
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function readStoredConsent() {
+  try {
+    return window.localStorage.getItem(analyticsConsentStorageKey);
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredConsent(consent: AnalyticsConsent) {
+  try {
+    window.localStorage.setItem(analyticsConsentStorageKey, consent);
+  } catch {
+    // Storage can be unavailable in hardened browsers. The in-memory choice
+    // still applies for this page; the next visit fails closed and asks again.
+  }
 }
