@@ -28,15 +28,16 @@ describe("voice tuner runtime governance", () => {
     });
   });
 
-  it("lets an enabled QA environment persist an opt-out and opt back in", async () => {
+  it("lets an enabled QA environment show the picker", async () => {
+    const fetcher = vi.fn(() => configResponse(true));
+    await expect(readTunerFlag(fetcher, "production")).resolves.toBe(true);
+  });
+
+  it("does not let URL or browser storage hide an enabled governed picker", async () => {
     const fetcher = vi.fn(() => configResponse(true));
     window.history.replaceState({}, "", "/?voices=0");
-    await expect(readTunerFlag(fetcher, "production")).resolves.toBe(false);
+    window.localStorage.setItem("oriental.voiceTunerHidden", "1");
 
-    window.history.replaceState({}, "", "/");
-    await expect(readTunerFlag(fetcher, "production")).resolves.toBe(false);
-
-    window.history.replaceState({}, "", "/?voices=1");
     await expect(readTunerFlag(fetcher, "production")).resolves.toBe(true);
   });
 

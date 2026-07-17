@@ -46,7 +46,7 @@ function aggregateExperimentValidation(validation: VoiceExperimentEvidenceValida
       invalidConversationCount === 0
         ? []
         : [
-            `${invalidConversationCount} conversation${invalidConversationCount === 1 ? "" : "s"} varied multiple experiment dimensions`,
+            `${invalidConversationCount} conversation${invalidConversationCount === 1 ? "" : "s"} failed experiment evidence validation`,
           ],
   };
 }

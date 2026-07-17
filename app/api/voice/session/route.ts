@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
     const deviceProfile = detectDeviceProfile(request.headers.get("user-agent"));
     const deploymentEnvironment = detectDeploymentEnvironment(request.url);
     const variantId =
-      deploymentEnvironment === "staging" && readEnv("VOICE_VARIANT_PICKER", "false") === "true"
+      isCanonicalStagingRequest(request.url) && readEnv("VOICE_VARIANT_PICKER", "false") === "true"
         ? parsed.data.variant
         : undefined;
     mintStartedAt = performance.now();
@@ -126,6 +126,10 @@ export async function POST(request: NextRequest) {
 
 function detectDeviceProfile(userAgent: string | null): RealtimeDeviceProfile {
   return userAgent && /mobile|android|iphone/i.test(userAgent) ? "mobile" : "desktop";
+}
+
+function isCanonicalStagingRequest(requestUrl: string) {
+  return new URL(requestUrl).hostname.toLowerCase() === "staging.oriental.mereka.io";
 }
 
 function detectDeploymentEnvironment(requestUrl: string) {
