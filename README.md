@@ -43,12 +43,14 @@ dedicated image build so staging-only client flags can differ safely, but Convex
 still use shared upstream accounts; environment attribution and Redis key namespacing prevent evidence and limiter
 collisions while dedicated staging services remain a separate infrastructure migration.
 
-The Mereka brand-motion preview is a staging-only build cell.
+The Mereka particle M is the canonical voice visual in every environment and
+compact voice affordances reuse the same approved mark geometry. The animated
+page-entrance loader remains a staging-only build cell.
 `scripts/deploy-coolify-host.sh --target staging --expected-current-sha <sha>`
 builds with `NEXT_PUBLIC_BRAND_MOTION_PREVIEW=true`; production builds force the
 flag to `false`. The UI also checks the staging hostname before enabling the
-preview. This keeps the production orb and page entrance unchanged and prevents
-one staging workflow from silently overwriting another.
+loader. This prevents a staging-only entrance experiment from leaking into
+production or one staging workflow from silently overwriting another.
 
 Required production variables:
 
@@ -61,6 +63,7 @@ OPENAI_REALTIME_MODEL=gpt-realtime-2
 OPENAI_REALTIME_MODEL_CANDIDATE=gpt-realtime-2.1
 VOICE_MODEL_CELL=control # candidate is an explicit measured release cell
 VOICE_REASONING_CELL=low # minimal is the independent reasoning cell
+VOICE_EMAIL_CAPTURE_MODE=adaptive # strict restores exact readback + explicit confirmation
 OPENAI_REALTIME_VOICE=coral
 OPENAI_REALTIME_SPEED=1.28
 VOICE_RUNTIME_PROFILE=baseline # rollback-safe default; instant-v1 enables adaptive semantic VAD
@@ -115,14 +118,17 @@ OWNER_OTHER=
 The permanent Realtime reflex prompt and tool contract live in
 `lib/voice/profile.ts`. Detailed Oriental facts stay behind the bounded,
 read-only `lookup_oriental` tool in `lib/voice/knowledge.ts`; reversible fields
-use atomic `capture_fields`, while routing and call termination remain separate
-irreversible tools. Keep prompt, endpointing, model, reasoning, and voice
+use one `capture_fields` batch per turn, retaining independently valid fields
+and returning rejected fields for focused retry. Routing and call termination
+remain separate irreversible tools. Keep prompt, endpointing, model, reasoning, and voice
 changes independently attributable.
 
 Endpointing experiments use `VOICE_RUNTIME_PROFILE=baseline|instant-v1`.
 Model and reasoning experiments use `VOICE_MODEL_CELL=control|candidate` and
 `VOICE_REASONING_CELL=low|minimal`. Safe deployment defaults are
-`baseline` / `control` / `low`; `instant-v1` and candidate cells must remain off
+`baseline` / `control` / `low`, with grounded adaptive email capture. The
+`strict` capture value is the instant rollback to exact readback and explicit
+confirmation. `instant-v1` and candidate cells must remain off
 until the evaluation gate has qualifying audible-latency, false-endpoint,
 barge-in, and contact-correction evidence.
 
@@ -134,6 +140,12 @@ detected remote audio. Its evaluator denominator covers reviewed post-mint
 attempts, including reconnect attempts, but excludes client-secret mint
 failures; it is therefore not the full-funnel product availability rate.
 Tap-to-live alone is not a product-success claim.
+
+Browser tool telemetry retains bounded, PII-free samples for tool name,
+response-created-to-call, execution/result dispatch, and outcome. Lead
+persistence and owner-notification fan-out start concurrently so the final
+`route_to_team` acknowledgement is bounded by the slower dependency instead of
+their sum; structured logs retain each backend operation duration.
 
 Production currently resolves the control cell to `gpt-realtime-2`. The first
 quality candidate is [`gpt-realtime-2.1`](https://developers.openai.com/api/docs/models/gpt-realtime-2.1),

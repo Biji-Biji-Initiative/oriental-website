@@ -11,6 +11,7 @@ describe("health route", () => {
     vi.stubEnv("VOICE_MODEL_CELL", "candidate");
     vi.stubEnv("OPENAI_REALTIME_MODEL_CANDIDATE", "gpt-realtime-2.1");
     vi.stubEnv("VOICE_REASONING_CELL", "minimal");
+    vi.stubEnv("VOICE_EMAIL_CAPTURE_MODE", "adaptive");
     vi.stubEnv("VOICE_VARIANT_PICKER", "true");
 
     const response = await GET();
@@ -26,6 +27,7 @@ describe("health route", () => {
         model_cell: "candidate",
         model: "gpt-realtime-2.1",
         reasoning_cell: "minimal",
+        email_capture_mode: "adaptive",
         variant_picker: true,
       },
     });

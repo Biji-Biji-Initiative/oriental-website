@@ -3,6 +3,7 @@ import type { ClientSecretCreateParams, ClientSecretCreateResponse } from "opena
 import type { RealtimeSessionCreateRequest } from "openai/resources/realtime/realtime";
 import { readEnv } from "@/lib/env";
 import type { SegmentId } from "@/lib/segments";
+import { resolveVoiceEmailCaptureMode } from "@/lib/voice/email-capture-policy";
 import { resolveVoiceExperimentConfig } from "@/lib/voice/experiments";
 import { buildVoiceInstructions, VOICE_SESSION_DEFAULTS, VOICE_TOOLS } from "@/lib/voice/profile";
 import { resolveVoiceRuntimeProfile } from "@/lib/voice/runtime-profile";
@@ -41,6 +42,7 @@ export async function createRealtimeClientSecret(
   // Phones are close-talking mics; laptops and desktops are far-field.
   const noiseReduction = deviceProfile === "mobile" ? "near_field" : "far_field";
   const runtimeProfile = resolveVoiceRuntimeProfile(readEnv("VOICE_RUNTIME_PROFILE", "baseline"));
+  const emailCaptureMode = resolveVoiceEmailCaptureMode(readEnv("VOICE_EMAIL_CAPTURE_MODE", "strict"));
   const durationPolicy = resolveVoiceDurationPolicy({
     maxDurationMs: readEnv("VOICE_MAX_DURATION_MS"),
     idleTimeoutMs: readEnv("VOICE_IDLE_TIMEOUT_MS"),
@@ -53,7 +55,7 @@ export async function createRealtimeClientSecret(
     session: {
       type: "realtime",
       model,
-      instructions: buildVoiceInstructions(undefined, initialSegment, variant?.personaNote),
+      instructions: buildVoiceInstructions(undefined, initialSegment, variant?.personaNote, emailCaptureMode),
       output_modalities: ["audio"],
       reasoning: { effort: experiments.reasoningEffort },
       truncation: VOICE_SESSION_DEFAULTS.truncation,
@@ -107,6 +109,7 @@ export async function createRealtimeClientSecret(
     noise_reduction: noiseReduction,
     runtime_profile: runtimeProfile.id,
     input_policy: runtimeProfile.defaultInputPolicy,
+    email_capture_mode: emailCaptureMode,
     // Session policy is server-tunable so the dominant UX constraints can be
     // adjusted from Infisical without a code deploy.
     limits: {

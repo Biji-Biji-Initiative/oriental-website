@@ -5,10 +5,12 @@ import { measureTapToLive, type VoiceActivationCue } from "@/components/voice-ag
 import type { SegmentId } from "@/lib/segments";
 import { type RealtimeOutboundEvent, serializeInputPolicyUpdate } from "@/lib/voice/client-events";
 import { ownsVoiceConnectAttempt } from "@/lib/voice/connect-attempt";
+import type { VoiceEmailCaptureMode } from "@/lib/voice/email-capture-policy";
 import type { VoiceModelCell, VoiceReasoningCell } from "@/lib/voice/experiments";
 import {
   createVoiceLatencyState,
   reduceVoiceLatency,
+  shouldEmitVoiceLatencyMetadata,
   type VoiceInputPolicy,
   type VoiceLatencySignal,
   type VoiceLatencyTelemetry,
@@ -32,6 +34,8 @@ import {
   sampleTransportStats,
   type VoiceTransportTelemetry,
 } from "@/lib/voice/transport-telemetry";
+
+type VoiceToolCompletedSignal = Extract<VoiceLatencySignal, { type: "tool_completed" }>;
 
 export type VoiceConnectionStatus = "idle" | "requesting_mic" | "connecting" | "reconnecting" | "listening";
 export type VoiceCloseReason =
@@ -88,6 +92,7 @@ type VoiceSessionResponse = {
   variant?: string | null;
   runtime_profile?: VoiceRuntimeProfileId;
   input_policy?: VoiceInputPolicy;
+  email_capture_mode?: VoiceEmailCaptureMode;
   limits?: { max_duration_ms?: number; idle_timeout_ms?: number; idle_goodbye_grace_ms?: number };
 };
 
@@ -418,9 +423,10 @@ export function useRealtimeVoiceSession({
   }, []);
 
   /**
-   * Mint the ephemeral session in the background so returning visitors do not
-   * wait on OpenAI client-secret creation. First-time visitors still spend no
-   * voice quota until they grant microphone access in the explicit start flow.
+   * Mint the ephemeral session in the background when the browser reports an
+   * active microphone grant, so a still-valid temporary grant and a persistent
+   * grant both get the fast path. A `prompt` result is not evidence that this is
+   * a first visit: browsers also return it after one-time access expires.
    */
   const prewarmVoiceSession = useCallback(() => {
     if (statusRef.current !== "idle") return;
@@ -488,7 +494,8 @@ export function useRealtimeVoiceSession({
       let stream: MediaStream;
       let session: MintedSession;
       if (permission === "granted") {
-        // Returning visitor: the mic opens silently, so mint in parallel.
+        // The browser has an active grant (temporary or persistent), so the mic
+        // opens without another decision and session minting can run in parallel.
         setStatus("connecting");
         const streamPromise = acquireMicStream(attemptId);
         // Pre-attach a handler so a late mic rejection after a mint failure
@@ -496,9 +503,9 @@ export function useRealtimeVoiceSession({
         streamPromise.catch(() => null);
         [stream, session] = await Promise.all([streamPromise, obtainVoiceSession()]);
       } else {
-        // First visit: surface the browser prompt immediately, and only spend
-        // the daily voice quota once the microphone is actually granted —
-        // unless a prewarmed session already spent it.
+        // Permission is promptable or the Permissions API cannot report it.
+        // Ask only after this explicit user action, and spend daily voice quota
+        // only once getUserMedia succeeds (unless a prewarm already spent it).
         setStatus("requesting_mic");
         stream = await acquireMicStream(attemptId);
         setStatus("connecting");
@@ -541,9 +548,7 @@ export function useRealtimeVoiceSession({
         if (next.phase !== previous.phase) setTurnPhase(next.phase);
         // Metadata only changes when a sample completes or the session closes;
         // output deltas never trigger review rerenders or snapshot churn.
-        if (next.telemetry.turns.length !== previous.telemetry.turns.length || signal.type === "session_closed") {
-          emitLatency();
-        }
+        if (shouldEmitVoiceLatencyMetadata(previous, next, signal)) emitLatency();
       };
       recordLatencySignalRef.current = recordLatencySignal;
       const captureCloseTelemetry = () => {
@@ -730,7 +735,7 @@ export function useRealtimeVoiceSession({
           });
         }
         resetIdleTimer();
-        if (parsed) onEvent(parsed, channel);
+        if (parsed) onEvent({ ...parsed, email_capture_mode: session.email_capture_mode ?? "strict" }, channel);
       };
 
       const offer = await peer.createOffer();
@@ -814,8 +819,8 @@ export function useRealtimeVoiceSession({
   const recordRemoteAudioStarted = useCallback((at: number) => {
     recordLatencySignalRef.current?.({ type: "remote_audio_started", at });
   }, []);
-  const recordToolDuration = useCallback((durationMs: number) => {
-    recordLatencySignalRef.current?.({ type: "tool_completed", durationMs });
+  const recordToolDuration = useCallback((sample: Omit<VoiceToolCompletedSignal, "type">) => {
+    recordLatencySignalRef.current?.({ type: "tool_completed", ...sample });
   }, []);
 
   return {
@@ -857,13 +862,15 @@ function wait(durationMs: number) {
   return new Promise<void>((resolve) => window.setTimeout(resolve, durationMs));
 }
 
-async function queryMicrophonePermission(): Promise<PermissionState> {
+async function queryMicrophonePermission(): Promise<PermissionState | "unavailable"> {
   try {
     const status = await navigator.permissions.query({ name: "microphone" as PermissionName });
     return status.state;
   } catch {
-    // Permissions API unavailable (e.g. Firefox for microphone): fall back to
-    // the prompt-first path, which is safe everywhere.
-    return "prompt";
+    // Permissions API unavailable (for example, for Firefox microphone access):
+    // keep this distinct from a real `prompt` result. Both safely call
+    // getUserMedia only after the visitor explicitly starts voice, but an
+    // unavailable query must never be described as a known first-time prompt.
+    return "unavailable";
   }
 }

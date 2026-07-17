@@ -40,6 +40,16 @@ describe("voice profile", () => {
     }
   });
 
+  it("keeps strict rollback copy while adaptive mode removes the blanket checkpoint", () => {
+    const strict = buildVoiceInstructions(VOICE_PROFILE);
+    const adaptive = buildVoiceInstructions(VOICE_PROFILE, undefined, undefined, "adaptive");
+
+    expect(strict).toContain("read it back and use confirm_email");
+    expect(adaptive).toContain("without asking for a separate yes");
+    expect(adaptive).toContain("Ask a targeted spelling question only when capture_fields rejects");
+    expect(adaptive).not.toContain("read it back and use confirm_email");
+  });
+
   it("keeps the Realtime tool surface narrow and explicit", () => {
     expect(VOICE_TOOLS.map((tool) => tool.name)).toEqual([
       "set_partner_type",

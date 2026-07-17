@@ -179,8 +179,6 @@ export function NebulaM({ connectionStatus, levelsRef, turnPhase }: NebulaMProps
     let visible = !document.hidden;
     let contextLost = false;
     let lastFrame = performance.now();
-    let autoTarget = 0;
-    let nextAutoFlip = lastFrame + 2_800;
 
     const resize = (width: number, height: number) => {
       if (contextLost) return;
@@ -227,12 +225,7 @@ export function NebulaM({ connectionStatus, levelsRef, turnPhase }: NebulaMProps
       lastFrame = now;
       const state = stateRef.current;
 
-      if (now >= nextAutoFlip) {
-        autoTarget = autoTarget > 0.5 ? 0 : 1;
-        nextAutoFlip = now + (autoTarget > 0.5 ? 4_100 : 3_300);
-      }
-
-      const targetResolve = resolveTargetForVoiceState(state, autoTarget);
+      const targetResolve = resolveMerekaMarkTarget(state);
       const resolveEase = 1 - Math.exp(-deltaSeconds * 1.85);
       currentResolveRef.current += (targetResolve - currentResolveRef.current) * resolveEase;
 
@@ -306,13 +299,13 @@ export function NebulaM({ connectionStatus, levelsRef, turnPhase }: NebulaMProps
   );
 }
 
-function resolveTargetForVoiceState(state: VoiceVisualState, autoTarget: number) {
-  if (state.connectionStatus === "requesting_mic" || state.connectionStatus === "connecting") return 0.18;
-  if (state.connectionStatus !== "listening") return autoTarget;
-  if (state.turnPhase === "user_speaking") return 0.06;
+export function resolveMerekaMarkTarget(state: VoiceVisualState) {
+  if (state.connectionStatus === "requesting_mic" || state.connectionStatus === "connecting") return 0.35;
+  if (state.connectionStatus !== "listening") return 1;
+  if (state.turnPhase === "user_speaking") return 0.25;
   if (state.turnPhase === "waiting_for_response") return 0.82;
   if (state.turnPhase === "assistant_speaking") return 1;
-  return autoTarget;
+  return 0.92;
 }
 
 function createParticleField(): ParticleField {

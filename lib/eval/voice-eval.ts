@@ -210,7 +210,7 @@ export function mergeConversationSessions(sessions: VoiceEvalSession[]): VoiceEv
       leadId: submitted?.leadId ?? head.leadId ?? null,
       captured: submitted?.captured ?? head.captured,
       transcript: mergeConversationTranscripts(ordered),
-      errors: ordered.flatMap((s) => s.errors),
+      errors: uniqueRuntimeErrors(ordered.flatMap((s) => s.errors)),
       transport,
       latency,
       activationAttempted: ordered.some((session) => session.activationAttempted === true),
@@ -222,6 +222,16 @@ export function mergeConversationSessions(sessions: VoiceEvalSession[]): VoiceEv
     });
   }
   return merged;
+}
+
+function uniqueRuntimeErrors(errors: VoiceEvalSession["errors"]): VoiceEvalSession["errors"] {
+  const seen = new Set<string>();
+  return errors.filter((error) => {
+    const key = `${error.code ?? ""}::${error.message}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function foldEvalLatency(sessions: VoiceEvalSession[]): EvalLatency {
@@ -609,6 +619,20 @@ export type EngagementSignals = {
   durationMs: number | null;
 };
 
+export type CaptureIntegritySignals = {
+  rejectedCaptures: number;
+  unconfirmedEmailFailures: number;
+  totalFailures: number;
+  failed: boolean;
+};
+
+export function deriveCaptureIntegritySignals(session: VoiceEvalSession): CaptureIntegritySignals {
+  const rejectedCaptures = session.errors.filter((error) => error.code === "voice_capture_rejected").length;
+  const unconfirmedEmailFailures = session.errors.filter((error) => error.code === "voice_email_unconfirmed").length;
+  const totalFailures = rejectedCaptures + unconfirmedEmailFailures;
+  return { rejectedCaptures, unconfirmedEmailFailures, totalFailures, failed: totalFailures > 0 };
+}
+
 export function deriveEngagementSignals(session: VoiceEvalSession): EngagementSignals {
   const userTurns = session.transcript.filter((turn) => turn.role === "user").length;
   const assistantTurns = session.transcript.filter((turn) => turn.role === "assistant").length;
@@ -730,6 +754,7 @@ export type SessionEval = {
   reasoningCell: "low" | "minimal";
   transport: TransportSignals;
   latency: LatencySignals;
+  captureIntegrity: CaptureIntegritySignals;
   engagement: EngagementSignals;
   score: JudgeScore | null;
 };
@@ -750,6 +775,7 @@ export function buildSessionEval(session: VoiceEvalSession, score: JudgeScore | 
     reasoningCell: session.reasoningCell ?? "low",
     transport: deriveTransportSignals(session),
     latency: deriveLatencySignals(session),
+    captureIntegrity: deriveCaptureIntegritySignals(session),
     engagement: deriveEngagementSignals(session),
     score,
   };
@@ -783,6 +809,12 @@ export type EvalAggregate = {
     quotaFailures: number;
     capacityFailures: number;
     transportFailures: number;
+    totalFailures: number;
+  };
+  captureIntegrity: {
+    failedSessions: number;
+    rejectedCaptures: number;
+    unconfirmedEmailFailures: number;
     totalFailures: number;
   };
   attribution: {
@@ -828,9 +860,14 @@ export function aggregateEvals(evals: SessionEval[]): EvalAggregate {
     entry.closeReasons.some((reason) => ["webrtc_failed", "session_failed", "disconnected", "error"].includes(reason)),
   );
   const availabilityFailures = evals.filter((entry) => entry.closeReasons.some(isVoiceAvailabilityFailure));
+  const captureIntegrityFailures = evals.filter((entry) => entry.captureIntegrity.failed);
   const worstSessions = [
     ...quotaFailures.map((entry) => ({ reviewId: entry.reviewId, reason: "OpenAI Realtime quota exhausted" })),
     ...droppedMidTurn.map((entry) => ({ reviewId: entry.reviewId, reason: "dropped mid-utterance" })),
+    ...captureIntegrityFailures.map((entry) => ({
+      reviewId: entry.reviewId,
+      reason: `${entry.captureIntegrity.totalFailures} capture-integrity failure${entry.captureIntegrity.totalFailures === 1 ? "" : "s"}`,
+    })),
     ...scored
       .filter((entry) => (entry.score as JudgeScore).frustration >= 4)
       .map((entry) => ({ reviewId: entry.reviewId, reason: "high visitor frustration" })),
@@ -872,6 +909,12 @@ export function aggregateEvals(evals: SessionEval[]): EvalAggregate {
       capacityFailures: capacityFailures.length,
       transportFailures: transportFailures.length,
       totalFailures: availabilityFailures.length,
+    },
+    captureIntegrity: {
+      failedSessions: captureIntegrityFailures.length,
+      rejectedCaptures: evals.reduce((sum, entry) => sum + entry.captureIntegrity.rejectedCaptures, 0),
+      unconfirmedEmailFailures: evals.reduce((sum, entry) => sum + entry.captureIntegrity.unconfirmedEmailFailures, 0),
+      totalFailures: evals.reduce((sum, entry) => sum + entry.captureIntegrity.totalFailures, 0),
     },
     attribution: {
       environments: countBy(
@@ -942,6 +985,7 @@ export type EvalThresholds = {
   maxDroppedMidTurn?: number;
   maxQuotaFailures?: number;
   maxAvailabilityFailures?: number;
+  maxCaptureIntegrityFailures?: number;
 };
 
 /** Gate an aggregate against thresholds — used for a CI regression check. */
@@ -990,6 +1034,14 @@ export function meetsThreshold(
   ) {
     failures.push(
       `availabilityFailures ${aggregate.availability.totalFailures} > ${thresholds.maxAvailabilityFailures}`,
+    );
+  }
+  if (
+    typeof thresholds.maxCaptureIntegrityFailures === "number" &&
+    aggregate.captureIntegrity.totalFailures > thresholds.maxCaptureIntegrityFailures
+  ) {
+    failures.push(
+      `captureIntegrityFailures ${aggregate.captureIntegrity.totalFailures} > ${thresholds.maxCaptureIntegrityFailures}`,
     );
   }
   return { ok: failures.length === 0, failures };

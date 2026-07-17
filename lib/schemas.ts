@@ -129,6 +129,15 @@ export const voiceReviewSnapshotSchema = z.object({
       website: z.string().max(300).default(""),
       message: z.string().max(2500).default(""),
     }),
+    emailVerification: z
+      .object({
+        source: z.enum(["prefill", "speech", "typed"]),
+        status: z.enum(["confirmed", "pending"]),
+        matchesCaptured: z.boolean(),
+        confidence: z.enum(["high", "medium"]).optional(),
+      })
+      .optional(),
+    emailCaptureMode: z.enum(["strict", "adaptive"]).optional(),
     transcript: z.array(transcriptEntrySchema).max(120).default([]),
     usage: z
       .object({
@@ -185,6 +194,31 @@ export const voiceReviewSnapshotSchema = z.object({
             }),
           )
           .max(80),
+        toolCalls: z
+          .array(
+            z.object({
+              sequence: z.number().int().nonnegative().optional(),
+              name: z.enum([
+                "set_partner_type",
+                "capture_field",
+                "capture_fields",
+                "confirm_email",
+                "lookup_oriental",
+                "clear_field",
+                "summarise_lead",
+                "route_to_team",
+                "wait_for_user",
+                "end_call",
+                "unknown",
+              ]),
+              outcome: z.enum(["success", "rejected", "failed", "dispatch_failed"]),
+              executionMs: z.number().nonnegative().max(120_000),
+              responseCreatedToCallMs: z.number().nonnegative().max(120_000).optional(),
+              responseCreatedToResultMs: z.number().nonnegative().max(120_000).optional(),
+            }),
+          )
+          .max(120)
+          .optional(),
       })
       .optional(),
     transport: z

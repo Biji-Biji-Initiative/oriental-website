@@ -17,8 +17,14 @@ export function VoiceVariantPicker() {
   const activeLabel = labelFor(selectedVariant);
 
   useEffect(() => {
+    let active = true;
     setHydrated(true);
-    setEnabled(readTunerFlag());
+    void readTunerFlag().then((next) => {
+      if (active) setEnabled(next);
+    });
+    return () => {
+      active = false;
+    };
   }, []);
 
   if (!enabled) return null;

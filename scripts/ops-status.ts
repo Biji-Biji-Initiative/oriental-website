@@ -22,6 +22,7 @@ type Health = {
     model_cell?: string;
     model?: string;
     reasoning_cell?: string;
+    email_capture_mode?: string;
     variant_picker?: boolean;
   };
 };
@@ -252,7 +253,12 @@ async function main() {
     },
     review: { latestApr: latestAprReview(root) },
     voice: {
-      requiredProductionCell: { runtimeProfile: "baseline", modelCell: "control", reasoningCell: "low" },
+      requiredProductionCell: {
+        runtimeProfile: "baseline",
+        modelCell: "control",
+        reasoningCell: "low",
+        emailCaptureMode: "adaptive",
+      },
       evidenceGate: voiceEvidence,
     },
     deployedShas: [...new Set(deployedShas.filter(Boolean))],
@@ -272,7 +278,7 @@ async function main() {
     console.log(
       `${name}: ${health?.version?.slice(0, 12) ?? "unavailable"} ` +
         `${health?.ok && health?.convex ? "healthy" : "unhealthy"} ` +
-        `${voice ? `${voice.runtime_profile}/${voice.model_cell}/${voice.reasoning_cell}` : "voice-cell unavailable"}`,
+        `${voice ? `${voice.runtime_profile}/${voice.model_cell}/${voice.reasoning_cell}/${voice.email_capture_mode}` : "voice-cell unavailable"}`,
     );
   }
   console.log(

@@ -6,6 +6,7 @@ import {
   assessLatencyAutopilotGate,
   buildJudgeUserPrompt,
   buildSessionEval,
+  deriveCaptureIntegritySignals,
   deriveEngagementSignals,
   deriveLatencySignals,
   deriveTransportSignals,
@@ -423,6 +424,28 @@ describe("deriveEngagementSignals", () => {
   });
 });
 
+describe("deriveCaptureIntegritySignals", () => {
+  it("counts rejected captures and unconfirmed-email failures independently", () => {
+    const signals = deriveCaptureIntegritySignals(
+      session({
+        errors: [
+          { code: "voice_capture_rejected", message: "capture_fields:ungrounded_identity_capture:email" },
+          { code: "voice_capture_rejected", message: "capture_fields:ungrounded_identity_capture:name" },
+          { code: "voice_email_unconfirmed", message: "route_to_team:unconfirmed_required_fields" },
+          { code: "conversation_already_has_active_response", message: "benign response race" },
+        ],
+      }),
+    );
+
+    expect(signals).toEqual({
+      rejectedCaptures: 2,
+      unconfirmedEmailFailures: 1,
+      totalFailures: 3,
+      failed: true,
+    });
+  });
+});
+
 describe("isJudgeable", () => {
   it("requires a non-empty user turn", () => {
     expect(isJudgeable(session())).toBe(true);
@@ -518,6 +541,37 @@ describe("aggregateEvals + meetsThreshold", () => {
     const reasons = aggregate.worstSessions.map((entry) => entry.reason);
     expect(reasons).toContain("dropped mid-utterance");
     expect(reasons).toContain("high visitor frustration");
+  });
+
+  it("surfaces capture-integrity failures deterministically and gates them", () => {
+    const aggregate = aggregateEvals([
+      buildSessionEval(
+        session({
+          reviewId: "capture-failed",
+          errors: [
+            { code: "voice_capture_rejected", message: "capture_fields:ungrounded_identity_capture:email" },
+            { code: "voice_email_unconfirmed", message: "route_to_team:unconfirmed_required_fields" },
+          ],
+        }),
+        null,
+      ),
+      buildSessionEval(session({ reviewId: "capture-clean" }), null),
+    ]);
+
+    expect(aggregate.captureIntegrity).toEqual({
+      failedSessions: 1,
+      rejectedCaptures: 1,
+      unconfirmedEmailFailures: 1,
+      totalFailures: 2,
+    });
+    expect(aggregate.worstSessions).toContainEqual({
+      reviewId: "capture-failed",
+      reason: "2 capture-integrity failures",
+    });
+    expect(meetsThreshold(aggregate, { maxCaptureIntegrityFailures: 0 })).toEqual({
+      ok: false,
+      failures: ["captureIntegrityFailures 2 > 0"],
+    });
   });
 
   it("reports exact tap-to-live percentiles for profile and model-cell comparisons", () => {

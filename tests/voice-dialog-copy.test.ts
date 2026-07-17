@@ -26,6 +26,22 @@ describe("voice dialogue activation copy", () => {
     expect(voiceStatusCopy("listening", "assistant_speaking").label).toBe("Reka speaking");
   });
 
+  it("sets accurate expectations for temporary microphone permission", () => {
+    expect(voiceStatusCopy("requesting_mic")).toEqual({
+      label: "Mic permission",
+      detail:
+        "If your browser asks, choose its every-visit option to remember the mic. One-time access will ask again later.",
+      button: "Opening microphone...",
+    });
+
+    expect(voiceCloseReasonToast("mic_denied")).toEqual({
+      tone: "error",
+      title: "Microphone access is blocked.",
+      description:
+        "Use the microphone control in your browser's address bar to allow access, then try again — or type the handoff instead.",
+    });
+  });
+
   it("distinguishes upstream Realtime capacity from a visitor's daily limit", () => {
     expect(voiceCloseReasonToast("realtime_busy")).toEqual({
       tone: "warning",

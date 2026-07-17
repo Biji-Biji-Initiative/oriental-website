@@ -270,6 +270,12 @@ describe("persistVoiceReviewSnapshot", () => {
     deviceProfile: "desktop" as const,
     deploymentEnvironment: "staging" as const,
     activationAttempted: true,
+    emailVerification: {
+      source: "speech" as const,
+      status: "pending" as const,
+      matchesCaptured: true,
+    },
+    emailCaptureMode: "adaptive" as const,
     transport: {
       realtimeBusyRetryCount: 0,
       disconnectCount: 1,
@@ -319,6 +325,13 @@ describe("persistVoiceReviewSnapshot", () => {
         }),
       }),
     );
+    const mutationSnapshot = mocks.mutation.mock.calls[0]?.[1]?.snapshot;
+    expect(mutationSnapshot).toHaveProperty("emailVerification", {
+      source: "speech",
+      status: "pending",
+      matchesCaptured: true,
+    });
+    expect(mutationSnapshot).toHaveProperty("emailCaptureMode", "adaptive");
   });
 
   it("retries without telemetry when a pre-migration Convex rejects an unknown field", async () => {
@@ -333,6 +346,8 @@ describe("persistVoiceReviewSnapshot", () => {
     expect(retryArgs.snapshot).not.toHaveProperty("latency");
     expect(retryArgs.snapshot).not.toHaveProperty("runtimeProfile");
     expect(retryArgs.snapshot).not.toHaveProperty("inputPolicy");
+    expect(retryArgs.snapshot).not.toHaveProperty("emailVerification");
+    expect(retryArgs.snapshot).not.toHaveProperty("emailCaptureMode");
     expect(retryArgs.snapshot).not.toHaveProperty("modelCell");
     expect(retryArgs.snapshot).not.toHaveProperty("reasoningCell");
     expect(retryArgs.snapshot).not.toHaveProperty("deviceProfile");

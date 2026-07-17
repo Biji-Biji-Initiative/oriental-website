@@ -1,4 +1,5 @@
 import { readEnv } from "@/lib/env";
+import { resolveVoiceEmailCaptureMode } from "@/lib/voice/email-capture-policy";
 import { resolveVoiceExperimentConfig } from "@/lib/voice/experiments";
 import { resolveVoiceRuntimeProfile } from "@/lib/voice/runtime-profile";
 
@@ -27,6 +28,7 @@ export async function GET() {
         model_cell: experiments.modelCell,
         model: experiments.model,
         reasoning_cell: experiments.reasoningCell,
+        email_capture_mode: resolveVoiceEmailCaptureMode(readEnv("VOICE_EMAIL_CAPTURE_MODE", "strict")),
         variant_picker: readEnv("VOICE_VARIANT_PICKER", "false") === "true",
       },
     },

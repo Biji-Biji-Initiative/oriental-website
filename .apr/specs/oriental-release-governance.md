@@ -15,15 +15,16 @@ work observed during the previous release.
   The legacy `*.deploy.mereka.io` application hosts are redirects only.
 - Cloudflare MUST remain DNS-only; public responses MUST not contain evidence
   that Cloudflare is on the request path.
-- Health proof MUST require the exact SHA, `ok: true`, and `convex: true` for
-  repeated checks. The public QA picker MUST remain off.
+- Health proof MUST require the exact SHA, `ok: true`, `convex: true`, and the
+  exact governed voice/capture contract for repeated checks. The public QA
+  picker MUST remain off.
 - Shared staging deploys MUST use optimistic concurrency against the live full
   SHA and a host-side nonblocking lock. A stale or simultaneous deployment MUST
   fail before image build or container mutation.
 - At the production promotion boundary, staging and production MUST use the
   same source SHA. Staging may later move for another controlled experiment,
   and documentation MUST distinguish historical proof from current live state.
-- Production MUST remain `baseline/control/low` unless an evidence gate and
+- Production MUST remain `baseline/control/low/adaptive` unless an evidence gate and
   human review explicitly authorize one changed experiment dimension. The
   production preflight MUST validate this by default, not through an optional
   operator flag.

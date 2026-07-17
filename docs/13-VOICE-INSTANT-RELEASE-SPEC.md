@@ -75,6 +75,10 @@ dimension, and prove the exact staged commit before promotion.
 - Per-turn telemetry MUST retain at most 80 samples and MUST include available
   speech, endpoint, response-created, first-output, remote-audio, playout,
   browser-tool, response, interruption, and rapid-resume durations/signals.
+- Per-tool telemetry MUST retain at most 120 PII-free samples with a bounded
+  tool name, outcome, browser execution/result-dispatch duration, and available
+  response-created-to-call/result durations. It MUST NOT persist arguments,
+  contact values, call IDs, or raw browser timestamps.
 - An OpenAI Realtime SDP capacity `429` MUST receive at most one retry after
   300–700 ms jitter. The retry MUST reuse the existing mint, offer, microphone,
   and typed context; other status codes, mic denial, and malformed sessions
@@ -116,16 +120,26 @@ dimension, and prove the exact staged commit before promotion.
 
 - The permanent prompt MUST remain below 7 KB and detailed facts MUST remain
   behind bounded read-only `lookup_oriental`.
-- Reversible fields MUST be captured with one atomic `capture_fields` batch;
-  one invalid, duplicate, or ungrounded item MUST reject the whole batch.
+- Reversible fields MUST be captured with one `capture_fields` batch per turn.
+  Independently valid fields MUST be retained and invalid or ungrounded items
+  returned in `rejectedFields` for focused retry; duplicate keys MUST reject
+  the batch before any field is committed.
 - Routing and end-call actions MUST remain explicit and separate.
 - Tentative email extraction MAY fill an empty draft only for a literal address
   alone or with explicit visitor ownership; it MUST NOT infer spoken punctuation
   and MUST NOT overwrite an existing/corrected value.
-- A speech-captured email MUST remain pending until Reka reads the exact address
-  back and the visitor explicitly confirms it. Voice submission MUST fail at
-  both client and API boundaries when that confirmation is absent. A direct
-  form edit or verified prefill MAY confirm the resulting exact value.
+- `VOICE_EMAIL_CAPTURE_MODE=adaptive` MAY immediately confirm a speech email
+  only when it passes syntax validation, the model's evidence canonicalizes to
+  the exact proposed address, and the latest visitor turn either matches it or
+  has an explicit email cue within the bounded ASR distance. Pending native
+  transcription may yield medium confidence; corrections MUST re-evaluate from
+  the latest turn and replace prior verification. The address remains visible
+  and editable without a blanket confirmation turn.
+- `VOICE_EMAIL_CAPTURE_MODE=strict` MUST restore exact readback and grounded
+  explicit confirmation. Unknown or missing values MUST resolve to `strict`.
+  Typed edits and verified prefills MAY confirm their exact current value in
+  either mode. Client and API MUST still reject invalid, pending, ungrounded, or
+  stale email values.
 
 ### Quality and promotion
 
@@ -148,14 +162,14 @@ dimension, and prove the exact staged commit before promotion.
 - [x] AC-03 — Profile switching and session updates:
   `tests/voice-runtime-profile.test.ts` and
   `tests/realtime-client-events.test.ts`.
-- [x] AC-04 — Compact prompt, read-only lookup, and atomic capture:
+- [x] AC-04 — Compact prompt, read-only lookup, and partial-safe batched capture:
   `tests/voice-profile.test.ts`, `tests/voice-knowledge.test.ts`, and
   `tests/realtime-events.test.ts`.
 - [x] AC-05 — Controlled model/reasoning cells:
   `tests/voice-experiments.test.ts` and `tests/openai-realtime.test.ts`.
 - [x] AC-06 — Typed duration policy and server timing:
   `tests/voice-session-policy.test.ts` and `tests/voice-session-route.test.ts`.
-- [x] AC-07 — Independent remote-audio and browser-tool measurement:
+- [x] AC-07 — Independent remote-audio and per-tool queue/execution/result measurement:
   `tests/voice-audio-activity.test.ts`, `tests/voice-latency.test.ts`, and
   `tests/voice-eval.test.ts`.
 - [x] AC-08 — Conservative tentative extraction:
@@ -193,6 +207,9 @@ dimension, and prove the exact staged commit before promotion.
   max close, and close while speaking MUST preserve the editable handoff and
   emit the existing close diagnostics.
 - A browser clock jump MUST not persist an unbounded tool duration.
+- Lead persistence and independent notification fan-out MUST start concurrently
+  so `route_to_team` is bounded by the slower dependency rather than their sum;
+  failure semantics and notification durability MUST remain unchanged.
 - A temporarily older Convex deployment MUST receive a compatibility retry
   without evolvable latency/transport/profile fields.
 
@@ -206,7 +223,7 @@ utterance order constant. Change only one dimension at a time:
 | Endpointing | `baseline` | `instant-v1` |
 | Model | `control` | `candidate` |
 | Reasoning | `low` | `minimal` |
-| Prompt/tools | exact `b4a11f1` source boundary | compact prompt + lookup + atomic capture |
+| Prompt/tools | exact `b4a11f1` source boundary | compact prompt + lookup + batched reversible capture |
 
 The same corpus is required for each comparison: a normal uninterrupted brief;
 a thought with a 700–1,200 ms pause; a slowly dictated email with a mid-address
@@ -235,7 +252,7 @@ an unperformed listening result is never a pass.
   promotion status and aggregate-only console output, including tap-to-live
   p50/p95 by runtime profile and full runtime/model/reasoning cell.
 - Raw transcripts and captured PII MUST NOT appear in structured route logs.
-- `/api/health` exposes the active runtime/model/reasoning cells and selected
+- `/api/health` exposes the active runtime/model/reasoning/capture cells and selected
   model without credentials or visitor data so release status can be rebuilt
   without chat history or container-shell access.
 - `pnpm --silent ops:status --json` reports only aggregate voice evidence. Missing
@@ -251,9 +268,12 @@ an unperformed listening result is never a pass.
    `https://staging.oriental.mereka.io` and verify `/api/health` version.
 3. Run the dry evaluation and manual AC-12 checks without submitting a staging
    lead while staging shares the production data plane.
-4. Keep `VOICE_RUNTIME_PROFILE=baseline`, `VOICE_MODEL_CELL=control`, and
-   `VOICE_REASONING_CELL=low` until the promotion gate and human review pass.
-5. Roll back endpointing with `VOICE_RUNTIME_PROFILE=baseline`; roll back model
+4. Keep `VOICE_RUNTIME_PROFILE=baseline`, `VOICE_MODEL_CELL=control`,
+   `VOICE_REASONING_CELL=low`, and `VOICE_EMAIL_CAPTURE_MODE=adaptive`; the
+   runtime/model/reasoning candidates remain gated while adaptive capture is a
+   separately approved product policy.
+5. Roll back email friction independently with `VOICE_EMAIL_CAPTURE_MODE=strict`.
+   Roll back endpointing with `VOICE_RUNTIME_PROFILE=baseline`; roll back model
    or reasoning independently with their control env values. Roll back the
 prompt/tool slice independently by redeploying exact pre-slice commit
    `b4a11f160f0be50fb1c878b019fdfe4d7fe64e03`; roll back the full web release by
@@ -273,7 +293,8 @@ prompt/tool slice independently by redeploying exact pre-slice commit
 - PR4 prompt/tool code is part of the reviewed merge and has its own exact
   rollback boundary at `b4a11f160f0be50fb1c878b019fdfe4d7fe64e03`.
   Its presence does not satisfy or bypass the PR3 runtime-profile sample gate;
-  production runtime selection remains baseline/control/low.
+  production runtime selection remains baseline/control/low with adaptive
+  grounded email capture.
 
 ## Evidence-gated Decisions
 
@@ -299,4 +320,4 @@ prompt/tool slice independently by redeploying exact pre-slice commit
   evidence, not proof that voice feels instant or excellent.
 - The measured gate blocks `instant-v1`, candidate model, and minimal reasoning
   promotion. It does not block the owner's explicitly authorized deployment of
-  the reviewed web code while production stays baseline/control/low.
+  the reviewed web code while production stays baseline/control/low/adaptive.

@@ -17,6 +17,7 @@ import {
 } from "@/lib/voice/client-events";
 import { endConversation, resolveConversationId, touchConversation } from "@/lib/voice/conversation";
 import { recallHandoff, rememberHandoff } from "@/lib/voice/handoff-memory";
+import type { VoiceToolName, VoiceToolOutcome } from "@/lib/voice/latency";
 import {
   fetchWithTimeout,
   LEAD_SUBMIT_TIMEOUT_MS,
@@ -94,6 +95,8 @@ export function VoiceAgentDialog({
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const submittingRef = useRef(false);
   const submittedLeadIdRef = useRef<string | null>(null);
+  const dialogContentRef = useRef<HTMLDivElement | null>(null);
+  const dialogLayoutRef = useRef<HTMLDivElement | null>(null);
   const lastSyncedHandoffRef = useRef("");
   const openedVoiceTurnRef = useRef(false);
   const reviewRef = useRef<VoiceReviewMetadata | null>(null);
@@ -104,7 +107,9 @@ export function VoiceAgentDialog({
   );
   const connectionStatusRef = useRef<VoiceConnectionStatus>("idle");
   const postCloseSnapshotRef = useRef<((reason: VoiceCloseReason) => void) | null>(null);
-  const recordToolDurationRef = useRef<((durationMs: number) => void) | null>(null);
+  const recordToolDurationRef = useRef<
+    ((sample: { at: number; durationMs: number; name: VoiceToolName; outcome: VoiceToolOutcome }) => void) | null
+  >(null);
   const prewarmSnapshotIdsRef = useRef<Set<string>>(new Set());
   const [reviewMetadata, setReviewMetadata] = useState<VoiceReviewMetadata | null>(null);
 
@@ -226,7 +231,7 @@ export function VoiceAgentDialog({
     prefillEmail: prefill?.email,
     submitLead: (leadState) => submit("voice", leadState),
     onEndVoice: () => teardownVoiceRef.current?.("manual"),
-    onToolDuration: (durationMs) => recordToolDurationRef.current?.(durationMs),
+    onToolDuration: (sample) => recordToolDurationRef.current?.(sample),
     onCaptureNeedsAttention: (key) => formRef.current?.setFocus(key),
   });
   const { segment, captured, emailVerification, transcript, stateRef } = runtime;
@@ -281,7 +286,13 @@ export function VoiceAgentDialog({
   const [tunerEnabled, setTunerEnabled] = useState(false);
   const pendingVariantRestartRef = useRef(false);
   useEffect(() => {
-    setTunerEnabled(readTunerFlag());
+    let active = true;
+    void readTunerFlag().then((next) => {
+      if (active) setTunerEnabled(next);
+    });
+    return () => {
+      active = false;
+    };
   }, []);
   const switchVoiceVariant = useCallback(
     (variantId: string) => {
@@ -503,19 +514,61 @@ export function VoiceAgentDialog({
   const selectedSegment = getSegment(segment);
   const submitted = status === "submitted";
 
+  useEffect(() => {
+    if (!open || submitted) return;
+    const desktopLayout = window.matchMedia("(min-width: 80rem)");
+    let resetFrame = 0;
+    let settledReset = 0;
+    const resetResponsiveScroll = () => {
+      window.cancelAnimationFrame(resetFrame);
+      resetFrame = window.requestAnimationFrame(() => {
+        const layout = dialogLayoutRef.current;
+        if (!layout) return;
+        layout.scrollTop = 0;
+        layout.scrollLeft = 0;
+        for (const region of layout.children) {
+          region.scrollTop = 0;
+          region.scrollLeft = 0;
+        }
+        if (!desktopLayout.matches) dialogContentRef.current?.focus({ preventScroll: true });
+      });
+    };
+    resetResponsiveScroll();
+    // Base UI finishes its focus-trap setup after the opening frame. Reassert
+    // the popup focus once that settles so a lower form field cannot scroll a
+    // short mobile viewport to the middle or summon its keyboard on open.
+    settledReset = window.setTimeout(resetResponsiveScroll, 120);
+    desktopLayout.addEventListener("change", resetResponsiveScroll);
+    return () => {
+      window.cancelAnimationFrame(resetFrame);
+      window.clearTimeout(settledReset);
+      desktopLayout.removeEventListener("change", resetResponsiveScroll);
+    };
+  }, [open, submitted]);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
+        ref={dialogContentRef}
         className={cn(
-          "max-h-[94svh] overflow-hidden rounded-xl border-white/10 bg-mk-off-black p-0 text-white shadow-2xl sm:max-w-none",
+          "max-h-[calc(100dvh-1rem)] max-w-none overflow-hidden rounded-xl border-white/10 bg-mk-off-black p-0 text-white shadow-2xl sm:max-h-[94dvh] sm:max-w-none",
           // Once sent, the intake collapses to a compact confirmation — no
           // reason to hold a 1500px canvas for a done state.
-          submitted ? "w-[min(560px,94vw)]" : "w-[min(1500px,96vw)]",
+          submitted
+            ? "w-[min(560px,calc(100vw-1rem))]"
+            : "h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] sm:h-[94dvh] sm:w-[min(1500px,96vw)]",
         )}
+        data-voice-agent-dialog
+        initialFocus={() =>
+          window.matchMedia("(max-width: 79.999rem)").matches
+            ? dialogContentRef.current
+            : (dialogContentRef.current?.querySelector<HTMLInputElement>('input[name="name"]') ??
+              dialogContentRef.current)
+        }
       >
         <DialogTitle className="sr-only">Talk to Reka</DialogTitle>
         {submitted ? (
-          <div className="max-h-[94svh] overflow-y-auto">
+          <div className="max-h-[calc(100dvh-1rem)] overflow-y-auto overscroll-contain sm:max-h-[94dvh]">
             <VoiceSubmittedConfirmation
               captured={captured}
               onClose={() => onOpenChange(false)}
@@ -523,31 +576,21 @@ export function VoiceAgentDialog({
             />
           </div>
         ) : (
-          <div className="grid max-h-[94svh] grid-cols-1 overflow-y-auto lg:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_360px]">
-            <aside className="order-2 border-t border-white/10 p-5 lg:order-none lg:row-span-2 lg:border-t-0 lg:border-r xl:row-span-1">
-              <div className="mb-5 text-xs uppercase tracking-[0.16em] text-white/48">Partner type</div>
-              <div className="flex gap-3 overflow-x-auto pb-2 lg:flex-col lg:overflow-visible">
-                {segmentOptions().map((option) => (
-                  <button
-                    className={cn(
-                      "min-w-56 rounded-lg border border-white/10 p-4 text-left transition hover:border-white/28 hover:bg-white/8 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mk-horizon lg:min-w-0",
-                      option.id === segment && "border-mk-horizon bg-white/10",
-                    )}
-                    key={option.id}
-                    onClick={() => runtime.setSegment(option.id)}
-                    type="button"
-                  >
-                    <div className="text-sm font-semibold">{option.label}</div>
-                    <div className="mt-1 text-xs leading-5 text-white/58">{option.blurb}</div>
-                  </button>
-                ))}
-              </div>
-            </aside>
-
-            <main className="order-1 min-w-0 p-5 sm:p-8 lg:order-none">
+          <div
+            className="grid h-full min-h-0 grid-cols-1 overflow-y-auto overscroll-contain lg:grid-cols-[200px_minmax(0,1fr)_320px] lg:overflow-hidden xl:grid-cols-[280px_minmax(0,1fr)_360px]"
+            data-voice-dialog-layout
+            ref={dialogLayoutRef}
+          >
+            <main
+              className="order-1 min-w-0 p-5 sm:p-8 lg:order-none lg:col-start-2 lg:row-start-1 lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain"
+              data-voice-primary-region
+            >
               {tunerEnabled ? (
-                <div className="mb-4 flex flex-wrap items-center gap-1.5">
-                  <span className="mr-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/40">
+                <div className="mb-4 flex flex-wrap items-center gap-1.5" data-voice-tuner>
+                  <span
+                    className="mr-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#aaa8af]"
+                    data-voice-tuner-label
+                  >
                     Voice
                   </span>
                   {VOICE_VARIANTS.map((variant) => {
@@ -595,9 +638,32 @@ export function VoiceAgentDialog({
               />
             </main>
 
+            <aside
+              className="order-2 border-t border-white/10 p-5 lg:order-none lg:col-start-1 lg:row-start-1 lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:border-t-0 lg:border-r"
+              data-voice-partner-region
+            >
+              <div className="mb-5 text-xs uppercase tracking-[0.16em] text-white/48">Partner type</div>
+              <div className="flex gap-3 overflow-x-auto pb-2 lg:flex-col lg:overflow-visible">
+                {segmentOptions().map((option) => (
+                  <button
+                    className={cn(
+                      "min-w-56 rounded-lg border border-white/10 p-4 text-left transition hover:border-white/28 hover:bg-white/8 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mk-horizon lg:min-w-0",
+                      option.id === segment && "border-mk-horizon bg-white/10",
+                    )}
+                    key={option.id}
+                    onClick={() => runtime.setSegment(option.id)}
+                    type="button"
+                  >
+                    <div className="text-sm font-semibold">{option.label}</div>
+                    <div className="mt-1 text-xs leading-5 text-white/58">{option.blurb}</div>
+                  </button>
+                ))}
+              </div>
+            </aside>
+
             <HandoffPanel
               captured={captured}
-              className="order-3 lg:order-none lg:col-start-2 xl:col-start-auto"
+              className="order-3 lg:order-none lg:col-start-3 lg:row-start-1 lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:border-t-0"
               emailVerification={emailVerification}
               form={form}
               onChange={runtime.updateCaptured}

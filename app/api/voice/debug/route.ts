@@ -131,6 +131,8 @@ function logVoiceSessionHealth(reviewId: string, snapshot: VoiceReviewSnapshotRe
       closedAt: snapshot.closedAt ?? null,
       segment: snapshot.segment,
       model: snapshot.model ?? null,
+      modelCell: snapshot.modelCell ?? null,
+      reasoningCell: snapshot.reasoningCell ?? null,
       voice: snapshot.voice ?? null,
       speed: snapshot.speed ?? null,
       variant: snapshot.variant ?? null,
@@ -139,6 +141,8 @@ function logVoiceSessionHealth(reviewId: string, snapshot: VoiceReviewSnapshotRe
       capturedFields,
       capturedFieldCount: Object.values(capturedFields).filter(Boolean).length,
       capturedMessageChars: snapshot.captured.message.length,
+      emailCaptureMode: snapshot.emailCaptureMode ?? null,
+      emailVerification: snapshot.emailVerification ?? null,
       routeRequested: snapshot.routeRequested,
       errorCount: actionableErrors.length,
       benignErrorCount,
@@ -227,6 +231,10 @@ function buildHealthSnapshotSignature(snapshot: VoiceReviewSnapshotRequest["snap
     transcriptTurns: snapshot.transcript.length,
     transcriptRoles: countTranscriptRoles(snapshot.transcript),
     capturedFields: buildCapturedFieldSummary(snapshot.captured),
+    emailCaptureMode: snapshot.emailCaptureMode ?? null,
+    emailVerification: snapshot.emailVerification ?? null,
+    modelCell: snapshot.modelCell ?? null,
+    reasoningCell: snapshot.reasoningCell ?? null,
     routeRequested: snapshot.routeRequested,
     actionableErrorCount: snapshot.errors.filter((error) => !isBenignVoiceError(error)).length,
     benignErrorCount: snapshot.errors.filter(isBenignVoiceError).length,
@@ -265,6 +273,34 @@ function summarizeLatency(latency: VoiceReviewSnapshotRequest["snapshot"]["laten
     typeof turn.stopToResponseCreatedMs === "number" ? [turn.stopToResponseCreatedMs] : [],
   );
   const tool = latency.turns.flatMap((turn) => (typeof turn.toolDurationMs === "number" ? [turn.toolDurationMs] : []));
+  const toolCalls = latency.toolCalls ?? [];
+  const toolCallsByName = Object.fromEntries(
+    [...new Set(toolCalls.map((sample) => sample.name))].sort().map((name) => {
+      const samples = toolCalls.filter((sample) => sample.name === name);
+      const execution = samples.map((sample) => sample.executionMs);
+      const queued = samples.flatMap((sample) =>
+        typeof sample.responseCreatedToCallMs === "number" ? [sample.responseCreatedToCallMs] : [],
+      );
+      const result = samples.flatMap((sample) =>
+        typeof sample.responseCreatedToResultMs === "number" ? [sample.responseCreatedToResultMs] : [],
+      );
+      return [
+        name,
+        {
+          samples: samples.length,
+          executionP50Ms: percentile(execution, 0.5),
+          executionP95Ms: percentile(execution, 0.95),
+          responseCreatedToCallP50Ms: percentile(queued, 0.5),
+          responseCreatedToCallP95Ms: percentile(queued, 0.95),
+          responseCreatedToResultP50Ms: percentile(result, 0.5),
+          responseCreatedToResultP95Ms: percentile(result, 0.95),
+          rejected: samples.filter((sample) => sample.outcome === "rejected").length,
+          failed: samples.filter((sample) => sample.outcome === "failed" || sample.outcome === "dispatch_failed")
+            .length,
+        },
+      ];
+    }),
+  );
   return {
     tapToLiveMs: latency.activation?.tapToLiveMs ?? null,
     tapToAudibleMs: latency.activation?.tapToAudibleMs ?? null,
@@ -280,6 +316,8 @@ function summarizeLatency(latency: VoiceReviewSnapshotRequest["snapshot"]["laten
     toolSamples: tool.length,
     toolP50Ms: percentile(tool, 0.5),
     toolP95Ms: percentile(tool, 0.95),
+    toolCallSamples: toolCalls.length,
+    toolCallsByName,
     interruptedTurns: latency.turns.filter((turn) => turn.interrupted).length,
     rapidResumeTurns: latency.turns.filter((turn) => turn.rapidResume).length,
   };
