@@ -1,10 +1,11 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { preconnect } from "react-dom";
 import { playArmCue } from "@/components/voice-agent/live-chime";
 import type { SegmentId } from "@/lib/segments";
+import { revokePrefillRequestEmail } from "@/lib/voice/prefill-request";
 import { DEFAULT_VOICE_VARIANT_ID, VOICE_VARIANT_IDS } from "@/lib/voice/variants";
 
 // The dialog pulls in the whole voice stack (forms, zod, realtime runtime), so
@@ -22,6 +23,11 @@ export type VoicePrefill = {
   autoStart?: boolean;
   /** Internal monotonic duration only; no wall-clock tap timestamp is retained. */
   activation?: ReturnType<typeof playArmCue>;
+};
+
+type VoiceOpenRequest = {
+  id: number;
+  prefill?: VoicePrefill;
 };
 
 const VOICE_VARIANT_STORAGE_KEY = "oriental.voiceVariant";
@@ -44,7 +50,8 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [intent, setIntent] = useState<SegmentId | undefined>();
-  const [prefill, setPrefill] = useState<VoicePrefill | undefined>();
+  const [openRequest, setOpenRequest] = useState<VoiceOpenRequest | undefined>();
+  const nextOpenRequestIdRef = useRef(1);
   const [prewarmSignal, setPrewarmSignal] = useState(0);
   const [voiceVariant, setVoiceVariantState] = useState<string | undefined>(DEFAULT_VOICE_VARIANT_ID);
 
@@ -74,13 +81,25 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
 
   const openVoice = useCallback((nextIntent?: SegmentId, nextPrefill?: VoicePrefill) => {
     const activation = nextPrefill?.autoStart ? playArmCue() : undefined;
+    const requestId = nextOpenRequestIdRef.current++;
     setIntent(nextIntent);
-    setPrefill(nextPrefill ? { ...nextPrefill, activation } : undefined);
+    setOpenRequest({ id: requestId, prefill: nextPrefill ? { ...nextPrefill, activation } : undefined });
     setMounted(true);
     setOpen(true);
   }, []);
 
-  const close = useCallback(() => setOpen(false), []);
+  const handleOpenChange = useCallback((nextOpen: boolean) => {
+    setOpen(nextOpen);
+    if (!nextOpen) setOpenRequest(undefined);
+  }, []);
+
+  const close = useCallback(() => handleOpenChange(false), [handleOpenChange]);
+
+  // Prefill PII is a one-shot opening instruction. Compare-and-swap by request
+  // id so a late clear/close from call A can never erase a newer call B.
+  const revokePrefill = useCallback((requestId: number) => {
+    setOpenRequest((current) => revokePrefillRequestEmail(current, requestId));
+  }, []);
 
   const prewarm = useCallback(() => {
     setMounted(true);
@@ -111,9 +130,11 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       {mounted ? (
         <VoiceAgentDialog
           intent={intent}
-          onOpenChange={setOpen}
+          onOpenChange={handleOpenChange}
+          onPrefillRevoked={revokePrefill}
           open={open}
-          prefill={prefill}
+          prefill={openRequest?.prefill}
+          prefillRequestId={openRequest?.id}
           prewarmSignal={prewarmSignal}
           voiceVariant={voiceVariant}
         />

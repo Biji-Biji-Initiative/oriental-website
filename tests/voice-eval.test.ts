@@ -278,6 +278,36 @@ describe("mergeConversationSessions", () => {
     expect(deriveTransportSignals(merged[0] as VoiceEvalSession).droppedMidTurn).toBe(true);
   });
 
+  it("fails closed when more than one call row claims immutable submission evidence", () => {
+    const merged = mergeConversationSessions([
+      session({
+        reviewId: "submitted-call-a",
+        conversationId: "conv-double-evidence",
+        connectStartedAt: 1,
+        submittedAt: 10,
+        leadId: "lead-one",
+        submissionEvidenceOutcome: "matched",
+        submissionEvidenceProvenance: "v1",
+      }),
+      session({
+        reviewId: "submitted-call-b",
+        conversationId: "conv-double-evidence",
+        connectStartedAt: 2,
+        submittedAt: 20,
+        leadId: "lead-one",
+        submissionEvidenceOutcome: "matched",
+        submissionEvidenceProvenance: "v1",
+      }),
+    ]);
+
+    expect(merged[0]).toMatchObject({ submissionEvidenceConflict: true });
+    expect(deriveCaptureIntegritySignals(merged[0] as VoiceEvalSession)).toMatchObject({
+      staleEmailSubmissions: 0,
+      unattributedEmailSubmissions: 1,
+      failed: true,
+    });
+  });
+
   it("marks a conversation that switches voice profile across call segments", () => {
     const merged = mergeConversationSessions([
       session({
@@ -582,6 +612,68 @@ describe("deriveCaptureIntegritySignals", () => {
 
     expect(mutableSnapshotMatches.staleEmailSubmissions).toBe(1);
     expect(mutableSnapshotDiffers.staleEmailSubmissions).toBe(0);
+  });
+
+  it("does not let a post-submission correction rewrite a frozen successful outcome", () => {
+    const signals = deriveCaptureIntegritySignals(
+      session({
+        submittedAt: 100,
+        leadId: "lead-before-later-correction",
+        submissionEvidenceOutcome: "none",
+        submissionEvidenceProvenance: "v1",
+        submissionAuthorityTurnSequence: 1,
+        transcript: [
+          { role: "user", text: "My email is original@example.com." },
+          { role: "user", text: "Actually, my email is later@example.com." },
+        ],
+      }),
+    );
+
+    expect(signals).toMatchObject({
+      staleEmailSubmissions: 0,
+      unattributedEmailSubmissions: 0,
+      failed: false,
+    });
+  });
+
+  it("does not let a later correction-back mask a frozen submission mismatch", () => {
+    const signals = deriveCaptureIntegritySignals(
+      session({
+        submittedAt: 100,
+        leadId: "lead-frozen-mismatch",
+        submissionEvidenceOutcome: "mismatched",
+        submissionEvidenceProvenance: "v1",
+        transcript: [
+          { role: "user", text: "Actually, my email is corrected@example.com." },
+          { role: "user", text: "Switch it back to original@example.com." },
+        ],
+      }),
+    );
+
+    expect(signals).toMatchObject({
+      staleEmailSubmissions: 1,
+      unattributedEmailSubmissions: 0,
+      failed: true,
+    });
+  });
+
+  it("accepts a direct typed submission with no correction as fully attributed", () => {
+    const signals = deriveCaptureIntegritySignals(
+      session({
+        submittedAt: 100,
+        leadId: "lead-typed",
+        submissionEvidenceOutcome: "none",
+        submissionEvidenceProvenance: "v1",
+        submissionEvidenceSource: "typed",
+        submissionAuthorityTurnSequence: 1,
+      }),
+    );
+
+    expect(signals).toMatchObject({
+      staleEmailSubmissions: 0,
+      unattributedEmailSubmissions: 0,
+      failed: false,
+    });
   });
 
   it("fails closed when immutable submission attribution is unavailable", () => {
@@ -1108,6 +1200,7 @@ describe("aggregateEvals + meetsThreshold", () => {
     const confounded = buildSessionEval(
       session({
         reviewId: "confounded",
+        deploymentEnvironment: "staging",
         runtimeProfile: "instant-v1",
         modelCell: "candidate",
         reasoningCell: "minimal",
@@ -1128,6 +1221,7 @@ describe("aggregateEvals + meetsThreshold", () => {
     const audition = buildSessionEval(
       session({
         reviewId: "candidate-audition",
+        deploymentEnvironment: "staging",
         modelCell: "candidate",
         voice: "marin",
         speed: 1.22,
@@ -1147,7 +1241,14 @@ describe("aggregateEvals + meetsThreshold", () => {
       null,
     );
     const candidate = buildSessionEval(
-      session({ reviewId: "candidate-render", modelCell: "candidate", voice: "marin", speed: 1.22, variant: null }),
+      session({
+        reviewId: "candidate-render",
+        deploymentEnvironment: "staging",
+        modelCell: "candidate",
+        voice: "marin",
+        speed: 1.22,
+        variant: null,
+      }),
       null,
     );
 
@@ -1162,7 +1263,14 @@ describe("aggregateEvals + meetsThreshold", () => {
       null,
     );
     const candidate = buildSessionEval(
-      session({ reviewId: "matched-candidate", modelCell: "candidate", voice: "coral", speed: 1.28, variant: null }),
+      session({
+        reviewId: "matched-candidate",
+        deploymentEnvironment: "staging",
+        modelCell: "candidate",
+        voice: "coral",
+        speed: 1.28,
+        variant: null,
+      }),
       null,
     );
 
@@ -1175,7 +1283,14 @@ describe("aggregateEvals + meetsThreshold", () => {
       null,
     );
     const candidate = buildSessionEval(
-      session({ reviewId: "speed-candidate", modelCell: "candidate", voice: "coral", speed: 1.22, variant: null }),
+      session({
+        reviewId: "speed-candidate",
+        deploymentEnvironment: "staging",
+        modelCell: "candidate",
+        voice: "coral",
+        speed: 1.22,
+        variant: null,
+      }),
       null,
     );
 
@@ -1186,7 +1301,14 @@ describe("aggregateEvals + meetsThreshold", () => {
 
   it("fails closed when a non-voice experiment has no control voice-profile baseline", () => {
     const candidateOnly = buildSessionEval(
-      session({ reviewId: "candidate-only", modelCell: "candidate", voice: "marin", speed: 1.22, variant: null }),
+      session({
+        reviewId: "candidate-only",
+        deploymentEnvironment: "staging",
+        modelCell: "candidate",
+        voice: "marin",
+        speed: 1.22,
+        variant: null,
+      }),
       null,
     );
 
@@ -1207,6 +1329,24 @@ describe("aggregateEvals + meetsThreshold", () => {
     expect(validation).toEqual({
       ok: false,
       failures: ["missing-render is missing experiment attribution: voice, speed"],
+    });
+  });
+
+  it("rejects candidate evidence without canonical staging attribution", () => {
+    const candidate = buildSessionEval(
+      session({
+        reviewId: "candidate-unknown-environment",
+        modelCell: "candidate",
+        voice: "coral",
+        speed: 1.28,
+        variant: null,
+      }),
+      null,
+    );
+
+    expect(validateVoiceExperimentEvidence([candidate])).toEqual({
+      ok: false,
+      failures: ["candidate-unknown-environment candidate evidence is not attributed to canonical staging"],
     });
   });
 

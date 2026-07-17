@@ -7,6 +7,7 @@ export type { NotificationResult };
 export type LeadSubmitResponse = {
   ok?: boolean;
   id?: string;
+  acceptedAt?: number;
   error?: string;
   persisted?: boolean;
   notifications?: {

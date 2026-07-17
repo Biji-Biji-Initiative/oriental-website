@@ -20,6 +20,11 @@
 import { z } from "zod";
 import { activeVoiceExperimentDimensions } from "../voice/experiments";
 import { isVoiceAvailabilityFailure } from "../voice/realtime-call-failure";
+import type {
+  VoiceSubmissionEvidenceOutcome,
+  VoiceSubmissionEvidenceProvenance,
+  VoiceSubmissionEvidenceSource,
+} from "../voice/submission-evidence";
 
 export type EvalTranscriptTurn = { role: string; text: string };
 
@@ -110,8 +115,16 @@ export type VoiceEvalSession = {
   latency?: EvalLatency;
   routeRequested: boolean;
   submittedAt?: number | null;
+  createdAt?: number | null;
+  updatedAt?: number | null;
   /** PII-free comparison against the immutable email stored on the routed lead. */
   submittedEmailCorrectionAttribution?: SubmittedEmailCorrectionAttribution;
+  /** Server-bound result derived from the immutable lead at acceptance time. */
+  submissionEvidenceOutcome?: VoiceSubmissionEvidenceOutcome;
+  submissionEvidenceProvenance?: VoiceSubmissionEvidenceProvenance;
+  submissionEvidenceSource?: VoiceSubmissionEvidenceSource;
+  submissionAuthorityTurnSequence?: number;
+  submissionEvidenceConflict?: boolean;
   /** Review ids of the call segments folded into this conversation (if merged). */
   callReviewIds?: string[];
   /** Close reasons from every call segment, retained across conversation folding. */
@@ -197,7 +210,11 @@ export function mergeConversationSessions(sessions: VoiceEvalSession[]): VoiceEv
     }
     const ordered = [...group].sort((a, b) => callStartAt(a) - callStartAt(b));
     const head = ordered[ordered.length - 1] as VoiceEvalSession;
-    const submitted = ordered.find((s) => Boolean(s.submittedAt) || Boolean(s.leadId));
+    const submittedRows = ordered.filter((s) => Boolean(s.submittedAt) || Boolean(s.leadId));
+    const evidenceRows = submittedRows.filter((s) => Boolean(s.submissionEvidenceOutcome));
+    const submitted = evidenceRows[0] ?? submittedRows[0];
+    const submissionEvidenceConflict =
+      evidenceRows.length > 1 || new Set(submittedRows.map((session) => session.leadId).filter(Boolean)).size > 1;
     const foldedTransport = ordered.reduce<EvalTransport>(
       (acc, s) => foldEvalTransport(acc, s.transport ?? null),
       null,
@@ -234,6 +251,16 @@ export function mergeConversationSessions(sessions: VoiceEvalSession[]): VoiceEv
       mixedExperimentProfile,
       activationAttempted: ordered.some((session) => session.activationAttempted === true),
       routeRequested: ordered.some((s) => s.routeRequested),
+      submittedEmailCorrectionAttribution: submissionEvidenceConflict
+        ? undefined
+        : submitted?.submittedEmailCorrectionAttribution,
+      submissionEvidenceOutcome: submissionEvidenceConflict ? undefined : submitted?.submissionEvidenceOutcome,
+      submissionEvidenceProvenance: submissionEvidenceConflict ? undefined : submitted?.submissionEvidenceProvenance,
+      submissionEvidenceSource: submissionEvidenceConflict ? undefined : submitted?.submissionEvidenceSource,
+      submissionAuthorityTurnSequence: submissionEvidenceConflict
+        ? undefined
+        : submitted?.submissionAuthorityTurnSequence,
+      submissionEvidenceConflict,
       callReviewIds: ordered.map((s) => s.reviewId),
       callCloseReasons: ordered.flatMap(
         (s) => s.callCloseReasons ?? (typeof s.closeReason === "string" ? [s.closeReason] : []),
@@ -654,16 +681,17 @@ export function deriveCaptureIntegritySignals(session: VoiceEvalSession): Captur
     (error) => error.code === "voice_capture_rejected" && /(?:^|:)email(?:$|:)/i.test(error.message),
   ).length;
   const unconfirmedEmailFailures = session.errors.filter((error) => error.code === "voice_email_unconfirmed").length;
-  const correction = resolveLatestEmailCorrection(session.transcript);
   const submitted = typeof session.submittedAt === "number" || Boolean(session.leadId);
-  const hasSubmissionCorrectionEvidence = submitted && correction.kind !== "none";
-  const staleEmailSubmissions =
-    correction.kind === "resolved" && session.submittedEmailCorrectionAttribution === "mismatched" ? 1 : 0;
+  const outcome =
+    session.submissionEvidenceOutcome ??
+    (session.submittedEmailCorrectionAttribution === "matched"
+      ? "matched"
+      : session.submittedEmailCorrectionAttribution === "mismatched"
+        ? "mismatched"
+        : undefined);
+  const staleEmailSubmissions = submitted && outcome === "mismatched" ? 1 : 0;
   const unattributedEmailSubmissions =
-    hasSubmissionCorrectionEvidence &&
-    (correction.kind === "ambiguous" || typeof session.submittedEmailCorrectionAttribution === "undefined")
-      ? 1
-      : 0;
+    submitted && (session.submissionEvidenceConflict || !outcome || outcome === "ambiguous") ? 1 : 0;
   const totalFailures =
     rejectedCaptures + unconfirmedEmailFailures + staleEmailSubmissions + unattributedEmailSubmissions;
   return {
@@ -1184,6 +1212,9 @@ export function validateVoiceExperimentEvidence(evals: SessionEval[]): VoiceExpe
     }
     if (entry.mixedVoiceProfile) {
       return [`${entry.reviewId} spans multiple voice profiles across reconnects`];
+    }
+    if (entry.modelCell === "candidate" && entry.deploymentEnvironment !== "staging") {
+      return [`${entry.reviewId} candidate evidence is not attributed to canonical staging`];
     }
 
     const missingAttribution = [

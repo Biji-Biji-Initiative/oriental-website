@@ -49,6 +49,7 @@ export const leadRequestSchema = z.object({
   voiceInputPolicy: z.enum(["baseline", "fast", "patient"]).optional(),
   voiceEmailVerified: z.boolean().optional(),
   voiceEmailVerificationSource: z.enum(["prefill", "speech", "typed"]).optional(),
+  voiceEmailVerificationUserTurnSequence: z.number().int().nonnegative().max(200).optional(),
   utm: utmSchema,
 });
 

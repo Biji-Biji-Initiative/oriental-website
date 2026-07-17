@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 const convexSource = readFileSync("convex/leads.ts", "utf8");
 const schemaSource = readFileSync("convex/schema.ts", "utf8");
 const tableSource = readFileSync("components/admin/AdminEnquiryDataTable.tsx", "utf8");
+const workspaceSource = readFileSync("components/admin/EnquiryCrmWorkspace.tsx", "utf8");
 
 describe("admin CRM data integrity contract", () => {
   it("implements archive as a reversible patch and never a hard delete", () => {
@@ -60,5 +61,9 @@ describe("admin CRM data integrity contract", () => {
     const normalizedTableSource = tableSource.replace(/\s+/g, " ");
     expect(normalizedTableSource).toContain("No customer, transcript, delivery, or audit data is deleted.");
     expect(normalizedTableSource).toContain("archive or restore records without deleting customer evidence");
+  });
+
+  it("strips server-owned submission evidence before lead rows cross into the client table", () => {
+    expect(workspaceSource).toContain("utm: publicLeadUtm(lead.utm)");
   });
 });
