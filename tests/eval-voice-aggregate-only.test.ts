@@ -138,6 +138,108 @@ describe("eval-voice aggregate-only mode", () => {
     }
   });
 
+  it("fails closed without exposing identifiers when profile enrichment is incomplete", async () => {
+    const server = createServer((request, response) => {
+      let body = "";
+      request.setEncoding("utf8");
+      request.on("data", (chunk) => {
+        body += chunk;
+      });
+      request.on("end", () => {
+        const parsedBody = JSON.parse(body) as Record<string, unknown>;
+        const value = parsedBody.path === "leads:voiceSessionByReviewId" ? null : [voiceSession()];
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ status: "success", value }));
+      });
+    });
+    await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("mock Convex server did not bind a port");
+    const cwd = await mkdtemp(resolve(tmpdir(), "oriental-voice-audit-incomplete-"));
+    temporaryDirectories.push(cwd);
+    const repositoryRoot = resolve(import.meta.dirname, "..");
+
+    try {
+      await expect(
+        execFileAsync(
+          resolve(repositoryRoot, "node_modules/.bin/tsx"),
+          [resolve(repositoryRoot, "scripts/eval-voice.ts"), "--aggregate-only", "--limit", "10"],
+          {
+            cwd,
+            env: {
+              ...process.env,
+              CONVEX_URL: `http://127.0.0.1:${address.port}`,
+              CONVEX_INGEST_SECRET: "test-ingest-secret",
+            },
+          },
+        ),
+      ).rejects.toMatchObject({
+        stderr: expect.stringContaining("Voice profile attribution is incomplete; experiment evidence is unavailable."),
+      });
+      expect(await readdir(cwd)).toEqual([]);
+    } finally {
+      await new Promise<void>((resolveClose, rejectClose) =>
+        server.close((error) => (error ? rejectClose(error) : resolveClose())),
+      );
+    }
+  });
+
+  it("fails closed without exposing identifiers when the profile query errors", async () => {
+    const server = createServer((request, response) => {
+      let body = "";
+      request.setEncoding("utf8");
+      request.on("data", (chunk) => {
+        body += chunk;
+      });
+      request.on("end", () => {
+        const parsedBody = JSON.parse(body) as Record<string, unknown>;
+        response.writeHead(200, { "content-type": "application/json" });
+        if (parsedBody.path === "leads:voiceSessionByReviewId") {
+          response.end(JSON.stringify({ status: "error", errorMessage: "private upstream error" }));
+        } else {
+          response.end(JSON.stringify({ status: "success", value: [voiceSession()] }));
+        }
+      });
+    });
+    await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("mock Convex server did not bind a port");
+    const cwd = await mkdtemp(resolve(tmpdir(), "oriental-voice-audit-query-error-"));
+    temporaryDirectories.push(cwd);
+    const repositoryRoot = resolve(import.meta.dirname, "..");
+
+    try {
+      let stderr = "";
+      try {
+        await execFileAsync(
+          resolve(repositoryRoot, "node_modules/.bin/tsx"),
+          [resolve(repositoryRoot, "scripts/eval-voice.ts"), "--aggregate-only", "--limit", "10"],
+          {
+            cwd,
+            env: {
+              ...process.env,
+              CONVEX_URL: `http://127.0.0.1:${address.port}`,
+              CONVEX_INGEST_SECRET: "test-ingest-secret",
+            },
+          },
+        );
+        throw new Error("expected aggregate-only evaluation to fail");
+      } catch (error) {
+        stderr = String((error as { stderr?: string }).stderr ?? "");
+      }
+
+      expect(stderr).toContain("Voice profile attribution query failed; experiment evidence is unavailable.");
+      expect(stderr).not.toMatch(/private-review-id|private-session-id|private-conversation-id|private upstream error/);
+      expect(await readdir(cwd)).toEqual([]);
+    } finally {
+      await new Promise<void>((resolveClose, rejectClose) =>
+        server.close((error) => (error ? rejectClose(error) : resolveClose())),
+      );
+    }
+  });
+
   it("removes identifier-bearing experiment validation failures", () => {
     const report = buildAggregateOnlyVoiceEvalReport({
       generatedAt: "2026-07-17T00:00:00.000Z",
@@ -159,11 +261,11 @@ describe("eval-voice aggregate-only mode", () => {
     expect(report.experimentValidation).toEqual({
       ok: false,
       invalidConversationCount: 1,
-      failures: ["1 conversation varied multiple experiment dimensions"],
+      failures: ["1 conversation failed experiment evidence validation"],
     });
     expect(report.gate).toEqual({
       ok: false,
-      failures: ["1 conversation varied multiple experiment dimensions"],
+      failures: ["1 conversation failed experiment evidence validation"],
     });
     expect(JSON.stringify(report)).not.toContain("private-review-id");
   });

@@ -276,6 +276,30 @@ describe("mergeConversationSessions", () => {
 
     expect(deriveTransportSignals(merged[0] as VoiceEvalSession).droppedMidTurn).toBe(true);
   });
+
+  it("marks a conversation that switches voice profile across call segments", () => {
+    const merged = mergeConversationSessions([
+      session({
+        reviewId: "polished-call",
+        conversationId: "conv-picker-switch",
+        connectStartedAt: 1,
+        voice: "marin",
+        speed: 1.22,
+        variant: "kl-polished",
+      }),
+      session({
+        reviewId: "warm-call",
+        conversationId: "conv-picker-switch",
+        connectStartedAt: 2,
+        voice: "coral",
+        speed: 1.06,
+        variant: "malay-warm",
+      }),
+    ]);
+
+    expect(merged[0]?.mixedVoiceProfile).toBe(true);
+    expect(buildSessionEval(merged[0] as VoiceEvalSession, null).mixedVoiceProfile).toBe(true);
+  });
 });
 
 describe("deriveLatencySignals", () => {
@@ -448,7 +472,7 @@ describe("deriveCaptureIntegritySignals", () => {
     });
   });
 
-  it("flags a submitted stale prefill after a rejected literal email correction", () => {
+  it("flags a submitted stale prefill after a literal email correction even without a rejection event", () => {
     const signals = deriveCaptureIntegritySignals(
       session({
         submittedAt: 100,
@@ -457,14 +481,14 @@ describe("deriveCaptureIntegritySignals", () => {
           { role: "user", text: "My email is old@example.com." },
           { role: "user", text: "Actually, my email is new@example.com." },
         ],
-        errors: [{ code: "voice_capture_rejected", message: "capture_fields:ungrounded_identity_capture:email" }],
+        errors: [],
       }),
     );
 
     expect(signals).toMatchObject({
-      rejectedEmailCaptures: 1,
+      rejectedEmailCaptures: 0,
       staleEmailSubmissions: 1,
-      totalFailures: 2,
+      totalFailures: 1,
       failed: true,
     });
   });
@@ -475,7 +499,33 @@ describe("deriveCaptureIntegritySignals", () => {
         submittedAt: 100,
         captured: { name: "", email: "new@example.com", org: "", message: "" },
         transcript: [{ role: "user", text: "Actually, my email is new@example.com." }],
-        errors: [{ code: "voice_capture_rejected", message: "capture_fields:ungrounded_identity_capture:email" }],
+        errors: [],
+      }),
+    );
+
+    expect(signals.staleEmailSubmissions).toBe(0);
+  });
+
+  it("flags a lead-id-only stale submission and uses the latest explicit correction", () => {
+    const signals = deriveCaptureIntegritySignals(
+      session({
+        leadId: "lead_123",
+        captured: { name: "", email: "first@example.com", org: "", message: "" },
+        transcript: [
+          { role: "user", text: "Actually, my email is second@example.com." },
+          { role: "user", text: "Sorry, my email is final@example.com." },
+        ],
+      }),
+    );
+
+    expect(signals.staleEmailSubmissions).toBe(1);
+  });
+
+  it("does not call an unsubmitted corrected address stale", () => {
+    const signals = deriveCaptureIntegritySignals(
+      session({
+        captured: { name: "", email: "old@example.com", org: "", message: "" },
+        transcript: [{ role: "user", text: "Actually, my email is new@example.com." }],
       }),
     );
 
@@ -901,8 +951,20 @@ describe("aggregateEvals + meetsThreshold", () => {
   });
 
   it("rejects evidence rows that confound multiple experiment dimensions", () => {
+    const control = buildSessionEval(
+      session({ reviewId: "control", voice: "coral", speed: 1.28, variant: null }),
+      null,
+    );
     const valid = buildSessionEval(
-      session({ reviewId: "runtime-only", runtimeProfile: "instant-v1", modelCell: "control", reasoningCell: "low" }),
+      session({
+        reviewId: "runtime-only",
+        runtimeProfile: "instant-v1",
+        modelCell: "control",
+        reasoningCell: "low",
+        voice: "coral",
+        speed: 1.28,
+        variant: null,
+      }),
       null,
     );
     const confounded = buildSessionEval(
@@ -911,12 +973,15 @@ describe("aggregateEvals + meetsThreshold", () => {
         runtimeProfile: "instant-v1",
         modelCell: "candidate",
         reasoningCell: "minimal",
+        voice: "coral",
+        speed: 1.28,
+        variant: null,
       }),
       null,
     );
 
-    expect(validateVoiceExperimentEvidence([valid])).toEqual({ ok: true, failures: [] });
-    const validation = validateVoiceExperimentEvidence([valid, confounded]);
+    expect(validateVoiceExperimentEvidence([control, valid])).toEqual({ ok: true, failures: [] });
+    const validation = validateVoiceExperimentEvidence([control, valid, confounded]);
     expect(validation.ok).toBe(false);
     expect(validation.failures[0]).toContain("runtime, model, reasoning");
   });
@@ -936,5 +1001,91 @@ describe("aggregateEvals + meetsThreshold", () => {
     const validation = validateVoiceExperimentEvidence([audition]);
     expect(validation.ok).toBe(false);
     expect(validation.failures[0]).toContain("model, voice variant");
+  });
+
+  it("rejects model evidence when voice or speed varies even with null variants", () => {
+    const control = buildSessionEval(
+      session({ reviewId: "control-render", modelCell: "control", voice: "coral", speed: 1.28, variant: null }),
+      null,
+    );
+    const candidate = buildSessionEval(
+      session({ reviewId: "candidate-render", modelCell: "candidate", voice: "marin", speed: 1.22, variant: null }),
+      null,
+    );
+
+    const validation = validateVoiceExperimentEvidence([control, candidate]);
+    expect(validation.ok).toBe(false);
+    expect(validation.failures.join("\n")).toContain("model, voice profile");
+  });
+
+  it("accepts model-only evidence when candidate and control voice profiles match", () => {
+    const control = buildSessionEval(
+      session({ reviewId: "matched-control", modelCell: "control", voice: "coral", speed: 1.28, variant: null }),
+      null,
+    );
+    const candidate = buildSessionEval(
+      session({ reviewId: "matched-candidate", modelCell: "candidate", voice: "coral", speed: 1.28, variant: null }),
+      null,
+    );
+
+    expect(validateVoiceExperimentEvidence([control, candidate])).toEqual({ ok: true, failures: [] });
+  });
+
+  it("rejects a speed-only confound against the control voice profile", () => {
+    const control = buildSessionEval(
+      session({ reviewId: "speed-control", modelCell: "control", voice: "coral", speed: 1.28, variant: null }),
+      null,
+    );
+    const candidate = buildSessionEval(
+      session({ reviewId: "speed-candidate", modelCell: "candidate", voice: "coral", speed: 1.22, variant: null }),
+      null,
+    );
+
+    const validation = validateVoiceExperimentEvidence([control, candidate]);
+    expect(validation.ok).toBe(false);
+    expect(validation.failures.join("\n")).toContain("model, voice profile");
+  });
+
+  it("fails closed when a non-voice experiment has no control voice-profile baseline", () => {
+    const candidateOnly = buildSessionEval(
+      session({ reviewId: "candidate-only", modelCell: "candidate", voice: "marin", speed: 1.22, variant: null }),
+      null,
+    );
+
+    const validation = validateVoiceExperimentEvidence([candidateOnly]);
+    expect(validation).toEqual({
+      ok: false,
+      failures: ["candidate-only cannot prove a single complete control voice profile baseline"],
+    });
+  });
+
+  it("fails closed when experiment attribution is missing", () => {
+    const incomplete = buildSessionEval(
+      session({ reviewId: "missing-render", voice: null, speed: null, variant: null }),
+      null,
+    );
+
+    const validation = validateVoiceExperimentEvidence([incomplete]);
+    expect(validation).toEqual({
+      ok: false,
+      failures: ["missing-render is missing experiment attribution: voice, speed"],
+    });
+  });
+
+  it("rejects a stitched conversation that switched picker profiles", () => {
+    const mixed = buildSessionEval(
+      session({
+        reviewId: "mixed-picker",
+        voice: "coral",
+        speed: 1.06,
+        variant: "malay-warm",
+        mixedVoiceProfile: true,
+      }),
+      null,
+    );
+
+    const validation = validateVoiceExperimentEvidence([mixed]);
+    expect(validation.ok).toBe(false);
+    expect(validation.failures[0]).toContain("voice variant, voice profile");
   });
 });

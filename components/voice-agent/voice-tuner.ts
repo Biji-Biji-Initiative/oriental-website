@@ -1,5 +1,3 @@
-const TUNER_DISABLED_KEY = "oriental.voiceTunerHidden";
-
 let runtimePickerPromise: Promise<boolean> | undefined;
 
 async function fetchRuntimePickerFlag(fetcher: typeof window.fetch) {
@@ -24,8 +22,8 @@ async function fetchRuntimePickerFlag(fetcher: typeof window.fetch) {
 
 /**
  * The voice register picker is always available in development. Production
- * first requires the runtime flag from `/api/client-config`; query/local
- * preferences can hide an allowed picker but can never bypass a disabled one.
+ * first requires the runtime flag from `/api/client-config`. URL parameters
+ * and browser storage have no authority over whether the picker is visible.
  */
 export async function readTunerFlag(fetcher?: typeof window.fetch, environment = process.env.NODE_ENV) {
   if (environment !== "production") return true;
@@ -37,16 +35,5 @@ export async function readTunerFlag(fetcher?: typeof window.fetch, environment =
     if (!runtimePickerPromise) runtimePickerPromise = fetchRuntimePickerFlag(window.fetch.bind(window));
     enabled = await runtimePickerPromise;
   }
-  if (!enabled) return false;
-
-  try {
-    const voices = new URLSearchParams(window.location.search).get("voices");
-    if (voices === "1") window.localStorage.removeItem(TUNER_DISABLED_KEY);
-    if (voices === "0") window.localStorage.setItem(TUNER_DISABLED_KEY, "1");
-    return window.localStorage.getItem(TUNER_DISABLED_KEY) !== "1";
-  } catch {
-    // Config explicitly allows the picker; unavailable preferences should not
-    // hide the QA control in that environment.
-    return true;
-  }
+  return enabled;
 }

@@ -236,7 +236,7 @@ test("lead form surfaces a partial failure when the lead saves but notifications
 });
 
 test("voice variant picker appears, switches voice, and persists the selection", async ({ page }) => {
-  await page.goto("/?voices=1");
+  await page.goto("/");
   await page.getByRole("button", { name: /Choose Reka voice/i }).click();
   const picker = page.getByRole("region", { name: /Choose Reka voice/i });
   await expect(picker).toBeVisible();
@@ -254,21 +254,29 @@ test("voice variant picker appears, switches voice, and persists the selection",
 });
 
 test("expanded staging voice picker stays reachable in a short landscape viewport", async ({ page }) => {
-  await page.setViewportSize({ width: 844, height: 390 });
-  await page.goto("/?voices=1");
-  await page.getByRole("button", { name: /Choose Reka voice/i }).click();
+  for (const viewport of [
+    { width: 844, height: 390 },
+    { width: 1024, height: 390 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    await page.getByRole("button", { name: /Choose Reka voice/i }).click();
 
-  const picker = page.getByRole("region", { name: /Choose Reka voice/i });
-  await expect(picker).toBeVisible();
-  await expect(page.getByRole("button", { name: "Collapse voice picker" })).toBeInViewport({ ratio: 1 });
-  await expect
-    .poll(() =>
-      picker.evaluate((element) => {
-        const rect = element.getBoundingClientRect();
-        return rect.top >= 0 && rect.bottom <= window.innerHeight;
-      }),
-    )
-    .toBe(true);
+    const picker = page.getByRole("region", { name: /Choose Reka voice/i });
+    await expect(picker).toBeVisible();
+    await expect(page.getByRole("button", { name: "Collapse voice picker" })).toBeInViewport({ ratio: 1 });
+    await expect
+      .poll(() =>
+        picker.evaluate((element) => {
+          const rect = element.getBoundingClientRect();
+          return rect.top >= 0 && rect.bottom <= window.innerHeight;
+        }),
+      )
+      .toBe(true);
+    const finalOption = picker.getByRole("button", { name: /Young KL/i });
+    await finalOption.scrollIntoViewIfNeeded();
+    await expect(finalOption).toBeInViewport({ ratio: 1 });
+  }
 });
 
 test("page-load voice warmup does not mint a session before microphone permission", async ({ page }) => {

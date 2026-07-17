@@ -88,6 +88,8 @@ export type VoiceEvalSession = {
   voice?: string | null;
   speed?: number | null;
   variant?: string | null;
+  /** Evaluation-only marker: call segments in one conversation used different render profiles. */
+  mixedVoiceProfile?: boolean;
   transcript: EvalTranscriptTurn[];
   captured?: {
     name: string;
@@ -200,6 +202,7 @@ export function mergeConversationSessions(sessions: VoiceEvalSession[]): VoiceEv
       ? { ...foldedTransport, droppedMidTurn: Boolean(foldedTransport.droppedMidTurn || droppedMidTurn) }
       : null;
     const latency = foldEvalLatency(ordered);
+    const mixedVoiceProfile = new Set(ordered.map(voiceProfileKey)).size > 1;
     merged.push({
       ...head,
       // The latest call row heads the conversation, but timings and outcome span
@@ -216,6 +219,7 @@ export function mergeConversationSessions(sessions: VoiceEvalSession[]): VoiceEv
       errors: uniqueRuntimeErrors(ordered.flatMap((s) => s.errors)),
       transport,
       latency,
+      mixedVoiceProfile,
       activationAttempted: ordered.some((session) => session.activationAttempted === true),
       routeRequested: ordered.some((s) => s.routeRequested),
       callReviewIds: ordered.map((s) => s.reviewId),
@@ -639,13 +643,8 @@ export function deriveCaptureIntegritySignals(session: VoiceEvalSession): Captur
   const unconfirmedEmailFailures = session.errors.filter((error) => error.code === "voice_email_unconfirmed").length;
   const correctedEmail = lastLiteralEmailCorrection(session);
   const submittedEmail = session.captured?.email.trim().toLowerCase() ?? "";
-  const staleEmailSubmissions =
-    rejectedEmailCaptures > 0 &&
-    (session.submittedAt || session.leadId) &&
-    correctedEmail !== null &&
-    submittedEmail !== correctedEmail
-      ? 1
-      : 0;
+  const submitted = typeof session.submittedAt === "number" || Boolean(session.leadId);
+  const staleEmailSubmissions = submitted && correctedEmail !== null && submittedEmail !== correctedEmail ? 1 : 0;
   const totalFailures = rejectedCaptures + unconfirmedEmailFailures + staleEmailSubmissions;
   return {
     rejectedCaptures,
@@ -814,6 +813,7 @@ export type SessionEval = {
   voice: string | null;
   speed: number | null;
   variant: string | null;
+  mixedVoiceProfile: boolean;
   transport: TransportSignals;
   latency: LatencySignals;
   captureIntegrity: CaptureIntegritySignals;
@@ -839,6 +839,7 @@ export function buildSessionEval(session: VoiceEvalSession, score: JudgeScore | 
     voice: session.voice ?? null,
     speed: session.speed ?? null,
     variant: session.variant ?? null,
+    mixedVoiceProfile: session.mixedVoiceProfile ?? false,
     transport: deriveTransportSignals(session),
     latency: deriveLatencySignals(session),
     captureIntegrity: deriveCaptureIntegritySignals(session),
@@ -1053,9 +1054,42 @@ export type VoiceExperimentEvidenceValidation = { ok: boolean; failures: string[
 
 /** Reject rows that vary more than one controlled experiment dimension. */
 export function validateVoiceExperimentEvidence(evals: SessionEval[]): VoiceExperimentEvidenceValidation {
+  const controlVoiceProfiles = new Set(
+    evals
+      .filter(
+        (entry) =>
+          entry.runtimeProfile === "baseline" &&
+          entry.modelCell === "control" &&
+          entry.reasoningCell === "low" &&
+          entry.variant === null &&
+          !entry.mixedVoiceProfile &&
+          entry.voice !== null &&
+          entry.speed !== null,
+      )
+      .map(voiceProfileKey),
+  );
+  const controlVoiceProfile = controlVoiceProfiles.size === 1 ? [...controlVoiceProfiles][0] : null;
   const failures = evals.flatMap((entry) => {
+    const missingAttribution = [
+      entry.voice === null ? "voice" : null,
+      entry.speed === null ? "speed" : null,
+      typeof (entry as { variant?: unknown }).variant === "undefined" ? "variant" : null,
+    ].filter((value): value is string => value !== null);
+    if (missingAttribution.length > 0) {
+      return [`${entry.reviewId} is missing experiment attribution: ${missingAttribution.join(", ")}`];
+    }
+
     const activeDimensions: string[] = [...activeVoiceExperimentDimensions(entry)];
     if (entry.variant) activeDimensions.push("voice variant");
+    else if (activeDimensions.length > 0) {
+      if (!controlVoiceProfile) {
+        return [`${entry.reviewId} cannot prove a single complete control voice profile baseline`];
+      }
+      if (voiceProfileKey(entry) !== controlVoiceProfile) activeDimensions.push("voice profile");
+    }
+    if (entry.mixedVoiceProfile && !activeDimensions.includes("voice profile")) {
+      activeDimensions.push("voice profile");
+    }
     return activeDimensions.length > 1
       ? [
           `${entry.reviewId} varies multiple experiment dimensions: ${activeDimensions.join(", ")} ` +
@@ -1064,6 +1098,10 @@ export function validateVoiceExperimentEvidence(evals: SessionEval[]): VoiceExpe
       : [];
   });
   return { ok: failures.length === 0, failures };
+}
+
+function voiceProfileKey(entry: { voice?: string | null; speed?: number | null; variant?: string | null }) {
+  return `${entry.variant ?? "env-default"}\u0000${entry.voice ?? "__missing__"}\u0000${entry.speed ?? "__missing__"}`;
 }
 
 export type EvalThresholds = {

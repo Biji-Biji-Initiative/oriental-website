@@ -169,6 +169,24 @@ describe("POST /api/voice/session", () => {
     expect(await json(response)).toMatchObject({ deployment_environment: "staging" });
   });
 
+  it("ignores submitted variants behind a non-canonical staging proxy URL", async () => {
+    process.env.APP_ENV = "staging";
+    process.env.VOICE_VARIANT_PICKER = "true";
+    process.env.OPENAI_REALTIME_VOICE = "coral";
+    process.env.OPENAI_REALTIME_SPEED = "1.28";
+    const fetchMock = mockOpenAiFetch();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await POST(request({ intent: "technology", variant: "gen-z-kl" }));
+
+    expect(await json(response)).toMatchObject({
+      deployment_environment: "staging",
+      variant: null,
+      voice: "coral",
+      speed: 1.28,
+    });
+  });
+
   it("ignores browser voice variants when the runtime picker is disabled", async () => {
     process.env.VOICE_VARIANT_PICKER = "false";
     process.env.OPENAI_REALTIME_VOICE = "coral";
@@ -176,7 +194,13 @@ describe("POST /api/voice/session", () => {
     const fetchMock = mockOpenAiFetch();
     vi.stubGlobal("fetch", fetchMock);
 
-    const response = await POST(request({ intent: "technology", variant: "gen-z-kl" }));
+    const response = await POST(
+      request(
+        { intent: "technology", variant: "gen-z-kl" },
+        "203.0.113.10",
+        "https://staging.oriental.mereka.io/api/voice/session",
+      ),
+    );
 
     expect(await json(response)).toMatchObject({ ok: true, variant: null, voice: "coral", speed: 1.28 });
   });

@@ -187,33 +187,42 @@ async function enrichVoiceSessionProfiles(
   convex: ConvexHttpClient,
   ingestSecret: string,
   sessions: VoiceEvalSession[],
-  silent: boolean,
 ): Promise<VoiceEvalSession[]> {
   return mapPool(sessions, PROFILE_ENRICHMENT_CONCURRENCY, async (session) => {
-    const needsProfile = session.voice == null || session.speed == null || typeof session.variant === "undefined";
+    const needsProfile =
+      !isValidVoice(session.voice) || !isValidSpeed(session.speed) || !isValidVariant(session.variant);
     if (!needsProfile) return session;
 
+    let raw: RawVoiceSessionProfile | null;
     try {
-      const raw = (await convex.query(api.leads.voiceSessionByReviewId, {
+      raw = (await convex.query(api.leads.voiceSessionByReviewId, {
         ingestSecret,
         reviewId: session.reviewId,
       })) as RawVoiceSessionProfile | null;
-      if (!raw) return session;
-      return {
-        ...session,
-        voice: typeof raw.voice === "string" ? raw.voice : (session.voice ?? null),
-        speed: typeof raw.speed === "number" && Number.isFinite(raw.speed) ? raw.speed : (session.speed ?? null),
-        variant: typeof raw.variant === "string" || raw.variant === null ? raw.variant : (session.variant ?? null),
-      };
-    } catch (error) {
-      if (!silent) {
-        console.warn(
-          `  ! profile attribution unavailable for ${session.reviewId}: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-      return session;
+    } catch {
+      throw new Error("Voice profile attribution query failed; experiment evidence is unavailable.");
     }
+
+    const voice = isValidVoice(raw?.voice) ? raw.voice.trim() : session.voice;
+    const speed = isValidSpeed(raw?.speed) ? raw.speed : session.speed;
+    const variant = isValidVariant(raw?.variant) ? raw.variant : session.variant;
+    if (!raw || !isValidVoice(voice) || !isValidSpeed(speed) || !isValidVariant(variant)) {
+      throw new Error("Voice profile attribution is incomplete; experiment evidence is unavailable.");
+    }
+    return { ...session, voice: voice.trim(), speed, variant };
   });
+}
+
+function isValidVoice(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isValidSpeed(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0.25 && value <= 1.5;
+}
+
+function isValidVariant(value: unknown): value is string | null {
+  return value === null || (typeof value === "string" && value.trim().length > 0);
 }
 
 async function main() {
@@ -234,7 +243,7 @@ async function main() {
     limit: args.limit,
   })) as VoiceEvalSession[];
   const customerRows = fetchedSessions.filter((session) => !isSyntheticVoiceSession(session));
-  const rawSessions = await enrichVoiceSessionProfiles(convex, ingestSecret, customerRows, args.aggregateOnly);
+  const rawSessions = await enrichVoiceSessionProfiles(convex, ingestSecret, customerRows);
   const syntheticRowsExcluded = fetchedSessions.length - customerRows.length;
   if (!args.aggregateOnly && syntheticRowsExcluded > 0) {
     console.log(`Excluded ${syntheticRowsExcluded} synthetic smoke row(s).`);

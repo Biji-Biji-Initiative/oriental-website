@@ -7,7 +7,7 @@ describe("client config route", () => {
   it("keeps the voice variant picker disabled by default", async () => {
     vi.stubEnv("VOICE_VARIANT_PICKER", "");
 
-    const response = await GET();
+    const response = await GET(new Request("https://staging.oriental.mereka.io/api/client-config"));
 
     await expect(response.json()).resolves.toMatchObject({ voiceVariantPicker: false });
     expect(response.headers.get("cache-control")).toBe("no-store");
@@ -19,6 +19,15 @@ describe("client config route", () => {
     const response = await GET(new Request("https://staging.oriental.mereka.io/api/client-config"));
 
     await expect(response.json()).resolves.toMatchObject({ voiceVariantPicker: true });
+  });
+
+  it("ignores a staging env hint on a non-canonical hostname", async () => {
+    vi.stubEnv("VOICE_VARIANT_PICKER", "true");
+    vi.stubEnv("APP_ENV", "staging");
+
+    const response = await GET(new Request("https://preview.example.test/api/client-config"));
+
+    await expect(response.json()).resolves.toMatchObject({ voiceVariantPicker: false });
   });
 
   it("serves a valid GA measurement id from runtime env", async () => {

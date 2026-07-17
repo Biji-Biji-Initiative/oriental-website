@@ -97,7 +97,7 @@ docs/                     # handover specs — reference, not auto-synced to cod
 | Nav active section underline | `components/site/SiteNav.tsx`, `.site-nav__link--active` |
 | Partner segments, openers, routing labels | `lib/segments.ts` |
 | Voice persona, guardrails, tool descriptions, VAD/transcription/timeouts | `lib/voice/profile.ts` |
-| Voice A/B variants (distinct Malaysian registers: voice/speed/persona) + tuning picker (dev, or explicitly enabled staging; `/?voices=1` cannot bypass server authority) | `lib/voice/variants.ts`, `components/voice-agent/VoiceVariantPicker.tsx`; selected voice persists in localStorage/cookie |
+| Voice A/B variants (distinct Malaysian registers: voice/speed/persona) + tuning picker (dev, or explicitly enabled canonical staging) | `lib/voice/variants.ts`, `components/voice-agent/VoiceVariantPicker.tsx`; selected voice persists in localStorage/cookie |
 | Realtime protocol / transcript state machine / capture grounding | `lib/voice/realtime-events.ts` + `tests/realtime-events.test.ts` |
 | Voice UI / WebRTC wiring | `components/voice-agent/useRealtimeVoiceSession.ts`, `useVoiceRuntime.ts`, `VoiceAgentDialog.tsx`, `VoiceSessionStage.tsx` |
 | Voice orb look & motion | `components/voice-agent/VoiceSessionStage.tsx`, `.voice-orb*` in `app/globals.css`, level source in `useVoiceAudioLevel.ts` |
@@ -185,8 +185,9 @@ candidate staging deployment with `--staging-model-cell candidate` while
 production remains control.
 `VOICE_VARIANT_PICKER=false` governs both `/api/client-config` and the actual
 browser controls. Client tuner code must fetch that runtime route and fail
-closed; query strings or local storage may hide an allowed picker but must
-never bypass a disabled environment.
+closed. Only `staging.oriental.mereka.io` may expose the governed picker or
+honour a submitted variant; query strings and browser storage have no picker
+visibility authority.
 
 Realtime model changes are experiments, not string upgrades. Hold runtime,
 reasoning, voice, device, and scripted corpus constant while comparing
