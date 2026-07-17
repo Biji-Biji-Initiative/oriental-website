@@ -2,159 +2,175 @@
 
 ## Exact implementation boundary
 
-- Review base: `b0b0d83c7499ea4ed470430e8e3cfa80ab7bd68e`
-- Integrated implementation head before this evidence update:
-  `c8103c6d1b138479a88e520b65a71d032a3017c9`
-- Integrated implementation tree: `c625b86da54303a1644f5115c7788c082d730d24`
-- Scope: 144 files, 8,783 insertions and 1,053 deletions spanning the admin
-  console, safe evaluation, consented analytics, Google release wiring,
-  responsive voice UI, reactive brand motion, capture correctness, PII-free
-  tool and intake-attribution telemetry, managed-environment convergence,
-  scheduled analytics operations, and release verification.
-- This document is evidence-only. APR MUST inspect the checked-out exact tree;
-  no staging or production mutation is claimed by this pre-merge gate.
+- Review base: `87362df959561702e36a188e402d91ad34d2b8be` (`origin/main`).
+- Exact implementation head before this evidence-only update:
+  `c8ed8375ef6c048324bd9a28333f3e7c90c4d963`.
+- Exact implementation tree: `89115dd252d2b960f5b66cb05c14e9b433e56415`.
+- Delta from base: 179 files, 13,262 insertions, 1,464 deletions.
+- The feature candidate is not represented as live. Both canonical hosts run
+  the auth-only safety boundary `87362df959561702e36a188e402d91ad34d2b8be`.
+  The old shared admin alias was rejected with HTTP 401 on staging while the
+  rotated governed credential returned 200 and a secure application cookie.
+- This is the pre-merge code gate. The final merged SHA still requires Convex,
+  staging, smoke, production, and post-release evidence in that order.
 
-## Admin, evaluation, and analytics closure
+## Email capture and attribution closure
 
-- The admin UI uses one scoped dark design system, an admin-owned portal
-  boundary, a named command-palette modal, focus trap, inert background, Escape
-  close, and focus restoration. Search results resolve through the typed
-  `Enquiries` group on desktop and mobile.
-- Admin evaluation retains authorization and a small judge-model allowlist.
-  Untargeted work scans a bounded backlog, skips rows already scored by the same
-  model, caps each synchronous batch at 12, uses a Redis-backed five-minute
-  lease with memory fallback, bounds provider retries, and enforces shared
-  judge and whole-run deadlines. Only normalized scores and model metadata are
-  persisted; provider prose is discarded at the persistence boundary and the
-  displayed summary is deterministically reconstructed from numeric scores, so
-  an echoed name, email, organisation, captured value, or transcript excerpt
-  cannot reach Convex. Errors are returned and logged as aggregate categories.
-- Auto-evaluation on verified session close uses the same bounded runner, while
-  explicit force/targeted rescoring remains deliberate. The managed environment
-  owns `EVAL_AUTO_ON_CLOSE`. A canonical-host GitHub workflow invokes a valid
-  12-session maximum nightly and an authenticated ownership-SLA sweep hourly;
-  network failures fail the job and the expected `no_sessions` result remains
-  machine-readable.
-- GA validates its public identifier and loads only after Allow analytics.
-  Denial remains fail-closed; withdrawal denies future collection and attempts
-  `_ga`/`_ga_*` cleanup, and a later regrant explicitly restores
-  `analytics_storage: granted`. Page locations omit query/fragment data, public
-  tracking excludes admin/API paths, and the bilingual privacy page provides a
-  persistent consent-revision path.
-- Funnel and conversion events now use one client pipeline. Event-specific
-  TypeScript maps and runtime allowlists accept only bounded entry/submit
-  categories, segment/variant labels, and 0..6 counters. A retained `gtag`
-  function cannot emit after consent withdrawal, and runtime tests prove that
-  email-shaped, free-form, cross-event, and invalid-category parameters are
-  discarded.
-- Docker, direct-host staging, and Coolify production all receive the validated
-  public Google identifiers at build time. The deterministic verifier proves
-  site-verification metadata, no pre-consent GA request, exactly one expected
-  GA asset after consent, and no admin GA request.
+- Mobile and short landscape render one email editor beside the voice action;
+  desktop places email first in DOM and tab order. The same logical field
+  transfers focus across the 1024px breakpoint without stealing it during
+  ordinary renders. A valid email is the only routing requirement.
+- Invalid, medium-confidence pending, and confirmed email states are visibly
+  distinct and truthful. Valid short-landscape capture scrolls the nearby Send
+  action into view with a double animation-frame handoff; the action is at
+  least 44×44 CSS pixels. Breakpoint, clipping, focus, source-order, contrast,
+  long-caption, and scoped Axe assertions are browser-backed.
+- Entry location/method and submission method distinguish persistent header,
+  mobile navigation, hero/inline/floating CTAs, typed button, voice command,
+  and email-capture send. Six fixed fields retain method, last-input method,
+  edit/correction/clear counts, and mixed provenance without values.
+- Client provenance is explicitly labelled client-reported diagnostic evidence,
+  not an independent observation or model-promotion signal. Any voice, chat, or
+  mixed claim requires a cryptographically valid signed review linkage.
+- The admin separates accepted submitted leads from all engaged logical voice
+  conversations. The voice funnel deduplicates reconnects by conversation ID,
+  excludes unused prewarms, and reports pending/rejected email, corrections,
+  clears, typed fallback, recoverable failures, and abandonment with explicit
+  bounded-window/truncation labels.
 
-## Voice UX, capture, and brand closure
+## Privacy, retention, and data-integrity closure
 
-- The approved Mereka M is a bounded point-cloud/WebGL surface with deterministic
-  reduced-motion fallback, adaptive audio floor and hysteresis, and a normal
-  production visual rather than an environment experiment.
-- The public entrance trace is pointer-transparent, never locks scrolling,
-  lasts at most 690 ms once per tab, and is absent on admin/API and
-  reduced-motion loads. Admin command navigation uses the Next router and does
-  not force document reloads.
-- Deterministic Playwright screenshots and geometry checks passed at 390x844,
-  768x1024, 1440x900, and 844x390. The dialog had zero body/root horizontal
-  overflow. The M remained centered and legible, the initial voice action stayed
-  visible, mobile/tablet continued into a scrollable handoff, desktop retained
-  independent three-pane layout, and short landscape preserved the action.
-- Typed-only handoff edits survive close/reopen. Email correction invalidates
-  prior verification immediately. Typed mutation invalidates stale model
-  responses. Clear-all uses `clear_fields` through tool definition, reducer,
-  schema, bounded validator, Convex persistence, and aggregate reporting.
-- Mobile and short-landscape layouts expose one email editor beside the voice
-  action; desktop places the same logical field first in DOM/tab order. Focus
-  transfers deterministically across the 1024px boundary, a valid email is the
-  only routing requirement, and invalid/pending/confirmed states use truthful
-  accessible copy. Exact/high-confidence speech is usable immediately;
-  medium-confidence speech remains visible and pending for an explicit check.
-- Entry attribution locks on the first explicit logical open and ignores
-  background prewarms. Submission attribution distinguishes handoff button,
-  voice command, and email-capture button. Six fixed field-provenance records
-  retain bounded voice/manual/mixed edit, correction, and clear counts without
-  values. Server schemas reject impossible source/method pairs, and a voice
-  command must carry cryptographically valid review credentials rather than
-  substituting a Turnstile proof.
-- Browser telemetry persists only canonical tool name, outcome, and bounded
-  execution/response timing samples. Aggregate-only output exposes counts and
-  p50/p95 values overall/by tool while omitting IDs, arguments, contact values,
-  transcripts, captures, attention lists, and raw browser timestamps. Routing
-  still waits for durable handoff success.
+- Captured and lead emails persist normalized lookup fields. Legacy
+  normalization is bounded and indexed; subject deletion cannot proceed while
+  legacy matching remains incomplete, preventing mixed-case false success.
+- Subject deletion first builds a bounded plan, requires manual confirmation
+  for delivered email and unaddressable legacy mirrors, deletes addressable
+  Slack messages and ClickUp tasks idempotently, and only then authorizes Convex
+  erasure. Responses, logs, and audit rows omit the subject email.
+- Voice records use `snapshotSequence` and monotonic submitted/linkage state so
+  stale heartbeats cannot overwrite a final snapshot. Automatic evaluation is
+  queued atomically with the accepted close snapshot and cannot consume a lease
+  without owned work.
+- Transcript aggregates are capped at 8,000 characters. New and migrated rows
+  carry `payloadSafe`; admin/eval/SLA/count reads use bounded indexes and exclude
+  unmigrated rows. Lead counts scan at most 750+1 and render `≥`/lower-bound
+  labels when truncated rather than claiming exact totals.
+- Indexed retention deletes unsubmitted voice diagnostics after 30 days,
+  submitted diagnostics after 90 days, strips copied lead transcript content at
+  90 days, and deletes archived leads/workflow history 730 days after archival.
+  Each mutation backfills 4 legacy leads and 4 legacy sessions, deletes up to 24
+  expired sessions, strips 24 lead transcripts, and deletes 2 archived leads;
+  the job exposes `hasMore` plus deleted and redacted counts.
+- Release ordering requires repeated retention calls after the Convex deploy
+  until `hasMore=false`; remaining legacy rows are a release blocker because
+  safe indexed reads intentionally hide them.
 
-## Experiment and deployment closure
+## Authorization, privacy, and observability closure
 
-- Staging candidate and voice-picker controls are orthogonal: `clean` is the
-  governed picker-off evidence mode and `audition` is the explicit picker-on
-  human-listening mode. Production rejects both candidate and audition paths.
-- `release:preflight` forces production-only secret validation even when the
-  caller did not inherit `NODE_ENV=production`.
-- Staging automatically selects the available Linux or WSL Tailscale client,
-  authenticates to Infisical when required, streams the complete dotenv scope
-  through encrypted stdin, and atomically reconciles managed keys under a
-  deployment lock. A mode-0600 sidecar records managed keys so retired values
-  are removed without deleting compose-owned settings.
-- Production fails closed on the control voice cell before reading credentials
-  or making a Git, health, or Coolify request. It reads the complete approved
-  application scope and the separate Coolify operator scope, excludes
-  deploy-only values, reconciles exactly one
-  entry per runtime key with only public `NEXT_PUBLIC_*` values build-enabled,
-  writes concrete Infisical values as literals, and reads back effective value,
-  literal, multiline, runtime, and build scope without logging secrets. A live
-  value missing from the supplied scope stops before any mutation; clearing is
-  allowed only through a code-reviewed retirement tombstone introduced with
-  the source removal and retained as ownership history. It re-reads the expected-current Coolify SHA,
-  `running:healthy` state, enabled health checking, and host `127.0.0.1`
-  immediately before the first environment mutation and again before changing
-  the frozen SHA; the same state is re-fetched after deployment.
-- The release verifier supports separate staging clean/audition expectations,
-  rejects audition for production, proves both cells and picker states, and
-  adds browser Google/canonical-host/DNS-only/legacy-host assertions.
-- Convex must deploy first because this patch adds canonical `clear_fields` to
-  the bounded function validator. The web application deliberately contains no
-  lossy alias that could conceal an older function deployment.
-- Convex stores the optional bounded attribution record idempotently and
-  aggregates entry coverage, CTA/open/submit dimensions, cross-dimension
-  matrices, completion provenance, correction counts, and clear actions. Its
-  compatibility fallback retries only confirmed unknown-field validation
-  failures, never generic transport failures that could duplicate a write.
+- Admin cookies are v2 HMAC sessions binding actor and role. Interactive review,
+  ops automation, and privacy deletion use three distinct >=32-character
+  credentials and disjoint principals. Machine tokens cannot log in or cross
+  permissions; interactive roles cannot invoke ops retention/SLA or privacy
+  erasure.
+- Cookie mutations and login require same-origin `application/json`, including
+  proxy-aware host/protocol validation. Login remains trusted-proxy-IP rate
+  limited. Logout is a same-origin JSON action.
+- GitHub scheduled work uses only `OPS_AUTOMATION_TOKEN`. Infisical staging and
+  production hold distinct admin/ops/privacy credentials plus explicit actor and
+  role; GitHub's ops and transitional admin credentials were rotated without
+  printing values.
+- Browser, edge, and server Sentry hooks remove request data, query strings,
+  user data, breadcrumbs, extras, contexts, log messages, exception values,
+  credentials, and non-allowlisted span attributes while retaining safe error
+  type/stack and operational timing.
+- Automated judging caps and delimits untrusted transcript text, tokenizes
+  captured/recognizable email, phone, and URL values, and tells the evaluator to
+  ignore embedded instructions. The bilingual privacy notice truthfully states
+  that uncaptured names/organisations may remain in the bounded extract.
+- Debug persistence reduces errors to bounded codes, rate limits per review,
+  and requires three distinct production signals before alerting. Tool telemetry
+  retains only canonical outcome and response-created-to-call, execution, and
+  response-created-to-result durations, with PII-free p50/p95 aggregation by
+  canonical tool.
 
-## Exact-tree validation
+## Voice, brand, and experiment closure
 
-- Biome: 251 files checked, no findings.
-- TypeScript: passed with strict project configuration.
-- Vitest: 69 files, 684 tests passed, zero failures.
-- Next.js 16.2.10 production build: passed; 9 static pages generated.
-- Admin Chromium matrix: 43 passed, one intentional mobile mutation skip,
-  zero unexpected and zero flaky results.
-- Responsive homepage/voice Chromium matrix: 44 passed, zero failures,
-  including email focus/correction behavior across short mobile, desktop, and
-  the 1024px layout boundary.
-- Performance/a11y: mobile LCP 500 ms, CLS 0, 415,579 transferred JavaScript
-  bytes, 1,426,149 decoded bytes, 14 requests, and zero serious/critical Axe
-  violations.
-- The tested implementation commit was clean before this evidence-only update.
+- The homepage/voice surface uses the canonical Mereka path-and-dot/particle M,
+  including loading and success fallbacks; there is no generic blue orb.
+- The entrance effect is pointer-transparent, never locks scroll, runs once per
+  tab for at most 700 ms, and is omitted for admin/API/reduced-motion loads.
+- Staging clean mode is
+  `baseline/candidate/gpt-realtime-2.1/low/adaptive`, picker off. Audition mode is
+  a separately labelled staging-only picker-on surface. Production rejects both
+  candidate and audition and remains
+  `baseline/control/gpt-realtime-2/low/adaptive`, picker off.
+- Latency/provenance telemetry does not promote a model. Candidate promotion
+  remains evidence- and Malaysian-human-listening-gated; the open upstream
+  Realtime quota issue remains honest product availability evidence.
 
-## Honest post-merge boundary
+## Deployment and rollback closure
 
-- Read-only live evidence before this patch found 100 recent rows: 56 customer
-  call rows across 48 conversations after excluding 44 synthetic rows. There
-  were 21 activation attempts, tap-to-live p50 4,220 ms, tap-to-audible p50
-  5,715 ms, zero useful starts within two seconds, and seven upstream quota
-  failures. All runtime-profile samples were baseline; `instant-v1` had zero
-  clean samples and correctly remained `insufficient_data`.
-- Production therefore remains control `gpt-realtime-2`. Staging remains the
-  clean `gpt-realtime-2.1` candidate only. Neither instant runtime promotion nor
-  Malaysian human-quality approval is claimed.
-- After merge and green CI: freeze the merge SHA, deploy changed Convex
-  functions, reconcile/deploy/prove staging, run each governed smoke once,
-  reconcile/deploy/prove production, require both canonical hosts on the same
-  exact SHA, and rerun the aggregate-only evidence query. The external OpenAI
-  quota failure must remain an open issue if it persists.
+- Canonical hosts are `staging.oriental.mereka.io` and `oriental.mereka.io`;
+  legacy `deploy.mereka.io` names redirect. Cloudflare remains DNS-only and
+  Coolify Traefik terminates TLS.
+- Staging streams the complete Infisical dotenv scope through encrypted stdin,
+  atomically reconciles managed keys under the host lock, uses exact current and
+  candidate SHAs, and automatically restores Compose plus `.env`, recreates the
+  previous image, and proves exact public SHA on failure. Unknown rollback state
+  exits 70.
+- Production reconciles the complete managed scope through one Coolify bulk
+  write. The successful response must acknowledge every key and exact
+  runtime/build/literal/multiline scope; visible values are compared, while
+  locked values stay hidden from the least-privilege `read`/`write`/`deploy`
+  token and are verified inside the running container after release.
+- A live key missing from Infisical blocks before mutation unless it has a
+  code-reviewed retirement tombstone. `OWNER_AI` and `OWNER_CULTURAL` were
+  removed from both native scopes and remain governed empty tombstones in
+  Coolify. `TURNSTILE_ENFORCEMENT=relaxed`, `VOICE_SESSION_DAILY_LIMIT=80`, and
+  picker off are native governed values for both environments.
+- A terminal Coolify deployment may precede application/public health
+  convergence; the deployer waits up to 90 seconds. Any later candidate failure
+  re-pins and redeploys the previous SHA. If Coolify briefly resolves a stale
+  commit after re-pinning, that rollback deployment is cancelled and retried up
+  to three times. Unit tests cover lost PATCH/trigger responses, stale commits,
+  delayed health, public mismatch, and executable host rollback.
+- The auth-only production rollout exposed both real API behaviours above. The
+  old candidate stayed publicly healthy while the control-plane pin was
+  manually reconverged to the same SHA; five repeated control/public checks and
+  the deterministic dual-host verifier then passed. The full candidate uses the
+  hardened code and has not yet been deployed.
+
+## Exact-tree executable validation
+
+- `pnpm lint`: 272 files, no findings.
+- `pnpm typecheck`: generated route types and strict TypeScript passed.
+- `pnpm test`: 80 files, 752 tests passed.
+- `pnpm build`: optimized Next.js 16.2.10 production build passed, including
+  privacy and admin retention routes.
+- Public Playwright: 44 desktop/mobile tests passed; 46 credential-gated admin
+  cases were intentionally skipped in that unauthenticated run.
+- Fixture-backed admin Playwright: 45 desktop/mobile cases passed with one
+  intentional mobile duplicate-mutation skip. The first run found two stale
+  assertions expecting the superseded absolute no-deletion copy; after aligning
+  them to the truthful two-year retention copy, the exact desktop/mobile archive
+  flow passed 2/2.
+- Performance/a11y: mobile LCP 484 ms, CLS 0, 416,507 transferred JavaScript
+  bytes, 1,429,393 decoded bytes, 14 requests, zero serious/critical Axe issues.
+- Real production Convex dry-run: schema/function typecheck passed, no indexes
+  deleted, and 12 additive safe indexes would be created.
+- `git diff --check`: clean; worktree clean before this evidence-only update.
+
+## Honest remaining post-merge gates
+
+1. APR must return the exact merge verdict for this tree, then GitHub CI must be
+   green on the final PR head.
+2. Merge once, freeze the exact `main` SHA, and rerun managed preflight.
+3. Deploy Convex first; call retention until `hasMore=false` so no safe data is
+   hidden by migration backlog.
+4. Deploy/prove that exact SHA on canonical staging, run deterministic intake
+   and real WebRTC/audio/persistence smoke once, and inspect live funnel data.
+5. Promote the same web SHA through Coolify with production control model,
+   verify runtime secret parity inside the container, then prove both canonical
+   hosts and legacy redirects.
+6. Report upstream availability and candidate/human-quality evidence honestly;
+   this engineering release does not manufacture product proof.

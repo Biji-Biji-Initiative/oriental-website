@@ -14,10 +14,13 @@ rounds:
   impl_every_n: 1
 
 template: |
-  Perform the post-tombstone, literal-parity closure pass: an adversarial
+  Perform the post-tombstone, bulk-acknowledgement closure pass: an adversarial
   exact-tree pre-merge review of the complete Oriental release. Independently
-  verify explicit secret retirement, fail-before-mutation behavior, effective
-  Coolify value/scope parity, and fail-open browser storage. Treat privacy leakage, analytics before consent, weak authorization,
+  verify explicit secret retirement, fail-before-mutation behavior, exact
+  Coolify bulk-write acknowledgement plus scope/runtime proof for deliberately
+  locked values, and fail-open browser storage. Also verify principal-bound
+  admin authorization, downstream privacy erasure, byte-safe indexed retention,
+  monotonic snapshots, and rollback convergence. Treat privacy leakage, analytics before consent, weak authorization,
   unbounded evaluation spend, inaccessible or overflowing UI, misleading brand
   or experiment gates, lost capture state, misleading telemetry, weakened lead
   durability, incomplete managed-environment convergence, unsafe production
@@ -26,11 +29,14 @@ template: |
   `VERDICT: MERGE ORIENTAL RELEASE` or `VERDICT: DO NOT MERGE`.
 
 template_with_impl: |
-  Perform the post-tombstone, literal-parity closure pass: an adversarial
+  Perform the post-tombstone, bulk-acknowledgement closure pass: an adversarial
   exact-tree pre-merge review of the complete Oriental release against the
   attached executable evidence. Independently verify explicit secret
-  retirement, fail-before-mutation behavior, effective Coolify value/scope
-  parity, and fail-open browser storage. Verify claims against the
+  retirement, fail-before-mutation behavior, exact Coolify bulk-write
+  acknowledgement plus scope/runtime proof for deliberately locked values, and
+  fail-open browser storage. Verify principal-bound admin authorization,
+  downstream privacy erasure, byte-safe indexed retention, monotonic snapshots,
+  and rollback convergence. Verify claims against the
   checked-out implementation. Treat privacy leakage, analytics before consent,
   weak authorization, unbounded evaluation spend, inaccessible or overflowing
   UI, misleading brand or experiment gates, lost capture state, misleading

@@ -62,11 +62,19 @@ deployment-governance patch as one exact-tree merge gate.
 - Candidate staging MUST support a clean picker-off evidence mode independently
   from the explicitly approved picker-on audition mode. Production MUST reject
   candidate and audition configurations and remain the control model cell.
+- Interactive review, scheduled ops, and privacy deletion MUST use distinct
+  principal-bound credentials with disjoint permissions. Machine credentials
+  MUST NOT open the dashboard; cookie mutations and login MUST require
+  same-origin JSON requests.
 - Staging and production deployers MUST use optimistic-lock exact SHAs,
   reconcile the complete approved Infisical runtime scope without printing
   secrets, retire formerly managed keys safely, preserve build/runtime scopes,
-  and verify the resulting configuration. Production MUST additionally require
-  Coolify `running:healthy` and health ownership on `127.0.0.1`.
+  and verify the resulting configuration. A least-privilege production token
+  may keep values locked, but the bulk API MUST acknowledge every exact write
+  and scope and the running container MUST be compared with Infisical after
+  release. Production MUST additionally require Coolify `running:healthy`,
+  health ownership on `127.0.0.1`, delayed terminal-to-health convergence, and
+  a previous-SHA rollback that rejects/retries stale deployment commits.
 - The release verifier MUST prove canonical host behavior, exact revision and
   voice cells, picker state, Google metadata, consent-gated GA loading, admin GA
   exclusion, DNS-only public responses, and legacy redirects. Deployment order
@@ -75,17 +83,20 @@ deployment-governance patch as one exact-tree merge gate.
   `gpt-realtime-2.1` candidate is not promotion evidence until clean runtime
   samples and human Malaysian quality evidence satisfy the documented gates.
   Known upstream Realtime quota failures MUST be reported honestly.
-- Scheduled evaluation and ownership-SLA operations MUST use the canonical
-  production host, valid API limits, the governed admin credential, and
+- Scheduled evaluation, retention, and ownership-SLA operations MUST use the canonical
+  production host, valid API limits, the dedicated ops credential, and
   machine-checkable responses. Evaluation auto-on-close MUST be part of the
   managed environment contract, retain bounded cost/concurrency controls, and
   expose no transcript or captured-field content in workflow output or logs.
 - Published retention MUST be executable: delete abandoned voice diagnostics
-  after 30 days, submitted voice diagnostics after 90 days, and archived leads
-  plus workflow history after 730 days using bounded scheduled batches that
-  fail visibly on backlog. Verified subject deletion MUST be admin-only,
-  bounded, auditable without storing the subject email, and remove matching
-  leads, events, and linked/email-matching voice sessions.
+  after 30 days, submitted voice diagnostics and copied lead transcript content
+  after 90 days, and archived leads plus workflow history after 730 days using
+  bounded indexed batches that fail visibly on backlog. Legacy rows MUST be
+  normalized/backfilled before safe analytics may claim completeness. Verified
+  subject deletion MUST be privacy-principal-only, bounded, auditable without
+  storing the subject email, and remove matching leads, events, linked/email-
+  matching voice sessions, and addressable Slack/ClickUp copies before reporting
+  success; unaddressable copies require explicit operator confirmation.
 - Managed environment ownership MUST explicitly govern
   `TURNSTILE_ENFORCEMENT=relaxed|required` and a bounded
   `VOICE_SESSION_DAILY_LIMIT`; retired AI/Cultural owner keys MUST be removed
