@@ -964,7 +964,6 @@ export function aggregateEvals(evals: SessionEval[]): EvalAggregate {
   );
   const availabilityFailures = evals.filter((entry) => entry.closeReasons.some(isVoiceAvailabilityFailure));
   const captureIntegrityFailures = evals.filter((entry) => entry.captureIntegrity.failed);
-  const toolCalls = evals.flatMap((entry) => entry.latency.toolCalls);
   const conversationStyleFailures = evals.filter((entry) => entry.conversationStyle.failed);
   const toolCalls = evals.flatMap((entry) => entry.latency.toolCalls);
   const worstSessions = [

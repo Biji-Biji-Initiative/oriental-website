@@ -63,17 +63,7 @@ describe("Coolify host deploy image cells", () => {
       chmodSync(resolve(directory, ".env"), 0o600);
       const result = spawnSync(
         "python3",
-        [
-          "-",
-          directory,
-          "app:staging-new",
-          sha,
-          "staging",
-          "candidate",
-          "clean",
-          "G-ABC123DEF4",
-          "a".repeat(32),
-        ],
+        ["-", directory, "app:staging-new", sha, "staging", "candidate", "clean", "G-ABC123DEF4", "a".repeat(32)],
         {
           input: python,
           encoding: "utf8",
