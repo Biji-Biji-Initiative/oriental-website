@@ -4,7 +4,7 @@ description: Final adversarial exact-tree gate for the complete Oriental release
 documents:
   readme: docs/12-CHAT-RELEASE-RUNBOOK.md
   spec: .apr/specs/oriental-final-integrated-release.md
-  implementation: .apr/evidence/oriental-final-integrated-release.md
+  implementation: .apr/evidence/oriental-final-implementation.patch
 
 oracle:
   model: "gpt-5.2-pro"
@@ -33,7 +33,7 @@ template: |
 template_with_impl: |
   Perform the post-tombstone, bulk-acknowledgement closure pass: an adversarial
   exact-tree pre-merge review of the complete Oriental release against the
-  attached executable evidence. Independently verify explicit secret
+  attached exact source/test/config patch. Independently verify explicit secret
   retirement, fail-before-mutation behavior, exact Coolify bulk-write
   acknowledgement plus scope/runtime proof for deliberately locked values, and
   fail-open browser storage. Verify principal-bound admin authorization,

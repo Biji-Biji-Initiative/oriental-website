@@ -3,10 +3,20 @@
 ## Exact implementation boundary
 
 - Review base: `87362df959561702e36a188e402d91ad34d2b8be` (`origin/main`).
-- Exact implementation head before this evidence-only update:
-  `c8ed8375ef6c048324bd9a28333f3e7c90c4d963`.
-- Exact implementation tree: `89115dd252d2b960f5b66cb05c14e9b433e56415`.
-- Delta from base: 179 files, 13,262 insertions, 1,464 deletions.
+- Exact implementation head before review-artifact updates:
+  `80ee5436b83e72da3843c73a8f807051b3b55651`.
+- Exact implementation tree: `ff57e28317295910dd3ec2f0fea26d9fd0137eb8`.
+- Delta from base: 179 files, 13,421 insertions, 1,465 deletions.
+- APR receives the deterministic 113-file runtime/config plus high-risk-test
+  patch at `.apr/evidence/oriental-final-implementation.patch` (504,694 bytes,
+  SHA-256
+  `a6118e8ac6d09ad168ecbc994ba04a32804e7f39ba4e996d5ea5332cbdb274f2`). It
+  contains every changed runtime/config source plus focused auth, privacy,
+  retention, Convex, deployment, byte-bound, and homepage browser tests. Prose,
+  APR's own artifacts, and redundant lower-risk test files are omitted to stay
+  within Oracle's 196K-token input limit; the release runbook and specification
+  are attached separately and the complete 752-test result remains recorded
+  below.
 - The feature candidate is not represented as live. Both canonical hosts run
   the auth-only safety boundary `87362df959561702e36a188e402d91ad34d2b8be`.
   The old shared admin alias was rejected with HTTP 401 on staging while the
@@ -51,10 +61,12 @@
   stale heartbeats cannot overwrite a final snapshot. Automatic evaluation is
   queued atomically with the accepted close snapshot and cannot consume a lease
   without owned work.
-- Transcript aggregates are capped at 8,000 characters. New and migrated rows
-  carry `payloadSafe`; admin/eval/SLA/count reads use bounded indexes and exclude
-  unmigrated rows. Lead counts scan at most 750+1 and render `≥`/lower-bound
-  labels when truncated rather than claiming exact totals.
+- Transcript aggregates are capped at both 8,000 UTF-16 code units and 24,000
+  UTF-8 bytes without splitting Unicode code points. Multibyte and surrogate-
+  boundary tests prove both ceilings. New and migrated rows carry `payloadSafe`;
+  admin/eval/SLA/count reads use bounded indexes and exclude unmigrated rows.
+  Lead counts scan at most 750+1 and render `≥`/lower-bound labels when
+  truncated rather than claiming exact totals.
 - Indexed retention deletes unsubmitted voice diagnostics after 30 days,
   submitted diagnostics after 90 days, strips copied lead transcript content at
   90 days, and deletes archived leads/workflow history 730 days after archival.
@@ -158,6 +170,8 @@
   bytes, 1,429,393 decoded bytes, 14 requests, zero serious/critical Axe issues.
 - Real production Convex dry-run: schema/function typecheck passed, no indexes
   deleted, and 12 additive safe indexes would be created.
+- Focused byte-bound regression: 59 schema/Convex/payload tests passed, including
+  multibyte UTF-8 and Unicode-boundary cases; strict TypeScript passed again.
 - `git diff --check`: clean; worktree clean before this evidence-only update.
 
 ## Honest remaining post-merge gates
