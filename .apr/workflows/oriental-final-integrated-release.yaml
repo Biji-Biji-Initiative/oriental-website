@@ -20,7 +20,9 @@ template: |
   Coolify bulk-write acknowledgement plus scope/runtime proof for deliberately
   locked values, and fail-open browser storage. Also verify principal-bound
   admin authorization, downstream privacy erasure, byte-safe indexed retention,
-  monotonic snapshots, and rollback convergence. Treat privacy leakage, analytics before consent, weak authorization,
+  monotonic snapshots, explicit retention drain to `hasMore=false`,
+  authenticated Convex-backed admin proof, and rollback convergence. Treat
+  privacy leakage, analytics before consent, weak authorization,
   unbounded evaluation spend, inaccessible or overflowing UI, misleading brand
   or experiment gates, lost capture state, misleading telemetry, weakened lead
   durability, incomplete managed-environment convergence, unsafe production
@@ -36,7 +38,8 @@ template_with_impl: |
   acknowledgement plus scope/runtime proof for deliberately locked values, and
   fail-open browser storage. Verify principal-bound admin authorization,
   downstream privacy erasure, byte-safe indexed retention, monotonic snapshots,
-  and rollback convergence. Verify claims against the
+  explicit retention drain to `hasMore=false`, authenticated Convex-backed
+  admin proof, and rollback convergence. Verify claims against the
   checked-out implementation. Treat privacy leakage, analytics before consent,
   weak authorization, unbounded evaluation spend, inaccessible or overflowing
   UI, misleading brand or experiment gates, lost capture state, misleading
