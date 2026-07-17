@@ -163,6 +163,15 @@ before any deployment. For runtime work:
 
 1. Put runtime code, tests, specs/docs, configuration contract, and relevant
    agent guidance in one PR.
+   Persisted request and telemetry fields must remain optional in both the web
+   request contract and Convex until the backward-compatibility window is
+   deliberately retired. Deploy the additive Convex schema/functions before
+   the web image so the previous web image remains valid during deployment and
+   rollback. A web compatibility retry is permitted only for a confirmed
+   unknown/extra-field validator rejection, must reuse the
+   application-generated UUID, and must strip only the forward fields. Never
+   retry a generic validation, transport, timeout, or ambiguous post-commit
+   failure; the corresponding Convex mutation must be idempotent on that UUID.
 2. Merge once, update local `main`, and freeze the full merge SHA.
 3. Inject the production app contract from Infisical and run
    `env NODE_ENV=production pnpm release:preflight -- --sha <sha>`; managed
@@ -269,9 +278,10 @@ sequenceDiagram
 ```
 
 - **Profile:** `VOICE_PROFILE` in `lib/voice/profile.ts` drives instructions, tools, turn detection, truncation.
-- **Capture:** governed staging/production use `VOICE_EMAIL_CAPTURE_MODE=adaptive`; accept only syntax-valid, independently grounded latest-turn evidence. A completed correction immediately invalidates the prior email verification before routing; duplicate email tool calls re-ground, and pending transcription relaxes capture only when no completed turn contradicts it. Typed edits also invalidate any already-active response for email mutation or routing. `strict` is the exact-readback/confirmation rollback. Never loosen the reducer or API submission boundary to achieve lower friction.
+- **Capture:** governed staging/production use `VOICE_EMAIL_CAPTURE_MODE=adaptive`; accept only syntax-valid, independently grounded latest-turn evidence. Exact/high-confidence speech is immediately usable. A bounded medium-confidence substitution stays pending in the visible email editor: do not read it back or start a spelling loop. Voice-command routing remains blocked until confirmed, while an explicit click on the visible Send button is the visitor's check/submit action. A completed correction immediately invalidates the prior email verification before routing; duplicate email tool calls re-ground, and pending transcription relaxes capture only when no completed turn contradicts it. Typed edits also invalidate any already-active response for email mutation or routing. `strict` is the exact-readback/confirmation rollback. Never weaken syntax or grounding to achieve lower friction.
 - **Events:** `lib/voice/realtime-events.ts` handles grounded state/tool events; `lib/voice/latency.ts` handles bounded turn and PII-free per-tool timings. Persist each completed tool sample to review metadata immediately—`wait_for_user` may have no later response. Never persist arguments, call IDs, contact values, or raw browser timestamps. Add focused tests for either reducer.
-- **Responsive voice UI:** preserve explicit proof at 320x568, 360x800, 390x844, 844x390, 1024x600, 1280x720, and 1440x900 plus mobile-to-desktop resize. Assert the primary Start Voice action is initially visible before any scroll; `scrollIntoView` proves reachability, not fit. At >=1024 all three panes scroll independently.
+- **Attribution:** every explicit intake open carries a bounded CTA surface (`entryPoint`) and independent opening method (`entryMethod`: voice button, form, or email capture); every accepted lead carries a bounded `submissionMethod` and PII-free six-field provenance summary. Preserve the distinction between entry surface, entry method, voice/form submission, and per-field voice, form, typed-chat, prefill, or mixed capture. Never put field values, transcripts, URLs, IDs, timestamps, or free-form text into analytics/provenance.
+- **Responsive voice UI:** preserve explicit proof at 320x568, 360x800, 390x844, 844x390, 1023x600, 1024x390, 1024x600, 1280x720, and 1440x900 plus mobile-to-desktop resize. Below 1024 the single visible email editor stays beside the primary voice controls and must never focus-scroll them away; at >=1024 all three panes scroll independently.
 - **Specs:** `docs/05-VOICE-AGENT-SPEC.md` covers product flow and `docs/13-VOICE-INSTANT-RELEASE-SPEC.md` covers the staged latency/endpointing release contract; verify both against code before assuming parity.
 
 ---

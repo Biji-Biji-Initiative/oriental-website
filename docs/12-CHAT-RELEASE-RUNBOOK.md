@@ -187,7 +187,16 @@ include release docs before the first deployment.
 
 1. Deploy Convex first only when the reviewed diff changes schema or functions.
    This release adds canonical `clear_fields` support to the bounded tool-name
-   validator, so its reviewed Convex functions are a required dependency.
+   validator and optional intake-attribution fields (`entryPoint`,
+   `entryMethod`, `submissionMethod`, and bounded per-field provenance), so its
+   reviewed Convex schema/functions are a required dependency. The additions
+   remain optional: the previous web image must still write valid rows during
+   deployment and after an application rollback. The lead mutation is
+   idempotent on the application-generated lead UUID. The web adapter may retry
+   once only after a confirmed unknown/extra-field validator rejection and must
+   reuse that UUID while stripping the forward fields; generic validation,
+   transport, timeout, and ambiguous post-commit failures are never retry
+   triggers.
    Aggregate-only evaluation remains read-only and cannot perform this deploy.
    Do not add a lossy `clear_fields` → `clear_field` application fallback.
 2. Build the distinct `staging-<sha>` image and recreate host-managed staging:
@@ -341,7 +350,11 @@ early convergence and fail-closed checks, not repeated manual verification.
 - Staging: restore the timestamped Compose/`.env` backup or previous
   `staging-<sha>` image.
 - Convex: use backward-compatible schema/function changes; never assume an app
-  image rollback also rolls back Convex.
+  image rollback also rolls back Convex. Additive persisted fields remain
+  optional until every supported old web image is retired. Keep compatibility
+  fallbacks limited to confirmed unknown/extra-field validation errors and keep
+  the corresponding mutation idempotent; never mask a generic or ambiguous
+  persistence failure with a retry.
 
 ## Acceptance criteria mapping
 

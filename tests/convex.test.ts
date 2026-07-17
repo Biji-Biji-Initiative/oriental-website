@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createLead } from "@/convex/leads";
+import { summarizeIntakeAttribution } from "@/lib/intake-attribution-analytics";
 import {
   archiveAdminLeads,
   bulkAssignAdminLeads,
@@ -69,6 +71,76 @@ function lead(): StoredLead {
   };
 }
 
+describe("intake attribution aggregates", () => {
+  const unknownField = { method: "unknown", correctionCount: 0, clearCount: 0 };
+
+  it("keeps legacy rows visible while aggregating new and newsletter provenance", () => {
+    const analytics = summarizeIntakeAttribution([
+      {},
+      {
+        entryPoint: "hero_primary",
+        entryMethod: "voice_button",
+        submissionMethod: "voice_command",
+        fieldProvenance: {
+          name: { method: "voice", correctionCount: 0, clearCount: 0 },
+          email: { method: "voice", correctionCount: 1, clearCount: 1 },
+          org: unknownField,
+          phone: unknownField,
+          website: unknownField,
+          message: { method: "mixed", correctionCount: 2, clearCount: 0 },
+        },
+      },
+      {
+        entryPoint: "hero_updates",
+        entryMethod: "email_capture",
+        submissionMethod: "email_capture_button",
+        fieldProvenance: {
+          name: unknownField,
+          email: { method: "form", correctionCount: 0, clearCount: 0 },
+          org: unknownField,
+          phone: unknownField,
+          website: unknownField,
+          message: unknownField,
+        },
+      },
+    ]);
+
+    expect(analytics.entryMethodCounts).toEqual({ unknown: 1, voice_button: 1, email_capture: 1 });
+    expect(analytics.entryPointSubmissionMatrix).toEqual({
+      unknown: { unknown: 1 },
+      hero_primary: { voice_command: 1 },
+      hero_updates: { email_capture_button: 1 },
+    });
+    expect(analytics.entryMethodSubmissionMatrix).toEqual({
+      unknown: { unknown: 1 },
+      voice_button: { voice_command: 1 },
+      email_capture: { email_capture_button: 1 },
+    });
+    expect(analytics.attributionCoverage).toEqual({
+      total: 3,
+      complete: 2,
+      partial: 0,
+      legacy: 1,
+      completePercent: 66.7,
+    });
+    expect(analytics.fieldCompletionCounts.email).toEqual({ unknown: 1, voice: 1, form: 1 });
+    expect(analytics.fieldCorrectionCounts).toMatchObject({ email: 1, message: 2 });
+    expect(analytics.fieldClearCounts).toMatchObject({ email: 1, message: 0 });
+  });
+
+  it("distinguishes partially attributed rows from untouched legacy rows", () => {
+    const analytics = summarizeIntakeAttribution([{ entryPoint: "nav_mobile" }, {}]);
+
+    expect(analytics.attributionCoverage).toEqual({
+      total: 2,
+      complete: 0,
+      partial: 1,
+      legacy: 1,
+      completePercent: 0,
+    });
+  });
+});
+
 describe("persistLead", () => {
   beforeEach(() => {
     process.env = {
@@ -114,6 +186,55 @@ describe("persistLead", () => {
     expect(retryArgs.lead).not.toHaveProperty("voiceInputPolicy");
     expect(retryArgs.lead).not.toHaveProperty("voiceModelCell");
     expect(retryArgs.lead).not.toHaveProperty("voiceReasoningCell");
+  });
+
+  it("strips new intake attribution only for a Convex forward-field validation error", async () => {
+    mocks.mutation
+      .mockRejectedValueOnce(new Error("ArgumentValidationError: unexpected field `entryPoint`"))
+      .mockResolvedValueOnce({ id: "lead_123" });
+
+    await expect(
+      persistLead({
+        ...lead(),
+        entryPoint: "hero_primary",
+        entryMethod: "voice_button",
+        submissionMethod: "handoff_button",
+        fieldProvenance: undefined,
+      }),
+    ).resolves.toEqual({ id: "lead_123", persisted: true });
+
+    const retryArgs = mocks.mutation.mock.calls[1]?.[1] as { lead: Record<string, unknown> };
+    expect(retryArgs.lead).not.toHaveProperty("entryPoint");
+    expect(retryArgs.lead).not.toHaveProperty("entryMethod");
+    expect(retryArgs.lead).not.toHaveProperty("submissionMethod");
+    expect(retryArgs.lead).toHaveProperty("id", "lead_123");
+  });
+
+  it("does not retry a validator failure that is unrelated to forward fields", async () => {
+    mocks.mutation.mockRejectedValue(new Error("ArgumentValidationError: source must be a valid literal"));
+
+    await expect(persistLead({ ...lead(), entryPoint: "hero_primary", entryMethod: "voice_button" })).rejects.toThrow(
+      "source must be a valid literal",
+    );
+    expect(mocks.mutation).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry an attributed lead after an ambiguous non-validation failure", async () => {
+    mocks.mutation.mockRejectedValue(new Error("network response lost"));
+
+    await expect(
+      persistLead({ ...lead(), entryPoint: "hero_primary", submissionMethod: "handoff_button" }),
+    ).rejects.toThrow("network response lost");
+    expect(mocks.mutation).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not infer a Convex validator failure from generic unknown-field wording", async () => {
+    mocks.mutation.mockRejectedValue(new Error("upstream proxy returned unknown field state"));
+
+    await expect(persistLead({ ...lead(), entryPoint: "hero_primary", entryMethod: "voice_button" })).rejects.toThrow(
+      "unknown field state",
+    );
+    expect(mocks.mutation).toHaveBeenCalledTimes(1);
   });
 
   it("applies admin workflow mutations through Convex", async () => {
@@ -219,6 +340,34 @@ describe("persistLead", () => {
       actor: "Nadia",
       requestId: "request_archive_1",
     });
+  });
+});
+
+describe("createLead idempotency", () => {
+  it("returns the existing application lead ID without inserting duplicate rows or events", async () => {
+    const first = vi.fn().mockResolvedValue({ leadId: "lead_123" });
+    const withIndex = vi.fn().mockReturnValue({ first });
+    const query = vi.fn().mockReturnValue({ withIndex });
+    const insert = vi.fn();
+    const handler = (
+      createLead as unknown as {
+        _handler: (ctx: unknown, args: { lead: StoredLead; ingestSecret: string }) => Promise<{ id: string }>;
+      }
+    )._handler;
+    const previousSecret = process.env.CONVEX_INGEST_SECRET;
+    process.env.CONVEX_INGEST_SECRET = "ingest-secret";
+
+    try {
+      await expect(
+        handler({ db: { query, insert } }, { lead: lead(), ingestSecret: "ingest-secret" }),
+      ).resolves.toEqual({ id: "lead_123" });
+      expect(query).toHaveBeenCalledWith("leads");
+      expect(withIndex).toHaveBeenCalledWith("by_lead_id", expect.any(Function));
+      expect(insert).not.toHaveBeenCalled();
+    } finally {
+      if (previousSecret === undefined) delete process.env.CONVEX_INGEST_SECRET;
+      else process.env.CONVEX_INGEST_SECRET = previousSecret;
+    }
   });
 });
 
@@ -413,6 +562,9 @@ describe("persistVoiceReviewSnapshot", () => {
     deviceProfile: "desktop" as const,
     deploymentEnvironment: "staging" as const,
     activationAttempted: true,
+    entryPoint: "hero_primary" as const,
+    entryMethod: "voice_button" as const,
+    submissionMethod: "voice_command" as const,
     emailVerification: {
       source: "speech" as const,
       status: "pending" as const,
@@ -521,6 +673,16 @@ describe("persistVoiceReviewSnapshot", () => {
     expect(retryArgs.snapshot).not.toHaveProperty("deviceProfile");
     expect(retryArgs.snapshot).not.toHaveProperty("deploymentEnvironment");
     expect(retryArgs.snapshot).not.toHaveProperty("activationAttempted");
+    expect(retryArgs.snapshot).not.toHaveProperty("entryPoint");
+    expect(retryArgs.snapshot).not.toHaveProperty("entryMethod");
+    expect(retryArgs.snapshot).not.toHaveProperty("submissionMethod");
     expect(retryArgs.snapshot).toMatchObject({ reviewId: "review_1" });
+  });
+
+  it("does not hide non-validation voice snapshot failures behind the compatibility retry", async () => {
+    mocks.mutation.mockRejectedValue(new Error("convex transport unavailable"));
+
+    await expect(persistVoiceReviewSnapshot(snapshot)).rejects.toThrow("convex transport unavailable");
+    expect(mocks.mutation).toHaveBeenCalledTimes(1);
   });
 });

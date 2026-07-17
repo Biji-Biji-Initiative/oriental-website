@@ -4,7 +4,9 @@ import dynamic from "next/dynamic";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { preconnect } from "react-dom";
 import { playArmCue } from "@/components/voice-agent/live-chime";
+import { trackIntakeEvent } from "@/lib/client-analytics";
 import type { SegmentId } from "@/lib/segments";
+import type { VoiceEntryMethod, VoiceEntryPoint } from "@/lib/voice/interaction-attribution";
 import { DEFAULT_VOICE_VARIANT_ID, VOICE_VARIANT_IDS } from "@/lib/voice/variants";
 
 // The dialog pulls in the whole voice stack (forms, zod, realtime runtime), so
@@ -22,6 +24,10 @@ export type VoicePrefill = {
   autoStart?: boolean;
   /** Internal monotonic duration only; no wall-clock tap timestamp is retained. */
   activation?: ReturnType<typeof playArmCue>;
+  /** Bounded CTA attribution; no page text or visitor data is retained. */
+  entryPoint?: VoiceEntryPoint;
+  /** How the intake was explicitly opened, independent of its CTA surface. */
+  entryMethod?: VoiceEntryMethod;
 };
 
 const VOICE_VARIANT_STORAGE_KEY = "oriental.voiceVariant";
@@ -74,8 +80,14 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
 
   const openVoice = useCallback((nextIntent?: SegmentId, nextPrefill?: VoicePrefill) => {
     const activation = nextPrefill?.autoStart ? playArmCue() : undefined;
+    const entryMethod = resolveEntryMethod(nextPrefill);
+    trackIntakeEvent("intake_open", {
+      entry_point: nextPrefill?.entryPoint ?? "unknown",
+      entry_method: entryMethod,
+      intended_mode: nextPrefill?.autoStart ? "voice" : (nextPrefill?.mode ?? "form"),
+    });
     setIntent(nextIntent);
-    setPrefill(nextPrefill ? { ...nextPrefill, activation } : undefined);
+    setPrefill(nextPrefill ? { ...nextPrefill, activation, entryMethod } : { entryMethod });
     setMounted(true);
     setOpen(true);
   }, []);
@@ -120,6 +132,13 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       ) : null}
     </VoiceContext.Provider>
   );
+}
+
+function resolveEntryMethod(prefill: VoicePrefill | undefined): VoiceEntryMethod {
+  if (prefill?.entryMethod) return prefill.entryMethod;
+  if (prefill?.email) return "email_capture";
+  if (prefill?.autoStart) return "voice_button";
+  return "form";
 }
 
 function readCookie(name: string) {

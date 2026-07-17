@@ -267,6 +267,68 @@
       "form": 1,
       "hero-email": 1
     },
+    "entryPointCounts": {
+      "unknown": 3
+    },
+    "entryMethodCounts": {
+      "unknown": 3
+    },
+    "submissionMethodCounts": {
+      "unknown": 3
+    },
+    "entryPointSubmissionMatrix": {
+      "unknown": {
+        "unknown": 3
+      }
+    },
+    "entryMethodSubmissionMatrix": {
+      "unknown": {
+        "unknown": 3
+      }
+    },
+    "attributionCoverage": {
+      "total": 3,
+      "complete": 0,
+      "partial": 0,
+      "legacy": 3,
+      "completePercent": 0
+    },
+    "fieldCompletionCounts": {
+      "name": {
+        "unknown": 3
+      },
+      "email": {
+        "unknown": 3
+      },
+      "org": {
+        "unknown": 3
+      },
+      "phone": {
+        "unknown": 3
+      },
+      "website": {
+        "unknown": 3
+      },
+      "message": {
+        "unknown": 3
+      }
+    },
+    "fieldCorrectionCounts": {
+      "name": 0,
+      "email": 0,
+      "org": 0,
+      "phone": 0,
+      "website": 0,
+      "message": 0
+    },
+    "fieldClearCounts": {
+      "name": 0,
+      "email": 0,
+      "org": 0,
+      "phone": 0,
+      "website": 0,
+      "message": 0
+    },
     "statusCounts": {
       "new": 1,
       "reviewing": 1,

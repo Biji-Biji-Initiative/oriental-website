@@ -5,10 +5,11 @@ import { MerekaMiniMark } from "@/components/orb/MerekaMiniMark";
 import { useVoice } from "@/components/voice-agent/voice-state";
 import type { SegmentId } from "@/lib/segments";
 import { cn } from "@/lib/utils";
+import type { VoiceEntryPoint } from "@/lib/voice/interaction-attribution";
 
 type VoiceButtonProps = ComponentPropsWithoutRef<"button"> & {
   intent?: SegmentId;
-  prefill?: { email?: string; mode?: "voice" | "form" };
+  prefill?: { email?: string; mode?: "voice" | "form"; entryPoint?: VoiceEntryPoint };
   orb?: boolean;
   /** Talk CTAs default to starting Reka on the same tap; pass false to just open the workspace. */
   autoStart?: boolean;

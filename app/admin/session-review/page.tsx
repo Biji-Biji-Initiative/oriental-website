@@ -1478,6 +1478,51 @@ function AnalyticsPanel({ data }: { data: DashboardData }) {
           <CountList title="Priority" values={data.analytics.priorityCounts} />
           <CountList title="Segment" values={data.analytics.segmentCounts} />
         </div>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <CountList
+            labelFor={intakeEntryPointLabel}
+            title="Intake entry location"
+            values={data.analytics.entryPointCounts}
+          />
+          <CountList
+            labelFor={intakeEntryMethodLabel}
+            title="Intake opened with"
+            values={data.analytics.entryMethodCounts}
+          />
+          <CountList
+            labelFor={submissionMethodLabel}
+            title="Enquiry sent with"
+            values={data.analytics.submissionMethodCounts}
+          />
+          <AttributionCoverage coverage={data.analytics.attributionCoverage} />
+        </div>
+        <div className="grid gap-4 xl:grid-cols-2">
+          <AttributionMatrix
+            labelFor={intakeEntryPointLabel}
+            matrix={data.analytics.entryPointSubmissionMatrix}
+            title="Entry location × send method"
+          />
+          <AttributionMatrix
+            labelFor={intakeEntryMethodLabel}
+            matrix={data.analytics.entryMethodSubmissionMatrix}
+            title="Opening method × send method"
+          />
+        </div>
+        <details className="rounded-lg border border-white/10 bg-white/[0.02]" suppressHydrationWarning>
+          <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-slate-300 marker:hidden">
+            Field capture mix — privacy-safe provenance
+          </summary>
+          <div className="grid gap-4 border-t border-white/10 p-4 sm:grid-cols-2 xl:grid-cols-3">
+            {Object.entries(data.analytics.fieldCompletionCounts).map(([field, values]) => (
+              <CountList
+                key={field}
+                labelFor={fieldCompletionMethodLabel}
+                title={`${intakeFieldLabel(field)} · ${data.analytics.fieldCorrectionCounts[field] ?? 0} correction actions · ${data.analytics.fieldClearCounts[field] ?? 0} clear actions`}
+                values={values}
+              />
+            ))}
+          </div>
+        </details>
         <details className="rounded-lg border border-white/10 bg-white/[0.02]" suppressHydrationWarning>
           <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-slate-300 marker:hidden">
             Engineering details — voice experiment cells
@@ -1889,7 +1934,15 @@ function EventRow({ event, leadName }: { event: LeadEventRow; leadName?: string 
   );
 }
 
-function CountList({ title, values }: { title: string; values: Record<string, number> }) {
+function CountList({
+  title,
+  values,
+  labelFor = defaultCountLabel,
+}: {
+  title: string;
+  values: Record<string, number>;
+  labelFor?: (value: string) => string;
+}) {
   const entries = Object.entries(values).sort((left, right) => right[1] - left[1]);
   const total = entries.reduce((sum, [, count]) => sum + count, 0);
   return (
@@ -1900,7 +1953,7 @@ function CountList({ title, values }: { title: string; values: Record<string, nu
         {entries.slice(0, 6).map(([label, count]) => (
           <div className="grid gap-1" key={`${title}:${label}`}>
             <div className="flex items-center justify-between gap-2 text-xs">
-              <span className="capitalize text-slate-400">{label.replaceAll("-", " ")}</span>
+              <span className="text-slate-400">{labelFor(label)}</span>
               <span className="font-semibold">{count}</span>
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.04]">
@@ -1914,6 +1967,150 @@ function CountList({ title, values }: { title: string; values: Record<string, nu
       </div>
     </div>
   );
+}
+
+function AttributionCoverage({
+  coverage,
+}: {
+  coverage: { total: number; complete: number; partial: number; legacy: number; completePercent: number };
+}) {
+  return (
+    <div className="rounded-lg border border-white/10 p-3">
+      <div className="mb-3 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Attribution coverage</div>
+      <div className="text-2xl font-semibold tabular-nums text-slate-200">{coverage.completePercent}%</div>
+      <p className="mt-1 text-xs leading-5 text-slate-400">
+        {coverage.complete} of {coverage.total} rows have the complete location, opening method, send method, and
+        per-field provenance contract.
+      </p>
+      <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
+        <div className="rounded-md bg-white/[0.04] p-2">
+          <dt className="text-slate-500">Partial</dt>
+          <dd className="mt-1 font-semibold tabular-nums text-slate-300">{coverage.partial}</dd>
+        </div>
+        <div className="rounded-md bg-white/[0.04] p-2">
+          <dt className="text-slate-500">Legacy rows (no attribution)</dt>
+          <dd className="mt-1 font-semibold tabular-nums text-slate-300">{coverage.legacy}</dd>
+        </div>
+      </dl>
+    </div>
+  );
+}
+
+function AttributionMatrix({
+  matrix,
+  title,
+  labelFor,
+}: {
+  matrix: Record<string, Record<string, number>>;
+  title: string;
+  labelFor: (value: string) => string;
+}) {
+  const rows = Object.entries(matrix).sort(
+    (left, right) =>
+      Object.values(right[1]).reduce((sum, count) => sum + count, 0) -
+      Object.values(left[1]).reduce((sum, count) => sum + count, 0),
+  );
+  return (
+    <details className="rounded-lg border border-white/10 bg-white/[0.02]" suppressHydrationWarning>
+      <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-slate-300 marker:hidden">
+        {title}
+      </summary>
+      <div className="grid gap-2 border-t border-white/10 p-4">
+        {rows.length === 0 ? <div className="text-xs text-slate-400">No data</div> : null}
+        {rows.map(([entryPoint, submissions]) => (
+          <div
+            className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-white/[0.03] px-3 py-2 text-xs"
+            key={entryPoint}
+          >
+            <span className="font-medium text-slate-300">{labelFor(entryPoint)}</span>
+            <span className="flex flex-wrap justify-end gap-2 text-slate-400">
+              {Object.entries(submissions)
+                .sort((left, right) => right[1] - left[1])
+                .map(([submission, count]) => (
+                  <span className="rounded-full bg-white/[0.05] px-2.5 py-1" key={`${entryPoint}:${submission}`}>
+                    {submissionMethodLabel(submission)}: <strong className="text-slate-200">{count}</strong>
+                  </span>
+                ))}
+            </span>
+          </div>
+        ))}
+      </div>
+    </details>
+  );
+}
+
+const intakeEntryPointLabels: Record<string, string> = {
+  hero_primary: "Hero primary call to action",
+  hero_updates: "Hero updates capture",
+  hero_updates_followup: "Hero updates follow-up",
+  nav_desktop: "Desktop navigation",
+  nav_mobile: "Mobile navigation",
+  keyboard_shortcut: "Keyboard shortcut",
+  voice_rail: "Floating voice rail",
+  ecosystem: "Ecosystem section",
+  facilities: "Facilities section",
+  partners: "Partners section",
+  closing_cta: "Closing call to action",
+  footer_cta: "Footer call to action",
+  faq_cta: "FAQ call to action",
+  unknown: "Unknown / legacy",
+};
+
+const intakeEntryMethodLabels: Record<string, string> = {
+  voice_button: "Voice button",
+  form: "Form",
+  email_capture: "Email capture",
+  unknown: "Unknown / legacy",
+};
+
+const submissionMethodLabels: Record<string, string> = {
+  handoff_button: "Send enquiry button",
+  voice_command: "Spoken send command",
+  email_capture_button: "Email updates button",
+  unknown: "Unknown / legacy",
+};
+
+const fieldCompletionMethodLabels: Record<string, string> = {
+  voice: "Voice only",
+  form: "Form field",
+  chat: "Typed chat",
+  prefill: "Prefilled",
+  mixed: "Multiple methods",
+  unknown: "Not captured / legacy",
+};
+
+const intakeFieldLabels: Record<string, string> = {
+  name: "Name",
+  email: "Email",
+  org: "Organisation",
+  phone: "Phone",
+  website: "Website",
+  message: "Enquiry details",
+};
+
+function intakeEntryPointLabel(value: string) {
+  return intakeEntryPointLabels[value] ?? defaultCountLabel(value);
+}
+
+function intakeEntryMethodLabel(value: string) {
+  return intakeEntryMethodLabels[value] ?? defaultCountLabel(value);
+}
+
+function submissionMethodLabel(value: string) {
+  return submissionMethodLabels[value] ?? defaultCountLabel(value);
+}
+
+function fieldCompletionMethodLabel(value: string) {
+  return fieldCompletionMethodLabels[value] ?? defaultCountLabel(value);
+}
+
+function intakeFieldLabel(value: string) {
+  return intakeFieldLabels[value] ?? defaultCountLabel(value);
+}
+
+function defaultCountLabel(value: string) {
+  const label = value.replaceAll(/[-_]/g, " ");
+  return label ? `${label[0]?.toUpperCase() ?? ""}${label.slice(1)}` : "Unknown";
 }
 
 function HealthBox({

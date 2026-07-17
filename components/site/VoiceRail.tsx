@@ -61,7 +61,7 @@ export function VoiceRail() {
         "fixed bottom-5 right-5 z-40 flex translate-y-6 items-center gap-3 rounded-full border border-white/18 bg-mk-off-black px-4 py-3 text-sm font-semibold text-white opacity-0 shadow-2xl transition duration-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-mk-anchor-blue",
         visible && "translate-y-0 opacity-100",
       )}
-      onClick={() => voice.open(context.intent, { autoStart: false, mode: "form" })}
+      onClick={() => voice.open(context.intent, { autoStart: false, mode: "form", entryPoint: "voice_rail" })}
       type="button"
     >
       <span className="orb-breathe inline-flex">

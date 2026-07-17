@@ -1,6 +1,12 @@
 import type { VoiceReviewSnapshotRequest } from "@/lib/schemas";
 import { isConversationId } from "@/lib/voice/conversation";
 import type { VoiceModelCell, VoiceReasoningCell } from "@/lib/voice/experiments";
+import {
+  type SubmissionMethod,
+  summarizeFieldProvenance,
+  type VoiceEntryMethod,
+  type VoiceEntryPoint,
+} from "@/lib/voice/interaction-attribution";
 import type { VoiceInputPolicy, VoiceLatencyTelemetry } from "@/lib/voice/latency";
 import type { VoiceRuntimeState } from "@/lib/voice/realtime-events";
 import type { VoiceRuntimeProfileId } from "@/lib/voice/runtime-profile";
@@ -41,6 +47,9 @@ export function buildVoiceReviewSnapshot(
     submittedAt?: number;
     closeReason?: VoiceReviewSnapshotRequest["snapshot"]["closeReason"];
     closedAt?: number;
+    entryPoint?: VoiceEntryPoint;
+    entryMethod?: VoiceEntryMethod;
+    submissionMethod?: SubmissionMethod;
   } = {},
 ): VoiceReviewSnapshotRequest["snapshot"] {
   return {
@@ -66,6 +75,10 @@ export function buildVoiceReviewSnapshot(
     deviceProfile: review.deviceProfile,
     deploymentEnvironment: review.deploymentEnvironment,
     activationAttempted: review.activationAttempted,
+    ...(overrides.entryPoint ? { entryPoint: overrides.entryPoint } : {}),
+    ...(overrides.entryMethod ? { entryMethod: overrides.entryMethod } : {}),
+    ...(overrides.submissionMethod ? { submissionMethod: overrides.submissionMethod } : {}),
+    fieldProvenance: summarizeFieldProvenance(state.captured, state.fieldProvenance),
     variant: review.variant,
     runtimeProfile: review.runtimeProfile,
     inputPolicy: review.inputPolicy,

@@ -1,10 +1,33 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+function fieldProvenanceSchema() {
+  const entry = () =>
+    v.object({
+      method: v.string(),
+      lastInput: v.optional(v.string()),
+      editCount: v.number(),
+      correctionCount: v.number(),
+      clearCount: v.number(),
+    });
+  return v.object({
+    name: entry(),
+    email: entry(),
+    org: entry(),
+    phone: entry(),
+    website: entry(),
+    message: entry(),
+  });
+}
+
 export default defineSchema({
   leads: defineTable({
     leadId: v.string(),
     source: v.union(v.literal("voice"), v.literal("form"), v.literal("hero-email")),
+    entryPoint: v.optional(v.string()),
+    entryMethod: v.optional(v.string()),
+    submissionMethod: v.optional(v.string()),
+    fieldProvenance: v.optional(fieldProvenanceSchema()),
     segment: v.string(),
     routedTo: v.string(),
     routedToEmail: v.optional(v.union(v.string(), v.null())),
@@ -99,6 +122,10 @@ export default defineSchema({
     // Explicit post-mint user activation. This distinguishes failed attempts
     // with missing latency payloads from unused permission-aware prewarms.
     activationAttempted: v.optional(v.boolean()),
+    entryPoint: v.optional(v.string()),
+    entryMethod: v.optional(v.string()),
+    submissionMethod: v.optional(v.string()),
+    fieldProvenance: v.optional(fieldProvenanceSchema()),
     prewarmedAt: v.optional(v.number()),
     connectStartedAt: v.optional(v.number()),
     connectedAt: v.optional(v.number()),

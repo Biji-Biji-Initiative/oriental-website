@@ -46,7 +46,7 @@ test("FAQ renders and the inline Talk to Mereka CTA opens the form-first dialog 
   await page.locator("main").getByRole("button", { name: "Talk to Mereka" }).click();
 
   await expect(page.getByRole("dialog")).toBeVisible();
-  await expect(isMobile ? page.getByRole("dialog") : page.getByLabel("Name")).toBeFocused();
+  await expect(isMobile ? page.getByRole("dialog") : page.getByLabel("Email", { exact: true })).toBeFocused();
   await expect
     .poll(() =>
       page.evaluate(

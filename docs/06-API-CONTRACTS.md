@@ -53,6 +53,16 @@ Purpose: persist a voice/form partner enquiry and notify the routed owner.
 ```ts
 type LeadRequest = {
   source: "voice" | "form";
+  entryPoint?: VoiceEntryPoint; // fixed CTA enum; never page text or URL
+  entryMethod?: "voice_button" | "form" | "email_capture" | "unknown"; // how intake opened
+  submissionMethod?: "voice_command" | "handoff_button";
+  fieldProvenance?: Record<LeadField, {
+    method: "voice" | "form" | "chat" | "prefill" | "mixed" | "unknown";
+    lastInput?: "voice" | "form" | "chat" | "prefill";
+    editCount: number;       // 0..100
+    correctionCount: number; // 0..100
+    clearCount: number;      // 0..100
+  }>;
   segment?: Segment; // defaults to "other"
   form: LeadForm;
   transcript?: Array<{
@@ -128,6 +138,7 @@ degraded-success case.
 |---|---|---|
 | 400 | `invalid_payload` | Zod validation failed. |
 | 403 | `turnstile_failed` | Cloudflare verify rejected the token. |
+| 403 | `voice_review_invalid` | A `voice_command` submission did not carry valid signed review credentials. Turnstile cannot substitute for this voice trust boundary. |
 | 409 | `voice_email_unconfirmed` | Voice source did not provide a currently verified email marker (grounded adaptive capture, strict confirmation, typed edit, or prefill). |
 | 429 | `rate_limited` | More than 12 lead attempts per IP per hour. |
 | 500 | `routing_unconfigured` | Production owner email missing for the resolved segment. |
@@ -162,6 +173,11 @@ The email verification marker and signed review token are request-boundary
 evidence; both are stripped before lead persistence. PII-free capture mode,
 source, confidence, status, and current-value match remain in the signed
 voice-session review snapshot for QA.
+
+`entryPoint`, `entryMethod`, `submissionMethod`, and `fieldProvenance` are persisted for
+aggregate product analysis. They contain fixed categories and counters only—no
+contact values, transcript text, URLs, visitor IDs, or raw timestamps. Legacy
+clients may omit them.
 
 In local and test environments, notification failures are represented in the
 `notifications` object and do not turn a successfully accepted lead into an
@@ -376,6 +392,10 @@ type VoiceReviewSnapshotRequest = {
     deviceProfile?: "mobile" | "desktop";
     deploymentEnvironment?: "local" | "staging" | "production";
     activationAttempted?: boolean;
+    entryPoint?: VoiceEntryPoint;
+    entryMethod?: "voice_button" | "form" | "email_capture" | "unknown";
+    submissionMethod?: "voice_command" | "handoff_button";
+    fieldProvenance?: FieldProvenanceSummary;
     model?: string;
     voice?: string;
     speed?: number;

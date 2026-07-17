@@ -42,6 +42,21 @@ describe("lead request schema", () => {
       voiceInputPolicy: "fast",
       voiceEmailVerified: true,
       voiceEmailVerificationSource: "speech",
+      entryPoint: "hero_primary",
+      entryMethod: "voice_button",
+      submissionMethod: "voice_command",
+      fieldProvenance: Object.fromEntries(
+        ["name", "email", "org", "phone", "website", "message"].map((field) => [
+          field,
+          {
+            method: field === "email" ? "voice" : "unknown",
+            lastInput: field === "email" ? "voice" : undefined,
+            editCount: field === "email" ? 1 : 0,
+            correctionCount: 0,
+            clearCount: 0,
+          },
+        ]),
+      ),
       form: {
         name: "Asha",
         email: "asha@example.com",
@@ -54,6 +69,83 @@ describe("lead request schema", () => {
     });
 
     expect(parsed.success).toBe(true);
+  });
+
+  it("rejects unbounded intake attribution categories and counters", () => {
+    const base = {
+      source: "form",
+      segment: "technology",
+      form: {
+        name: "Asha",
+        email: "asha@example.com",
+        org: "",
+        phone: "",
+        website: "",
+        message: "",
+      },
+    };
+    expect(leadRequestSchema.safeParse({ ...base, entryPoint: "free-form-page-copy" }).success).toBe(false);
+    expect(leadRequestSchema.safeParse({ ...base, entryMethod: "free-form-method" }).success).toBe(false);
+    expect(leadRequestSchema.safeParse({ ...base, submissionMethod: "mystery" }).success).toBe(false);
+  });
+
+  it("rejects source and submission-method combinations that cannot occur", () => {
+    const base = {
+      segment: "technology",
+      form: {
+        name: "Asha",
+        email: "asha@example.com",
+        org: "",
+        phone: "",
+        website: "",
+        message: "",
+      },
+    };
+
+    expect(leadRequestSchema.safeParse({ ...base, source: "form", submissionMethod: "voice_command" }).success).toBe(
+      false,
+    );
+    expect(
+      leadRequestSchema.safeParse({ ...base, source: "voice", submissionMethod: "email_capture_button" }).success,
+    ).toBe(false);
+    expect(
+      leadRequestSchema.safeParse({ ...base, source: "form", submissionMethod: "email_capture_button" }).success,
+    ).toBe(false);
+    expect(leadRequestSchema.safeParse({ ...base, source: "form", submissionMethod: "handoff_button" }).success).toBe(
+      true,
+    );
+    expect(
+      leadRequestSchema.safeParse({
+        ...base,
+        source: "voice",
+        submissionMethod: "voice_command",
+        voiceReviewId: "5a8c25b1-cd50-4e47-89bf-84947c805add",
+        voiceReviewToken: "signed-review-linkage-token",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects a voice command without both review credentials", () => {
+    const base = {
+      source: "voice",
+      submissionMethod: "voice_command",
+      form: {
+        name: "Asha",
+        email: "asha@example.com",
+        org: "",
+        phone: "",
+        website: "",
+        message: "",
+      },
+    };
+
+    expect(leadRequestSchema.safeParse(base).success).toBe(false);
+    expect(
+      leadRequestSchema.safeParse({
+        ...base,
+        voiceReviewId: "5a8c25b1-cd50-4e47-89bf-84947c805add",
+      }).success,
+    ).toBe(false);
   });
 
   it("rejects transcripts beyond the 200-entry cap", () => {

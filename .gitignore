@@ -50,3 +50,6 @@ next-env.d.ts
 # Automated Plan Reviser runtime state (review rounds remain trackable)
 /.apr/.locks/
 /.apr/logs/
+
+# Local code graph index
+/.codegraph/

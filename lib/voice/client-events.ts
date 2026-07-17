@@ -116,7 +116,9 @@ export function serializeHandoffContext(
     ? state.emailVerification?.status === "confirmed" &&
       state.emailVerification.value.trim().toLowerCase() === state.captured.email.trim().toLowerCase()
       ? `confirmed (${state.emailVerification.source})`
-      : "awaiting exact spoken confirmation"
+      : state.emailCaptureMode === "adaptive"
+        ? "needs a quick check in the visible email editor"
+        : "awaiting exact spoken confirmation"
     : "missing";
   const resumed = options.resumedTranscript ?? [];
   const emailPolicy =

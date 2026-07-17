@@ -23,7 +23,11 @@ capture.
 |---|---|---|
 | `_id` / `_creationTime` | Convex-managed | Internal document identity and creation time. |
 | `leadId` | string | App-generated UUID from `routeLead`; returned to the browser. |
-| `source` | `"voice" | "form" | "hero-email"` | Entry surface. |
+| `source` | `"voice" | "form" | "hero-email"` | Coarse interaction channel retained for compatibility. |
+| `entryPoint` | string? | Bounded CTA category (`hero_primary`, `nav_desktop`, etc.); no URL or copy. |
+| `entryMethod` | string? | Independent opening method: `voice_button`, `form`, `email_capture`, or `unknown`. |
+| `submissionMethod` | string? | `voice_command`, `handoff_button`, or `email_capture_button`. |
+| `fieldProvenance` | object? | PII-free fixed six-field capture method and bounded edit/correction/clear counters. |
 | `segment` | string | One of the segment IDs in `lib/segments.ts`; Convex keeps it string-typed. |
 | `routedTo` | string | Denormalised owner name at write time. |
 | `routedToEmail` | string \| null | Resolved from `OWNER_*`; nullable so non-production can still capture. |
@@ -91,6 +95,8 @@ submission.
 | `connectionStatus` | string | WebRTC state from the client. |
 | `deviceProfile` / `deploymentEnvironment` | optional | Evidence attribution for device class and local/staging/production traffic. |
 | `activationAttempted` | boolean? | Explicit post-mint user activation; distinguishes an empty failed attempt from an unused prewarm or legacy unknown row. |
+| `entryPoint` / `entryMethod` / `submissionMethod` | optional | Bounded entry surface, opening method, and final submission categories. Unused prewarms carry no entry attribution; heartbeats never erase an already persisted submission method. |
+| `fieldProvenance` | object? | PII-free source/correction summary for the six captured fields; no captured values. |
 | `model` / `voice` / `speed` | optional | Realtime render settings used for the session. |
 | `runtimeProfile` / `modelCell` / `reasoningCell` | optional | Controlled experiment dimensions; only one may differ from control in a release. |
 | `latency` | object? | Bounded activation and turn timing, including tap-to-live and tap-to-audible. |

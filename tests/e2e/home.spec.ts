@@ -1,4 +1,8 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
+
+function visibleDialogEmail(page: Page) {
+  return page.getByRole("dialog").locator('input[type="email"]:visible');
+}
 
 test.beforeEach(async ({ page }) => {
   await page.route("**/api/voice/session", async (route) => {
@@ -40,7 +44,7 @@ test("renders the Oriental microsite and opens the collaborative intake workspac
   await page.getByRole("button", { name: /Tell us why/i }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await expect(page.locator(".mereka-nebula")).toBeVisible();
-  await expect(page.getByText("Handoff details", { exact: true })).toBeVisible();
+  await expect(page.getByText("Send your enquiry", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Name")).toBeVisible();
   await page.getByRole("button", { name: "The spaces" }).click();
   await expect(page.getByText("Oriental note")).toBeVisible();
@@ -102,7 +106,7 @@ test("faq page nav links point home and the talk CTA opens the form workspace", 
     await page.getByRole("button", { name: "Talk to Mereka" }).last().click();
   }
   await expect(page.getByRole("dialog")).toBeVisible();
-  await expect(isMobile ? page.getByRole("dialog") : page.getByLabel("Name")).toBeFocused();
+  await expect(isMobile ? page.getByRole("dialog") : page.getByLabel("Email", { exact: true })).toBeFocused();
   await expect(page.getByText(/every-visit option to remember the mic/i)).toBeVisible();
   await expect(page.getByText(/One-time access will ask again later/i)).toBeVisible();
 });
@@ -165,11 +169,11 @@ test("lead form prevents duplicate posts while submission is pending", async ({ 
   await page.goto("/");
   await page.getByRole("button", { name: /Tell us why/i }).click();
   await page.getByLabel("Name").fill("Asha");
-  await page.getByLabel("Email").fill("asha@example.com");
+  await visibleDialogEmail(page).fill("asha@example.com");
   await page.getByLabel("Organisation").fill("Future Lab");
   await page.getByLabel("What would you build with Mereka?").fill("We want to run AI literacy demos.");
 
-  await page.getByRole("button", { name: "Send complete handoff" }).first().dblclick();
+  await page.getByRole("button", { name: "Send enquiry" }).first().dblclick();
   await expect.poll(() => leadRequests).toBe(1);
 
   releaseLead?.();
@@ -198,14 +202,23 @@ test("lead form submits the latest typed handoff values", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: /Tell us why/i }).click();
   await page.getByLabel("Name").fill("Mei Ling");
-  await page.getByLabel("Email").fill("mei@example.com");
+  await visibleDialogEmail(page).fill("mei@example.com");
   await page.getByLabel("Organisation").fill("Fresh Typed Org");
   await page.getByLabel("What would you build with Mereka?").fill("A last-moment typed brief for the handoff.");
-  await page.getByRole("button", { name: "Send complete handoff" }).click();
+  await page.getByRole("button", { name: "Send enquiry" }).click();
 
   await expect(page.getByRole("heading", { name: /Sent to/i })).toBeVisible();
   expect(submittedBody).toMatchObject({
     source: "form",
+    entryPoint: "hero_primary",
+    entryMethod: "form",
+    submissionMethod: "handoff_button",
+    fieldProvenance: {
+      name: { method: "form", lastInput: "form" },
+      email: { method: "form", lastInput: "form" },
+      org: { method: "form", lastInput: "form" },
+      message: { method: "form", lastInput: "form" },
+    },
     form: {
       name: "Mei Ling",
       email: "mei@example.com",
@@ -219,7 +232,7 @@ test("typed-only handoff edits survive closing and reopening the workspace", asy
   await page.goto("/");
   await page.getByRole("button", { name: /Tell us why/i }).click();
   await page.getByLabel("Name").fill("Nur Aina");
-  await page.getByLabel("Email").fill("aina@example.com");
+  await visibleDialogEmail(page).fill("aina@example.com");
   await page.getByLabel("Organisation").fill("Community Studio");
   await page.getByLabel("What would you build with Mereka?").fill("A typed-only circular design programme.");
 
@@ -228,7 +241,7 @@ test("typed-only handoff edits survive closing and reopening the workspace", asy
   await page.getByRole("button", { name: /Tell us why/i }).click();
 
   await expect(page.getByLabel("Name")).toHaveValue("Nur Aina");
-  await expect(page.getByLabel("Email")).toHaveValue("aina@example.com");
+  await expect(visibleDialogEmail(page)).toHaveValue("aina@example.com");
   await expect(page.getByLabel("Organisation")).toHaveValue("Community Studio");
   await expect(page.getByLabel("What would you build with Mereka?")).toHaveValue(
     "A typed-only circular design programme.",
@@ -256,10 +269,10 @@ test("lead form surfaces a partial failure when the lead saves but notifications
   await page.goto("/");
   await page.getByRole("button", { name: /Tell us why/i }).click();
   await page.getByLabel("Name").fill("Asha");
-  await page.getByLabel("Email").fill("asha@example.com");
+  await visibleDialogEmail(page).fill("asha@example.com");
   await page.getByLabel("Organisation").fill("Future Lab");
   await page.getByLabel("What would you build with Mereka?").fill("We want to run AI literacy demos.");
-  await page.getByRole("button", { name: "Send complete handoff" }).click();
+  await page.getByRole("button", { name: "Send enquiry" }).click();
 
   await expect(page.getByText("Saved, but notifications need attention.")).toBeVisible();
   await expect(page.getByLabel("Name")).toHaveValue("Asha");
@@ -403,7 +416,7 @@ test("talk CTA opens the partner dialog without requesting the microphone", asyn
   await page.locator('header button[aria-label="Talk to Mereka"]').click();
 
   await expect(page.getByRole("dialog")).toBeVisible();
-  await expect(isMobile ? page.getByRole("dialog") : page.getByLabel("Name")).toBeFocused();
+  await expect(isMobile ? page.getByRole("dialog") : page.getByLabel("Email", { exact: true })).toBeFocused();
   await expect
     .poll(() =>
       page.evaluate(
@@ -520,6 +533,92 @@ test("voice intake stays contained and resets scroll across short responsive vie
   });
   await page.setViewportSize({ width: 1440, height: 900 });
   await expect.poll(() => page.locator("[data-voice-dialog-layout]").evaluate((layout) => layout.scrollTop)).toBe(0);
+});
+
+test("email correction stays beside voice controls across the 1024px breakpoint", async ({ page }) => {
+  let leadPosts = 0;
+  page.on("request", (request) => {
+    if (request.method() === "POST" && request.url().includes("/api/leads")) leadPosts += 1;
+  });
+
+  const viewports = [
+    { width: 320, height: 568 },
+    { width: 390, height: 844 },
+    { width: 844, height: 390 },
+    { width: 1023, height: 600 },
+    { width: 1024, height: 390 },
+    { width: 1024, height: 600 },
+  ];
+
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    await page.locator('header button[aria-label="Talk to Mereka"]').click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await page.waitForTimeout(150);
+    await expect(dialog.locator('input[type="email"]:visible')).toHaveCount(1);
+    if (viewport.width >= 1024) {
+      await expect
+        .poll(() =>
+          dialog.evaluate((element) => {
+            const email = element.querySelector<HTMLInputElement>('input[name="email"]');
+            const name = element.querySelector<HTMLInputElement>('input[name="name"]');
+            if (!email || !name) return false;
+            return Boolean(email.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING);
+          }),
+        )
+        .toBe(true);
+    }
+
+    const email = visibleDialogEmail(page);
+    await email.focus();
+    await email.fill("asha@example.com");
+
+    await expect(email).toBeFocused();
+    await expect(page.locator("[data-voice-primary-action]")).toBeInViewport({ ratio: 1 });
+    await expect(page.getByRole("button", { name: "Send enquiry" })).toBeEnabled();
+    await expect
+      .poll(() =>
+        dialog.locator("[data-voice-dialog-layout]").evaluate((layout) => ({
+          horizontal: layout.scrollLeft,
+          pageOverflow: document.documentElement.scrollWidth > window.innerWidth,
+        })),
+      )
+      .toEqual({ horizontal: 0, pageOverflow: false });
+  }
+
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.goto("/");
+  await page.locator('header button[aria-label="Talk to Mereka"]').click();
+  const quickEmail = visibleDialogEmail(page);
+  await quickEmail.fill("not-an-email");
+  await quickEmail.blur();
+  const quickCapture = page.locator("[data-email-quick-capture]");
+  const quickHelp = page.locator("#voice-quick-email-help");
+  await expect(quickCapture).toHaveAttribute("data-email-state", "invalid");
+  await expect(quickHelp).toHaveText(/Enter a valid email/i);
+  await expect(quickHelp).toBeInViewport({ ratio: 1 });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.locator('header button[aria-label="Talk to Mereka"]').click();
+  const dialog = page.getByRole("dialog");
+  const mobileEmail = dialog.getByLabel("Email to follow up");
+  await page.waitForTimeout(150);
+  await mobileEmail.click();
+  await expect(mobileEmail).toBeFocused();
+
+  await page.setViewportSize({ width: 1024, height: 600 });
+  const desktopEmail = dialog.getByLabel("Email", { exact: true });
+  await expect(desktopEmail).toBeVisible();
+  await expect(desktopEmail).toBeFocused();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(mobileEmail).toBeVisible();
+  await expect(mobileEmail).toBeFocused();
+
+  expect(leadPosts).toBe(0);
 });
 
 test("a maximum-length live caption keeps the voice action in the initial short viewport", async ({ page }) => {

@@ -4,6 +4,7 @@ import { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { SegmentId } from "@/lib/segments";
 import { serializeRealtimeCommand } from "@/lib/voice/client-events";
+import { provenanceForInitialCaptured, recordCapturedChanges } from "@/lib/voice/interaction-attribution";
 import { VOICE_TOOL_NAMES, type VoiceToolName, type VoiceToolOutcome } from "@/lib/voice/latency";
 import {
   appendTypedUserMessage,
@@ -56,6 +57,7 @@ export function useVoiceRuntime({
   );
   const [transcript, setTranscript] = useState<VoiceTranscriptEntry[]>([]);
   const [assistantDraft, setAssistantDraft] = useState("");
+  const initialCaptured = { ...emptyCapturedLead, email: prefillEmail ?? "" };
   const stateRef = useRef<VoiceRuntimeState>({
     segment,
     captured,
@@ -63,12 +65,20 @@ export function useVoiceRuntime({
     handledCallIds: [],
     emailVerification,
     emailVerificationUserTurnSequence: 0,
+    fieldProvenance: provenanceForInitialCaptured(initialCaptured),
   });
   const callbacksRef = useRef({ submitLead, onEndVoice, onToolDuration, onCaptureNeedsAttention, onClearFields });
   callbacksRef.current = { submitLead, onEndVoice, onToolDuration, onCaptureNeedsAttention, onClearFields };
   // The model retries a rejected capture on its own; only bother the visitor
   // when the same field keeps failing.
   const ungroundedRejectionsRef = useRef(0);
+  // Tool calls do not identify whether their evidence came from microphone or
+  // the live text composer. Bind each response to the modality that caused it;
+  // a later turn must not relabel a delayed tool result from an earlier turn.
+  const inputAttributionRef = useRef<RuntimeInputAttribution>({ latest: "voice" });
+  // False means focused but unchanged; true means this focus session already
+  // recorded its one bounded form edit.
+  const capturedEditSessionsRef = useRef<Partial<Record<keyof CapturedLead, boolean>>>({});
 
   const reset = useCallback((initial: { segment: SegmentId; email?: string; name?: string; org?: string }) => {
     const nextCaptured = {
@@ -84,6 +94,8 @@ export function useVoiceRuntime({
     setTranscript([]);
     setAssistantDraft("");
     ungroundedRejectionsRef.current = 0;
+    inputAttributionRef.current = { latest: "voice" };
+    capturedEditSessionsRef.current = {};
     stateRef.current = {
       segment: initial.segment,
       captured: nextCaptured,
@@ -91,16 +103,26 @@ export function useVoiceRuntime({
       handledCallIds: [],
       emailVerification: nextEmailVerification,
       emailVerificationUserTurnSequence: 0,
+      fieldProvenance: provenanceForInitialCaptured(nextCaptured),
     };
   }, []);
 
   const updateCaptured = useCallback((key: keyof CapturedLead, value: string) => {
     const nextCaptured = { ...stateRef.current.captured, [key]: value };
+    const changeKind = capturedEditSessionsRef.current[key] === true ? "continuous" : "atomic";
+    capturedEditSessionsRef.current[key] = true;
     const nextEmailVerification =
       key === "email" ? confirmedEmailVerification(value, "typed") : stateRef.current.emailVerification;
     stateRef.current = {
       ...stateRef.current,
       captured: nextCaptured,
+      fieldProvenance: recordCapturedChanges(
+        stateRef.current.captured,
+        nextCaptured,
+        stateRef.current.fieldProvenance,
+        "form",
+        changeKind,
+      ),
       emailVerification: nextEmailVerification,
       ...(key === "email"
         ? {
@@ -118,13 +140,27 @@ export function useVoiceRuntime({
     if (key === "email") setEmailVerification(nextEmailVerification);
   }, []);
 
+  const beginCapturedEdit = useCallback((key: keyof CapturedLead) => {
+    capturedEditSessionsRef.current[key] = false;
+  }, []);
+
+  const endCapturedEdit = useCallback((key: keyof CapturedLead) => {
+    delete capturedEditSessionsRef.current[key];
+  }, []);
+
   const updateSegment = useCallback((nextSegment: SegmentId) => {
     stateRef.current = { ...stateRef.current, segment: nextSegment };
     setSegment(nextSegment);
   }, []);
 
   const appendUserText = useCallback((text: string) => {
-    stateRef.current = appendTypedUserMessage(stateRef.current, text);
+    inputAttributionRef.current = { ...inputAttributionRef.current, latest: "chat" };
+    const previous = stateRef.current;
+    const next = appendTypedUserMessage(previous, text);
+    stateRef.current = {
+      ...next,
+      fieldProvenance: recordCapturedChanges(previous.captured, next.captured, previous.fieldProvenance, "chat"),
+    };
     setCaptured(stateRef.current.captured);
     setEmailVerification(stateRef.current.emailVerification);
     setTranscript(stateRef.current.transcript);
@@ -173,8 +209,17 @@ export function useVoiceRuntime({
   const handleRealtimeEvent = useCallback(
     (serverEvent: RealtimeServerEvent, channel: RTCDataChannel) => {
       const toolStartedAt = performance.now();
+      const inputAttribution = advanceRuntimeInputAttribution(inputAttributionRef.current, serverEvent.type);
+      inputAttributionRef.current = inputAttribution.state;
       const previousErrorCount = stateRef.current.errors?.length ?? 0;
-      const reduced = reduceRealtimeServerEvent(serverEvent, stateRef.current);
+      const previous = stateRef.current;
+      const reduced = reduceRealtimeServerEvent(serverEvent, previous);
+      reduced.state.fieldProvenance = recordCapturedChanges(
+        previous.captured,
+        reduced.state.captured,
+        previous.fieldProvenance,
+        inputAttribution.input,
+      );
       stateRef.current = reduced.state;
       setSegment(reduced.state.segment);
       setCaptured(reduced.state.captured);
@@ -246,8 +291,10 @@ export function useVoiceRuntime({
   return {
     appendUserText,
     assistantDraft,
+    beginCapturedEdit,
     captured,
     emailVerification,
+    endCapturedEdit,
     handleRealtimeEvent,
     reset,
     segment,
@@ -256,6 +303,36 @@ export function useVoiceRuntime({
     transcript,
     updateCaptured,
   };
+}
+
+type RuntimeInputModality = "voice" | "chat";
+
+export type RuntimeInputAttribution = {
+  latest: RuntimeInputModality;
+  activeResponse?: RuntimeInputModality;
+};
+
+/**
+ * Realtime function calls arrive on response completion and do not carry their
+ * originating input modality. Audio commit is the earliest authoritative voice
+ * boundary; response creation freezes that boundary until its output settles.
+ */
+export function advanceRuntimeInputAttribution(
+  current: RuntimeInputAttribution,
+  eventType: RealtimeServerEvent["type"],
+): { state: RuntimeInputAttribution; input: RuntimeInputModality } {
+  let latest = current.latest;
+  let activeResponse = current.activeResponse;
+  if (
+    eventType === "input_audio_buffer.committed" ||
+    eventType === "conversation.item.input_audio_transcription.completed"
+  ) {
+    latest = "voice";
+  }
+  if (eventType === "response.created") activeResponse = latest;
+  const input = eventType === "response.done" ? (activeResponse ?? latest) : latest;
+  if (eventType === "response.done") activeResponse = undefined;
+  return { state: { latest, ...(activeResponse ? { activeResponse } : {}) }, input };
 }
 
 function toolNameForCall(event: RealtimeServerEvent, callId: string): VoiceToolName {

@@ -31,6 +31,11 @@ export default function PrivacyPage() {
             </li>
             <li>Security and delivery events needed to prevent abuse, route the enquiry, and diagnose failures.</li>
             <li>
+              Bounded interaction categories—where the intake opened, whether voice or the Send button submitted it, and
+              whether each field was completed by voice, typing, prefill, or a mix. These metrics do not contain the
+              field values.
+            </li>
+            <li>
               Public page-use events through Google Analytics only after you select “Allow analytics”. Query strings and
               admin routes are excluded.
             </li>
@@ -85,6 +90,10 @@ export default function PrivacyPage() {
             <li>
               Peristiwa keselamatan dan penghantaran digunakan untuk mencegah penyalahgunaan serta mendiagnosis
               kegagalan.
+            </li>
+            <li>
+              Kategori interaksi terhad merekod tempat borang dibuka, cara ia dihantar, dan sama ada medan dilengkapkan
+              melalui suara, taip, praisi atau gabungan—tanpa menyimpan nilai medan dalam metrik tersebut.
             </li>
             <li>
               Google Analytics hanya diaktifkan selepas anda memilih “Allow analytics”; laluan pentadbir dan rentetan

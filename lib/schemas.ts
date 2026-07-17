@@ -6,8 +6,29 @@ import {
   validateAdminLeadWorkflow,
 } from "@/lib/admin-workflow";
 import { SEGMENT_IDS } from "@/lib/segments";
+import { SUBMISSION_METHODS, VOICE_ENTRY_METHODS, VOICE_ENTRY_POINTS } from "@/lib/voice/interaction-attribution";
 
 const segmentSchema = z.enum(SEGMENT_IDS);
+const entryPointSchema = z.enum(VOICE_ENTRY_POINTS);
+const entryMethodSchema = z.enum(VOICE_ENTRY_METHODS);
+const submissionMethodSchema = z.enum(SUBMISSION_METHODS);
+const fieldInputMethodSchema = z.enum(["voice", "form", "chat", "prefill"]);
+const fieldCompletionMethodSchema = z.enum(["voice", "form", "chat", "prefill", "mixed", "unknown"]);
+const fieldProvenanceEntrySchema = z.object({
+  method: fieldCompletionMethodSchema,
+  lastInput: fieldInputMethodSchema.optional(),
+  editCount: z.number().int().min(0).max(100),
+  correctionCount: z.number().int().min(0).max(100),
+  clearCount: z.number().int().min(0).max(100),
+});
+export const fieldProvenanceSummarySchema = z.object({
+  name: fieldProvenanceEntrySchema,
+  email: fieldProvenanceEntrySchema,
+  org: fieldProvenanceEntrySchema,
+  phone: fieldProvenanceEntrySchema,
+  website: fieldProvenanceEntrySchema,
+  message: fieldProvenanceEntrySchema,
+});
 
 const utmSchema = z
   .record(z.string().max(80), z.string().max(300))
@@ -30,27 +51,53 @@ export const leadFormSchema = z.object({
   message: z.string().trim().max(2500),
 });
 
-export const leadRequestSchema = z.object({
-  source: z.enum(["voice", "form"]),
-  segment: segmentSchema.default("other"),
-  form: leadFormSchema,
-  transcript: z.array(transcriptEntrySchema).max(200).default([]),
-  turnstileToken: z.string().optional(),
-  voiceReviewId: z.string().uuid().optional(),
-  voiceReviewToken: z.string().min(20).max(500).optional(),
-  voiceSessionId: z.string().max(160).optional(),
-  voiceVariant: z.string().max(64).optional(),
-  voiceModel: z.string().max(80).optional(),
-  voiceModelCell: z.enum(["control", "candidate"]).optional(),
-  voiceReasoningCell: z.enum(["low", "minimal"]).optional(),
-  voiceName: z.string().max(80).optional(),
-  voiceSpeed: z.number().min(0.25).max(1.5).optional(),
-  voiceRuntimeProfile: z.enum(["baseline", "instant-v1"]).optional(),
-  voiceInputPolicy: z.enum(["baseline", "fast", "patient"]).optional(),
-  voiceEmailVerified: z.boolean().optional(),
-  voiceEmailVerificationSource: z.enum(["prefill", "speech", "typed"]).optional(),
-  utm: utmSchema,
-});
+export const leadRequestSchema = z
+  .object({
+    source: z.enum(["voice", "form"]),
+    entryPoint: entryPointSchema.optional(),
+    entryMethod: entryMethodSchema.optional(),
+    submissionMethod: submissionMethodSchema.optional(),
+    fieldProvenance: fieldProvenanceSummarySchema.optional(),
+    segment: segmentSchema.default("other"),
+    form: leadFormSchema,
+    transcript: z.array(transcriptEntrySchema).max(200).default([]),
+    turnstileToken: z.string().optional(),
+    voiceReviewId: z.string().uuid().optional(),
+    voiceReviewToken: z.string().min(20).max(500).optional(),
+    voiceSessionId: z.string().max(160).optional(),
+    voiceVariant: z.string().max(64).optional(),
+    voiceModel: z.string().max(80).optional(),
+    voiceModelCell: z.enum(["control", "candidate"]).optional(),
+    voiceReasoningCell: z.enum(["low", "minimal"]).optional(),
+    voiceName: z.string().max(80).optional(),
+    voiceSpeed: z.number().min(0.25).max(1.5).optional(),
+    voiceRuntimeProfile: z.enum(["baseline", "instant-v1"]).optional(),
+    voiceInputPolicy: z.enum(["baseline", "fast", "patient"]).optional(),
+    voiceEmailVerified: z.boolean().optional(),
+    voiceEmailVerificationSource: z.enum(["prefill", "speech", "typed"]).optional(),
+    utm: utmSchema,
+  })
+  .superRefine((lead, context) => {
+    if (!lead.submissionMethod) return;
+    const validPair =
+      (lead.source === "form" && lead.submissionMethod === "handoff_button") ||
+      (lead.source === "voice" &&
+        (lead.submissionMethod === "handoff_button" || lead.submissionMethod === "voice_command"));
+    if (!validPair) {
+      context.addIssue({
+        code: "custom",
+        message: "Submission method does not match the lead source",
+        path: ["submissionMethod"],
+      });
+    }
+    if (lead.submissionMethod === "voice_command" && (!lead.voiceReviewId || !lead.voiceReviewToken)) {
+      context.addIssue({
+        code: "custom",
+        message: "Voice-command submission requires signed voice review linkage",
+        path: [!lead.voiceReviewId ? "voiceReviewId" : "voiceReviewToken"],
+      });
+    }
+  });
 
 export const newsletterRequestSchema = z.object({
   email: z.string().trim().email().max(180),
@@ -166,6 +213,10 @@ export const voiceReviewSnapshotSchema = z.object({
     deviceProfile: z.enum(["mobile", "desktop"]).optional(),
     deploymentEnvironment: z.enum(["local", "staging", "production"]).optional(),
     activationAttempted: z.boolean().optional(),
+    entryPoint: entryPointSchema.optional(),
+    entryMethod: entryMethodSchema.optional(),
+    submissionMethod: submissionMethodSchema.optional(),
+    fieldProvenance: fieldProvenanceSummarySchema.optional(),
     prewarmedAt: z.number().optional(),
     connectStartedAt: z.number().optional(),
     connectedAt: z.number().optional(),

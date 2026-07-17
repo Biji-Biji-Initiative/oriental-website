@@ -147,6 +147,13 @@ persistence and owner-notification fan-out start concurrently so the final
 `route_to_team` acknowledgement is bounded by the slower dependency instead of
 their sum; structured logs retain each backend operation duration.
 
+Intake telemetry also keeps bounded entry CTA, actual submission method, and
+per-field voice/form/chat/prefill/mixed provenance plus correction counters.
+Those records contain no contact values. Consent-gated GA events cover opens,
+voice starts, and submit outcomes for directional funnel analysis; Convex lead
+and signed voice-session records remain the authoritative accepted-submission
+evidence.
+
 Production currently resolves the control cell to `gpt-realtime-2`. The first
 quality candidate is [`gpt-realtime-2.1`](https://developers.openai.com/api/docs/models/gpt-realtime-2.1),
 which OpenAI documents as improving alphanumeric recognition, silence/noise

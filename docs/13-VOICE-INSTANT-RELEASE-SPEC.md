@@ -153,11 +153,13 @@ dimension, and prove the exact staged commit before promotion.
   latest visitor turn canonicalizes to that exact address. Such exact evidence
   is high-confidence and immediately usable. Bounded ASR substitution MUST
   apply only to a complete spoken-form candidate with an explicit email cue; it
-  MUST remain medium-confidence and pending until one exact readback receives
-  explicit affirmation. A differing literal email MUST never enter the
+  MUST remain medium-confidence and pending in the visible email editor. Reka
+  MUST point to that editor once and continue without an exact readback or
+  spelling loop. Voice-command routing remains blocked; pressing the visible
+  Send button is the visitor's explicit check/submit action. A differing literal email MUST never enter the
   approximate path. Pending native transcription MAY yield medium confidence
   only when no completed turn contradicts the proposed value, and MUST NOT
-  bypass that readback. Corrections and failed replacements MUST invalidate
+  bypass that visible check. Corrections and failed replacements MUST invalidate
   prior verification before routing and re-evaluate from the latest turn;
   duplicate email tool calls MUST pass the same grounding boundary. Clear-all
   MUST clear remembered handoff state and fence every pre-clear ASR completion
@@ -166,8 +168,8 @@ dimension, and prove the exact staged commit before promotion.
 - `VOICE_EMAIL_CAPTURE_MODE=strict` MUST restore exact readback and grounded
   explicit confirmation. Unknown or missing values MUST resolve to `strict`.
   Typed edits and verified prefills MAY confirm their exact current value in
-  either mode. Client and API MUST still reject invalid, pending, ungrounded, or
-  stale email values. A typed edit MUST invalidate any already-active response
+  either mode. Client and API MUST still reject invalid, ungrounded, or stale
+  email values; voice-command routing also rejects pending values. A typed edit MUST invalidate any already-active response
   for email mutation and routing; older tool output MUST NOT overwrite or
   submit the typed value.
 

@@ -42,6 +42,13 @@ type VoiceSessionStageProps = {
   onTopicToggle: (topicId: string) => void;
   onLocalSpeechEnded: (at: number) => void;
   onRemoteAudioStarted: (at: number) => void;
+  emailAttention?: "rejected" | "pending" | "route_blocked" | null;
+  emailInputRef?: RefObject<HTMLInputElement | null>;
+  emailTouched?: boolean;
+  emailValid?: boolean;
+  onEmailBlur?: () => void;
+  onEmailChange?: (value: string) => void;
+  onEmailFocus?: () => void;
   selectedSegment: ReturnType<typeof getSegment>;
   status: "idle" | "submitted";
   turnPhase: VoiceTurnPhase;
@@ -61,6 +68,13 @@ export function VoiceSessionStage({
   onTopicToggle,
   onLocalSpeechEnded,
   onRemoteAudioStarted,
+  emailAttention,
+  emailInputRef,
+  emailTouched = false,
+  emailValid,
+  onEmailBlur,
+  onEmailChange,
+  onEmailFocus,
   selectedSegment,
   status,
   turnPhase,
@@ -80,6 +94,7 @@ export function VoiceSessionStage({
   const orbRef = useRef<HTMLDivElement | null>(null);
   const brandMotionLevelsRef = useRef({ user: 0, voice: 0 });
   const [draft, setDraft] = useState("");
+  const showEmailError = emailTouched && emailValid === false;
   const micPermission = useMicrophonePermissionState();
   useVoiceAudioLevel(audioRef, orbRef, connectionStatus === "listening", {
     onLevel: (level) => {
@@ -99,6 +114,21 @@ export function VoiceSessionStage({
     const text = draft.trim();
     if (!text) return;
     if (onSendText(text)) setDraft("");
+  };
+
+  const handleEmailBlur = () => {
+    onEmailBlur?.();
+    window.requestAnimationFrame(() => {
+      const quickCapture = emailInputRef?.current?.closest<HTMLElement>("[data-email-quick-capture]");
+      if (!quickCapture || quickCapture.dataset.emailState === "ready") return;
+      const help = quickCapture.querySelector<HTMLElement>("#voice-quick-email-help");
+      const scrollHost = quickCapture.closest<HTMLElement>("[data-voice-dialog-layout]");
+      if (!help || !scrollHost) return;
+      const helpRect = help.getBoundingClientRect();
+      const hostRect = scrollHost.getBoundingClientRect();
+      if (helpRect.bottom > hostRect.bottom) scrollHost.scrollTop += helpRect.bottom - hostRect.bottom + 8;
+      if (helpRect.top < hostRect.top) scrollHost.scrollTop -= hostRect.top - helpRect.top + 8;
+    });
   };
 
   if (status === "submitted") {
@@ -188,6 +218,62 @@ export function VoiceSessionStage({
             ? "Choose your browser’s every-visit option to remember the mic. One-time access will ask again later."
             : "Speak or type anytime. Reka says a quick goodbye if you go quiet, and your typed details stay here."}
         </p>
+
+        <div
+          className={cn(
+            "mt-5 w-full max-w-xl rounded-xl border bg-white/[0.045] p-3 text-left lg:hidden",
+            showEmailError
+              ? "border-mk-error/65 shadow-[0_0_0_1px_rgba(255,122,122,0.12)]"
+              : emailAttention
+                ? "border-[#f2d38a]/65 shadow-[0_0_0_1px_rgba(242,211,138,0.12)]"
+                : "border-white/12",
+          )}
+          data-email-quick-capture
+          data-email-state={showEmailError ? "invalid" : emailAttention ? "attention" : "ready"}
+        >
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="flex shrink-0 items-center justify-between gap-3 sm:block">
+              <label className="text-xs font-semibold text-white/82" htmlFor="voice-quick-email">
+                Email to follow up
+              </label>
+              <span className="text-[11px] text-white/48 sm:ml-2">Only required</span>
+            </div>
+            <Input
+              aria-describedby="voice-quick-email-help"
+              aria-errormessage={showEmailError ? "voice-quick-email-help" : undefined}
+              aria-invalid={showEmailError || undefined}
+              aria-required="true"
+              className="sm:min-w-0 sm:flex-1"
+              id="voice-quick-email"
+              onBlur={handleEmailBlur}
+              onChange={(event) => onEmailChange?.(event.target.value)}
+              onFocus={onEmailFocus}
+              placeholder="name@example.com"
+              ref={emailInputRef}
+              required
+              type="email"
+              value={captured.email}
+              variant="glass"
+            />
+          </div>
+          <p
+            aria-live="polite"
+            className={cn(
+              "mt-2 text-xs leading-5",
+              showEmailError ? "text-mk-error-soft" : emailAttention ? "text-[#f2d38a]" : "text-white/48",
+            )}
+            id="voice-quick-email-help"
+            role={showEmailError ? "alert" : undefined}
+          >
+            {showEmailError
+              ? "Enter a valid email, such as name@example.com."
+              : emailAttention
+                ? "Check this once or edit it here. Reka will keep the conversation moving—no spelling loop."
+                : captured.email.trim()
+                  ? "Email added · ready to send."
+                  : "Say it naturally or type it here whenever you are ready."}
+          </p>
+        </div>
 
         {connectionStatus === "listening" ? (
           <form className="mt-6 flex w-full max-w-xl gap-2" data-voice-stage-composer onSubmit={handleComposerSubmit}>

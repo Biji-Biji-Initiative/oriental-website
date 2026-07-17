@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { provenanceForInitialCaptured } from "@/lib/voice/interaction-attribution";
 import { emptyCapturedLead, type VoiceRuntimeState } from "@/lib/voice/realtime-events";
 import { buildVoiceReviewSnapshot, postVoiceReviewSnapshot } from "@/lib/voice/review-snapshot";
 
@@ -51,12 +52,23 @@ function state(overrides: Partial<VoiceRuntimeState> = {}): VoiceRuntimeState {
 describe("voice review snapshots", () => {
   it("builds a persisted review snapshot from runtime state", () => {
     expect(
-      buildVoiceReviewSnapshot(review, state({ routeRequested: true }), "listening", {
-        leadId: "lead_123",
-        submittedAt: 1234,
-        closeReason: "manual",
-        closedAt: 4500,
-      }),
+      buildVoiceReviewSnapshot(
+        review,
+        state({
+          routeRequested: true,
+          fieldProvenance: provenanceForInitialCaptured({ ...emptyCapturedLead, name: "Asha" }, "voice"),
+        }),
+        "listening",
+        {
+          leadId: "lead_123",
+          submittedAt: 1234,
+          closeReason: "manual",
+          closedAt: 4500,
+          entryPoint: "hero_primary",
+          entryMethod: "voice_button",
+          submissionMethod: "voice_command",
+        },
+      ),
     ).toMatchObject({
       sessionId: "sess_123",
       leadId: "lead_123",
@@ -77,6 +89,12 @@ describe("voice review snapshots", () => {
       deviceProfile: "desktop",
       deploymentEnvironment: "staging",
       activationAttempted: true,
+      entryPoint: "hero_primary",
+      entryMethod: "voice_button",
+      submissionMethod: "voice_command",
+      fieldProvenance: {
+        name: { method: "voice", lastInput: "voice", editCount: 1, correctionCount: 0, clearCount: 0 },
+      },
       variant: "kl-polished",
       runtimeProfile: "instant-v1",
       inputPolicy: "fast",
@@ -111,6 +129,8 @@ describe("voice review snapshots", () => {
   it("omits an unassigned conversation id from prewarm snapshots", () => {
     const snapshot = buildVoiceReviewSnapshot({ ...review, conversationId: "" }, state(), "idle");
     expect(snapshot).not.toHaveProperty("conversationId");
+    expect(snapshot).not.toHaveProperty("entryPoint");
+    expect(snapshot).not.toHaveProperty("entryMethod");
   });
 
   it("records PII-free pending speech verification provenance", () => {

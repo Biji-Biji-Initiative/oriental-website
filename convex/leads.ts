@@ -2,6 +2,7 @@ import { mutationGeneric, queryGeneric } from "convex/server";
 import { v } from "convex/values";
 import { summarizeAdminLeads } from "../lib/admin-lead-counts";
 import { ADMIN_LEAD_OWNERS, validateAdminLeadWorkflow } from "../lib/admin-workflow";
+import { summarizeIntakeAttribution } from "../lib/intake-attribution-analytics";
 
 function requireIngestSecret(ingestSecret: string) {
   const expected = process.env.CONVEX_INGEST_SECRET;
@@ -17,9 +18,56 @@ const transcriptValidator = v.array(
   }),
 );
 
+const entryPointValidator = v.union(
+  v.literal("hero_primary"),
+  v.literal("hero_updates"),
+  v.literal("hero_updates_followup"),
+  v.literal("nav_desktop"),
+  v.literal("nav_mobile"),
+  v.literal("keyboard_shortcut"),
+  v.literal("voice_rail"),
+  v.literal("ecosystem"),
+  v.literal("facilities"),
+  v.literal("partners"),
+  v.literal("closing_cta"),
+  v.literal("footer_cta"),
+  v.literal("faq_cta"),
+  v.literal("unknown"),
+);
+const entryMethodValidator = v.union(
+  v.literal("voice_button"),
+  v.literal("form"),
+  v.literal("email_capture"),
+  v.literal("unknown"),
+);
+
+const fieldInputValidator = v.union(v.literal("voice"), v.literal("form"), v.literal("chat"), v.literal("prefill"));
+const fieldCompletionValidator = v.union(fieldInputValidator, v.literal("mixed"), v.literal("unknown"));
+const fieldProvenanceEntryValidator = v.object({
+  method: fieldCompletionValidator,
+  lastInput: v.optional(fieldInputValidator),
+  editCount: v.number(),
+  correctionCount: v.number(),
+  clearCount: v.number(),
+});
+const fieldProvenanceValidator = v.object({
+  name: fieldProvenanceEntryValidator,
+  email: fieldProvenanceEntryValidator,
+  org: fieldProvenanceEntryValidator,
+  phone: fieldProvenanceEntryValidator,
+  website: fieldProvenanceEntryValidator,
+  message: fieldProvenanceEntryValidator,
+});
+
 const leadValidator = v.object({
   id: v.string(),
   source: v.union(v.literal("voice"), v.literal("form"), v.literal("hero-email")),
+  entryPoint: v.optional(entryPointValidator),
+  entryMethod: v.optional(entryMethodValidator),
+  submissionMethod: v.optional(
+    v.union(v.literal("handoff_button"), v.literal("voice_command"), v.literal("email_capture_button")),
+  ),
+  fieldProvenance: v.optional(fieldProvenanceValidator),
   segment: v.string(),
   routedTo: v.string(),
   routedToEmail: v.optional(v.union(v.string(), v.null())),
@@ -169,6 +217,12 @@ const voiceSessionValidator = v.object({
   deviceProfile: v.optional(v.union(v.literal("mobile"), v.literal("desktop"))),
   deploymentEnvironment: v.optional(v.union(v.literal("local"), v.literal("staging"), v.literal("production"))),
   activationAttempted: v.optional(v.boolean()),
+  entryPoint: v.optional(entryPointValidator),
+  entryMethod: v.optional(entryMethodValidator),
+  submissionMethod: v.optional(
+    v.union(v.literal("handoff_button"), v.literal("voice_command"), v.literal("email_capture_button")),
+  ),
+  fieldProvenance: v.optional(fieldProvenanceValidator),
   prewarmedAt: v.optional(v.number()),
   connectStartedAt: v.optional(v.number()),
   connectedAt: v.optional(v.number()),
@@ -217,9 +271,22 @@ export const createLead = mutationGeneric({
   handler: async (ctx, { lead, ingestSecret }) => {
     requireIngestSecret(ingestSecret);
 
+    // The web adapter may retry once after a forward-field validator mismatch.
+    // A committed response can also be lost in transit, so make the insert
+    // idempotent on the application-generated UUID before writing either row.
+    const existing = await ctx.db
+      .query("leads")
+      .withIndex("by_lead_id", (query) => query.eq("leadId", lead.id))
+      .first();
+    if (existing) return { id: existing.leadId };
+
     await ctx.db.insert("leads", {
       leadId: lead.id,
       source: lead.source,
+      ...(lead.entryPoint ? { entryPoint: lead.entryPoint } : {}),
+      ...(lead.entryMethod ? { entryMethod: lead.entryMethod } : {}),
+      ...(lead.submissionMethod ? { submissionMethod: lead.submissionMethod } : {}),
+      ...(lead.fieldProvenance ? { fieldProvenance: lead.fieldProvenance } : {}),
       segment: lead.segment,
       routedTo: lead.routedTo,
       routedToEmail: lead.routedToEmail ?? null,
@@ -726,6 +793,10 @@ export const recordVoiceSession = mutationGeneric({
       ...(typeof snapshot.activationAttempted === "boolean"
         ? { activationAttempted: snapshot.activationAttempted }
         : {}),
+      ...(snapshot.entryPoint ? { entryPoint: snapshot.entryPoint } : {}),
+      ...(snapshot.entryMethod ? { entryMethod: snapshot.entryMethod } : {}),
+      ...(snapshot.submissionMethod ? { submissionMethod: snapshot.submissionMethod } : {}),
+      ...(snapshot.fieldProvenance ? { fieldProvenance: snapshot.fieldProvenance } : {}),
       ...(typeof snapshot.prewarmedAt === "number" ? { prewarmedAt: snapshot.prewarmedAt } : {}),
       ...(typeof snapshot.connectStartedAt === "number" ? { connectStartedAt: snapshot.connectStartedAt } : {}),
       ...(typeof snapshot.connectedAt === "number" ? { connectedAt: snapshot.connectedAt } : {}),
@@ -921,6 +992,7 @@ export const reviewDashboard = queryGeneric({
     const notificationDelivered = leads.filter((lead) => lead.notificationDelivered === true).length;
     const notificationFailures = leads.filter((lead) => lead.notificationDelivered === false).length;
     const voiceLeads = leads.filter((lead) => lead.source === "voice").length;
+    const intakeAttribution = summarizeIntakeAttribution(leads);
     const activeLeads = leads.filter((lead) => !["qualified", "archived"].includes(lead.status)).length;
     const urgentLeads = leads.filter((lead) => lead.priority === "urgent" || lead.priority === "high").length;
     const sessionsWithErrors = voiceSessions.filter((session) => session.errors.length > 0).length;
@@ -956,6 +1028,7 @@ export const reviewDashboard = queryGeneric({
       },
       analytics: {
         sourceCounts: countBy(leads, (lead) => lead.source),
+        ...intakeAttribution,
         statusCounts: countBy(leads, (lead) => lead.status || "new"),
         priorityCounts: countBy(leads, (lead) => lead.priority || "normal"),
         segmentCounts: countBy(leads, (lead) => lead.segment || "other"),

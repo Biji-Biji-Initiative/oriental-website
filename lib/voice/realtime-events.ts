@@ -4,6 +4,7 @@ import {
   type VoiceEmailCaptureConfidence,
   type VoiceEmailCaptureMode,
 } from "@/lib/voice/email-capture-policy";
+import type { FieldProvenance } from "@/lib/voice/interaction-attribution";
 import { lookupOrientalKnowledge } from "@/lib/voice/knowledge";
 import { extractExplicitVisitorEmail } from "@/lib/voice/tentative-extraction";
 
@@ -52,6 +53,8 @@ export type VoiceRuntimeState = {
   rateLimits?: Array<Record<string, unknown>>;
   errors?: VoiceRuntimeError[];
   emailVerification?: VoiceEmailVerification;
+  /** PII-free source/correction counters for each captured field. */
+  fieldProvenance?: FieldProvenance;
   emailVerificationUserTurnSequence?: number;
   emailVerificationIgnoredTranscriptIds?: string[];
   emailCaptureMode?: VoiceEmailCaptureMode;
@@ -1164,6 +1167,16 @@ function emailConfirmationInstructions(
       emailConfidence: state.emailVerification.confidence ?? "medium",
       nextAction:
         "The address is visible and editable. Briefly acknowledge it and continue without asking for a separate confirmation.",
+    };
+  }
+  if (state.emailCaptureMode === "adaptive") {
+    return {
+      emailConfirmationRequired: false,
+      emailCheckRequired: true,
+      emailCaptureMode: "adaptive",
+      emailConfidence: state.emailVerification?.confidence ?? "medium",
+      nextAction:
+        "The address is highlighted in the visible editor. Ask the visitor to check or edit it there once, then continue their idea. Do not read it back or start a spelling loop.",
     };
   }
   return {

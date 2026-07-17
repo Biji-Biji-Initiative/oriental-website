@@ -185,7 +185,7 @@ describe("reduceRealtimeServerEvent", () => {
     expect(routed.commands).toEqual([{ type: "submit_voice", callId: "call_adaptive_route", segment: "technology" }]);
   });
 
-  it("keeps bounded ASR drift editable and pending behind one exact read-back", () => {
+  it("keeps bounded ASR drift pending in the visible editor without a spoken read-back", () => {
     const result = reduceRealtimeServerEvent(
       {
         type: "response.done",
@@ -215,8 +215,9 @@ describe("reduceRealtimeServerEvent", () => {
     });
     expect(result.commands[0]).toMatchObject({
       output: {
-        emailConfirmationRequired: true,
-        emailReadback: "asha dot lim at example dot my",
+        emailConfirmationRequired: false,
+        emailCheckRequired: true,
+        emailCaptureMode: "adaptive",
       },
     });
   });
@@ -257,7 +258,9 @@ describe("reduceRealtimeServerEvent", () => {
       status: "pending",
       confidence: "medium",
     });
-    expect(result.commands[0]).toMatchObject({ output: { emailConfirmationRequired: true } });
+    expect(result.commands[0]).toMatchObject({
+      output: { emailConfirmationRequired: false, emailCheckRequired: true, emailCaptureMode: "adaptive" },
+    });
   });
 
   it("re-evaluates a corrected adaptive email and still blocks an invented replacement", () => {
@@ -3899,7 +3902,14 @@ describe("reduceRealtimeServerEvent", () => {
       source: "speech",
       confidence: "medium",
     });
-    expect(result.commands[0]).toMatchObject({ output: { ok: true, emailConfirmationRequired: true } });
+    expect(result.commands[0]).toMatchObject({
+      output: {
+        ok: true,
+        emailConfirmationRequired: false,
+        emailCheckRequired: true,
+        emailCaptureMode: "adaptive",
+      },
+    });
   });
 
   it("reconciles the same ASR-drifted email whether transcription completes before or after capture", () => {
