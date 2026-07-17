@@ -539,6 +539,45 @@ Errors:
 | 503 | `unconfigured` | `ADMIN_REVIEW_TOKEN` is missing. |
 | 503 | `convex_unconfigured` / `convex_failed` | Convex env is missing or the mutation failed. |
 
+### `POST /api/admin/evals`
+
+Bearer-token or admin-cookie protected action (permission `evals.run`,
+operator+) that scores persisted customer voice sessions with the LLM judge
+rubric from `lib/eval/voice-eval.ts` and persists the results via the
+`recordVoiceEvals` Convex mutation — the on-demand equivalent of
+`pnpm eval:voice -- --persist`. Synthetic smoke rows are excluded and
+dropped-and-resumed calls are stitched into one conversation before judging.
+The batch is hard-capped at 50 conversations per request so a single click
+cannot fan out unbounded model spend.
+
+```ts
+type AdminEvalsRequest = {
+  model?: string; // judge model id; defaults to EVAL_JUDGE_MODEL (fallback gpt-4o-mini)
+  limit?: number; // 1–50, default 25
+  reviewIds?: string[]; // target specific sessions (max 20)
+};
+
+type AdminEvalsResponse = {
+  ok: true;
+  model: string;
+  fetched: number; // customer sessions in the window
+  conversations: number; // after stitching call segments
+  judged: number;
+  persisted: number;
+  failures: number; // judged but unscorable (judge error/parse failure)
+};
+```
+
+Errors:
+
+| HTTP | `error` | Cause |
+|---|---|---|
+| 400 | `invalid_request` / `invalid_model` | Zod validation failed or the model id is malformed. |
+| 401/403 | `missing` / `invalid` / `forbidden` | Auth failed or the role lacks `evals.run`. |
+| 404 | `no_sessions` | No judgeable customer sessions in the window (or targets not found). |
+| 502 | `convex_failed` | Convex query/mutation failed mid-run. |
+| 503 | `unconfigured` | `OPENAI_API_KEY` or Convex env is missing. |
+
 ## `GET /api/health`
 
 Purpose: Coolify/container health check.

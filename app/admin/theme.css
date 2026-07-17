@@ -1,0 +1,162 @@
+/*
+ * Admin-scoped dark theme. Overrides the shadcn design tokens for the /admin
+ * subtree only — the public site keeps the light theme from globals.css.
+ */
+.admin-root {
+  --background: #070a12;
+  --foreground: #e7ebf4;
+  --card: rgba(255, 255, 255, 0.03);
+  --card-foreground: #e7ebf4;
+  --popover: #0d1322;
+  --popover-foreground: #e7ebf4;
+  --primary: #8ab0ff;
+  --primary-foreground: #081020;
+  --secondary: rgba(138, 176, 255, 0.14);
+  --secondary-foreground: #dbe6ff;
+  --muted: rgba(255, 255, 255, 0.06);
+  --muted-foreground: #94a1ba;
+  --accent: rgba(138, 176, 255, 0.14);
+  --accent-foreground: #dbe6ff;
+  --destructive: #fb7185;
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.14);
+  --ring: #8ab0ff;
+
+  position: relative;
+  isolation: isolate;
+  min-height: 100svh;
+  background-color: #070a12;
+  color: var(--foreground);
+  color-scheme: dark;
+}
+
+/* Layered aurora backdrop: brand blue + strategy teal glows over deep ink. */
+.admin-root::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  background:
+    radial-gradient(1100px 540px at 78% -12%, rgba(40, 81, 168, 0.42), transparent 60%),
+    radial-gradient(900px 480px at -10% 6%, rgba(45, 106, 122, 0.3), transparent 62%),
+    radial-gradient(720px 420px at 52% 118%, rgba(138, 176, 255, 0.16), transparent 65%), #070a12;
+}
+
+/* Faint dot grid that fades out toward the fold — command-center texture. */
+.admin-root::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.055) 1px, transparent 1px);
+  background-size: 26px 26px;
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.9), rgba(0, 0, 0, 0.28) 42%, transparent 80%);
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.9), rgba(0, 0, 0, 0.28) 42%, transparent 80%);
+}
+
+.admin-root ::selection {
+  background: rgba(138, 176, 255, 0.35);
+  color: #f4f7ff;
+}
+
+.admin-root ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.admin-root ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.admin-root ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
+.admin-root ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.24);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+
+.admin-root {
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+/* Native selects/inputs inside the dark shell (option lists follow color-scheme). */
+.admin-root select,
+.admin-root input,
+.admin-root textarea {
+  color-scheme: dark;
+}
+
+/* Slow drifting halo used on the login screen and hero accents. */
+@media (prefers-reduced-motion: no-preference) {
+  .admin-halo {
+    animation: admin-halo-drift 14s ease-in-out infinite alternate;
+  }
+
+  @keyframes admin-halo-drift {
+    from {
+      transform: translate3d(-4%, -2%, 0) scale(1);
+    }
+    to {
+      transform: translate3d(4%, 3%, 0) scale(1.08);
+    }
+  }
+
+  /* Staggered rise-in for top-level dashboard sections on load. */
+  .admin-rise > * {
+    animation: admin-rise-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  }
+
+  .admin-rise > *:nth-child(2) {
+    animation-delay: 60ms;
+  }
+  .admin-rise > *:nth-child(3) {
+    animation-delay: 120ms;
+  }
+  .admin-rise > *:nth-child(4) {
+    animation-delay: 180ms;
+  }
+  .admin-rise > *:nth-child(5) {
+    animation-delay: 240ms;
+  }
+  .admin-rise > *:nth-child(6) {
+    animation-delay: 300ms;
+  }
+  .admin-rise > *:nth-child(n + 7) {
+    animation-delay: 360ms;
+  }
+
+  @keyframes admin-rise-in {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* Command palette pop-in. */
+  .admin-palette {
+    animation: admin-palette-in 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  @keyframes admin-palette-in {
+    from {
+      opacity: 0;
+      transform: translateY(-8px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}

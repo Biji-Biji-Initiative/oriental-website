@@ -1,4 +1,5 @@
 import { AlertTriangleIcon, ArrowUpRightIcon, CheckCircle2Icon, MessagesSquareIcon } from "lucide-react";
+import { AdminRunEvalsButton } from "@/components/admin/AdminRunEvalsButton";
 import { Badge } from "@/components/admin/Badge";
 
 type EvalScore = {
@@ -88,26 +89,26 @@ export function RekaQualityWorkspace({
 
   return (
     <section aria-label="Reka quality" className="grid scroll-mt-36 gap-5" id="reka-quality">
-      <header className="flex flex-col gap-3 rounded-2xl border border-mk-ash/15 bg-white p-5 shadow-sm sm:flex-row sm:items-end sm:justify-between">
+      <header className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-mk-blue">Interaction quality</div>
+          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-300">Interaction quality</div>
           <h2 className="mt-2 text-2xl font-semibold tracking-tight">Reka evaluations</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-mk-ash">
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
             A readable record of evaluated visitor conversations. Scores run from 1–5; higher is better except
             frustration, where lower is better.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Badge tone="blue">{evaluated} evaluated</Badge>
-          <Badge tone={flagged.length > 0 ? "amber" : "green"}>{flagged.length} need review</Badge>
+        <div className="flex flex-col items-start gap-3 sm:items-end">
+          <div className="flex flex-wrap gap-2">
+            <Badge tone="blue">{evaluated} evaluated</Badge>
+            <Badge tone={flagged.length > 0 ? "amber" : "green"}>{flagged.length} need review</Badge>
+          </div>
+          <AdminRunEvalsButton />
         </div>
       </header>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <article
-          className="rounded-xl border border-mk-ash/15 bg-mk-off-black p-4 text-white shadow-sm"
-          data-eval-coverage
-        >
+        <article className="rounded-xl border border-sky-400/25 bg-sky-400/10 p-4 text-white" data-eval-coverage>
           <div className="text-[11px] font-semibold uppercase tracking-[0.13em] text-white/60">Evaluation coverage</div>
           <div className="mt-2 text-3xl font-semibold">{coverage}%</div>
           <p className="mt-2 text-xs leading-5 text-white/65">
@@ -116,29 +117,29 @@ export function RekaQualityWorkspace({
         </article>
         {dimensions.map((dimension) => (
           <article
-            className="rounded-xl border border-mk-ash/15 bg-white p-4 shadow-sm"
+            className="rounded-xl border border-white/10 bg-white/[0.04] p-4"
             data-eval-dimension={dimension.key}
             key={dimension.key}
           >
             <div className="flex items-start justify-between gap-2">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.13em] text-mk-off-black/55">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.13em] text-slate-500">
                 {dimension.label}
               </div>
               <Badge tone={scoreTone(dimension.value, dimension.invert)}>
                 {dimension.value === null ? "Not scored" : `${dimension.value.toFixed(2)}/5`}
               </Badge>
             </div>
-            <p className="mt-3 text-xs leading-5 text-mk-ash">{dimension.detail}</p>
+            <p className="mt-3 text-xs leading-5 text-slate-400">{dimension.detail}</p>
           </article>
         ))}
       </div>
 
-      <section className="overflow-hidden rounded-2xl border border-mk-ash/15 bg-white shadow-sm">
-        <div className="flex flex-col gap-2 border-b border-mk-ash/15 p-5 sm:flex-row sm:items-end sm:justify-between">
+      <section className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04]">
+        <div className="flex flex-col gap-2 border-b border-white/10 p-5 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.13em] text-mk-blue">Evaluation register</div>
+            <div className="text-xs font-semibold uppercase tracking-[0.13em] text-sky-300">Evaluation register</div>
             <h3 className="mt-1 text-xl font-semibold tracking-tight">Scored interactions</h3>
-            <p className="mt-1 text-sm text-mk-ash">
+            <p className="mt-1 text-sm text-slate-400">
               Each row is one persisted evaluation, linked back to the CRM record.
             </p>
           </div>
@@ -154,12 +155,12 @@ export function RekaQualityWorkspace({
         </div>
 
         {sessions.length === 0 ? (
-          <div className="p-8 text-center text-sm text-mk-ash">No persisted interaction evaluations yet.</div>
+          <div className="p-8 text-center text-sm text-slate-400">No persisted interaction evaluations yet.</div>
         ) : (
           <>
             <div className="hidden overflow-x-auto lg:block">
               <table className="w-full min-w-[1120px] border-collapse text-left text-sm" data-eval-table>
-                <thead className="bg-mk-paper text-[11px] font-semibold uppercase tracking-[0.11em] text-mk-off-black/55">
+                <thead className="bg-white/[0.04] text-[11px] font-semibold uppercase tracking-[0.11em] text-slate-500">
                   <tr>
                     <th className="px-4 py-3">Visitor</th>
                     <th className="px-3 py-3">Routing</th>
@@ -171,14 +172,14 @@ export function RekaQualityWorkspace({
                     <th className="px-4 py-3 text-right">Record</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-mk-ash/10">
+                <tbody className="divide-y divide-white/5">
                   {sessions.map((session) => (
                     <EvaluationTableRow key={session.reviewId} leads={leads} session={session} />
                   ))}
                 </tbody>
               </table>
             </div>
-            <div className="grid divide-y divide-mk-ash/10 lg:hidden">
+            <div className="grid divide-y divide-white/5 lg:hidden">
               {sessions.map((session) => (
                 <EvaluationCard key={session.reviewId} leads={leads} session={session} />
               ))}
@@ -187,7 +188,7 @@ export function RekaQualityWorkspace({
         )}
       </section>
 
-      <section className="grid gap-3 rounded-2xl border border-mk-ash/15 bg-mk-paper/60 p-5 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-5 sm:grid-cols-2 xl:grid-cols-4">
         <ScoreDefinition label="Routing" value="1 = wrong team · 5 = correct team and context" />
         <ScoreDefinition label="Capture" value="1 = little retained · 5 = follow-up-ready lead" />
         <ScoreDefinition label="Conversation" value="1 = unhelpful · 5 = clear, useful, natural" />
@@ -207,11 +208,11 @@ function EvaluationTableRow({
   const lead = matchingLead(session, leads);
   const flagged = needsReview(session);
   return (
-    <tr className={flagged ? "bg-amber-500/[0.045] align-top" : "align-top hover:bg-mk-paper/45"}>
+    <tr className={flagged ? "bg-amber-500/[0.045] align-top" : "align-top hover:bg-white/[0.02]"}>
       <td className="px-4 py-4">
-        <div className="font-semibold text-mk-off-black">{session.captured.name?.trim() || "Uncaptured visitor"}</div>
-        <div className="mt-1 text-xs text-mk-ash">{session.captured.email?.trim() || "Email not captured"}</div>
-        <div className="mt-1 text-xs text-mk-ash">{session.captured.org?.trim() || "Organisation not captured"}</div>
+        <div className="font-semibold text-slate-100">{session.captured.name?.trim() || "Uncaptured visitor"}</div>
+        <div className="mt-1 text-xs text-slate-400">{session.captured.email?.trim() || "Email not captured"}</div>
+        <div className="mt-1 text-xs text-slate-400">{session.captured.org?.trim() || "Organisation not captured"}</div>
       </td>
       <ScoreCell invert={false} value={session.eval.routingCorrect} />
       <ScoreCell invert={false} value={session.eval.captureCompleteness} />
@@ -222,9 +223,9 @@ function EvaluationTableRow({
           <Badge tone={flagged ? "amber" : "green"}>{flagged ? "Review" : "Healthy"}</Badge>
           <Badge tone="neutral">{session.segment || "Other"}</Badge>
         </div>
-        <p className="mt-2 line-clamp-3 text-xs leading-5 text-mk-ash">{session.eval.summary}</p>
+        <p className="mt-2 line-clamp-3 text-xs leading-5 text-slate-400">{session.eval.summary}</p>
       </td>
-      <td className="whitespace-nowrap px-3 py-4 text-xs text-mk-ash">
+      <td className="whitespace-nowrap px-3 py-4 text-xs text-slate-400">
         {formatAdminDate(session.eval.evaluatedAt)}
         <div className="mt-1">{session.eval.model}</div>
       </td>
@@ -243,7 +244,7 @@ function EvaluationCard({ session, leads }: { session: VoiceSession & { eval: Ev
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="font-semibold">{session.captured.name?.trim() || "Uncaptured visitor"}</div>
-          <div className="mt-1 text-xs text-mk-ash">{session.captured.email?.trim() || "Email not captured"}</div>
+          <div className="mt-1 text-xs text-slate-400">{session.captured.email?.trim() || "Email not captured"}</div>
         </div>
         <Badge tone={flagged ? "amber" : "green"}>{flagged ? "Review" : "Healthy"}</Badge>
       </div>
@@ -253,7 +254,7 @@ function EvaluationCard({ session, leads }: { session: VoiceSession & { eval: Ev
         <MobileScore label="Conversation" value={session.eval.conversationQuality} />
         <MobileScore invert label="Frustration" value={session.eval.frustration} />
       </div>
-      <p className="text-xs leading-5 text-mk-ash">{session.eval.summary}</p>
+      <p className="text-xs leading-5 text-slate-400">{session.eval.summary}</p>
       <RecordLink leadId={lead?.leadId} reviewId={session.reviewId} />
     </article>
   );
@@ -269,8 +270,8 @@ function ScoreCell({ invert, value }: { invert: boolean; value: number }) {
 
 function MobileScore({ invert = false, label, value }: { invert?: boolean; label: string; value: number }) {
   return (
-    <div className="flex items-center justify-between rounded-lg border border-mk-ash/15 bg-mk-paper/50 px-3 py-2">
-      <span className="text-mk-ash">{label}</span>
+    <div className="flex items-center justify-between rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
+      <span className="text-slate-400">{label}</span>
       <Badge tone={scoreTone(value, invert)}>{value}/5</Badge>
     </div>
   );
@@ -281,7 +282,7 @@ function RecordLink({ leadId, reviewId }: { leadId?: string; reviewId: string })
     ? `/admin/session-review?view=leads&lead=${encodeURIComponent(leadId)}#crm-record`
     : `/admin/session-review?view=voice#voice-${encodeURIComponent(reviewId)}`;
   return (
-    <a className="inline-flex items-center text-xs font-semibold text-mk-blue hover:underline" href={href}>
+    <a className="inline-flex items-center text-xs font-semibold text-sky-300 hover:underline" href={href}>
       {leadId ? "Open CRM record" : "Open diagnostics"}
       <ArrowUpRightIcon className="ml-1 size-3" />
     </a>
@@ -291,10 +292,10 @@ function RecordLink({ leadId, reviewId }: { leadId?: string; reviewId: string })
 function ScoreDefinition({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex gap-3">
-      <MessagesSquareIcon className="mt-0.5 size-4 shrink-0 text-mk-blue" />
+      <MessagesSquareIcon className="mt-0.5 size-4 shrink-0 text-sky-300" />
       <div>
-        <div className="text-xs font-semibold uppercase tracking-[0.11em] text-mk-off-black/60">{label}</div>
-        <div className="mt-1 text-xs leading-5 text-mk-ash">{value}</div>
+        <div className="text-xs font-semibold uppercase tracking-[0.11em] text-slate-400">{label}</div>
+        <div className="mt-1 text-xs leading-5 text-slate-400">{value}</div>
       </div>
     </div>
   );
