@@ -2,9 +2,9 @@
 
 ## Exact candidate and live boundary
 
-- Candidate implementation: `748e842c9cae7fb3bf61a647ec9c963ebe340e6a`.
+- Candidate implementation: `0459383d109955316bf0df93fecdb246b250024c`.
 - Base: `b0b0d83c7499ea4ed470430e8e3cfa80ab7bd68e` (`origin/main`).
-- The candidate implementation is three commits ahead and zero commits behind
+- The candidate implementation is five commits ahead and zero commits behind
   main; the following evidence-only commit does not alter runtime code.
 - `pnpm --silent ops:status --json` on 2026-07-17 reported both canonical
   environments healthy on the unchanged base SHA. Production reported
@@ -62,6 +62,11 @@
 - Independent responsive audit: all 15 requested viewports passed; at 844x390
   and 1024x390 the expanded picker stayed between top 20px and bottom 370px,
   with all five options and Hide reachable and no overflow or console errors.
+- Independent post-rebase audit preserved PR #67's GA runtime configuration and
+  dark admin styling, proved staging picker-on and canonical production
+  picker-off together, and caught one screen-reader-only identity leak. The
+  caption now says "Mereka at Oriental"; 20 focused tests, lint, and diff-check
+  passed after reconciliation.
 - Independent email protocol review replayed medium substitutions, exact and
   contaminated readbacks, stale correction races, clear-all out-of-order
   completions, duplicates, unknown/reused IDs, and untagged events. All P1
