@@ -1,0 +1,29 @@
+name: oriental-email-grounding-closure
+description: Adversarial release review for correction freshness and email routing integrity
+
+documents:
+  readme: .apr/evidence/oriental-email-grounding-closure.md
+  spec: .apr/specs/oriental-email-grounding-closure.md
+  implementation: lib/voice/realtime-events.ts
+
+oracle:
+  model: "gemini-3.1-pro"
+
+rounds:
+  output_dir: .apr/rounds/oriental-email-grounding-closure
+  impl_every_n: 1
+
+template: |
+  Review the email-grounding closure adversarially. Treat stale routing,
+  duplicate-capture bypass, pending-transcription bypass, reversed correction
+  ordering, false invalidation of an explicitly selected address, or any
+  weakening of strict mode as blockers. End with exactly
+  `VERDICT: SHIP SAFE DEFAULTS` or `VERDICT: DO NOT SHIP`.
+
+template_with_impl: |
+  Trace the attached reducer against every contract and executable scenario.
+  Challenge literal and spoken replacements, direct routing after correction,
+  duplicate calls, pending audio, alternatives, non-contact secondary
+  addresses, typed/prefill authority, and strict/adaptive behavior. No
+  production mutation or candidate-quality claim is authorized. End with
+  exactly `VERDICT: SHIP SAFE DEFAULTS` or `VERDICT: DO NOT SHIP`.
