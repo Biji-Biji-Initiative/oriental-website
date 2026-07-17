@@ -40,10 +40,15 @@ export function isConversationId(value: unknown): value is string {
 export function shouldResumeVoiceConversation(
   previousId: string,
   nextId: string,
-  transcriptLength: number,
+  context: { transcriptLength: number; hasDraftHandoff: boolean },
   explicitFreshHandoff = false,
 ) {
-  return Boolean(!explicitFreshHandoff && previousId && previousId === nextId && transcriptLength > 0);
+  return Boolean(
+    !explicitFreshHandoff &&
+      previousId &&
+      previousId === nextId &&
+      (context.transcriptLength > 0 || context.hasDraftHandoff),
+  );
 }
 
 function write(id: string, at: number) {

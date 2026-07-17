@@ -205,6 +205,26 @@ test("lead form submits the latest typed handoff values", async ({ page }) => {
   });
 });
 
+test("typed-only handoff edits survive closing and reopening the workspace", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Tell us why/i }).click();
+  await page.getByLabel("Name").fill("Nur Aina");
+  await page.getByLabel("Email").fill("aina@example.com");
+  await page.getByLabel("Organisation").fill("Community Studio");
+  await page.getByLabel("What would you build with Mereka?").fill("A typed-only circular design programme.");
+
+  await page.locator('[data-slot="dialog-close"]').click();
+  await expect(page.getByRole("dialog")).toBeHidden();
+  await page.getByRole("button", { name: /Tell us why/i }).click();
+
+  await expect(page.getByLabel("Name")).toHaveValue("Nur Aina");
+  await expect(page.getByLabel("Email")).toHaveValue("aina@example.com");
+  await expect(page.getByLabel("Organisation")).toHaveValue("Community Studio");
+  await expect(page.getByLabel("What would you build with Mereka?")).toHaveValue(
+    "A typed-only circular design programme.",
+  );
+});
+
 test("lead form surfaces a partial failure when the lead saves but notifications fail", async ({ page }) => {
   await page.route("**/api/leads", async (route) => {
     await route.fulfill({

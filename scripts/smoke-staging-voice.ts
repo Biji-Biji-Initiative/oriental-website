@@ -1,15 +1,16 @@
 import { chromium, type Page, type Response } from "playwright";
 import { voiceReviewSnapshotSchema } from "../lib/schemas";
 import { DEFAULT_VOICE_VARIANT_ID, getVoiceVariant } from "../lib/voice/variants";
-import { STAGING_CANDIDATE_VOICE_CELL } from "./lib/release-governance";
+import { governedVoiceCell, type VoicePickerMode } from "./lib/release-governance";
 
 const canonicalStagingOrigin = "https://staging.oriental.mereka.io";
 const targetOrigin = new URL(process.env.VOICE_SMOKE_URL ?? canonicalStagingOrigin).origin;
-const expectedModel = process.env.EXPECTED_REALTIME_MODEL ?? STAGING_CANDIDATE_VOICE_CELL.model;
-const expectedModelCell = process.env.EXPECTED_REALTIME_MODEL_CELL ?? STAGING_CANDIDATE_VOICE_CELL.modelCell;
-const expectedEmailCaptureMode =
-  process.env.EXPECTED_EMAIL_CAPTURE_MODE ?? STAGING_CANDIDATE_VOICE_CELL.emailCaptureMode;
-const expectedVoiceVariant = requireDefaultVoiceVariant();
+const voiceSmokeMode = readVoiceSmokeMode();
+const expectedVoiceCell = governedVoiceCell("candidate", voiceSmokeMode);
+const expectedModel = process.env.EXPECTED_REALTIME_MODEL ?? expectedVoiceCell.model;
+const expectedModelCell = process.env.EXPECTED_REALTIME_MODEL_CELL ?? expectedVoiceCell.modelCell;
+const expectedEmailCaptureMode = process.env.EXPECTED_EMAIL_CAPTURE_MODE ?? expectedVoiceCell.emailCaptureMode;
+const expectedVoiceVariant = voiceSmokeMode === "audition" ? requireDefaultVoiceVariant() : null;
 
 if (targetOrigin !== canonicalStagingOrigin) {
   throw new Error(`Refusing voice smoke target outside canonical staging: ${targetOrigin}`);
@@ -19,6 +20,14 @@ function requireDefaultVoiceVariant() {
   const variant = getVoiceVariant(DEFAULT_VOICE_VARIANT_ID);
   if (!variant) throw new Error(`Default voice variant is missing: ${DEFAULT_VOICE_VARIANT_ID}`);
   return variant;
+}
+
+function readVoiceSmokeMode(): VoicePickerMode {
+  const value = process.env.VOICE_SMOKE_MODE ?? "clean";
+  if (value !== "clean" && value !== "audition") {
+    throw new Error("VOICE_SMOKE_MODE must be clean or audition");
+  }
+  return value;
 }
 
 type SmokeResult = {
@@ -150,7 +159,7 @@ async function run() {
       !health.voice?.model ||
       !health.voice.model_cell ||
       !health.voice.email_capture_mode ||
-      health.voice.variant_picker !== true
+      health.voice.variant_picker !== expectedVoiceCell.variantPicker
     ) {
       throw new Error("Staging health payload is incomplete");
     }
@@ -171,7 +180,10 @@ async function run() {
     await loader.waitFor({ state: "visible", timeout: 3_000 });
     await loader.waitFor({ state: "hidden", timeout: 5_000 });
     await page.locator('header button[aria-label="Talk to Mereka"]').waitFor({ state: "visible" });
-    await page.getByRole("button", { name: /Choose Reka voice/i }).waitFor({ state: "visible" });
+    const pickerTrigger = page.getByRole("button", { name: /Choose Reka voice/i });
+    if (expectedVoiceCell.variantPicker) await pickerTrigger.waitFor({ state: "visible" });
+    else if ((await pickerTrigger.count()) !== 0)
+      throw new Error("Clean staging smoke unexpectedly exposed the picker");
     await page.locator('header button[aria-label="Talk to Mereka"]').click();
     const orb = page.locator(".voice-orb");
     await orb.waitFor({ state: "visible" });
@@ -246,13 +258,17 @@ async function run() {
       );
     }
     if (
-      sessionProfile.variant !== expectedVoiceVariant.id ||
-      sessionProfile.voice !== expectedVoiceVariant.voice ||
-      sessionProfile.speed !== expectedVoiceVariant.speed
+      expectedVoiceVariant &&
+      (sessionProfile.variant !== expectedVoiceVariant.id ||
+        sessionProfile.voice !== expectedVoiceVariant.voice ||
+        sessionProfile.speed !== expectedVoiceVariant.speed)
     ) {
       throw new Error(
         `Unexpected staging voice variant: ${sessionProfile.variant}/${sessionProfile.voice}/${sessionProfile.speed}; expected ${expectedVoiceVariant.id}/${expectedVoiceVariant.voice}/${expectedVoiceVariant.speed}`,
       );
+    }
+    if (!expectedVoiceVariant && sessionProfile.variant !== null) {
+      throw new Error(`Clean staging smoke must use the environment voice, received variant=${sessionProfile.variant}`);
     }
     if (!debugStatuses.some((status) => status === 200)) throw new Error("Voice review snapshot was not persisted");
     await Promise.allSettled(responseDiagnostics);
@@ -268,7 +284,7 @@ async function run() {
       interruptionRecoveryMs: Math.round(interruptionRecoveryMs),
       loaderObserved: true,
       nebulaRenderer,
-      voiceVariantPicker: true,
+      voiceVariantPicker: expectedVoiceCell.variantPicker,
       responsiveViewportsChecked,
       remoteAudioTrackLive: audioAfterInterrupt.trackLive,
       remoteAudioAdvanced: audioAfterInterrupt.currentTime > audioBeforeInterrupt.currentTime,

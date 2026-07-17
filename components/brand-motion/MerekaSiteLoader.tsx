@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { isBrandMotionPreviewHost } from "@/lib/brand-motion";
 import { MerekaTraceSpinner } from "./MerekaTraceSpinner";
 
 const LOADER_HOLD_MS = 1_150;
@@ -9,16 +8,12 @@ const LOADER_EXIT_MS = 520;
 
 type LoaderPhase = "visible" | "leaving" | "hidden";
 
-export function StagingSiteLoader({ enabled }: { enabled: boolean }) {
-  const [phase, setPhase] = useState<LoaderPhase>(enabled ? "visible" : "hidden");
+/** Approved Mereka entrance treatment shared by staging and production. */
+export function MerekaSiteLoader() {
+  const [phase, setPhase] = useState<LoaderPhase>("visible");
   const previousOverflowRef = useRef("");
 
   useEffect(() => {
-    if (!enabled || !isBrandMotionPreviewHost(window.location.hostname)) {
-      setPhase("hidden");
-      return;
-    }
-
     previousOverflowRef.current = document.documentElement.style.overflow;
     document.documentElement.style.overflow = "hidden";
     const leaveTimer = window.setTimeout(() => setPhase("leaving"), LOADER_HOLD_MS);
@@ -27,7 +22,7 @@ export function StagingSiteLoader({ enabled }: { enabled: boolean }) {
       window.clearTimeout(leaveTimer);
       document.documentElement.style.overflow = previousOverflowRef.current;
     };
-  }, [enabled]);
+  }, []);
 
   useEffect(() => {
     if (phase !== "leaving") return;

@@ -325,14 +325,20 @@ export function VoiceAgentDialog({
     // segment come back from local memory; the brief always starts fresh.
     const remembered = recallHandoff();
     // Resume the in-flight conversation if the visitor reopens soon after a
-    // drop. A new form/email entry is an explicit fresh handoff, not a reconnect.
-    const explicitFreshHandoff = prefill?.mode === "form" || Boolean(prefill?.email);
+    // drop or closes an unfinished typed form. Form mode only controls focus;
+    // an explicit external email prefill starts a different handoff.
+    const explicitFreshHandoff = Boolean(prefill?.email);
     if (explicitFreshHandoff) endConversation();
     const nextConversationId = resolveConversationId();
     const resumesInFlightConversation = shouldResumeVoiceConversation(
       conversationIdRef.current,
       nextConversationId,
-      stateRef.current.transcript.length,
+      {
+        transcriptLength: stateRef.current.transcript.length,
+        hasDraftHandoff:
+          stateRef.current.segment !== "other" ||
+          Object.values(stateRef.current.captured).some((value) => value.trim().length > 0),
+      },
       explicitFreshHandoff,
     );
     conversationIdRef.current = nextConversationId;

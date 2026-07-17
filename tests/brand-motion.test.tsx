@@ -1,15 +1,9 @@
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { MerekaSiteLoader } from "@/components/brand-motion/MerekaSiteLoader";
 import { NebulaM, resolveMerekaMarkTarget } from "@/components/brand-motion/NebulaM";
-import { StagingSiteLoader } from "@/components/brand-motion/StagingSiteLoader";
 import { MerekaMiniMark } from "@/components/orb/MerekaMiniMark";
-import {
-  BRAND_MOTION_PREVIEW_HOST,
-  isBrandMotionPreviewHost,
-  MEREKA_MARK_PATH,
-  MEREKA_NEBULA_PARTICLE_COUNT,
-  MEREKA_TRACE_DURATION_MS,
-} from "@/lib/brand-motion";
+import { MEREKA_MARK_PATH, MEREKA_NEBULA_PARTICLE_COUNT, MEREKA_TRACE_DURATION_MS } from "@/lib/brand-motion";
 
 afterEach(() => {
   cleanup();
@@ -18,16 +12,7 @@ afterEach(() => {
   document.documentElement.style.overflow = "";
 });
 
-describe("brand motion staging gate", () => {
-  it("allows the canonical staging host and local visual proof only", () => {
-    expect(isBrandMotionPreviewHost(BRAND_MOTION_PREVIEW_HOST)).toBe(true);
-    expect(isBrandMotionPreviewHost(`${BRAND_MOTION_PREVIEW_HOST}.`)).toBe(true);
-    expect(isBrandMotionPreviewHost("localhost")).toBe(true);
-    expect(isBrandMotionPreviewHost("127.0.0.1")).toBe(true);
-    expect(isBrandMotionPreviewHost("oriental.mereka.io")).toBe(false);
-    expect(isBrandMotionPreviewHost(`preview.${BRAND_MOTION_PREVIEW_HOST}`)).toBe(false);
-  });
-
+describe("Mereka brand motion", () => {
   it("keeps the measured motion contract", () => {
     expect(MEREKA_NEBULA_PARTICLE_COUNT).toBe(2_100);
     expect(MEREKA_TRACE_DURATION_MS).toBe(2_600);
@@ -50,11 +35,6 @@ describe("brand motion staging gate", () => {
     expect(resolveMerekaMarkTarget({ connectionStatus: "connecting", turnPhase: "quiet" })).toBe(0.35);
   });
 
-  it("does not mount the site loader when the build flag is disabled", () => {
-    render(<StagingSiteLoader enabled={false} />);
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
-  });
-
   it("keeps the static WebGL fallback decorative and unfocusable", async () => {
     vi.stubGlobal(
       "matchMedia",
@@ -69,7 +49,7 @@ describe("brand motion staging gate", () => {
 
   it("shows the trace entrance briefly and restores document scrolling", () => {
     vi.useFakeTimers();
-    render(<StagingSiteLoader enabled />);
+    render(<MerekaSiteLoader />);
 
     expect(screen.getByRole("status")).toHaveAttribute("data-phase", "visible");
     expect(document.documentElement.style.overflow).toBe("hidden");

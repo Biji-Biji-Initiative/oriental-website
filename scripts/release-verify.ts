@@ -13,6 +13,7 @@ type Args = {
   target: ReleaseTargetName | "both";
   checks: number;
   stagingModelCell: "control" | "candidate";
+  stagingPickerMode: "clean" | "audition";
 };
 
 function parseArgs(argv: string[]): Args {
@@ -20,6 +21,7 @@ function parseArgs(argv: string[]): Args {
   let target: Args["target"] = "both";
   let checks = 5;
   let stagingModelCell: Args["stagingModelCell"] = "control";
+  let stagingPickerMode: Args["stagingPickerMode"] = "clean";
   const normalizedArgv = argv.filter((argument) => argument !== "--");
   for (let index = 0; index < normalizedArgv.length; index += 1) {
     const flag = normalizedArgv[index];
@@ -42,9 +44,15 @@ function parseArgs(argv: string[]): Args {
       }
       stagingModelCell = value;
       index += 1;
+    } else if (flag === "--staging-picker-mode") {
+      if (value !== "clean" && value !== "audition") {
+        throw new Error("--staging-picker-mode must be clean or audition");
+      }
+      stagingPickerMode = value;
+      index += 1;
     } else if (flag === "--help") {
       process.stdout.write(
-        "Usage: pnpm release:verify -- --sha <40-char-sha> [--target staging|production|both] [--checks 5] [--staging-model-cell control|candidate]\n",
+        "Usage: pnpm release:verify -- --sha <40-char-sha> [--target staging|production|both] [--checks 5] [--staging-model-cell control|candidate] [--staging-picker-mode clean|audition]\n",
       );
       process.exit(0);
     } else {
@@ -58,7 +66,10 @@ function parseArgs(argv: string[]): Args {
   if (target === "production" && stagingModelCell !== "control") {
     throw new Error("--staging-model-cell candidate is invalid when verifying production only");
   }
-  return { sha, target, checks, stagingModelCell };
+  if (target === "production" && stagingPickerMode !== "clean") {
+    throw new Error("--staging-picker-mode audition is invalid when verifying production only");
+  }
+  return { sha, target, checks, stagingModelCell, stagingPickerMode };
 }
 
 async function get(url: string, redirect: RequestRedirect = "follow") {
@@ -76,9 +87,11 @@ async function verifyTarget(
   expectedSha: string,
   checks: number,
   stagingModelCell: Args["stagingModelCell"],
+  stagingPickerMode: Args["stagingPickerMode"],
 ) {
   const target = RELEASE_TARGETS[name];
-  const expectedVoiceCell = name === "staging" ? governedVoiceCell(stagingModelCell) : CONTROL_VOICE_CELL;
+  const expectedVoiceCell =
+    name === "staging" ? governedVoiceCell(stagingModelCell, stagingPickerMode) : CONTROL_VOICE_CELL;
   const healthChecks: unknown[] = [];
   for (let index = 0; index < checks; index += 1) {
     const response = await get(`${target.origin}/api/health`);
@@ -130,7 +143,7 @@ async function main() {
   const names: ReleaseTargetName[] = args.target === "both" ? ["staging", "production"] : [args.target];
   const results = [];
   for (const name of names) {
-    results.push(await verifyTarget(name, args.sha, args.checks, args.stagingModelCell));
+    results.push(await verifyTarget(name, args.sha, args.checks, args.stagingModelCell, args.stagingPickerMode));
   }
   process.stdout.write(`${JSON.stringify({ ok: true, results }, null, 2)}\n`);
 }

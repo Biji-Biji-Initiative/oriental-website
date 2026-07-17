@@ -959,8 +959,7 @@
   }
 }
 
-/* Mereka brand motion. The voice mark is the production visual; the entrance
-   loader remains a staging-only build/host preview. */
+/* Approved Mereka brand motion shared by staging and production. */
 .brand-site-loader {
   position: fixed;
   inset: 0;

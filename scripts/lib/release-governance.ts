@@ -11,17 +11,34 @@ export const STAGING_CANDIDATE_VOICE_CELL = {
   ...CONTROL_VOICE_CELL,
   modelCell: "candidate",
   model: "gpt-realtime-2.1",
+  variantPicker: false,
+} as const;
+
+export const STAGING_CANDIDATE_AUDITION_VOICE_CELL = {
+  ...STAGING_CANDIDATE_VOICE_CELL,
   variantPicker: true,
 } as const;
 
-export type GovernedVoiceCell = typeof CONTROL_VOICE_CELL | typeof STAGING_CANDIDATE_VOICE_CELL;
+export type VoicePickerMode = "clean" | "audition";
+export type GovernedVoiceCell = {
+  runtimeProfile: "baseline";
+  modelCell: "control" | "candidate";
+  model: "gpt-realtime-2" | "gpt-realtime-2.1";
+  reasoningCell: "low";
+  emailCaptureMode: "adaptive";
+  variantPicker: boolean;
+};
 
 export type HealthPayloadValidationOptions = {
   allowMissingEmailCaptureMode?: boolean;
 };
 
-export function governedVoiceCell(modelCell: GovernedVoiceCell["modelCell"]): GovernedVoiceCell {
-  return modelCell === "candidate" ? STAGING_CANDIDATE_VOICE_CELL : CONTROL_VOICE_CELL;
+export function governedVoiceCell(
+  modelCell: GovernedVoiceCell["modelCell"],
+  pickerMode: VoicePickerMode = "clean",
+): GovernedVoiceCell {
+  const model = modelCell === "candidate" ? STAGING_CANDIDATE_VOICE_CELL : CONTROL_VOICE_CELL;
+  return pickerMode === "audition" ? { ...model, variantPicker: true } : model;
 }
 
 export const RELEASE_TARGETS = {
