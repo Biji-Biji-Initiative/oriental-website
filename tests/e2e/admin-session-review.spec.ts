@@ -23,7 +23,50 @@ test.describe("admin session review console", () => {
     await expect(page.getByRole("heading", { name: "Enquiry CRM" })).toBeVisible();
   });
 
-  test("shows a CRM table and a complete interaction record on the default view", async ({ page }, testInfo) => {
+  test("turns the default overview into an executive enquiry command center", async ({ page }, testInfo) => {
+    const command = page.locator("[data-command-center]");
+    await expect(
+      command.getByRole("heading", { name: "2 open enquiries need a clear owner and outcome." }),
+    ).toBeVisible();
+    await expect(command.getByText("Do this next", { exact: true })).toBeVisible();
+    await expect(command.getByRole("link", { name: "Open highest-priority record" })).toBeVisible();
+
+    const kpis = command.locator("[data-command-kpis]");
+    await expect(kpis.getByText("Open pipeline", { exact: true })).toBeVisible();
+    await expect(kpis.getByText("Assignment", { exact: true })).toBeVisible();
+    await expect(kpis.getByText("Delivery health", { exact: true })).toBeVisible();
+    await expect(kpis.getByText("Qualified", { exact: true })).toBeVisible();
+
+    const queue = command.locator("[data-command-action-queue]");
+    await expect(queue.getByRole("heading", { name: "What needs attention now" })).toBeVisible();
+    const desktop = testInfo.project.name !== "mobile";
+    if (desktop) {
+      await expect(queue.getByRole("columnheader", { name: "Customer" })).toBeVisible();
+      await expect(queue.locator('tr[data-lead-id="lead-critical-1"]')).toBeVisible();
+    } else {
+      await expect(queue.getByRole("table")).toBeHidden();
+      await expect(queue.locator('article[data-lead-id="lead-critical-1"]')).toBeVisible();
+    }
+
+    await expect(command.getByRole("heading", { name: "Can the team act without guessing?" })).toBeVisible();
+    await expect(command.getByRole("heading", { name: "Accounts, people, and repeat demand" })).toBeVisible();
+    await expect(command.getByRole("heading", { name: "Where demand comes from" })).toBeVisible();
+    await expect(command.getByRole("heading", { name: "Conversation quality and recoverable demand" })).toBeVisible();
+
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow).toBeLessThanOrEqual(1);
+  });
+
+  test("opens the highest-priority enquiry from the executive action", async ({ page }) => {
+    await page.getByRole("link", { name: "Open highest-priority record" }).click();
+    await expect(page).toHaveURL(/view=leads.*lead=lead-critical-1.*#crm-record/);
+    await expect(page.locator("#crm-record").getByRole("heading", { name: "Aisha Rahman" })).toBeVisible();
+  });
+
+  test("shows a CRM table and a complete interaction record on the enquiries view", async ({ page }, testInfo) => {
+    await page.goto("/admin/session-review?view=leads");
     const table = page.locator("[data-crm-table]");
     await expect(page.getByRole("heading", { name: "Enquiry pipeline" })).toBeVisible();
     const desktop = testInfo.project.name !== "mobile";
@@ -60,6 +103,7 @@ test.describe("admin session review console", () => {
   });
 
   test("shows account portfolio and owner workload as CRM tables", async ({ page }, testInfo) => {
+    await page.goto("/admin/session-review?view=leads");
     await expect(page.getByRole("heading", { name: "Account portfolio & ownership" })).toBeVisible();
     await expect(page.getByText("1 account", { exact: true })).toBeVisible();
     const multiEnquiry = page.getByText("Multi-enquiry", { exact: true }).locator("..");

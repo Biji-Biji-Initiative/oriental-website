@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import type { ReactNode } from "react";
 import { AdminAutoRefresh } from "@/components/admin/AdminAutoRefresh";
+import { AdminCommandCenter } from "@/components/admin/AdminCommandCenter";
 import { AdminHashOpenDetails } from "@/components/admin/AdminHashOpenDetails";
 import { AdminLeadWorkflowForm } from "@/components/admin/AdminLeadWorkflowForm";
 import { AdminLoginForm } from "@/components/admin/AdminLoginForm";
@@ -84,7 +85,9 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
   return (
     <AdminShell generatedAt={dashboard.data.generatedAt}>
       <AdminSectionTabs activeView={view} data={dashboard.data} sessionsWithRealErrors={sessionsWithRealErrors} />
-      {showToday || showLeadQueues ? (
+      {showToday ? <AdminCommandCenter data={dashboard.data} sessionsWithRealErrors={sessionsWithRealErrors} /> : null}
+
+      {showLeadQueues ? (
         <>
           <OperatorFilters
             filterActive={filterActive}
@@ -103,7 +106,7 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
             leads={filteredLeads}
             selectedLeadId={selectedLeadId}
             totalLeads={dashboard.data.leads.length}
-            view={showAll ? "all" : view === "today" ? "today" : "leads"}
+            view={showAll ? "all" : "leads"}
             voiceSessions={dashboard.data.voiceSessions}
           />
         </>
