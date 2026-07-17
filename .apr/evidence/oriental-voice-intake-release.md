@@ -165,6 +165,31 @@ files passed 31 tests before the earlier full gate. The subsequent accountable-
 workflow main merge was automatic, and the exact combined SHA passed the full
 353-test gate above.
 
+## Managed preflight isolation correction
+
+The first production-env preflight on merged main correctly failed before any
+deployment because Infisical's live `NODE_ENV=production`, Slack, email, and
+routing values leaked into the Vitest subprocess. This selected production
+React and allowed managed application configuration to bypass isolated test
+fixtures; it did not expose secret values or indicate an application-runtime
+failure.
+
+`1d597eed392d004d9dde0adcfce740b46279ddab` replaces the raw `pnpm test`
+step with `scripts/run-release-tests.ts`. Its allowlist retains only the process
+and package-manager environment needed to run the suite, forces
+`NODE_ENV=test`, and removes application settings. Managed secrets remain in
+the parent preflight for `check-secrets`, the production build, and final
+SHA/voice-cell verification. The regression supplies production-mode and live
+secret sentinels and proves they are absent from the child environment.
+
+Executable proof on that exact commit:
+
+- the focused release-governance file passed 11 tests;
+- the wrapper passed all 55 files / 354 tests while its parent deliberately
+  carried `NODE_ENV=production` plus OpenAI, Slack, and routing sentinels;
+- lint, typecheck, and diff-check passed;
+- native Infisical parity passed for staging candidate and production control.
+
 During integration review, quota classification was found to occur only after
 the retry loop. The hook now parses every failed response before calling
 `shouldRetryRealtimeCall`; that policy accepts `realtime_busy` only. A focused
