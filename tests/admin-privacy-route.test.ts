@@ -76,6 +76,25 @@ describe("admin privacy deletion route", () => {
     expect(deleteMock).not.toHaveBeenCalled();
   });
 
+  it("returns a retryable non-success when bounded erasure has more matching rows", async () => {
+    deleteMock.mockResolvedValue({
+      ok: true,
+      deleted: { leads: 2, leadEvents: 8, voiceSessions: 24 },
+      complete: false,
+    });
+
+    const response = await DELETE(request(body));
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      ok: false,
+      error: "deletion_incomplete",
+      retryable: true,
+      deleted: { leads: 2, leadEvents: 8, voiceSessions: 24 },
+      complete: false,
+    });
+  });
+
   it("requires explicit confirmation that unaddressable copies were deleted", async () => {
     planMock.mockResolvedValue({
       ok: true,

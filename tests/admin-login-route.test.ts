@@ -1,6 +1,9 @@
+import { cleanup, render } from "@testing-library/react";
 import { NextRequest } from "next/server";
+import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { POST } from "@/app/api/admin/login/route";
+import { AdminLoginForm } from "@/components/admin/AdminLoginForm";
 import { adminCookieName } from "@/lib/server/admin-auth";
 import { resetRateLimitBucketsForTest } from "@/lib/server/security";
 
@@ -23,6 +26,7 @@ describe("admin login route", () => {
   });
 
   afterEach(() => {
+    cleanup();
     resetRateLimitBucketsForTest();
     process.env = originalEnv;
   });
@@ -66,6 +70,14 @@ describe("admin login route", () => {
       method: "POST",
     });
     expect((await POST(nonJson)).status).toBe(403);
+  });
+
+  it("uses a native POST fallback so pre-hydration submits cannot put the token in the URL", () => {
+    const { container } = render(createElement(AdminLoginForm, {}));
+    const form = container.querySelector("form");
+
+    expect(form).toHaveAttribute("method", "post");
+    expect(form).toHaveAttribute("action", "/api/admin/login");
   });
 });
 

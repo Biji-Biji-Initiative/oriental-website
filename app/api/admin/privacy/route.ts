@@ -64,6 +64,26 @@ export async function DELETE(request: Request) {
     return { ok: false as const, reason: "convex_failed" as const };
   });
   if (!result.ok) return noStoreJson({ ok: false, error: result.reason }, { status: 503 });
+  if (!result.complete) {
+    logInfo("admin_privacy_delete.incomplete", {
+      actor: auth.actor,
+      requestId: parsed.data.requestId,
+      deletedLeads: result.deleted.leads,
+      deletedVoiceSessions: result.deleted.voiceSessions,
+      deletedLeadEvents: result.deleted.leadEvents,
+      manualCopiesConfirmedDeleted: parsed.data.manualCopiesConfirmedDeleted,
+    });
+    return noStoreJson(
+      {
+        ok: false,
+        error: "deletion_incomplete",
+        retryable: true,
+        deleted: result.deleted,
+        complete: false,
+      },
+      { status: 409 },
+    );
+  }
 
   logInfo("admin_privacy_delete.completed", {
     actor: auth.actor,
@@ -72,7 +92,6 @@ export async function DELETE(request: Request) {
     deletedVoiceSessions: result.deleted.voiceSessions,
     deletedLeadEvents: result.deleted.leadEvents,
     manualCopiesConfirmedDeleted: parsed.data.manualCopiesConfirmedDeleted,
-    complete: result.complete,
   });
-  return noStoreJson({ ok: true, deleted: result.deleted, complete: result.complete });
+  return noStoreJson({ ok: true, deleted: result.deleted, complete: true });
 }

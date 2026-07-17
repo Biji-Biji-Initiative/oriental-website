@@ -114,7 +114,13 @@ export function AdminLoginForm({ reason }: { reason?: string }) {
               </div>
             ) : null}
             <Form {...form}>
-              <form className="mt-6 grid gap-5" onSubmit={form.handleSubmit(onSubmit)}>
+              {/* Native POST is a fail-closed fallback: the JSON-only API rejects it without placing the token in a URL. */}
+              <form
+                action="/api/admin/login"
+                className="mt-6 grid gap-5"
+                method="post"
+                onSubmit={form.handleSubmit(onSubmit)}
+              >
                 <FormField
                   control={form.control}
                   name="token"
