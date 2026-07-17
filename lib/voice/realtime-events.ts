@@ -833,12 +833,25 @@ function resolveLiteralVisitorEmailUpdate(text: string, currentEmail: string): L
         mention.email,
       ),
   );
+  const abandonedVisitorDeclaration = evaluatedMentions.some((mention) =>
+    literalEmailMentionWasDeclaredThenDisclaimed(
+      normalizedText,
+      mention.start,
+      mention.email.length,
+      mention.context,
+      mention.email,
+    ),
+  );
   if (relevantMentions.length === 0) {
-    return currentExplicitlyDisclaimed ? { kind: "invalidates" } : { kind: "irrelevant" };
+    return currentExplicitlyDisclaimed || abandonedVisitorDeclaration
+      ? { kind: "invalidates" }
+      : { kind: "irrelevant" };
   }
   if (relevantMentions.length < allMentions.length) {
     const scoped = resolveScopedRelevantLiteralUpdate(relevantMentions, currentEmail);
-    return scoped.kind === "irrelevant" && currentExplicitlyDisclaimed ? { kind: "invalidates" } : scoped;
+    return scoped.kind === "irrelevant" && (currentExplicitlyDisclaimed || abandonedVisitorDeclaration)
+      ? { kind: "invalidates" }
+      : scoped;
   }
   const relevantText = text;
   const mentions = getLiteralEmailMentions(relevantText);
@@ -848,6 +861,7 @@ function resolveLiteralVisitorEmailUpdate(text: string, currentEmail: string): L
 
   const corrected = getExplicitCorrectedVisitorEmail(relevantText);
   if (corrected) return { kind: "selected", email: corrected };
+  if (abandonedVisitorDeclaration) return { kind: "invalidates" };
 
   const distinct = [...new Set(mentions.map((mention) => mention.email))];
   const literal = extractExplicitVisitorEmail(relevantText);
@@ -866,6 +880,7 @@ function resolveLiteralVisitorEmailUpdate(text: string, currentEmail: string): L
     hasOrderedEmailSelectionCue(relevantText) ||
     hasEmailCorrectionLanguage(relevantText) ||
     emailTurnOffersAlternatives(relevantText) ||
+    hasCompetingOwnedEmailContext(relevantText) ||
     Boolean(currentEmail && emailTurnRejectsTarget(relevantText, currentEmail));
   if (!hasVisitorAuthorityIntent) return { kind: "irrelevant" };
 
@@ -924,18 +939,26 @@ function resolveScopedRelevantLiteralUpdate(
 function resolveUnambiguousLiteralSelection(text: string, mentions: Array<{ email: string; start: number }>) {
   const normalizedText = normalizeEmailDecisionText(text);
   const explicitlyReplaced = getExplicitLiteralReplacement(normalizedText, mentions);
+  const finalAlternativeSelection = getFinalAlternativeLiteralSelection(text);
   const selectedEmails = new Set<string>();
   const rejectedEmails = new Set<string>();
   for (const mention of mentions) {
     const disposition = getLiteralEmailMentionDisposition(normalizedText, mention.start, mention.email.length);
-    const rejected = disposition === "rejected" || emailTurnRejectsTarget(text, mention.email);
+    const rejected =
+      disposition === "rejected" ||
+      emailTurnRejectsTarget(text, mention.email) ||
+      (explicitlyReplaced !== undefined && explicitlyReplaced !== mention.email) ||
+      (finalAlternativeSelection !== undefined && finalAlternativeSelection !== mention.email);
     if (rejected) {
       rejectedEmails.add(mention.email);
     } else if (
-      disposition === "selected" ||
-      emailTurnSelectsTarget(text, mention.email) ||
-      emailTurnAssertsOwnership(text, mention.email) ||
-      explicitlyReplaced === mention.email
+      finalAlternativeSelection === mention.email ||
+      explicitlyReplaced === mention.email ||
+      (finalAlternativeSelection === undefined &&
+        explicitlyReplaced === undefined &&
+        (disposition === "selected" ||
+          emailTurnSelectsTarget(text, mention.email) ||
+          emailTurnAssertsOwnership(text, mention.email)))
     ) {
       selectedEmails.add(mention.email);
     }
@@ -955,7 +978,20 @@ function getExplicitLiteralReplacement(text: string, mentions: Array<{ email: st
       if (previous.email === next.email) continue;
       const from = previous.email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const to = next.email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      if (new RegExp(`(?:replace|change|update)\\s+${from}\\s+(?:to|with)\\s+${to}`, "iu").test(text)) {
+      const sourceFirst = new RegExp(
+        `(?:replace|change|update)(?:\\s+(?:(?:my|the)\\s+)?e-?mail)?\\s+(?:from\\s+)?${from}\\s+(?:to|with)\\s+${to}`,
+        "iu",
+      ).test(text);
+      const targetFirst = new RegExp(
+        `${to}\\s+(?:(?:should\\s+)?(?:replace(?:s)?|supersede(?:s)?))\\s+${from}`,
+        "iu",
+      ).test(text);
+      const swapOrMove =
+        new RegExp(`swap\\s+${from}\\s+(?:for|with)\\s+${to}`, "iu").test(text) ||
+        new RegExp(`move\\s+from\\s+${from}\\s+to\\s+${to}`, "iu").test(text);
+      const becomes = new RegExp(`${from}\\s+(?:should\\s+)?become(?:s)?\\s+${to}`, "iu").test(text);
+      const makeInstead = new RegExp(`make\\s+it\\s+${to}\\s+instead\\s+of\\s+${from}`, "iu").test(text);
+      if (sourceFirst || targetFirst || swapOrMove || becomes || makeInstead) {
         replacements.add(next.email);
       }
     }
@@ -966,9 +1002,13 @@ function getExplicitLiteralReplacement(text: string, mentions: Array<{ email: st
 function emailTurnAssertsOwnership(text: string, email: string) {
   const escapedEmail = email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(
-    `${escapedEmail}\\s+(?:(?:is|that's|that\\s+is)\\s+)?(?:mine|my\\s+(?:e-?mail|contact\\s+address))\\b|${escapedEmail}\\s+belongs\\s+to\\s+me\\b`,
+    `${escapedEmail}\\s+(?:(?:is|that's|that\\s+is)\\s+)?(?:mine|the\\s+one|my\\s+(?:e-?mail|contact\\s+address))\\b|${escapedEmail}\\s+belongs\\s+to\\s+me\\b|(?:this|that)\\s+(?:e-?mail|address)\\s+is\\s+mine\\s*[:=,-]?\\s*${escapedEmail}|(?:the\\s+)?(?:e-?mail|address)\\s+belonging\\s+to\\s+me\\s+is\\s+${escapedEmail}|the\\s+one\\s+to\\s+use\\s+is\\s+${escapedEmail}|it\\s+should\\s+be\\s+${escapedEmail}|(?:that\\s+is\\s+)?my\\s+(?:[\\p{Letter}][\\p{Letter}&'’-]*\\s+){0,3}(?:e-?mail|address|contact)\\s+${escapedEmail}`,
     "iu",
   ).test(normalizeEmailDecisionText(text));
+}
+
+function hasCompetingOwnedEmailContext(text: string) {
+  return /\bmy\s+e-?mails?\s+(?:are|include)\b|\bboth\b.{0,180}\b(?:are\s+mine|belong\s+to\s+me)\b/iu.test(text);
 }
 
 function normalizeEmailDecisionText(text: string) {
@@ -999,8 +1039,18 @@ function literalEmailDecisionContext(text: string, start: number, length: number
 }
 
 function anaphoricEmailRejectionStarts(text: string) {
-  return /^[,;:\s—–-]*(?:scratch\s+(?:that|this|it)|(?:(?:actually|no|nope|sorry)[,;:\s—–-]*)?(?:(?:that(?:\s+(?:one|e-?mail|address))?|this(?:\s+(?:one|e-?mail|address))?|it)\s+(?:(?:is|was|looks?)\s+)?(?:wrong|incorrect|not\s+(?:right|correct|mine|it|the\s+one)|isn['’]?t\s+(?:right|correct|mine|it)|a\s+typo|my\s+(?:old|previous|former|historical)\s+(?:e-?mail|address))|not\s+(?:that(?:\s+(?:one|e-?mail|address))?|this(?:\s+(?:one|e-?mail|address))?|it)))\b/i.test(
-    expandAnaphoricContractions(text),
+  const normalized = expandAnaphoricContractions(text)
+    .replace(/^[,;:.!?\s—–-]*/u, "")
+    .replace(/^(?:(?:but|and)\s+)?(?:(?:actually|no|nope|sorry)[,;:.!?\s—–-]*)?/u, "");
+  const target = "(?:that(?:\\s+(?:one|e-?mail|address))?|this(?:\\s+(?:one|e-?mail|address))?|it)";
+  return (
+    /^(?:scratch|forget)\s+(?:that|this|it)(?:\s+one)?\b/iu.test(normalized) ||
+    /^(?:do\s+not|don['’]?t|dont)\s+use\s+(?:that|this|it)(?:\s+one)?\b/iu.test(normalized) ||
+    /^wrong\s+(?:one|e-?mail|address)\b/iu.test(normalized) ||
+    new RegExp(
+      `^${target}\\s+(?:(?:(?:is|was|looks?)\\s+)?(?:wrong|incorrect|outdated|not\\s+(?:right|correct|mine|it|the\\s+one)|isn['’]?t\\s+(?:right|correct|mine|it)|a\\s+typo|someone\\s+else['’]?s|my\\s+(?:old|previous|former|historical)\\s+(?:e-?mail|address)|my\\s+(?:colleague|coworker|co-worker|manager|assistant|friend|supplier|customer|client|partner)['’]?s\\s+(?:e-?mail|address)|just\\s+an?\\s+example|the\\s+(?:website|web\\s*site|url|homepage)\\s+(?:e-?mail|address)|the\\s+(?!(?:right|correct|one|contact|preferred|selected|current|primary|main|best|only|chosen)\\b)(?:[\\p{Letter}][\\p{Letter}&'’-]*\\s+){1,3}(?:e-?mail|address|contact)|belongs?\\s+to\\s+(?!me\\b|us\\b)(?:my\\s+)?[\\p{Letter}][\\p{Letter}&'’-]*(?:\\s+[\\p{Letter}][\\p{Letter}&'’-]*){0,3})|(?:does\\s+not|doesn['’]?t|doesnt)\\s+belong\\s+to\\s+me)\\b`,
+      "iu",
+    ).test(normalized)
   );
 }
 
@@ -1012,29 +1062,27 @@ function literalEmailMentionIsIrrelevant(text: string, start: number, length: nu
   const before = text.slice(Math.max(0, start - 120), start);
   const after = text.slice(start + length, start + length + 80);
   const secondaryBefore =
-    /(?:^|\b)(?:for\s+)?(?:the\s+)?(?:billing(?:\s+department)?|invoices?|accounts?(?:\s+payable)?|reference|sample|support|website|web\s*site|url|homepage)(?:\s+(?:e-?mail|address|contact))?(?:\s+(?:is|was|use|at))?\s*$/i.test(
+    /(?:^|\b)(?:for\s+)?(?:the\s+)?(?:billing(?:\s+department)?|invoices?|accounts?(?:\s+(?:payable|receivable))?|finance(?:\s+(?:team|department|desk))?|support(?:\s+(?:team|department|desk))?|supplier(?:\s+contact)?|vendor(?:\s+contact)?|customer\s+success(?:\s+(?:team|department|desk))?|press(?:\s+(?:team|desk))?|media(?:\s+(?:team|desk))?|procurement(?:\s+(?:team|department))?|purchasing(?:\s+(?:team|department))?|legal(?:\s+(?:team|department))?|marketing(?:\s+(?:team|department))?|human\s+resources|hr(?:\s+(?:team|department))?|reference|sample|website|web\s*site|url|homepage)(?:\s+(?:e-?mail|address|contact))?(?:\s+(?:is|was|use|at))?\s*$/i.test(
       before,
-    );
+    ) || hasOrganizationalContactLabelBefore(before);
   const secondaryAfter =
-    /^\s*(?:(?:is|was|=|:)\s*)?(?:(?:the\s+)?(?:billing|invoice|accounts?|reference|sample|support|website|web\s*site|url|homepage)\b|for\s+(?:billing|invoices?|accounts?|reference|support)\b|(?:as\s+)?(?:an\s+)?example\b)/i.test(
+    /^\s*(?:(?:is|was|=|:)\s*)?(?:(?:the\s+)?(?:billing|invoice|accounts?(?:\s+(?:payable|receivable))?|finance|support|supplier|vendor|customer\s+success|press|media|procurement|purchasing|legal|marketing|human\s+resources|hr|reference|sample|website|web\s*site|url|homepage)\b|for\s+(?:billing|invoices?|accounts?|finance|support|procurement|reference)\b|(?:as\s+)?(?:an\s+)?example\b)/i.test(
       after,
-    );
+    ) || hasOrganizationalContactLabelAfter(after);
   const historicalBefore =
     /(?:^|\b)(?:(?:the|my)\s+)?(?:old|previous|former|historical)(?:\s+(?:e-?mail|address))?(?:\s+(?:is|was))?\s*$/i.test(
+      before,
+    ) ||
+    /(?:^|\b)(?:(?:i|we)\s+)?used\s+to\s+use\s*$/i.test(before) ||
+    /(?:^|\b)(?:previously|formerly|historically)[,;:\s-]+(?:my\s+)?(?:e-?mail|address)(?:\s+(?:is|was))?\s*$/i.test(
       before,
     );
   const historicalAfter =
     /^\s*(?:(?:is|was|=|:)\s*)?(?:(?:(?:the|my)\s+)?(?:old|previous|former|historical)\b|used\s+to\s+be\b)/i.test(
       after,
     );
-  const thirdPartyBefore =
-    /(?:^|\b)(?:his|her|their|someone\s+else['’]?s|(?:my\s+)?(?:colleague|coworker|co-worker|manager|assistant|friend|supplier|customer|client|partner)['’]?s|[\p{Letter}][\p{Letter}'’-]*['’]s|(?:the\s+)?(?:customer|client|supplier|partner|billing\s+department|accounts?\s+payable))(?:\s+(?:e-?mail|contact\s+address))?(?:\s+(?:is|was|at))?\s*$/iu.test(
-      before,
-    );
-  const thirdPartyAfter =
-    /^\s*(?:(?:is|was|=|:)\s*)?(?:(?:his|her|their|someone\s+else['’]?s|(?:my\s+)?(?:colleague|coworker|co-worker|manager|assistant|friend|supplier|customer|client|partner)['’]?s|[\p{Letter}][\p{Letter}'’-]*['’]s|(?:the\s+)?(?:customer|client|supplier|partner|billing\s+department|accounts?\s+payable)(?:['’]s)?)(?:\s+(?:e-?mail|contact\s+address))?|belongs\s+to\s+(?:him|her|them|someone\s+else|[\p{Letter}][\p{Letter}'’-]*))\b/iu.test(
-      after,
-    );
+  const thirdPartyBefore = hasThirdPartyOwnershipBefore(before);
+  const thirdPartyAfter = hasThirdPartyOwnershipAfter(after);
   const webBefore =
     /(?:^|\b)(?:website|web\s*site|url|homepage|site(?:\s+link)?|domain)(?:\s+(?:is|was|at))?\s*$/i.test(before);
   return (
@@ -1061,15 +1109,56 @@ function literalEmailMentionDisclaimsVisitorAuthority(
     /(?:^|\b)(?:my\s+)?(?:old|previous|former|historical)(?:\s+(?:e-?mail|address))?(?:\s+(?:is|was))?\s*$/iu.test(
       before,
     ) ||
-    /^\s*(?:(?:is|was|=|:)\s*)?(?:my\s+)?(?:old|previous|former|historical)(?:\s+(?:e-?mail|address))?\b/iu.test(after);
-  const thirdPartyOwnership =
-    /(?:^|\b)(?:his|her|their|someone\s+else['’]?s|(?:my\s+)?(?:colleague|coworker|co-worker|manager|assistant|friend|supplier|customer|client|partner)['’]?s|[\p{Letter}][\p{Letter}'’-]*['’]s)(?:\s+(?:e-?mail|contact\s+address))?(?:\s+(?:is|was|at))?\s*$/iu.test(
+    /(?:^|\b)(?:(?:i|we)\s+)?used\s+to\s+use\s*$/iu.test(before) ||
+    /(?:^|\b)(?:previously|formerly|historically)[,;:\s-]+(?:my\s+)?(?:e-?mail|address)(?:\s+(?:is|was))?\s*$/iu.test(
       before,
     ) ||
-    /^\s*(?:(?:is|was|=|:)\s*)?(?:his|her|their|someone\s+else['’]?s|(?:my\s+)?(?:colleague|coworker|co-worker|manager|assistant|friend|supplier|customer|client|partner)['’]?s|[\p{Letter}][\p{Letter}'’-]*['’]s)(?:\s+(?:e-?mail|contact\s+address))?\b/iu.test(
+    /^\s*(?:(?:is|was|=|:)\s*)?(?:(?:my\s+)?(?:old|previous|former|historical)(?:\s+(?:e-?mail|address))?|used\s+to\s+be\s+(?:mine|ours|my\s+(?:e-?mail|address)))\b/iu.test(
       after,
     );
+  const thirdPartyOwnership = hasThirdPartyOwnershipBefore(before) || hasThirdPartyOwnershipAfter(after);
   return historicalOwnership || thirdPartyOwnership || emailTurnRejectsTarget(context, email);
+}
+
+function hasThirdPartyOwnershipBefore(before: string) {
+  return /(?:^|\b)(?:his|her|their|someone\s+else['’]?s|(?:my\s+)?(?:colleague|coworker|co-worker|manager|assistant|friend|supplier|customer|client|partner)['’]?s|[\p{Letter}][\p{Letter}'’-]*['’]s|(?:the\s+)?(?:customer|client|supplier|partner|billing\s+department|accounts?\s+payable)|(?:(?:the|my)\s+)?(?:[\p{Letter}][\p{Letter}'’-]*\s+){1,3}(?:manager|director|lead|coordinator|officer|representative|assistant|owner)(?:['’]s)?)(?:\s+(?:e-?mail|contact\s+address))?(?:\s+(?:is|was|at))?\s*$/iu.test(
+    before,
+  );
+}
+
+function hasThirdPartyOwnershipAfter(after: string) {
+  return /^\s*(?:(?:is|was|=|:)\s*)?(?:(?:his|her|their|someone\s+else['’]?s|(?:my\s+)?(?:colleague|coworker|co-worker|manager|assistant|friend|supplier|customer|client|partner)['’]?s|[\p{Letter}][\p{Letter}'’-]*['’]s|(?:the\s+)?(?:customer|client|supplier|partner|billing\s+department|accounts?\s+payable)(?:['’]s)?|(?:(?:the|my)\s+)?(?:[\p{Letter}][\p{Letter}'’-]*\s+){1,3}(?:manager|director|lead|coordinator|officer|representative|assistant|owner)(?:['’]s)?)(?:\s+(?:e-?mail|contact\s+address))?|belongs\s+to\s+(?:him|her|them|someone\s+else|my\s+(?:colleague|coworker|co-worker|manager|assistant|friend|supplier|customer|client|partner)|(?!me\b|us\b)[\p{Letter}][\p{Letter}'’-]*))\b/iu.test(
+    after,
+  );
+}
+
+function hasOrganizationalContactLabelBefore(before: string) {
+  const match =
+    /(?:^|[;,.!?]\s*|\b(?:and|but)\s+)(?:the\s+)?(?:[\p{Letter}][\p{Letter}&'’-]*\s+){0,3}(?:team|desk|department|contact|enquir(?:y|ies))(?:\s+(?:e-?mail|address|contact))?(?:\s+(?:is|was|at|use))?\s*$/iu.exec(
+      before,
+    );
+  return Boolean(match && !/\b(?:my|this|that|your)\b/iu.test(match[0]));
+}
+
+function hasOrganizationalContactLabelAfter(after: string) {
+  const match =
+    /^\s*(?:(?:is|was|=|:)\s*)?(?:the\s+)?(?:[\p{Letter}][\p{Letter}&'’-]*\s+){0,3}(?:team|desk|department|contact|enquir(?:y|ies))(?:\s+(?:e-?mail|address|contact))?\b/iu.exec(
+      after,
+    );
+  return Boolean(match && !/\b(?:my|this|that|your)\b/iu.test(match[0]));
+}
+
+function literalEmailMentionWasDeclaredThenDisclaimed(
+  text: string,
+  start: number,
+  length: number,
+  context: string,
+  email: string,
+) {
+  const before = text.slice(Math.max(0, start - 100), start);
+  const declared = /(?:my\s+e-?mail(?:\s+address)?|this\s+(?:e-?mail|address))\s+is\s*$/iu.test(before);
+  const after = text.slice(start + length);
+  return declared && anaphoricEmailRejectionStarts(after) && emailTurnRejectsTarget(context, email);
 }
 
 function clearSelectedEmail(state: VoiceRuntimeState, source: "speech" | "typed"): VoiceRuntimeState {
@@ -1904,10 +1993,21 @@ function emailTurnRejectsTarget(text: string, groundedEmail: string) {
   const escapedEmail = groundedEmail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const normalizedText = expandAnaphoricContractions(normalizeEmailDecisionText(text));
   const exactGroundedIndex = normalizedText.indexOf(groundedEmail);
+  const beforeExactGrounded =
+    exactGroundedIndex < 0 ? "" : normalizedText.slice(Math.max(0, exactGroundedIndex - 100), exactGroundedIndex);
+  const afterExactGrounded =
+    exactGroundedIndex < 0 ? "" : normalizedText.slice(exactGroundedIndex + groundedEmail.length);
   if (
-    exactGroundedIndex >= 0 &&
-    anaphoricEmailRejectionStarts(normalizedText.slice(exactGroundedIndex + groundedEmail.length))
+    /(?:my\s+(?:e-?mail|address)|the\s+(?:right|correct)\s+(?:e-?mail|address))\s+(?:is\s+not|isn['’]?t)\s*$/iu.test(
+      beforeExactGrounded,
+    ) ||
+    /^\s*(?:(?:is|was)\s+)?(?:not\s+(?:my\s+(?:e-?mail|address)|the\s+(?:(?:right|correct)\s+(?:e-?mail|address)|one))|isn['’]?t\s+(?:my\s+(?:e-?mail|address)|the\s+(?:(?:right|correct)\s+(?:e-?mail|address)|one)))\b/iu.test(
+      afterExactGrounded,
+    )
   ) {
+    return true;
+  }
+  if (exactGroundedIndex >= 0 && anaphoricEmailRejectionStarts(afterExactGrounded)) {
     return true;
   }
   if (
@@ -1991,8 +2091,10 @@ function getLiteralEmailMentionDisposition(
   const before = normalizedText.slice(Math.max(0, start - 100), start);
   const after = normalizedText.slice(start + length, start + length + 48);
   if (
-    /(?:instead\s+of|rather\s+than|bukan|do\s+not\s+use|don't\s+use|dont\s+use|not)\s*$/i.test(before) ||
-    /^\s*(?:(?:was|is|looks?)\s+)?(?:wrong|incorrect|not\s+(?:right|correct|mine)|isn['’]?t\s+(?:right|correct|mine))/i.test(
+    /(?:instead\s+of|rather\s+than|bukan|do\s+not\s+use|don't\s+use|dont\s+use|not|(?:my\s+(?:e-?mail|address))\s+(?:is\s+not|isn['’]?t))\s*$/i.test(
+      before,
+    ) ||
+    /^\s*(?:(?:was|is|looks?)\s+)?(?:wrong|incorrect|not\s+(?:right|correct|mine|my\s+(?:e-?mail|address)|the\s+(?:(?:right|correct)\s+(?:e-?mail|address)|one))|isn['’]?t\s+(?:right|correct|mine|my\s+(?:e-?mail|address)|the\s+(?:(?:right|correct)\s+(?:e-?mail|address)|one)))/i.test(
       after,
     )
   ) {
@@ -2018,7 +2120,7 @@ function emailTurnSelectsTarget(text: string, selectedEmail: string) {
     .replace(/\p{Mark}/gu, "");
   if (
     new RegExp(
-      `(?:use|choose|select|prefer|keep|go\\s+with|switch\\s+to|contact\\s+(?:me|us)\\s+at|contact\\s+address(?:\\s+is)?|reach\\s+(?:me|us)\\s+at|send\\s+it\\s+to|(?:my\\s+)?(?:correct\\s+)?e-?mail(?:\\s+address)?\\s+is|changed?\\s+to|guna)\\s+${escapedEmail}`,
+      `(?:use|choose|select|prefer|keep|go\\s+with|switch\\s+to|contact\\s+(?:me|us)\\s+at|contact\\s+address(?:\\s+is)?|reach\\s+(?:me|us)\\s+at|send\\s+it\\s+to|(?:my\\s+)?(?:correct\\s+)?e-?mail(?:\\s+address)?\\s+is|changed?\\s+to|guna)\\s+${escapedEmail}|(?:use|choose|select|prefer|keep)\\s+(?:my|this|that)\\s+(?:[\\p{Letter}][\\p{Letter}&'’-]*\\s+){0,3}(?:e-?mail|address|contact)\\s+${escapedEmail}`,
       "iu",
     ).test(normalizedText)
   ) {
@@ -2074,7 +2176,9 @@ function postAlternativeSelectionText(text: string) {
   const both = /\bboth\b/i.exec(text);
   const firstAlternativeOr = /\bor\b/gi;
   firstAlternativeOr.lastIndex = either?.index ?? 0;
-  const separator = either ? firstAlternativeOr.exec(text)?.index : both?.index;
+  const separator = either
+    ? firstAlternativeOr.exec(text)?.index
+    : (both?.index ?? firstAlternativeOr.exec(text)?.index);
   if (separator === undefined) return undefined;
 
   const cues = Array.from(
@@ -2084,6 +2188,16 @@ function postAlternativeSelectionText(text: string) {
   ).filter((match) => (match.index ?? -1) > separator);
   const cue = cues.at(-1);
   return cue?.index === undefined ? undefined : text.slice(cue.index);
+}
+
+function getFinalAlternativeLiteralSelection(text: string) {
+  const finalSelectionText = postAlternativeSelectionText(text);
+  if (!finalSelectionText) return undefined;
+  const selected = getLiteralEmailMentions(finalSelectionText)
+    .filter((mention) => emailTurnSelectsTarget(finalSelectionText, mention.email))
+    .map((mention) => mention.email);
+  const distinct = [...new Set(selected)];
+  return distinct.length === 1 ? (distinct[0] as string) : undefined;
 }
 
 function getLiteralEmailMentions(text: string) {

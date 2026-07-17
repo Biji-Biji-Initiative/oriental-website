@@ -9,7 +9,14 @@ import {
 } from "@/components/brand-motion/MerekaSiteLoader";
 import { NebulaM, resolveMerekaMarkTarget } from "@/components/brand-motion/NebulaM";
 import { MerekaMiniMark } from "@/components/orb/MerekaMiniMark";
-import { MEREKA_MARK_PATH, MEREKA_NEBULA_PARTICLE_COUNT, MEREKA_TRACE_DURATION_MS } from "@/lib/brand-motion";
+import {
+  BRAND_MOTION_PREVIEW_HOST,
+  isBrandMotionPreviewEnabled,
+  isBrandMotionPreviewHost,
+  MEREKA_MARK_PATH,
+  MEREKA_NEBULA_PARTICLE_COUNT,
+  MEREKA_TRACE_DURATION_MS,
+} from "@/lib/brand-motion";
 
 afterEach(() => {
   cleanup();
@@ -23,6 +30,13 @@ describe("Mereka brand motion", () => {
   it("keeps the measured motion contract", () => {
     expect(MEREKA_NEBULA_PARTICLE_COUNT).toBe(2_100);
     expect(MEREKA_TRACE_DURATION_MS).toBe(2_600);
+  });
+
+  it("requires both the build flag and an exact staging/local host for every motion preview", () => {
+    expect(isBrandMotionPreviewEnabled(true, BRAND_MOTION_PREVIEW_HOST)).toBe(true);
+    expect(isBrandMotionPreviewEnabled(false, BRAND_MOTION_PREVIEW_HOST)).toBe(false);
+    expect(isBrandMotionPreviewEnabled(true, "oriental.mereka.io")).toBe(false);
+    expect(isBrandMotionPreviewEnabled(false, "oriental.mereka.io")).toBe(false);
   });
 
   it("uses the canonical Mereka mark instead of the generic blue sphere", () => {

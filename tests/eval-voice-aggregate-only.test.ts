@@ -312,9 +312,99 @@ describe("eval-voice aggregate-only mode", () => {
           "Submitted email attribution is incomplete; capture-integrity evidence is unavailable.",
         ),
       });
-      expect(requests).toHaveLength(2);
+      expect(requests).toHaveLength(3);
       expect(requests[0]).toMatchObject({ path: "leads:voiceSessionsForEval" });
       expect(requests[1]).toMatchObject({ path: "leads:adminLeadTable" });
+      expect(requests[2]).toMatchObject({
+        path: "leads:voiceSessionByReviewId",
+        args: [{ ingestSecret: "test-ingest-secret", reviewId: "private-orphan-review-id" }],
+      });
+      expect(await readdir(cwd)).toEqual([]);
+    } finally {
+      await new Promise<void>((resolveClose, rejectClose) =>
+        server.close((error) => (error ? rejectClose(error) : resolveClose())),
+      );
+    }
+  });
+
+  it("does not misclassify a signed lead whose durable session fell outside the bounded eval limit", async () => {
+    const selectedSession = voiceSession({
+      createdAt: 100,
+      updatedAt: 300,
+      deploymentEnvironment: "production",
+      voice: "coral",
+      speed: 1.28,
+      variant: null,
+    });
+    const excludedSession = voiceSession({
+      reviewId: "private-excluded-review-id",
+      sessionId: "private-excluded-session-id",
+      conversationId: "private-excluded-conversation-id",
+      createdAt: 200,
+      updatedAt: 250,
+      deploymentEnvironment: "production",
+      voice: "coral",
+      speed: 1.28,
+      variant: null,
+    });
+    const requests: Array<Record<string, unknown>> = [];
+    const server = createServer((request, response) => {
+      let body = "";
+      request.setEncoding("utf8");
+      request.on("data", (chunk) => {
+        body += chunk;
+      });
+      request.on("end", () => {
+        const parsedBody = JSON.parse(body) as Record<string, unknown>;
+        requests.push(parsedBody);
+        const value =
+          parsedBody.path === "leads:voiceSessionsForEval"
+            ? [selectedSession]
+            : parsedBody.path === "leads:adminLeadTable"
+              ? [
+                  {
+                    leadId: "private-excluded-lead-id",
+                    voiceReviewId: "private-excluded-review-id",
+                    voiceSessionId: "private-excluded-session-id",
+                    createdAt: 200,
+                    utm: { [VOICE_SUBMISSION_EVIDENCE_UTM_KEY]: "private-excluded-envelope" },
+                  },
+                ]
+              : excludedSession;
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ status: "success", value }));
+      });
+    });
+    await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("mock Convex server did not bind a port");
+    const cwd = await mkdtemp(resolve(tmpdir(), "oriental-voice-audit-bounded-limit-"));
+    temporaryDirectories.push(cwd);
+    const repositoryRoot = resolve(import.meta.dirname, "..");
+
+    try {
+      const result = await execFileAsync(
+        resolve(repositoryRoot, "node_modules/.bin/tsx"),
+        [resolve(repositoryRoot, "scripts/eval-voice.ts"), "--aggregate-only", "--limit", "1"],
+        {
+          cwd,
+          env: {
+            ...process.env,
+            CONVEX_URL: `http://127.0.0.1:${address.port}`,
+            CONVEX_INGEST_SECRET: "test-ingest-secret",
+          },
+        },
+      );
+
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        source: { queriedRows: 1, customerCallRows: 1, conversations: 1 },
+      });
+      expect(requests).toHaveLength(3);
+      expect(requests[2]).toMatchObject({
+        path: "leads:voiceSessionByReviewId",
+        args: [{ ingestSecret: "test-ingest-secret", reviewId: "private-excluded-review-id" }],
+      });
       expect(await readdir(cwd)).toEqual([]);
     } finally {
       await new Promise<void>((resolveClose, rejectClose) =>

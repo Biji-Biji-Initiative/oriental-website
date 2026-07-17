@@ -253,6 +253,45 @@ async function enrichSubmittedEmailAttribution(
   );
   const leadsByPair = new Map<string, ImmutableVoiceLeadEvidenceSource[]>();
   const sessionWindowStart = evaluatedSessionWindowStart(sessions);
+  const unmatchedEnvelopeLeads = rawLeads.filter((lead) => {
+    const reviewId = typeof lead.voiceReviewId === "string" ? lead.voiceReviewId : null;
+    const sessionId = typeof lead.voiceSessionId === "string" ? lead.voiceSessionId : null;
+    const leadId = typeof lead.leadId === "string" ? lead.leadId : null;
+    const overlapsEvaluatedSession =
+      (reviewId !== null && sessionReviewIds.has(reviewId)) ||
+      (sessionId !== null && sessionIds.has(sessionId)) ||
+      (leadId !== null && markedLeadIds.has(leadId));
+    if (overlapsEvaluatedSession || !hasVoiceSubmissionEvidenceEnvelope(lead)) return false;
+    const leadCreatedAt = typeof lead.createdAt === "number" ? lead.createdAt : null;
+    return (
+      sessions.length === 0 ||
+      sessionWindowStart === null ||
+      leadCreatedAt === null ||
+      leadCreatedAt >= sessionWindowStart
+    );
+  });
+  const durableExcludedPairs = new Set(
+    await mapPool(unmatchedEnvelopeLeads, PROFILE_ENRICHMENT_CONCURRENCY, async (lead) => {
+      const reviewId = typeof lead.voiceReviewId === "string" ? lead.voiceReviewId : null;
+      const sessionId = typeof lead.voiceSessionId === "string" ? lead.voiceSessionId : null;
+      if (!reviewId || !sessionId) {
+        throw new Error("Submitted email attribution is incomplete; capture-integrity evidence is unavailable.");
+      }
+      let raw: RawVoiceSessionProfile | null;
+      try {
+        raw = (await convex.query(api.leads.voiceSessionByReviewId, {
+          ingestSecret,
+          reviewId,
+        })) as RawVoiceSessionProfile | null;
+      } catch {
+        throw new Error("Submitted email attribution is incomplete; capture-integrity evidence is unavailable.");
+      }
+      if (!raw || raw.reviewId !== reviewId || raw.sessionId !== sessionId) {
+        throw new Error("Submitted email attribution is incomplete; capture-integrity evidence is unavailable.");
+      }
+      return submissionPairKey(reviewId, sessionId);
+    }),
+  );
   for (const lead of rawLeads) {
     const reviewId = typeof lead.voiceReviewId === "string" ? lead.voiceReviewId : null;
     const sessionId = typeof lead.voiceSessionId === "string" ? lead.voiceSessionId : null;
@@ -269,7 +308,8 @@ async function enrichSubmittedEmailAttribution(
           sessionWindowStart === null ||
           leadCreatedAt === null ||
           leadCreatedAt >= sessionWindowStart);
-      if (orphanIsInWindow) {
+      const excludedPair = reviewId && sessionId ? submissionPairKey(reviewId, sessionId) : null;
+      if (orphanIsInWindow && (!excludedPair || !durableExcludedPairs.has(excludedPair))) {
         throw new Error("Submitted email attribution is incomplete; capture-integrity evidence is unavailable.");
       }
       continue;
