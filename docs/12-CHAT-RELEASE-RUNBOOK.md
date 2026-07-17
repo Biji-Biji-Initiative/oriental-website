@@ -248,6 +248,55 @@ include release docs before the first deployment.
    configuration, WebRTC, session persistence, or voice UI changed.
 5. Inspect the running container—not only Infisical—for the expected revision,
    deployment environment, and voice cells.
+6. Drain the bounded legacy backfill and retention sweep before trusting the
+   admin, evaluation, SLA, or count views. The first drain intentionally applies
+   the published 30/90/730-day deletion windows and is not reversed by a web
+   rollback. Inspect the aggregate-only counts on every batch and continue until
+   the route explicitly returns `hasMore=false`; an arbitrary fixed number of
+   successful calls is not completion evidence:
+
+   ```bash
+   infisical run \
+     --domain https://secrets.mereka.io \
+     --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
+     --env staging \
+     --path /deploy/oriental-website \
+     -- bash -ceu '
+       has_more=true
+       for attempt in $(seq 1 500); do
+         response=$(curl -fsS -X POST \
+           https://staging.oriental.mereka.io/api/admin/retention \
+           -H "Authorization: Bearer $OPS_AUTOMATION_TOKEN" \
+           -H "Content-Type: application/json" \
+           -d "{}")
+         echo "$response" | jq -e ".ok == true and (.hasMore | type == \"boolean\")" >/dev/null
+         echo "$response" | jq -c "{hasMore,deleted,redacted}"
+         has_more=$(echo "$response" | jq -r .hasMore)
+         [ "$has_more" = false ] && break
+       done
+       [ "$has_more" = false ]
+     '
+   ```
+
+   The 500-call guard is a runaway safety limit, not an allowed residual
+   backlog. If it is reached, stop and diagnose; do not promote with hidden
+   legacy rows.
+7. Prove authenticated, Convex-backed admin reads independently of `/api/health`
+   and discard the response body so lead/session content does not enter the
+   release log:
+
+   ```bash
+   infisical run \
+     --domain https://secrets.mereka.io \
+     --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
+     --env staging \
+     --path /deploy/oriental-website \
+     -- bash -ceu '
+       curl -fsS https://staging.oriental.mereka.io/api/admin/review \
+         -H "Authorization: Bearer $ADMIN_REVIEW_TOKEN" \
+         | jq -e ".ok == true" >/dev/null
+     '
+   ```
 
 Do not submit a staging lead casually: staging still shares production Convex,
 OpenAI, Redis, and notification accounts.
@@ -321,7 +370,25 @@ OpenAI, Redis, and notification accounts.
 
 5. Confirm the deployer's result reports Coolify `running:healthy`, its health-check host is
    `127.0.0.1`, and the production container exposes the intended runtime cells.
-6. For voice releases, rerun the dry evaluator and report `insufficient_data`
+6. Repeat the bounded retention drain against
+   `https://oriental.mereka.io/api/admin/retention` with the production
+   `OPS_AUTOMATION_TOKEN` until `hasMore=false`, then prove
+   `https://oriental.mereka.io/api/admin/review` with the production
+   `ADMIN_REVIEW_TOKEN` exactly as in staging. This independently proves the
+   production routes, credentials, and Convex reads.
+7. Manually dispatch `.github/workflows/analytics-ops.yml` from merged `main`
+   and require every job to pass. This is the release proof for the separately
+   stored GitHub `OPS_AUTOMATION_TOKEN`; Infisical/Coolify parity cannot prove a
+   GitHub Actions secret:
+
+   ```bash
+   gh workflow run analytics-ops.yml --ref main
+   run_id=$(gh run list --workflow analytics-ops.yml --branch main \
+     --event workflow_dispatch --limit 1 --json databaseId --jq '.[0].databaseId')
+   gh run watch "$run_id" --exit-status
+   ```
+
+8. For voice releases, rerun the dry evaluator and report `insufficient_data`
    honestly when its minimum evidence gate is not met.
 
 ## Failure handling
