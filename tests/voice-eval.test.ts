@@ -332,6 +332,7 @@ describe("deriveLatencySignals", () => {
       tapToAudibleMs: null,
       interruptedTurns: 1,
       rapidResumeTurns: 1,
+      toolCalls: [],
     });
   });
 });

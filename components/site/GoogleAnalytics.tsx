@@ -91,10 +91,13 @@ function GoogleAnalyticsLoader() {
     });
   }, [pathname]);
 
+  const measurementId = GA_MEASUREMENT_ID;
+  if (!measurementId) return null;
+
   return (
     <>
       <Script
-        src={`https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(GA_MEASUREMENT_ID)}`}
+        src={`https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(measurementId)}`}
         strategy="afterInteractive"
       />
       <Script id="ga4-init" strategy="afterInteractive">
@@ -102,7 +105,7 @@ function GoogleAnalyticsLoader() {
 function gtag(){dataLayer.push(arguments);}
 window.gtag = gtag;
 gtag('js', new Date());
-gtag('config', '${GA_MEASUREMENT_ID}', {
+gtag('config', '${measurementId}', {
   send_page_view: false,
   anonymize_ip: true,
   allow_google_signals: false,

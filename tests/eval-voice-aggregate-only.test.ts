@@ -33,6 +33,15 @@ function voiceSession(overrides: Record<string, unknown> = {}) {
       version: 1,
       activation: { tapToLiveMs: 500, tapToAudibleMs: 900 },
       turns: [],
+      toolCalls: [
+        {
+          name: "lookup_oriental",
+          outcome: "success",
+          executionMs: 18,
+          responseCreatedToCallMs: 140,
+          responseCreatedToResultMs: 158,
+        },
+      ],
     },
     routeRequested: false,
     runtimeProfile: "baseline",
@@ -104,7 +113,14 @@ describe("eval-voice aggregate-only mode", () => {
           customerCallRows: 1,
           conversations: 1,
         },
-        aggregate: { sessionCount: 1, droppedMidTurnCount: 1 },
+        aggregate: {
+          sessionCount: 1,
+          droppedMidTurnCount: 1,
+          toolLatency: {
+            overall: { samples: 1, executionP50Ms: 18, responseCreatedToResultP95Ms: 158 },
+            byName: { lookup_oriental: { samples: 1, executionP95Ms: 18 } },
+          },
+        },
       });
       expect(serialized).not.toMatch(
         /private-review-id|private-session-id|private-conversation-id|private transcript sentinel/,

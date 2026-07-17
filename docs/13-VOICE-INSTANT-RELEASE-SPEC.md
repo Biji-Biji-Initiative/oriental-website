@@ -254,7 +254,10 @@ an unperformed listening result is never a pass.
   plus runtime/model cells.
 - `pnpm eval:voice -- --dry` writes a gitignored report containing the guarded
   promotion status and aggregate-only console output, including tap-to-live
-  p50/p95 by runtime profile and full runtime/model/reasoning cell.
+  p50/p95 by runtime profile and full runtime/model/reasoning cell. Query-only
+  aggregate output also reports PII-free overall/per-tool execution,
+  response-to-call, and response-to-result p50/p95 so browser execution can be
+  separated from model/transport delay.
 - Raw transcripts and captured PII MUST NOT appear in structured route logs.
 - `/api/health` exposes the active runtime/model/reasoning/capture cells and selected
   model without credentials or visitor data so release status can be rebuilt

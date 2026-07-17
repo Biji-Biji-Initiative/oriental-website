@@ -19,6 +19,12 @@
 
 import { z } from "zod";
 import { activeVoiceExperimentDimensions } from "../voice/experiments";
+import {
+  VOICE_TOOL_NAMES,
+  type VoiceToolLatencySample,
+  type VoiceToolName,
+  type VoiceToolOutcome,
+} from "../voice/latency";
 import { isVoiceAvailabilityFailure } from "../voice/realtime-call-failure";
 
 export type EvalTranscriptTurn = { role: string; text: string };
@@ -63,6 +69,7 @@ export type EvalLatency = {
     interrupted: boolean;
     rapidResume: boolean;
   }>;
+  toolCalls?: VoiceToolLatencySample[];
 } | null;
 
 export type VoiceEvalSession = {
@@ -237,6 +244,7 @@ function uniqueRuntimeErrors(errors: VoiceEvalSession["errors"]): VoiceEvalSessi
 
 function foldEvalLatency(sessions: VoiceEvalSession[]): EvalLatency {
   const turns = sessions.flatMap((session) => session.latency?.turns ?? []);
+  const toolCalls = sessions.flatMap((session) => session.latency?.toolCalls ?? []);
   const activationSamples = sessions.flatMap((session) => {
     const latency = session.latency;
     if (!latency) return [];
@@ -253,11 +261,12 @@ function foldEvalLatency(sessions: VoiceEvalSession[]): EvalLatency {
     return [{}];
   });
   const activation = activationSamples[0] ?? activationAttempts[0];
-  return turns.length > 0 || activation
+  return turns.length > 0 || toolCalls.length > 0 || activation
     ? {
         version: 1,
         ...(activation ? { activation, activationSamples, activationAttempts } : {}),
         turns,
+        ...(toolCalls.length > 0 ? { toolCalls } : {}),
       }
     : null;
 }
@@ -355,6 +364,8 @@ export type LatencySignals = {
   tapToAudibleMs: number | null;
   interruptedTurns: number;
   rapidResumeTurns: number;
+  /** PII-free bounded samples used only for aggregate tool latency. */
+  toolCalls: VoiceToolLatencySample[];
 };
 
 export function deriveLatencySignals(session: VoiceEvalSession): LatencySignals {
@@ -424,6 +435,7 @@ export function deriveLatencySignals(session: VoiceEvalSession): LatencySignals 
     tapToAudibleMs: firstActivation?.tapToAudibleMs ?? null,
     interruptedTurns: turns.filter((turn) => turn.interrupted).length,
     rapidResumeTurns: turns.filter((turn) => turn.rapidResume).length,
+    toolCalls: session.latency?.toolCalls ?? [],
   };
 }
 
@@ -822,6 +834,7 @@ export type EvalAggregate = {
     environments: Record<"production" | "staging" | "local" | "unknown", number>;
     devices: Record<"mobile" | "desktop" | "unknown", number>;
   };
+  toolLatency: ToolLatencyAggregate;
   averages: {
     routingCorrect: number | null;
     captureCompleteness: number | null;
@@ -829,6 +842,22 @@ export type EvalAggregate = {
     frustration: number | null;
   };
   worstSessions: Array<{ reviewId: string; reason: string }>;
+};
+
+export type ToolLatencySummary = {
+  samples: number;
+  outcomes: Record<VoiceToolOutcome, number>;
+  executionP50Ms: number | null;
+  executionP95Ms: number | null;
+  responseCreatedToCallP50Ms: number | null;
+  responseCreatedToCallP95Ms: number | null;
+  responseCreatedToResultP50Ms: number | null;
+  responseCreatedToResultP95Ms: number | null;
+};
+
+export type ToolLatencyAggregate = {
+  overall: ToolLatencySummary;
+  byName: Partial<Record<VoiceToolName, ToolLatencySummary>>;
 };
 
 const round = (value: number) => Math.round(value * 100) / 100;
@@ -862,6 +891,7 @@ export function aggregateEvals(evals: SessionEval[]): EvalAggregate {
   );
   const availabilityFailures = evals.filter((entry) => entry.closeReasons.some(isVoiceAvailabilityFailure));
   const captureIntegrityFailures = evals.filter((entry) => entry.captureIntegrity.failed);
+  const toolCalls = evals.flatMap((entry) => entry.latency.toolCalls);
   const worstSessions = [
     ...quotaFailures.map((entry) => ({ reviewId: entry.reviewId, reason: "OpenAI Realtime quota exhausted" })),
     ...droppedMidTurn.map((entry) => ({ reviewId: entry.reviewId, reason: "dropped mid-utterance" })),
@@ -925,6 +955,7 @@ export function aggregateEvals(evals: SessionEval[]): EvalAggregate {
       ),
       devices: countBy(evals, ["mobile", "desktop", "unknown"], (entry) => entry.deviceProfile),
     },
+    toolLatency: aggregateToolLatency(toolCalls),
     averages: {
       routingCorrect: average((score) => score.routingCorrect),
       captureCompleteness: average((score) => score.captureCompleteness),
@@ -932,6 +963,36 @@ export function aggregateEvals(evals: SessionEval[]): EvalAggregate {
       frustration: average((score) => score.frustration),
     },
     worstSessions,
+  };
+}
+
+function aggregateToolLatency(samples: VoiceToolLatencySample[]): ToolLatencyAggregate {
+  const byName = Object.fromEntries(
+    VOICE_TOOL_NAMES.flatMap((name) => {
+      const matching = samples.filter((sample) => sample.name === name);
+      return matching.length > 0 ? [[name, summarizeToolLatency(matching)]] : [];
+    }),
+  ) as Partial<Record<VoiceToolName, ToolLatencySummary>>;
+  return { overall: summarizeToolLatency(samples), byName };
+}
+
+function summarizeToolLatency(samples: VoiceToolLatencySample[]): ToolLatencySummary {
+  const execution = samples.map((sample) => sample.executionMs);
+  const responseToCall = samples.flatMap((sample) =>
+    typeof sample.responseCreatedToCallMs === "number" ? [sample.responseCreatedToCallMs] : [],
+  );
+  const responseToResult = samples.flatMap((sample) =>
+    typeof sample.responseCreatedToResultMs === "number" ? [sample.responseCreatedToResultMs] : [],
+  );
+  return {
+    samples: samples.length,
+    outcomes: countBy(samples, ["success", "rejected", "failed", "dispatch_failed"], (sample) => sample.outcome),
+    executionP50Ms: percentile(execution, 0.5),
+    executionP95Ms: percentile(execution, 0.95),
+    responseCreatedToCallP50Ms: percentile(responseToCall, 0.5),
+    responseCreatedToCallP95Ms: percentile(responseToCall, 0.95),
+    responseCreatedToResultP50Ms: percentile(responseToResult, 0.5),
+    responseCreatedToResultP95Ms: percentile(responseToResult, 0.95),
   };
 }
 

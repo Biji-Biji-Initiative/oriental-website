@@ -67,7 +67,9 @@ This mode performs only the Convex evaluation query, excludes synthetic smoke
 rows, disables the LLM judge and Convex mutations, writes no report, and emits a
 single aggregate/gate JSON document. It omits transcripts, contact data, session
 identifiers, and identifier-bearing attention lists. `--persist` and `--out` are
-rejected in this mode.
+rejected in this mode. PII-free tool-call telemetry is included as overall and
+per-tool sample/outcome counts plus execution, response-to-call, and
+response-to-result p50/p95 distributions.
 
 The command fetches and computes local/main Git state, both public health SHAs,
 the non-secret live voice cells, branches and PRs containing deployed SHAs,

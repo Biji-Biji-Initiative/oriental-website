@@ -140,7 +140,7 @@ pnpm check-secrets          # validate expected env keys (local)
 pnpm local:ngrok -- --check  # prove ngrok secret lookup without opening a tunnel
 pnpm smoke:staging:voice    # real canonical-staging WebRTC/audio/persistence proof
 pnpm smoke:staging:intake   # grounded adaptive email capture/no-confirmation/no-submit proof
-pnpm eval:voice -- --aggregate-only --limit 100  # Convex query-only aggregate/gate JSON; no PII report or writes
+pnpm eval:voice -- --aggregate-only --limit 100  # Query-only aggregate/gates + PII-free tool latency; no reports/writes
 pnpm --silent ops:status --json  # machine-readable live/repo/review/work-queue truth
 pnpm release:preflight -- --sha <full-main-sha>  # requires managed release env
 pnpm release:deploy:production -- --sha <full-sha> --expected-current-sha <full-sha>
