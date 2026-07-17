@@ -68,28 +68,44 @@ export function EnquiryCrmWorkspace({
   const unassigned = leadCounts.unassignedActive;
   const important = leadCounts.highPriorityActive;
   const clickUpGaps = leadCounts.clickUpGaps;
+  const countsAreLowerBounds = leadCounts.truncated === true;
 
   return (
     <section className="grid scroll-mt-32 gap-4" id="crm-workspace">
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-label="CRM summary">
-        <CrmMetric label="New today" value={todayCount} detail="Saved in Kuala Lumpur today" tone="blue" />
-        <CrmMetric label="Open pipeline" value={active} detail="Needs an operator outcome" tone="neutral" />
+        <CrmMetric
+          label="New today"
+          value={todayCount}
+          detail="Saved in Kuala Lumpur today"
+          lowerBound={countsAreLowerBounds}
+          tone="blue"
+        />
+        <CrmMetric
+          label="Open pipeline"
+          value={active}
+          detail="Needs an operator outcome"
+          lowerBound={countsAreLowerBounds}
+          tone="neutral"
+        />
         <CrmMetric
           label="Unassigned"
           value={unassigned}
           detail="No accountable owner yet"
+          lowerBound={countsAreLowerBounds}
           tone={unassigned ? "amber" : "green"}
         />
         <CrmMetric
           label="High priority"
           value={important}
           detail="High or urgent open work"
+          lowerBound={countsAreLowerBounds}
           tone={important ? "amber" : "green"}
         />
         <CrmMetric
           label="ClickUp gaps"
           value={clickUpGaps}
           detail="Enquiries without confirmed ClickUp sync"
+          lowerBound={countsAreLowerBounds}
           tone={clickUpGaps ? "red" : "green"}
         />
       </section>
@@ -104,6 +120,7 @@ export function EnquiryCrmWorkspace({
           recordHref: recordHref(view, filters, lead.leadId),
         }))}
         totalRows={leadCounts.total}
+        totalRowsLowerBound={countsAreLowerBounds}
       />
 
       {selected ? (
@@ -125,11 +142,13 @@ function CrmMetric({
   label,
   value,
   detail,
+  lowerBound = false,
   tone,
 }: {
   label: string;
   value: number;
   detail: string;
+  lowerBound?: boolean;
   tone: "neutral" | "blue" | "green" | "red" | "amber";
 }) {
   const toneClass = {
@@ -143,9 +162,15 @@ function CrmMetric({
     <div className={`rounded-xl border p-4 ${toneClass}`}>
       <div className="flex items-center justify-between gap-3">
         <span className="text-xs font-semibold uppercase tracking-[0.11em] text-slate-500">{label}</span>
-        <span className="text-2xl font-semibold tracking-tight text-slate-100">{value}</span>
+        <span className="text-2xl font-semibold tracking-tight text-slate-100">
+          {lowerBound ? "≥" : ""}
+          {value}
+        </span>
       </div>
-      <p className="mt-2 text-xs leading-5 text-slate-400">{detail}</p>
+      <p className="mt-2 text-xs leading-5 text-slate-400">
+        {detail}
+        {lowerBound ? " · lower bound" : ""}
+      </p>
     </div>
   );
 }
@@ -286,7 +311,7 @@ function CrmIntelligencePanel({
           </div>
           <div className="mt-4 overflow-x-auto rounded-xl border border-white/10 bg-white/[0.04]">
             <table className="w-full min-w-[360px] border-collapse text-left text-sm" data-owner-table>
-              <caption className="sr-only">Oriental enquiry owner workload</caption>
+              <caption className="sr-only">Mereka at Oriental enquiry owner workload</caption>
               <thead className="bg-[#0a0f1c]/85 text-[10px] font-semibold uppercase tracking-[0.11em] text-slate-500">
                 <tr>
                   <th className="px-3 py-2.5" scope="col">

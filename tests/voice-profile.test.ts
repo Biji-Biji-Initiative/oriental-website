@@ -10,6 +10,9 @@ describe("voice profile", () => {
     expect(prompt).toContain("# Conversation Reflex");
     expect(prompt).toContain("You are Reka");
     expect(prompt).toContain("never call yourself Mereka");
+    expect(prompt).toContain("Oriental Building is the physical building and Mereka's future location");
+    expect(prompt).toContain("Never call the organisation or team Oriental");
+    expect(prompt).toContain("Never use the phrase 'quick one'");
     expect(prompt).toContain("capture_fields");
     expect(prompt).not.toMatch(/\bcapture_field\b/);
     expect(prompt).toContain("lookup_oriental");
@@ -46,8 +49,10 @@ describe("voice profile", () => {
 
     expect(strict).toContain("read it back and use confirm_email");
     expect(adaptive).toContain("without asking for a separate yes");
-    expect(adaptive).toContain("Ask a targeted spelling question only when capture_fields rejects");
+    expect(adaptive).toContain("ask the visitor to type it there");
     expect(adaptive).not.toContain("read it back and use confirm_email");
+    expect(JSON.stringify(VOICE_PROFILE)).not.toContain("Always confirm a speech-captured email");
+    expect(JSON.stringify(VOICE_PROFILE)).not.toContain("read it back once and confirm it before routing");
   });
 
   it("keeps the Realtime tool surface narrow and explicit", () => {
@@ -57,6 +62,7 @@ describe("voice profile", () => {
       "lookup_oriental",
       "confirm_email",
       "clear_field",
+      "clear_fields",
       "summarise_lead",
       "route_to_team",
       "wait_for_user",

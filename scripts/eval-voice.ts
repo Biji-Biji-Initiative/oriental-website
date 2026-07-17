@@ -8,6 +8,7 @@
  *   pnpm eval:voice -- --dry              # transport/latency/engagement signals only, no LLM
  *   pnpm eval:voice -- --aggregate-only   # query-only aggregate/gate JSON; no judge, mutation, or report
  *   pnpm eval:voice -- --min-quality 3.5 --max-dropped 0   # CI gate
+ *   pnpm eval:voice -- --max-style-tics 0                  # ban known verbal tics
  *
  * Quota failures are hard-gated at zero by default. Override only when
  * reviewing a known historical incident; exhausted billing is never capacity.
@@ -36,6 +37,7 @@ import {
   meetsThreshold,
   mergeConversationSessions,
   parseJudgeResponse,
+  piiFreeJudgeSummary,
   type SessionEval,
   type VoiceEvalSession,
   validateVoiceExperimentEvidence,
@@ -55,9 +57,11 @@ type Args = {
   maxQuota: number;
   maxAvailability?: number;
   maxCaptureFailures?: number;
+  maxStyleTics?: number;
 };
 
 const JUDGE_CONCURRENCY = 4;
+const PROFILE_ENRICHMENT_CONCURRENCY = 8;
 
 function parseArgs(argv: string[]): Args {
   const args: Args = {
@@ -105,6 +109,9 @@ function parseArgs(argv: string[]): Args {
       i += 1;
     } else if (flag === "--max-capture-failures") {
       args.maxCaptureFailures = Number(value);
+      i += 1;
+    } else if (flag === "--max-style-tics") {
+      args.maxStyleTics = Number(value);
       i += 1;
     }
   }
@@ -165,6 +172,50 @@ async function mapPool<T, R>(items: T[], concurrency: number, mapper: (item: T) 
   return results;
 }
 
+type RawVoiceSessionProfile = {
+  voice?: unknown;
+  speed?: unknown;
+  variant?: unknown;
+};
+
+/**
+ * Keep aggregate audits read-only when a deployed bulk query predates profile
+ * attribution. Its existing per-session query can enrich only missing fields;
+ * no evaluator write or emergency Convex function deployment is needed.
+ */
+async function enrichVoiceSessionProfiles(
+  convex: ConvexHttpClient,
+  ingestSecret: string,
+  sessions: VoiceEvalSession[],
+  silent: boolean,
+): Promise<VoiceEvalSession[]> {
+  return mapPool(sessions, PROFILE_ENRICHMENT_CONCURRENCY, async (session) => {
+    const needsProfile = session.voice == null || session.speed == null || typeof session.variant === "undefined";
+    if (!needsProfile) return session;
+
+    try {
+      const raw = (await convex.query(api.leads.voiceSessionByReviewId, {
+        ingestSecret,
+        reviewId: session.reviewId,
+      })) as RawVoiceSessionProfile | null;
+      if (!raw) return session;
+      return {
+        ...session,
+        voice: typeof raw.voice === "string" ? raw.voice : (session.voice ?? null),
+        speed: typeof raw.speed === "number" && Number.isFinite(raw.speed) ? raw.speed : (session.speed ?? null),
+        variant: typeof raw.variant === "string" || raw.variant === null ? raw.variant : (session.variant ?? null),
+      };
+    } catch (error) {
+      if (!silent) {
+        console.warn(
+          `  ! profile attribution unavailable for ${session.reviewId}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      return session;
+    }
+  });
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
 
@@ -182,8 +233,9 @@ async function main() {
     ingestSecret,
     limit: args.limit,
   })) as VoiceEvalSession[];
-  const rawSessions = fetchedSessions.filter((session) => !isSyntheticVoiceSession(session));
-  const syntheticRowsExcluded = fetchedSessions.length - rawSessions.length;
+  const customerRows = fetchedSessions.filter((session) => !isSyntheticVoiceSession(session));
+  const rawSessions = await enrichVoiceSessionProfiles(convex, ingestSecret, customerRows, args.aggregateOnly);
+  const syntheticRowsExcluded = fetchedSessions.length - customerRows.length;
   if (!args.aggregateOnly && syntheticRowsExcluded > 0) {
     console.log(`Excluded ${syntheticRowsExcluded} synthetic smoke row(s).`);
   }
@@ -243,7 +295,7 @@ async function main() {
         captureCompleteness: entry.score.captureCompleteness,
         conversationQuality: entry.score.conversationQuality,
         frustration: entry.score.frustration,
-        summary: entry.score.summary,
+        summary: piiFreeJudgeSummary(entry.score),
         droppedMidTurn: entry.transport.droppedMidTurn,
         model,
       }));
@@ -261,6 +313,7 @@ async function main() {
     maxQuotaFailures: args.maxQuota,
     maxAvailabilityFailures: args.maxAvailability,
     maxCaptureIntegrityFailures: args.maxCaptureFailures,
+    maxStyleTicOccurrences: args.maxStyleTics,
   };
   const thresholdGate = meetsThreshold(aggregate, thresholds);
   const gate = {
@@ -338,7 +391,12 @@ function printSummary(
   console.log(
     `capture integrity:     ${aggregate.captureIntegrity.totalFailures} failures across ` +
       `${aggregate.captureIntegrity.failedSessions} sessions ` +
-      `(rejected ${aggregate.captureIntegrity.rejectedCaptures}, unconfirmed email ${aggregate.captureIntegrity.unconfirmedEmailFailures})`,
+      `(rejected ${aggregate.captureIntegrity.rejectedCaptures}, rejected email ${aggregate.captureIntegrity.rejectedEmailCaptures}, ` +
+      `unconfirmed email ${aggregate.captureIntegrity.unconfirmedEmailFailures}, stale email submissions ${aggregate.captureIntegrity.staleEmailSubmissions})`,
+  );
+  console.log(
+    `conversation style:    ${aggregate.conversationStyle.bannedPhraseOccurrences} banned tic occurrences across ` +
+      `${aggregate.conversationStyle.failedSessions} sessions`,
   );
   console.log(`submit rate:         ${(aggregate.submitRate * 100).toFixed(0)}%`);
   console.log(

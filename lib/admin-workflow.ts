@@ -66,7 +66,7 @@ export function validateAdminLeadWorkflow(input: AdminLeadWorkflowInput, now = D
   const owner = input.owner.trim();
 
   if (owner && !ADMIN_LEAD_OWNERS.includes(owner as AdminLeadOwner)) {
-    issues.push({ field: "owner", message: "Choose an owner from the Oriental team roster." });
+    issues.push({ field: "owner", message: "Choose an owner from the Mereka team roster." });
   }
 
   if (isActiveAdminLeadStatus(input.status)) {

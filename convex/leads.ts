@@ -1,7 +1,17 @@
 import { mutationGeneric, queryGeneric } from "convex/server";
 import { v } from "convex/values";
 import { summarizeAdminLeads } from "../lib/admin-lead-counts";
-import { ADMIN_LEAD_OWNERS, validateAdminLeadWorkflow } from "../lib/admin-workflow";
+import { ADMIN_ACTIVE_LEAD_STATUSES, ADMIN_LEAD_OWNERS, validateAdminLeadWorkflow } from "../lib/admin-workflow";
+import { boundTranscript, normalizeStoredEmail } from "../lib/data-payload";
+import {
+  archivedLeadRetentionExpiresAt,
+  leadTranscriptRetentionExpiresAt,
+  RETENTION_BATCH_LIMITS,
+  voiceRetentionExpiresAt,
+} from "../lib/data-retention";
+import { summarizeIntakeAttribution } from "../lib/intake-attribution-analytics";
+import { isEngagedVoiceCaptureSession, summarizeVoiceCaptureFunnel } from "../lib/voice-capture-analytics";
+import { mutation, query } from "./_generated/server";
 
 function requireIngestSecret(ingestSecret: string) {
   const expected = process.env.CONVEX_INGEST_SECRET;
@@ -17,9 +27,56 @@ const transcriptValidator = v.array(
   }),
 );
 
+const entryPointValidator = v.union(
+  v.literal("hero_primary"),
+  v.literal("hero_updates"),
+  v.literal("hero_updates_followup"),
+  v.literal("nav_desktop"),
+  v.literal("nav_mobile"),
+  v.literal("keyboard_shortcut"),
+  v.literal("voice_rail"),
+  v.literal("ecosystem"),
+  v.literal("facilities"),
+  v.literal("partners"),
+  v.literal("closing_cta"),
+  v.literal("footer_cta"),
+  v.literal("faq_cta"),
+  v.literal("unknown"),
+);
+const entryMethodValidator = v.union(
+  v.literal("voice_button"),
+  v.literal("form"),
+  v.literal("email_capture"),
+  v.literal("unknown"),
+);
+
+const fieldInputValidator = v.union(v.literal("voice"), v.literal("form"), v.literal("chat"), v.literal("prefill"));
+const fieldCompletionValidator = v.union(fieldInputValidator, v.literal("mixed"), v.literal("unknown"));
+const fieldProvenanceEntryValidator = v.object({
+  method: fieldCompletionValidator,
+  lastInput: v.optional(fieldInputValidator),
+  editCount: v.number(),
+  correctionCount: v.number(),
+  clearCount: v.number(),
+});
+const fieldProvenanceValidator = v.object({
+  name: fieldProvenanceEntryValidator,
+  email: fieldProvenanceEntryValidator,
+  org: fieldProvenanceEntryValidator,
+  phone: fieldProvenanceEntryValidator,
+  website: fieldProvenanceEntryValidator,
+  message: fieldProvenanceEntryValidator,
+});
+
 const leadValidator = v.object({
   id: v.string(),
   source: v.union(v.literal("voice"), v.literal("form"), v.literal("hero-email")),
+  entryPoint: v.optional(entryPointValidator),
+  entryMethod: v.optional(entryMethodValidator),
+  submissionMethod: v.optional(
+    v.union(v.literal("handoff_button"), v.literal("voice_command"), v.literal("email_capture_button")),
+  ),
+  fieldProvenance: v.optional(fieldProvenanceValidator),
   segment: v.string(),
   routedTo: v.string(),
   routedToEmail: v.optional(v.union(v.string(), v.null())),
@@ -59,6 +116,7 @@ const emailVerificationValidator = v.object({
   source: v.union(v.literal("prefill"), v.literal("speech"), v.literal("typed")),
   status: v.union(v.literal("confirmed"), v.literal("pending")),
   matchesCaptured: v.boolean(),
+  confidence: v.optional(v.union(v.literal("high"), v.literal("medium"))),
 });
 
 const usageValidator = v.object({
@@ -136,6 +194,7 @@ const latencyValidator = v.object({
           v.literal("confirm_email"),
           v.literal("lookup_oriental"),
           v.literal("clear_field"),
+          v.literal("clear_fields"),
           v.literal("summarise_lead"),
           v.literal("route_to_team"),
           v.literal("wait_for_user"),
@@ -159,6 +218,7 @@ const latencyValidator = v.object({
 const voiceSessionValidator = v.object({
   reviewId: v.string(),
   sessionId: v.string(),
+  snapshotSequence: v.optional(v.number()),
   conversationId: v.optional(v.string()),
   leadId: v.optional(v.union(v.string(), v.null())),
   segment: v.string(),
@@ -168,6 +228,12 @@ const voiceSessionValidator = v.object({
   deviceProfile: v.optional(v.union(v.literal("mobile"), v.literal("desktop"))),
   deploymentEnvironment: v.optional(v.union(v.literal("local"), v.literal("staging"), v.literal("production"))),
   activationAttempted: v.optional(v.boolean()),
+  entryPoint: v.optional(entryPointValidator),
+  entryMethod: v.optional(entryMethodValidator),
+  submissionMethod: v.optional(
+    v.union(v.literal("handoff_button"), v.literal("voice_command"), v.literal("email_capture_button")),
+  ),
+  fieldProvenance: v.optional(fieldProvenanceValidator),
   prewarmedAt: v.optional(v.number()),
   connectStartedAt: v.optional(v.number()),
   connectedAt: v.optional(v.number()),
@@ -216,19 +282,38 @@ export const createLead = mutationGeneric({
   handler: async (ctx, { lead, ingestSecret }) => {
     requireIngestSecret(ingestSecret);
 
+    // The web adapter may retry once after a forward-field validator mismatch.
+    // A committed response can also be lost in transit, so make the insert
+    // idempotent on the application-generated UUID before writing either row.
+    const existing = await ctx.db
+      .query("leads")
+      .withIndex("by_lead_id", (query) => query.eq("leadId", lead.id))
+      .first();
+    if (existing) return { id: existing.leadId };
+
+    const createdAt = Date.now();
+    const transcript = boundTranscript(lead.transcript);
     await ctx.db.insert("leads", {
       leadId: lead.id,
       source: lead.source,
+      ...(lead.entryPoint ? { entryPoint: lead.entryPoint } : {}),
+      ...(lead.entryMethod ? { entryMethod: lead.entryMethod } : {}),
+      ...(lead.submissionMethod ? { submissionMethod: lead.submissionMethod } : {}),
+      ...(lead.fieldProvenance ? { fieldProvenance: lead.fieldProvenance } : {}),
       segment: lead.segment,
       routedTo: lead.routedTo,
       routedToEmail: lead.routedToEmail ?? null,
       name: lead.form.name,
-      email: lead.form.email,
+      email: normalizeStoredEmail(lead.form.email),
+      emailNormalized: normalizeStoredEmail(lead.form.email),
       org: lead.form.org,
       phone: lead.form.phone,
       website: lead.form.website,
       message: lead.form.message,
-      transcript: lead.transcript,
+      transcript,
+      ...(transcript.length > 0
+        ? { hasRetainedTranscript: true, transcriptRetentionExpiresAt: leadTranscriptRetentionExpiresAt(createdAt) }
+        : {}),
       ...(lead.voiceReviewId ? { voiceReviewId: lead.voiceReviewId } : {}),
       ...(lead.voiceSessionId ? { voiceSessionId: lead.voiceSessionId } : {}),
       ...(lead.voiceVariant ? { voiceVariant: lead.voiceVariant } : {}),
@@ -243,7 +328,8 @@ export const createLead = mutationGeneric({
       status: "new",
       priority: "normal",
       owner: "",
-      createdAt: Date.now(),
+      payloadSafe: true,
+      createdAt,
     });
     await ctx.db.insert("leadEvents", {
       leadId: lead.id,
@@ -263,6 +349,7 @@ export const recordLeadNotification = mutationGeneric({
     notificationDelivered: v.boolean(),
     emailOk: v.boolean(),
     slackOk: v.boolean(),
+    slackMessageId: v.optional(v.string()),
     clickupOk: v.optional(v.boolean()),
     clickupTaskId: v.optional(v.string()),
     clickupTaskUrl: v.optional(v.string()),
@@ -278,6 +365,7 @@ export const recordLeadNotification = mutationGeneric({
       notificationDelivered,
       emailOk,
       slackOk,
+      slackMessageId,
       clickupOk,
       clickupTaskId,
       clickupTaskUrl,
@@ -295,6 +383,7 @@ export const recordLeadNotification = mutationGeneric({
       notificationDelivered,
       notificationEmailOk: emailOk,
       notificationSlackOk: slackOk,
+      ...(slackMessageId?.trim() ? { notificationSlackMessageId: slackMessageId.trim() } : {}),
       ...(typeof clickupOk === "boolean" ? { notificationClickUpOk: clickupOk } : {}),
       ...(clickupTaskId?.trim() ? { notificationClickUpTaskId: clickupTaskId.trim() } : {}),
       ...(clickupTaskUrl?.trim() ? { notificationClickUpTaskUrl: clickupTaskUrl.trim() } : {}),
@@ -663,6 +752,7 @@ export const archiveLeads = mutationGeneric({
           ? {
               status: "archived",
               archivedAt: now,
+              retentionExpiresAt: archivedLeadRetentionExpiresAt(now),
               archivedBy: cleanActor,
               archiveReason: cleanReason,
               preArchiveStatus: lead.status,
@@ -673,6 +763,7 @@ export const archiveLeads = mutationGeneric({
               status: restoredStatus,
               restoredAt: now,
               restoredBy: cleanActor,
+              retentionExpiresAt: undefined,
               lastReviewedAt: now,
               workflowRevision: revision,
             },
@@ -702,7 +793,7 @@ function restorableStatus(value: string | undefined): "new" | "reviewing" | "con
 
 export const recordVoiceSession = mutationGeneric({
   args: { ingestSecret: v.string(), snapshot: voiceSessionValidator },
-  returns: v.object({ ok: v.boolean(), id: v.string() }),
+  returns: v.object({ ok: v.boolean(), id: v.string(), applied: v.boolean(), autoEvalQueued: v.boolean() }),
   handler: async (ctx, { ingestSecret, snapshot }) => {
     requireIngestSecret(ingestSecret);
     const now = Date.now();
@@ -710,14 +801,39 @@ export const recordVoiceSession = mutationGeneric({
       .query("voiceSessions")
       .withIndex("by_review_id", (query) => query.eq("reviewId", snapshot.reviewId))
       .unique();
+    if (
+      existing &&
+      typeof existing.snapshotSequence === "number" &&
+      (typeof snapshot.snapshotSequence !== "number" || snapshot.snapshotSequence <= existing.snapshotSequence)
+    ) {
+      return { ok: true, id: existing.reviewId, applied: false, autoEvalQueued: false };
+    }
+
+    const transcript = boundTranscript(snapshot.transcript);
+    const captured = {
+      ...snapshot.captured,
+      email: normalizeStoredEmail(snapshot.captured.email),
+    };
+    const linkedLeadId =
+      typeof existing?.leadId === "string" && existing.leadId
+        ? existing.leadId
+        : typeof snapshot.leadId === "string" && snapshot.leadId
+          ? snapshot.leadId
+          : (existing?.leadId ?? snapshot.leadId);
+    const submitted = existing?.status === "submitted" || snapshot.status === "submitted" || Boolean(linkedLeadId);
+    const submittedAt = existing?.submittedAt ?? snapshot.submittedAt;
+    const closedAt = Math.max(existing?.closedAt ?? 0, snapshot.closedAt ?? 0) || undefined;
+    const shouldQueueAutoEval = Boolean(!existing?.autoEvalQueuedAt && snapshot.closeReason && transcript.length > 0);
+    const createdAt = existing?.createdAt ?? now;
     const patch = {
       sessionId: snapshot.sessionId,
+      ...(typeof snapshot.snapshotSequence === "number" ? { snapshotSequence: snapshot.snapshotSequence } : {}),
       ...(snapshot.conversationId ? { conversationId: snapshot.conversationId } : {}),
       // Heartbeats do not know about a lead until submission. Once linked, an
       // omitted leadId must not erase that durable relationship.
-      ...(typeof snapshot.leadId !== "undefined" ? { leadId: snapshot.leadId } : {}),
+      ...(typeof linkedLeadId !== "undefined" ? { leadId: linkedLeadId } : {}),
       segment: snapshot.segment,
-      status: snapshot.status,
+      status: submitted ? "submitted" : snapshot.status,
       connectionStatus: snapshot.connectionStatus,
       ...(snapshot.closeReason ? { closeReason: snapshot.closeReason } : {}),
       ...(snapshot.deviceProfile ? { deviceProfile: snapshot.deviceProfile } : {}),
@@ -725,15 +841,20 @@ export const recordVoiceSession = mutationGeneric({
       ...(typeof snapshot.activationAttempted === "boolean"
         ? { activationAttempted: snapshot.activationAttempted }
         : {}),
+      ...(snapshot.entryPoint ? { entryPoint: snapshot.entryPoint } : {}),
+      ...(snapshot.entryMethod ? { entryMethod: snapshot.entryMethod } : {}),
+      ...(snapshot.submissionMethod ? { submissionMethod: snapshot.submissionMethod } : {}),
+      ...(snapshot.fieldProvenance ? { fieldProvenance: snapshot.fieldProvenance } : {}),
       ...(typeof snapshot.prewarmedAt === "number" ? { prewarmedAt: snapshot.prewarmedAt } : {}),
       ...(typeof snapshot.connectStartedAt === "number" ? { connectStartedAt: snapshot.connectStartedAt } : {}),
       ...(typeof snapshot.connectedAt === "number" ? { connectedAt: snapshot.connectedAt } : {}),
       ...(typeof snapshot.firstEventAt === "number" ? { firstEventAt: snapshot.firstEventAt } : {}),
-      ...(typeof snapshot.closedAt === "number" ? { closedAt: snapshot.closedAt } : {}),
-      captured: snapshot.captured,
+      ...(typeof closedAt === "number" ? { closedAt } : {}),
+      captured,
+      capturedEmailNormalized: captured.email,
       ...(snapshot.emailVerification ? { emailVerification: snapshot.emailVerification } : {}),
       ...(snapshot.emailCaptureMode ? { emailCaptureMode: snapshot.emailCaptureMode } : {}),
-      transcript: snapshot.transcript,
+      transcript,
       errors: snapshot.errors,
       rateLimits: snapshot.rateLimits,
       routeRequested: snapshot.routeRequested,
@@ -747,20 +868,402 @@ export const recordVoiceSession = mutationGeneric({
       ...(snapshot.runtimeProfile ? { runtimeProfile: snapshot.runtimeProfile } : {}),
       ...(snapshot.inputPolicy ? { inputPolicy: snapshot.inputPolicy } : {}),
       ...(snapshot.usage ? { usage: snapshot.usage } : {}),
-      ...(typeof snapshot.submittedAt === "number" ? { submittedAt: snapshot.submittedAt } : {}),
+      ...(typeof submittedAt === "number" ? { submittedAt } : {}),
       ...(snapshot.latency ? { latency: snapshot.latency } : {}),
       ...(snapshot.transport ? { transport: snapshot.transport } : {}),
+      ...(shouldQueueAutoEval ? { autoEvalQueuedAt: now } : {}),
+      retentionExpiresAt: voiceRetentionExpiresAt({
+        createdAt,
+        ...(typeof submittedAt === "number" ? { submittedAt } : {}),
+        ...(typeof closedAt === "number" ? { closedAt } : {}),
+        linked: submitted,
+      }),
+      payloadSafe: true,
     };
     if (existing) {
       await ctx.db.patch(existing._id, patch);
-      return { ok: true, id: existing.reviewId };
+      return { ok: true, id: existing.reviewId, applied: true, autoEvalQueued: shouldQueueAutoEval };
     }
     await ctx.db.insert("voiceSessions", {
       reviewId: snapshot.reviewId,
       ...patch,
-      createdAt: now,
+      createdAt,
     });
-    return { ok: true, id: snapshot.reviewId };
+    return { ok: true, id: snapshot.reviewId, applied: true, autoEvalQueued: shouldQueueAutoEval };
+  },
+});
+
+export const applyDataRetention = mutation({
+  args: { ingestSecret: v.string(), now: v.number() },
+  returns: v.object({
+    deleted: v.object({ archivedLeads: v.number(), leadEvents: v.number(), voiceSessions: v.number() }),
+    redacted: v.object({ leadTranscripts: v.number() }),
+    hasMore: v.boolean(),
+  }),
+  handler: async (ctx, { ingestSecret, now }) => {
+    requireIngestSecret(ingestSecret);
+    let voiceSessions = 0;
+    let archivedLeads = 0;
+    let leadEvents = 0;
+    let leadTranscripts = 0;
+    let hasMore = false;
+
+    // Backfill only a handful of legacy documents per mutation. Queries used by
+    // the live dashboard stay byte-safe while old near-limit documents are
+    // normalized and assigned an indexed expiry over successive nightly calls.
+    const legacyVoice = await ctx.db
+      .query("voiceSessions")
+      .withIndex("by_payload_safe_updated_at", (query) => query.eq("payloadSafe", undefined))
+      .order("asc")
+      .take(RETENTION_BATCH_LIMITS.legacyVoiceSessions + 1);
+    if (legacyVoice.length > RETENTION_BATCH_LIMITS.legacyVoiceSessions) hasMore = true;
+    for (const session of legacyVoice.slice(0, RETENTION_BATCH_LIMITS.legacyVoiceSessions)) {
+      const capturedEmailNormalized = normalizeStoredEmail(session.captured.email);
+      await ctx.db.patch(session._id, {
+        captured: { ...session.captured, email: capturedEmailNormalized },
+        capturedEmailNormalized,
+        transcript: boundTranscript(session.transcript),
+        payloadSafe: true,
+        retentionExpiresAt: voiceRetentionExpiresAt({
+          createdAt: session.createdAt,
+          ...(typeof session.submittedAt === "number" ? { submittedAt: session.submittedAt } : {}),
+          ...(typeof session.closedAt === "number" ? { closedAt: session.closedAt } : {}),
+          linked: session.status === "submitted" || Boolean(session.leadId),
+        }),
+      });
+    }
+
+    const legacyLeads = await ctx.db
+      .query("leads")
+      .withIndex("by_payload_safe_created_at", (query) => query.eq("payloadSafe", undefined))
+      .order("asc")
+      .take(RETENTION_BATCH_LIMITS.legacyLeads + 1);
+    if (legacyLeads.length > RETENTION_BATCH_LIMITS.legacyLeads) hasMore = true;
+    for (const lead of legacyLeads.slice(0, RETENTION_BATCH_LIMITS.legacyLeads)) {
+      const transcript = boundTranscript(lead.transcript);
+      await ctx.db.patch(lead._id, {
+        email: normalizeStoredEmail(lead.email),
+        emailNormalized: normalizeStoredEmail(lead.email),
+        transcript,
+        payloadSafe: true,
+        ...(transcript.length > 0 && typeof lead.transcriptRetentionExpiresAt !== "number"
+          ? {
+              hasRetainedTranscript: true,
+              transcriptRetentionExpiresAt: leadTranscriptRetentionExpiresAt(lead.createdAt),
+            }
+          : {}),
+        ...(lead.status === "archived" && typeof lead.retentionExpiresAt !== "number"
+          ? { retentionExpiresAt: archivedLeadRetentionExpiresAt(lead.archivedAt ?? lead.createdAt) }
+          : {}),
+      });
+    }
+
+    const expiredVoice = await ctx.db
+      .query("voiceSessions")
+      .withIndex("by_safe_retention_expires_at", (query) =>
+        query.eq("payloadSafe", true).lte("retentionExpiresAt", now),
+      )
+      .order("asc")
+      .take(RETENTION_BATCH_LIMITS.expiredVoiceSessions + 1);
+    if (expiredVoice.length > RETENTION_BATCH_LIMITS.expiredVoiceSessions) hasMore = true;
+    const deletedVoiceIds = new Set<string>();
+    for (const session of expiredVoice.slice(0, RETENTION_BATCH_LIMITS.expiredVoiceSessions)) {
+      await ctx.db.delete(session._id);
+      deletedVoiceIds.add(String(session._id));
+      voiceSessions += 1;
+    }
+
+    const expiredTranscripts = await ctx.db
+      .query("leads")
+      .withIndex("by_retained_transcript_expires_at", (query) =>
+        query.eq("hasRetainedTranscript", true).lte("transcriptRetentionExpiresAt", now),
+      )
+      .order("asc")
+      .take(RETENTION_BATCH_LIMITS.expiredLeadTranscripts + 1);
+    if (expiredTranscripts.length > RETENTION_BATCH_LIMITS.expiredLeadTranscripts) hasMore = true;
+    for (const lead of expiredTranscripts.slice(0, RETENTION_BATCH_LIMITS.expiredLeadTranscripts)) {
+      await ctx.db.patch(lead._id, {
+        transcript: [],
+        hasRetainedTranscript: false,
+        transcriptRetentionExpiresAt: undefined,
+      });
+      leadTranscripts += 1;
+    }
+
+    const expiredLeads = await ctx.db
+      .query("leads")
+      .withIndex("by_safe_status_retention_expires_at", (query) =>
+        query.eq("payloadSafe", true).eq("status", "archived").lte("retentionExpiresAt", now),
+      )
+      .order("asc")
+      .take(RETENTION_BATCH_LIMITS.archivedLeads + 1);
+    if (expiredLeads.length > RETENTION_BATCH_LIMITS.archivedLeads) hasMore = true;
+    for (const lead of expiredLeads.slice(0, RETENTION_BATCH_LIMITS.archivedLeads)) {
+      const relatedLimit = RETENTION_BATCH_LIMITS.relatedRecordsPerLead;
+      const [events, sessions] = await Promise.all([
+        ctx.db
+          .query("leadEvents")
+          .withIndex("by_lead", (query) => query.eq("leadId", lead.leadId))
+          .take(relatedLimit + 1),
+        ctx.db
+          .query("voiceSessions")
+          .withIndex("by_lead_updated_at", (query) => query.eq("leadId", lead.leadId))
+          .take(relatedLimit + 1),
+      ]);
+      for (const event of events.slice(0, relatedLimit)) {
+        await ctx.db.delete(event._id);
+        leadEvents += 1;
+      }
+      for (const session of sessions.slice(0, relatedLimit)) {
+        await ctx.db.delete(session._id);
+        voiceSessions += 1;
+      }
+      if (events.length > relatedLimit || sessions.length > relatedLimit) {
+        hasMore = true;
+        continue;
+      }
+      await ctx.db.delete(lead._id);
+      archivedLeads += 1;
+    }
+
+    return {
+      deleted: { archivedLeads, leadEvents, voiceSessions },
+      redacted: { leadTranscripts },
+      hasMore,
+    };
+  },
+});
+
+export const normalizeLegacyPrivacyEmails = mutationGeneric({
+  args: { ingestSecret: v.string() },
+  returns: v.object({ complete: v.boolean() }),
+  handler: async (ctx, { ingestSecret }) => {
+    requireIngestSecret(ingestSecret);
+    const [leads, sessions] = await Promise.all([
+      ctx.db
+        .query("leads")
+        .withIndex("by_email_normalized", (query) => query.eq("emailNormalized", undefined))
+        .order("asc")
+        .take(RETENTION_BATCH_LIMITS.legacyLeads + 1),
+      ctx.db
+        .query("voiceSessions")
+        .withIndex("by_captured_email_normalized", (query) => query.eq("capturedEmailNormalized", undefined))
+        .order("asc")
+        .take(RETENTION_BATCH_LIMITS.legacyVoiceSessions + 1),
+    ]);
+    for (const lead of leads.slice(0, RETENTION_BATCH_LIMITS.legacyLeads)) {
+      const emailNormalized = normalizeStoredEmail(lead.email);
+      const transcript = boundTranscript(lead.transcript);
+      await ctx.db.patch(lead._id, {
+        email: emailNormalized,
+        emailNormalized,
+        transcript,
+        payloadSafe: true,
+        ...(transcript.length > 0
+          ? {
+              hasRetainedTranscript: true,
+              transcriptRetentionExpiresAt:
+                lead.transcriptRetentionExpiresAt ?? leadTranscriptRetentionExpiresAt(lead.createdAt),
+            }
+          : {}),
+        ...(lead.status === "archived"
+          ? {
+              retentionExpiresAt:
+                lead.retentionExpiresAt ?? archivedLeadRetentionExpiresAt(lead.archivedAt ?? lead.createdAt),
+            }
+          : {}),
+      });
+    }
+    for (const session of sessions.slice(0, RETENTION_BATCH_LIMITS.legacyVoiceSessions)) {
+      const capturedEmailNormalized = normalizeStoredEmail(session.captured.email);
+      await ctx.db.patch(session._id, {
+        captured: { ...session.captured, email: capturedEmailNormalized },
+        capturedEmailNormalized,
+        transcript: boundTranscript(session.transcript),
+        payloadSafe: true,
+        retentionExpiresAt:
+          session.retentionExpiresAt ??
+          voiceRetentionExpiresAt({
+            createdAt: session.createdAt,
+            ...(typeof session.submittedAt === "number" ? { submittedAt: session.submittedAt } : {}),
+            ...(typeof session.closedAt === "number" ? { closedAt: session.closedAt } : {}),
+            linked: session.status === "submitted" || Boolean(session.leadId),
+          }),
+      });
+    }
+    return {
+      complete:
+        leads.length <= RETENTION_BATCH_LIMITS.legacyLeads &&
+        sessions.length <= RETENTION_BATCH_LIMITS.legacyVoiceSessions,
+    };
+  },
+});
+
+export const privacyDeletionPlanByEmail = queryGeneric({
+  args: { ingestSecret: v.string(), email: v.string() },
+  returns: v.object({
+    leads: v.array(
+      v.object({
+        leadId: v.string(),
+        notificationEmailOk: v.boolean(),
+        notificationConfirmationOk: v.boolean(),
+        notificationSlackOk: v.boolean(),
+        notificationSlackMessageId: v.optional(v.string()),
+        notificationClickUpOk: v.boolean(),
+        notificationClickUpTaskId: v.optional(v.string()),
+      }),
+    ),
+    complete: v.boolean(),
+  }),
+  handler: async (ctx, { ingestSecret, email }) => {
+    requireIngestSecret(ingestSecret);
+    const normalized = normalizeStoredEmail(email);
+    const matchLimit = RETENTION_BATCH_LIMITS.privacyMatches;
+    const [leads, legacyLead, legacySession] = await Promise.all([
+      ctx.db
+        .query("leads")
+        .withIndex("by_email_normalized", (query) => query.eq("emailNormalized", normalized))
+        .take(matchLimit + 1),
+      ctx.db
+        .query("leads")
+        .withIndex("by_email_normalized", (query) => query.eq("emailNormalized", undefined))
+        .first(),
+      ctx.db
+        .query("voiceSessions")
+        .withIndex("by_captured_email_normalized", (query) => query.eq("capturedEmailNormalized", undefined))
+        .first(),
+    ]);
+    return {
+      leads: leads.slice(0, matchLimit).map((lead) => ({
+        leadId: lead.leadId,
+        notificationEmailOk: lead.notificationEmailOk === true,
+        notificationConfirmationOk: lead.notificationConfirmationOk === true,
+        notificationSlackOk: lead.notificationSlackOk === true,
+        ...(lead.notificationSlackMessageId ? { notificationSlackMessageId: lead.notificationSlackMessageId } : {}),
+        notificationClickUpOk: lead.notificationClickUpOk === true,
+        ...(lead.notificationClickUpTaskId ? { notificationClickUpTaskId: lead.notificationClickUpTaskId } : {}),
+      })),
+      complete: leads.length <= matchLimit && !legacyLead && !legacySession,
+    };
+  },
+});
+
+export const deletePersonalData = mutationGeneric({
+  args: {
+    ingestSecret: v.string(),
+    email: v.string(),
+    reason: v.union(
+      v.literal("data_subject_request"),
+      v.literal("consent_withdrawn"),
+      v.literal("operator_correction"),
+    ),
+    requestId: v.string(),
+    actor: v.string(),
+    downstreamCleanupComplete: v.boolean(),
+  },
+  returns: v.object({
+    deleted: v.object({ leads: v.number(), leadEvents: v.number(), voiceSessions: v.number() }),
+    complete: v.boolean(),
+  }),
+  handler: async (ctx, { ingestSecret, email, reason, requestId, actor, downstreamCleanupComplete }) => {
+    requireIngestSecret(ingestSecret);
+    const relatedLimit = RETENTION_BATCH_LIMITS.relatedRecordsPerLead;
+    let deletedLeads = 0;
+    let deletedLeadEvents = 0;
+    let deletedVoiceSessions = 0;
+    let complete = downstreamCleanupComplete;
+    const deletedVoiceIds = new Set<string>();
+
+    const normalized = normalizeStoredEmail(email);
+    const [legacyLead, legacySession] = await Promise.all([
+      ctx.db
+        .query("leads")
+        .withIndex("by_email_normalized", (query) => query.eq("emailNormalized", undefined))
+        .first(),
+      ctx.db
+        .query("voiceSessions")
+        .withIndex("by_captured_email_normalized", (query) => query.eq("capturedEmailNormalized", undefined))
+        .first(),
+    ]);
+    if (legacyLead || legacySession) complete = false;
+    if (!complete) {
+      await ctx.db.insert("privacyEvents", {
+        requestId,
+        reason,
+        actor,
+        deletedLeads: 0,
+        deletedVoiceSessions: 0,
+        deletedLeadEvents: 0,
+        downstreamCleanupComplete,
+        completed: false,
+        createdAt: Date.now(),
+      });
+      return {
+        deleted: { leads: 0, leadEvents: 0, voiceSessions: 0 },
+        complete: false,
+      };
+    }
+
+    const matchingSessions = await ctx.db
+      .query("voiceSessions")
+      .withIndex("by_captured_email_normalized", (query) => query.eq("capturedEmailNormalized", normalized))
+      .take(relatedLimit + 1);
+    if (matchingSessions.length > relatedLimit) complete = false;
+    for (const session of matchingSessions.slice(0, relatedLimit)) {
+      await ctx.db.delete(session._id);
+      deletedVoiceIds.add(String(session._id));
+      deletedVoiceSessions += 1;
+    }
+
+    const matchingLeads = await ctx.db
+      .query("leads")
+      .withIndex("by_email_normalized", (query) => query.eq("emailNormalized", normalized))
+      .take(RETENTION_BATCH_LIMITS.archivedLeads + 1);
+    if (matchingLeads.length > RETENTION_BATCH_LIMITS.archivedLeads) complete = false;
+    for (const lead of matchingLeads.slice(0, RETENTION_BATCH_LIMITS.archivedLeads)) {
+      const [events, sessions] = await Promise.all([
+        ctx.db
+          .query("leadEvents")
+          .withIndex("by_lead", (query) => query.eq("leadId", lead.leadId))
+          .take(relatedLimit + 1),
+        ctx.db
+          .query("voiceSessions")
+          .withIndex("by_lead_updated_at", (query) => query.eq("leadId", lead.leadId))
+          .take(relatedLimit + 1),
+      ]);
+      for (const event of events.slice(0, relatedLimit)) {
+        await ctx.db.delete(event._id);
+        deletedLeadEvents += 1;
+      }
+      for (const session of sessions.slice(0, relatedLimit)) {
+        if (deletedVoiceIds.has(String(session._id))) continue;
+        await ctx.db.delete(session._id);
+        deletedVoiceIds.add(String(session._id));
+        deletedVoiceSessions += 1;
+      }
+      if (events.length > relatedLimit || sessions.length > relatedLimit) {
+        complete = false;
+        continue;
+      }
+      await ctx.db.delete(lead._id);
+      deletedLeads += 1;
+    }
+
+    await ctx.db.insert("privacyEvents", {
+      requestId,
+      reason,
+      actor,
+      deletedLeads,
+      deletedVoiceSessions,
+      deletedLeadEvents,
+      downstreamCleanupComplete,
+      completed: complete,
+      createdAt: Date.now(),
+    });
+    return {
+      deleted: { leads: deletedLeads, leadEvents: deletedLeadEvents, voiceSessions: deletedVoiceSessions },
+      complete,
+    };
   },
 });
 
@@ -787,7 +1290,7 @@ export const voiceSessionByReviewId = queryGeneric({
       .query("voiceSessions")
       .withIndex("by_review_id", (query) => query.eq("reviewId", reviewId))
       .unique();
-    return session ?? null;
+    return session ? { ...session, transcript: boundTranscript(session.transcript) } : null;
   },
 });
 
@@ -828,7 +1331,11 @@ export const voiceSessionsForEval = queryGeneric({
   handler: async (ctx, { ingestSecret, limit }) => {
     requireIngestSecret(ingestSecret);
     const take = Math.min(Math.max(limit ?? 50, 1), 200);
-    const sessions = await ctx.db.query("voiceSessions").withIndex("by_updated_at").order("desc").take(take);
+    const sessions = await ctx.db
+      .query("voiceSessions")
+      .withIndex("by_payload_safe_updated_at", (query) => query.eq("payloadSafe", true))
+      .order("desc")
+      .take(take);
     return sessions.map((session) => ({
       reviewId: session.reviewId,
       sessionId: session.sessionId,
@@ -856,8 +1363,12 @@ export const voiceSessionsForEval = queryGeneric({
       inputPolicy: session.inputPolicy ?? null,
       modelCell: session.modelCell ?? null,
       reasoningCell: session.reasoningCell ?? null,
+      voice: session.voice ?? null,
+      speed: session.speed ?? null,
+      variant: session.variant ?? null,
       routeRequested: session.routeRequested,
       submittedAt: session.submittedAt ?? null,
+      eval: session.eval ?? null,
       createdAt: session.createdAt,
       updatedAt: session.updatedAt,
     }));
@@ -869,7 +1380,11 @@ export const recent = queryGeneric({
   handler: async (ctx, { ingestSecret }) => {
     requireIngestSecret(ingestSecret);
 
-    return await ctx.db.query("leads").order("desc").take(20);
+    return await ctx.db
+      .query("leads")
+      .withIndex("by_payload_safe_created_at", (query) => query.eq("payloadSafe", true))
+      .order("desc")
+      .take(20);
   },
 });
 
@@ -877,8 +1392,12 @@ export const leadsForClickUpBackfill = queryGeneric({
   args: { ingestSecret: v.string(), limit: v.optional(v.number()) },
   handler: async (ctx, { ingestSecret, limit }) => {
     requireIngestSecret(ingestSecret);
-    const take = Math.min(Math.max(Math.floor(limit ?? 500), 1), 1000);
-    return await ctx.db.query("leads").order("desc").take(take);
+    const take = Math.min(Math.max(Math.floor(limit ?? 500), 1), 500);
+    return await ctx.db
+      .query("leads")
+      .withIndex("by_payload_safe_created_at", (query) => query.eq("payloadSafe", true))
+      .order("desc")
+      .take(take);
   },
 });
 
@@ -886,8 +1405,12 @@ export const adminLeadTable = queryGeneric({
   args: { ingestSecret: v.string(), limit: v.optional(v.number()) },
   handler: async (ctx, { ingestSecret, limit }) => {
     requireIngestSecret(ingestSecret);
-    const take = Math.min(Math.max(Math.floor(limit ?? 500), 1), 1000);
-    return await ctx.db.query("leads").order("desc").take(take);
+    const take = Math.min(Math.max(Math.floor(limit ?? 500), 1), 500);
+    return await ctx.db
+      .query("leads")
+      .withIndex("by_payload_safe_created_at", (query) => query.eq("payloadSafe", true))
+      .order("desc")
+      .take(take);
   },
 });
 
@@ -895,10 +1418,91 @@ export const adminLeadCounts = queryGeneric({
   args: { ingestSecret: v.string() },
   handler: async (ctx, { ingestSecret }) => {
     requireIngestSecret(ingestSecret);
-    const leads = await ctx.db.query("leads").collect();
-    return summarizeAdminLeads(leads);
+    const countLimit = 750;
+    const leads = await ctx.db
+      .query("leads")
+      .withIndex("by_payload_safe_created_at", (query) => query.eq("payloadSafe", true))
+      .order("desc")
+      .take(countLimit + 1);
+    return { ...summarizeAdminLeads(leads.slice(0, countLimit)), truncated: leads.length > countLimit };
   },
 });
+
+const SLA_QUERY_BUCKET_LIMIT = 75;
+const HOUR_MS = 60 * 60 * 1000;
+
+/**
+ * PII-free operational SLA snapshot. Each bucket reads oldest-first through a
+ * matching index and one overflow sentinel. A saturated bucket is reported as
+ * truncated, so the route can alert on a lower bound without silently losing
+ * older breaches to the dashboard's recent-row window.
+ */
+export const adminLeadSlaSnapshot = query({
+  args: { ingestSecret: v.string(), maxUnownedMs: v.number() },
+  handler: async (ctx, { ingestSecret, maxUnownedMs }) => {
+    requireIngestSecret(ingestSecret);
+    const generatedAt = Date.now();
+    const boundedWindowMs = Math.min(Math.max(Math.floor(maxUnownedMs), HOUR_MS), 72 * HOUR_MS);
+    const breachCutoff = generatedAt - boundedWindowMs;
+
+    const [activeBuckets, unownedBuckets, failedNotificationRows] = await Promise.all([
+      Promise.all(
+        ADMIN_ACTIVE_LEAD_STATUSES.map((status) =>
+          ctx.db
+            .query("leads")
+            .withIndex("by_payload_safe_status_created_at", (query) =>
+              query.eq("payloadSafe", true).eq("status", status),
+            )
+            .order("asc")
+            .take(SLA_QUERY_BUCKET_LIMIT + 1),
+        ),
+      ),
+      Promise.all(
+        ADMIN_ACTIVE_LEAD_STATUSES.flatMap((status) =>
+          (["", undefined] as const).map((owner) =>
+            ctx.db
+              .query("leads")
+              .withIndex("by_payload_safe_status_owner_created_at", (query) =>
+                query.eq("payloadSafe", true).eq("status", status).eq("owner", owner).lt("createdAt", breachCutoff),
+              )
+              .order("asc")
+              .take(SLA_QUERY_BUCKET_LIMIT + 1),
+          ),
+        ),
+      ),
+      ctx.db
+        .query("leads")
+        .withIndex("by_payload_safe_notification_delivered_created_at", (query) =>
+          query.eq("payloadSafe", true).eq("notificationDelivered", false),
+        )
+        .order("asc")
+        .take(SLA_QUERY_BUCKET_LIMIT + 1),
+    ]);
+
+    const activeLeads = summarizeSlaBuckets(activeBuckets);
+    const unownedBreaches = summarizeSlaBuckets(unownedBuckets, true);
+    const failedNotifications = summarizeSlaBuckets([failedNotificationRows]);
+    return { generatedAt, activeLeads, unownedBreaches, failedNotifications };
+  },
+});
+
+function summarizeSlaBuckets(
+  buckets: Array<Array<{ createdAt: number }>>,
+  includeOldest = false,
+): { count: number; truncated: boolean; oldestCreatedAt?: number } {
+  const boundedRows = buckets.flatMap((bucket) => bucket.slice(0, SLA_QUERY_BUCKET_LIMIT));
+  const oldestCreatedAt = includeOldest
+    ? boundedRows.reduce<number | undefined>(
+        (oldest, row) => (oldest === undefined || row.createdAt < oldest ? row.createdAt : oldest),
+        undefined,
+      )
+    : undefined;
+  return {
+    count: boundedRows.length,
+    truncated: buckets.some((bucket) => bucket.length > SLA_QUERY_BUCKET_LIMIT),
+    ...(oldestCreatedAt === undefined ? {} : { oldestCreatedAt }),
+  };
+}
 
 export const reviewDashboard = queryGeneric({
   args: { ingestSecret: v.string(), limit: v.optional(v.number()) },
@@ -907,8 +1511,16 @@ export const reviewDashboard = queryGeneric({
     const take = Math.min(Math.max(Math.floor(limit ?? 50), 1), 100);
     const now = Date.now();
     const [leads, voiceSessions, leadEvents] = await Promise.all([
-      ctx.db.query("leads").order("desc").take(take),
-      ctx.db.query("voiceSessions").withIndex("by_updated_at").order("desc").take(take),
+      ctx.db
+        .query("leads")
+        .withIndex("by_payload_safe_created_at", (query) => query.eq("payloadSafe", true))
+        .order("desc")
+        .take(take),
+      ctx.db
+        .query("voiceSessions")
+        .withIndex("by_payload_safe_updated_at", (query) => query.eq("payloadSafe", true))
+        .order("desc")
+        .take(take),
       ctx.db
         .query("leadEvents")
         .order("desc")
@@ -917,12 +1529,13 @@ export const reviewDashboard = queryGeneric({
     const notificationDelivered = leads.filter((lead) => lead.notificationDelivered === true).length;
     const notificationFailures = leads.filter((lead) => lead.notificationDelivered === false).length;
     const voiceLeads = leads.filter((lead) => lead.source === "voice").length;
+    const intakeAttribution = summarizeIntakeAttribution(leads);
     const activeLeads = leads.filter((lead) => !["qualified", "archived"].includes(lead.status)).length;
     const urgentLeads = leads.filter((lead) => lead.priority === "urgent" || lead.priority === "high").length;
     const sessionsWithErrors = voiceSessions.filter((session) => session.errors.length > 0).length;
     const prewarmedSessions = voiceSessions.filter((session) => typeof session.prewarmedAt === "number").length;
     const connectedSessions = voiceSessions.filter((session) => typeof session.connectedAt === "number").length;
-    const engagedSessions = voiceSessions.filter(isEngagedVoiceSession);
+    const engagedSessions = voiceSessions.filter(isEngagedVoiceCaptureSession);
     const submittedSessions = voiceSessions.filter((session) => Boolean(session.leadId)).length;
     const totalResponseTokens = voiceSessions.reduce((sum, session) => sum + (session.usage?.responseTokens ?? 0), 0);
     const voiceLatency = summarizeVoiceLatency(voiceSessions);
@@ -952,6 +1565,7 @@ export const reviewDashboard = queryGeneric({
       },
       analytics: {
         sourceCounts: countBy(leads, (lead) => lead.source),
+        ...intakeAttribution,
         statusCounts: countBy(leads, (lead) => lead.status || "new"),
         priorityCounts: countBy(leads, (lead) => lead.priority || "normal"),
         segmentCounts: countBy(leads, (lead) => lead.segment || "other"),
@@ -972,6 +1586,7 @@ export const reviewDashboard = queryGeneric({
           totalResponseTokens,
           latency: voiceLatency,
         },
+        voiceCaptureFunnel: summarizeVoiceCaptureFunnel(voiceSessions, take),
         evals: {
           evaluated: evaluatedSessions.length,
           droppedMidTurn: droppedMidTurnEvals,
@@ -1033,25 +1648,6 @@ function dailyLeadCounts(leads: Array<{ createdAt: number }>, now: number) {
   });
   const counts = countBy(leads, (lead) => formatter.format(lead.createdAt));
   return days.map((date) => ({ date, count: counts[date] ?? 0 }));
-}
-
-function isEngagedVoiceSession(session: {
-  leadId?: string | null;
-  connectStartedAt?: number;
-  connectedAt?: number;
-  closedAt?: number;
-  transcript: Array<unknown>;
-  captured: { email: string; message: string };
-}) {
-  return Boolean(
-    session.leadId ||
-      typeof session.connectStartedAt === "number" ||
-      typeof session.connectedAt === "number" ||
-      typeof session.closedAt === "number" ||
-      session.transcript.length > 0 ||
-      session.captured.email.trim() ||
-      session.captured.message.trim(),
-  );
 }
 
 function percent(numerator: number, denominator: number) {

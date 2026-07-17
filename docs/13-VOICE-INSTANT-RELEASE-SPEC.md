@@ -4,7 +4,7 @@ type: "voice_ai_spec"
 status: "implemented_evidence_gated"
 owner: "Mereka Engineering"
 vehicle: "web_webrtc"
-last_updated: "2026-07-16"
+last_updated: "2026-07-17"
 links:
   related_docs:
     - "05-VOICE-AGENT-SPEC.md"
@@ -72,13 +72,23 @@ dimension, and prove the exact staged commit before promotion.
   understanding before a model response.
 - Reduced-motion mode MUST suppress visual animation without disabling audio
   activity measurement.
+- The approved Mereka M nebula MUST render on staging and production. Missing
+  WebGL or initialization failure MUST retain the canonical SVG fallback; this
+  visual is not a voice experiment. The public entrance treatment MUST be
+  non-interactive, never lock scrolling, run at most once per tab for no more
+  than 700 ms, and be omitted on admin/API and reduced-motion loads.
+- The visual audio envelope MUST learn sustained room noise through at least
+  the 0.12–0.20 input range and use distinct open/close thresholds so steady
+  noise converges inactive without gate chatter.
 - Per-turn telemetry MUST retain at most 80 samples and MUST include available
   speech, endpoint, response-created, first-output, remote-audio, playout,
   browser-tool, response, interruption, and rapid-resume durations/signals.
 - Per-tool telemetry MUST retain at most 120 PII-free samples with a bounded
   tool name, outcome, browser execution/result-dispatch duration, and available
   response-created-to-call/result durations. It MUST NOT persist arguments,
-  contact values, call IDs, or raw browser timestamps.
+  contact values, call IDs, or raw browser timestamps. Aggregate reports MUST
+  expose count and p50/p95 duration summaries overall and by canonical tool
+  name so a slow tool cannot hide inside the global average.
 - An OpenAI Realtime SDP capacity `429` MUST receive at most one retry after
   300–700 ms jitter. The retry MUST reuse the existing mint, offer, microphone,
   and typed context; other status codes, mic denial, and malformed sessions
@@ -109,8 +119,10 @@ dimension, and prove the exact staged commit before promotion.
 - `gpt-realtime-2.1-mini` MAY be evaluated later as a separate speed/cost cell;
   it MUST NOT be combined with the first `gpt-realtime-2.1` quality comparison.
 - At most one of runtime profile, model cell, and reasoning cell MAY differ
-  from control in one deployment. The QA voice-variant picker MUST remain off
-  while any experimental dimension is active.
+  from control in one clean experiment deployment. The QA voice-variant picker
+  MUST remain off for clean evidence. Staging MAY explicitly enter independent
+  `audition` mode with the picker on, but those rows are voice auditions and
+  MUST fail candidate-model evidence validation. Production remains picker-off.
 - Evaluator cohort keys MUST include runtime, model, and reasoning, and a row
   varying more than one non-control dimension MUST fail evidence validation.
 - Configured judge thresholds MUST fail closed when no conversations have
@@ -124,24 +136,40 @@ dimension, and prove the exact staged commit before promotion.
   Independently valid fields MUST be retained and invalid or ungrounded items
   returned in `rejectedFields` for focused retry; duplicate keys MUST reject
   the batch before any field is committed.
+- A typed-only edited handoff MUST survive closing and reopening the same active
+  intake even when no voice transcript exists. An explicit external prefill or
+  a completed submission still starts clean; form mode alone controls focus and
+  MUST NOT discard the active draft.
+- `clear_fields` MUST remain the canonical persisted and aggregated clear-all
+  tool label. It MUST NOT be rewritten as the distinct single-field
+  `clear_field` operation; Convex validators and bounded schemas support both.
 - Routing and end-call actions MUST remain explicit and separate.
 - Tentative email extraction MAY fill an empty draft only for a literal address
   alone or with explicit visitor ownership; it MUST NOT infer spoken punctuation
   and MUST NOT overwrite an existing/corrected value.
 - `VOICE_EMAIL_CAPTURE_MODE=adaptive` MAY immediately confirm a speech email
   only when it passes syntax validation, the model's evidence canonicalizes to
-  the exact proposed address, and the latest visitor turn either matches it or
-  has an explicit email cue within the bounded ASR distance. Pending native
-  transcription may yield medium confidence only when no completed turn
-  contradicts the proposed value. Corrections MUST invalidate prior
-  verification before routing and re-evaluate from the latest turn; duplicate
-  email tool calls MUST pass the same grounding boundary. The address remains
-  visible and editable without a blanket confirmation turn.
+  the exact proposed address, and the complete literal or spoken evidence in the
+  latest visitor turn canonicalizes to that exact address. Such exact evidence
+  is high-confidence and immediately usable. Bounded ASR substitution MUST
+  apply only to a complete spoken-form candidate with an explicit email cue; it
+  MUST remain medium-confidence and pending in the visible email editor. Reka
+  MUST point to that editor once and continue without an exact readback or
+  spelling loop. Voice-command routing remains blocked; pressing the visible
+  Send button is the visitor's explicit check/submit action. A differing literal email MUST never enter the
+  approximate path. Pending native transcription MAY yield medium confidence
+  only when no completed turn contradicts the proposed value, and MUST NOT
+  bypass that visible check. Corrections and failed replacements MUST invalidate
+  prior verification before routing and re-evaluate from the latest turn;
+  duplicate email tool calls MUST pass the same grounding boundary. Clear-all
+  MUST clear remembered handoff state and fence every pre-clear ASR completion
+  by Realtime item identity. The address remains visible and editable; exact
+  high-confidence captures have no blanket confirmation turn.
 - `VOICE_EMAIL_CAPTURE_MODE=strict` MUST restore exact readback and grounded
   explicit confirmation. Unknown or missing values MUST resolve to `strict`.
   Typed edits and verified prefills MAY confirm their exact current value in
-  either mode. Client and API MUST still reject invalid, pending, ungrounded, or
-  stale email values. A typed edit MUST invalidate any already-active response
+  either mode. Client and API MUST still reject invalid, ungrounded, or stale
+  email values; voice-command routing also rejects pending values. A typed edit MUST invalidate any already-active response
   for email mutation and routing; older tool output MUST NOT overwrite or
   submit the typed value.
 
@@ -254,7 +282,14 @@ an unperformed listening result is never a pass.
   plus runtime/model cells.
 - `pnpm eval:voice -- --dry` writes a gitignored report containing the guarded
   promotion status and aggregate-only console output, including tap-to-live
-  p50/p95 by runtime profile and full runtime/model/reasoning cell.
+  p50/p95 by runtime profile and full runtime/model/reasoning cell. Query-only
+  aggregate output also reports PII-free overall/per-tool execution,
+  response-to-call, and response-to-result p50/p95 so browser execution can be
+  separated from model/transport delay.
+- `--aggregate-only` MUST remain a zero-mutation path. It MAY enrich missing
+  historical voice profile fields through the existing read-only per-session
+  query with bounded concurrency; it MUST NOT deploy Convex functions, persist
+  judgments, or write a report.
 - Raw transcripts and captured PII MUST NOT appear in structured route logs.
 - `/api/health` exposes the active runtime/model/reasoning/capture cells and selected
   model without credentials or visitor data so release status can be rebuilt

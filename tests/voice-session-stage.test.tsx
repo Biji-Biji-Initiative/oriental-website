@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { createRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { VoiceSessionStage } from "@/components/voice-agent/VoiceSessionStage";
@@ -37,5 +37,80 @@ describe("VoiceSessionStage", () => {
     expect(caption).toHaveAttribute("aria-hidden", "true");
     expect(caption.compareDocumentPosition(action) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(action.compareDocumentPosition(composer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("keeps a persistent mobile email check beside the voice action", () => {
+    const onEmailBlur = vi.fn();
+    const onEmailChange = vi.fn();
+    const onEmailFocus = vi.fn();
+    render(
+      <VoiceSessionStage
+        activeTopicId={null}
+        assistantDraft=""
+        audioRef={createRef<HTMLAudioElement>()}
+        captured={{ ...emptyCapturedLead, email: "asha@example.com" }}
+        connectionStatus="listening"
+        emailAttention="pending"
+        emailInputRef={createRef<HTMLInputElement>()}
+        getLocalStream={() => null}
+        lastAssistantLine=""
+        onConnect={vi.fn()}
+        onDisconnect={vi.fn()}
+        onEmailBlur={onEmailBlur}
+        onEmailChange={onEmailChange}
+        onEmailFocus={onEmailFocus}
+        onLocalSpeechEnded={vi.fn()}
+        onRemoteAudioStarted={vi.fn()}
+        onSendText={vi.fn(() => true)}
+        onTopicToggle={vi.fn()}
+        selectedSegment={getSegment("other")}
+        status="idle"
+        turnPhase="quiet"
+      />,
+    );
+
+    const email = screen.getByLabelText("Email to follow up");
+    expect(email).toHaveValue("asha@example.com");
+    expect(email).toHaveAttribute("aria-required", "true");
+    expect(screen.getByText(/no spelling loop/i)).toBeVisible();
+    fireEvent.focus(email);
+    expect(onEmailFocus).toHaveBeenCalledOnce();
+    fireEvent.change(email, { target: { value: "asha+team@example.com" } });
+    expect(onEmailChange).toHaveBeenCalledWith("asha+team@example.com");
+    fireEvent.blur(email);
+    expect(onEmailBlur).toHaveBeenCalledOnce();
+  });
+
+  it("announces a touched invalid mobile email independently of voice attention", () => {
+    const { container } = render(
+      <VoiceSessionStage
+        activeTopicId={null}
+        assistantDraft=""
+        audioRef={createRef<HTMLAudioElement>()}
+        captured={{ ...emptyCapturedLead, email: "not-an-email" }}
+        connectionStatus="idle"
+        emailAttention="pending"
+        emailTouched
+        emailValid={false}
+        getLocalStream={() => null}
+        lastAssistantLine=""
+        onConnect={vi.fn()}
+        onDisconnect={vi.fn()}
+        onLocalSpeechEnded={vi.fn()}
+        onRemoteAudioStarted={vi.fn()}
+        onSendText={vi.fn(() => true)}
+        onTopicToggle={vi.fn()}
+        selectedSegment={getSegment("other")}
+        status="idle"
+        turnPhase="quiet"
+      />,
+    );
+
+    const email = screen.getByLabelText("Email to follow up");
+    const error = screen.getByRole("alert");
+    expect(email).toHaveAttribute("aria-invalid", "true");
+    expect(email).toHaveAttribute("aria-errormessage", "voice-quick-email-help");
+    expect(error).toHaveTextContent("Enter a valid email, such as name@example.com.");
+    expect(container.querySelector("[data-email-quick-capture]")).toHaveAttribute("data-email-state", "invalid");
   });
 });

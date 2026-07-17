@@ -14,6 +14,7 @@ import {
   requestIp,
   verifyTurnstile,
 } from "@/lib/server/security";
+import { provenanceForInitialCaptured, summarizeFieldProvenance } from "@/lib/voice/interaction-attribution";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,8 +52,23 @@ export async function POST(request: NextRequest) {
     return noStoreJson({ ok: false, error: "turnstile_failed" }, { status: 403 });
   }
 
+  const attributedCapture = {
+    name: "",
+    email: parsed.data.email,
+    org: "",
+    phone: "",
+    website: "",
+    message: "",
+  };
   const lead = routeLead({
     source: "hero-email",
+    entryPoint: "hero_updates",
+    entryMethod: "email_capture",
+    submissionMethod: "email_capture_button",
+    fieldProvenance: summarizeFieldProvenance(
+      attributedCapture,
+      provenanceForInitialCaptured(attributedCapture, "form"),
+    ),
     segment: "other",
     form: {
       name: "Newsletter subscriber",

@@ -4,6 +4,10 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
+  // This repository is often checked out below a home directory that contains
+  // unrelated fleet lockfiles. Keep dependency tracing and Turbopack's build
+  // graph scoped to this exact checkout instead of guessing an ancestor root.
+  turbopack: { root: process.cwd() },
   images: {
     formats: ["image/avif", "image/webp"],
     minimumCacheTTL: 60 * 60 * 24 * 30,

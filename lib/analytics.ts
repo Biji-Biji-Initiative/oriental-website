@@ -1,20 +1,23 @@
-/**
- * Client-side GA4 event helper. `window.gtag` exists only when
- * NEXT_PUBLIC_GA_MEASUREMENT_ID is configured (see
- * components/site/GoogleAnalytics.tsx), so this is a safe no-op everywhere
- * else — tests, admin, and unconfigured environments.
- *
- * PII rule: event parameters MUST NOT contain names, emails, phone numbers,
- * transcripts, or free-text messages. Segments, sources, and variant labels
- * only.
- */
-export type AnalyticsEventName =
-  | "lead_submitted"
-  | "voice_lead_submitted"
-  | "voice_session_started"
-  | "newsletter_signup";
+import {
+  type IntakeAnalyticsEvent,
+  type IntakeAnalyticsParametersByEvent,
+  trackIntakeEvent,
+} from "@/lib/client-analytics";
 
-export function trackEvent(name: AnalyticsEventName, params: Record<string, string | number | boolean> = {}) {
-  if (typeof window === "undefined") return;
-  window.gtag?.("event", name, params);
+/**
+ * Typed compatibility adapter for the site's GA4 conversion events. All
+ * events share the intake pipeline's explicit-consent check and runtime
+ * allowlist, so a stale `window.gtag` after consent withdrawal cannot emit
+ * conversions and unexpected/free-form parameters are discarded.
+ */
+export type AnalyticsEventName = Extract<
+  IntakeAnalyticsEvent,
+  "lead_submitted" | "voice_lead_submitted" | "voice_session_started" | "newsletter_signup"
+>;
+
+export function trackEvent<Event extends AnalyticsEventName>(
+  name: Event,
+  params: IntakeAnalyticsParametersByEvent[Event],
+) {
+  trackIntakeEvent(name, params);
 }

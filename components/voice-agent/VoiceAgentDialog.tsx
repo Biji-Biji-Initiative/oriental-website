@@ -7,6 +7,7 @@ import { type UseFormReturn, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { trackEvent } from "@/lib/analytics";
+import { trackIntakeEvent } from "@/lib/client-analytics";
 import { leadFormSchema } from "@/lib/schemas";
 import { getSegment, type SegmentId, segmentOptions } from "@/lib/segments";
 import { cn } from "@/lib/utils";
@@ -16,8 +17,20 @@ import {
   serializeResponseCreate,
   serializeTypedTurn,
 } from "@/lib/voice/client-events";
-import { endConversation, resolveConversationId, touchConversation } from "@/lib/voice/conversation";
-import { recallHandoff, rememberHandoff } from "@/lib/voice/handoff-memory";
+import {
+  endConversation,
+  resolveConversationId,
+  shouldResumeVoiceConversation,
+  touchConversation,
+} from "@/lib/voice/conversation";
+import { forgetHandoff, recallHandoff, rememberHandoff } from "@/lib/voice/handoff-memory";
+import {
+  fieldProvenanceCounts,
+  type SubmissionMethod,
+  summarizeFieldProvenance,
+  type VoiceEntryMethod,
+  type VoiceEntryPoint,
+} from "@/lib/voice/interaction-attribution";
 import type { VoiceToolName, VoiceToolOutcome } from "@/lib/voice/latency";
 import {
   fetchWithTimeout,
@@ -37,7 +50,7 @@ import {
   postVoiceReviewSnapshot,
   type VoiceReviewCredentials,
 } from "@/lib/voice/review-snapshot";
-import { DEFAULT_VOICE_VARIANT_ID, VOICE_VARIANTS } from "@/lib/voice/variants";
+import { DEFAULT_VOICE_VARIANT_ID, VOICE_VARIANTS, type VoiceVariantId } from "@/lib/voice/variants";
 import { HandoffPanel } from "./HandoffPanel";
 import { playArmCue, playLiveCue } from "./live-chime";
 import {
@@ -72,11 +85,13 @@ type VoiceAgentDialogProps = {
     mode?: "voice" | "form";
     autoStart?: boolean;
     activation?: ReturnType<typeof playArmCue>;
+    entryPoint?: VoiceEntryPoint;
+    entryMethod?: VoiceEntryMethod;
   };
   /** Bumped on talk-CTA hover/focus: pre-mint a session before the tap. */
   prewarmSignal?: number;
   /** QA voice variant id, threaded to the session mint. */
-  voiceVariant?: string;
+  voiceVariant?: VoiceVariantId;
 };
 
 export function VoiceAgentDialog({
@@ -90,16 +105,24 @@ export function VoiceAgentDialog({
   const [status, setStatus] = useState<"idle" | "submitted">("idle");
   const [submitting, setSubmitting] = useState(false);
   const [activeTopicId, setActiveTopicId] = useState<string | null>(null);
+  const [emailAttention, setEmailAttention] = useState<"rejected" | "pending" | "route_blocked" | null>(null);
+  const [emailTouched, setEmailTouched] = useState(false);
   // Stable across every call/reconnect in one intake; resolved on open so a
   // dropped-and-resumed conversation stitches to a single thread in review.
   const [conversationId, setConversationId] = useState<string>("");
+  const conversationIdRef = useRef("");
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const submittingRef = useRef(false);
   const submittedLeadIdRef = useRef<string | null>(null);
   const dialogContentRef = useRef<HTMLDivElement | null>(null);
   const dialogLayoutRef = useRef<HTMLDivElement | null>(null);
+  const mobileEmailRef = useRef<HTMLInputElement | null>(null);
+  const emailEditorOwnedFocusRef = useRef(false);
   const lastSyncedHandoffRef = useRef("");
   const openedVoiceTurnRef = useRef(false);
+  const activeEntryPointRef = useRef<VoiceEntryPoint | null>(null);
+  const activeEntryMethodRef = useRef<VoiceEntryMethod | null>(null);
+  const voiceStartTrackedRef = useRef(false);
   const reviewRef = useRef<VoiceReviewMetadata | null>(null);
   const localReviewRef = useRef<VoiceReviewCredentials | null>(null);
   const teardownVoiceRef = useRef<((reason: VoiceCloseReason) => void) | null>(null);
@@ -112,6 +135,7 @@ export function VoiceAgentDialog({
     ((sample: { at: number; durationMs: number; name: VoiceToolName; outcome: VoiceToolOutcome }) => void) | null
   >(null);
   const prewarmSnapshotIdsRef = useRef<Set<string>>(new Set());
+  const snapshotSequencesRef = useRef<Map<string, number>>(new Map());
   const [reviewMetadata, setReviewMetadata] = useState<VoiceReviewMetadata | null>(null);
 
   const currentReviewCredentials = useCallback((): VoiceReviewCredentials | null => {
@@ -119,6 +143,12 @@ export function VoiceAgentDialog({
     if (process.env.NODE_ENV === "production") return null;
     localReviewRef.current ??= { id: crypto.randomUUID(), token: "local-development-review-token" };
     return localReviewRef.current;
+  }, []);
+
+  const nextSnapshotSequence = useCallback((reviewId: string) => {
+    const next = (snapshotSequencesRef.current.get(reviewId) ?? 0) + 1;
+    snapshotSequencesRef.current.set(reviewId, next);
+    return next;
   }, []);
 
   const handleVoiceClose = useCallback((reason: VoiceCloseReason) => {
@@ -138,25 +168,71 @@ export function VoiceAgentDialog({
 
   const formRef = useRef<UseFormReturn<CapturedLead> | null>(null);
 
+  const focusCapturedField = useCallback(
+    (key: keyof CapturedLead, reason: "rejected" | "pending" | "route_blocked" = "rejected") => {
+      if (key !== "email") {
+        formRef.current?.setFocus(key);
+        return;
+      }
+      setEmailAttention(reason);
+      window.requestAnimationFrame(() => {
+        if (window.matchMedia("(max-width: 63.999rem)").matches) {
+          const editor = mobileEmailRef.current;
+          editor?.focus();
+          editor?.select();
+          editor?.closest<HTMLElement>("[data-email-quick-capture]")?.scrollIntoView({
+            block: "nearest",
+            inline: "nearest",
+          });
+          return;
+        }
+        formRef.current?.setFocus("email");
+      });
+    },
+    [],
+  );
+
   const submit = useCallback(
-    async (source: "form" | "voice", leadState: VoiceRuntimeState): Promise<Record<string, unknown>> => {
+    async (submissionMethod: SubmissionMethod, leadState: VoiceRuntimeState): Promise<Record<string, unknown>> => {
       if (submittingRef.current) return { ok: false, error: "submission_in_progress" };
       submittingRef.current = true;
       setSubmitting(true);
+      const fieldProvenance = summarizeFieldProvenance(leadState.captured, leadState.fieldProvenance);
+      const fieldCounts = fieldProvenanceCounts(fieldProvenance);
+      const entryPoint = activeEntryPointRef.current ?? "unknown";
+      const entryMethod = activeEntryMethodRef.current ?? "unknown";
+      const voiceEngaged =
+        submissionMethod === "voice_command" ||
+        Boolean(reviewRef.current?.activationAttempted || reviewRef.current?.connectedAt || openedVoiceTurnRef.current);
+      const source = voiceEngaged ? "voice" : "form";
+      const analytics = {
+        entry_point: entryPoint,
+        entry_method: entryMethod,
+        submission_method: submissionMethod,
+        session_mode: source,
+        completed_field_count: fieldCounts.completed,
+        voice_field_count: fieldCounts.voice,
+        manual_field_count: fieldCounts.manual,
+        mixed_field_count: fieldCounts.mixed,
+        corrected_field_count: fieldCounts.corrected,
+      } as const;
+      trackIntakeEvent("intake_submit_attempt", analytics);
       try {
-        if (source === "voice" && !isVoiceEmailConfirmed(leadState)) {
-          formRef.current?.setFocus("email");
-          toast.error("Please confirm the email before I send this.", {
-            description: "Say yes after Reka reads it back, or edit the email field directly.",
+        if (submissionMethod === "voice_command" && !isVoiceEmailConfirmed(leadState)) {
+          focusCapturedField("email", "route_blocked");
+          toast.error("Please check the highlighted email once.", {
+            description: "Edit it if needed, then press Send enquiry. Reka will not make you spell it out again.",
           });
+          trackIntakeEvent("intake_submit_failure", { ...analytics, failure_class: "email_check_required" });
           return { ok: false, error: "voice_email_unconfirmed" };
         }
         const parsed = leadFormSchema.safeParse(leadState.captured);
         if (!parsed.success) {
-          if (source === "form") void formRef.current?.trigger();
+          if (submissionMethod === "handoff_button") void formRef.current?.trigger();
           toast.error("Please fix the highlighted details.", {
             description: "A valid email is required before sending — everything else is optional.",
           });
+          trackIntakeEvent("intake_submit_failure", { ...analytics, failure_class: "invalid_fields" });
           return { ok: false, error: "invalid_lead", details: parsed.error.flatten() };
         }
         const response = await fetchWithTimeout(
@@ -166,13 +242,17 @@ export function VoiceAgentDialog({
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               source,
+              entryPoint,
+              entryMethod,
+              submissionMethod,
+              fieldProvenance,
               segment: leadState.segment,
               form: parsed.data,
               transcript: leadState.transcript,
               ...(source === "voice"
                 ? {
                     ...buildVoiceLeadMetadata(currentReviewCredentials()),
-                    voiceEmailVerified: true,
+                    voiceEmailVerified: submissionMethod === "handoff_button" || isVoiceEmailConfirmed(leadState),
                     voiceEmailVerificationSource: leadState.emailVerification?.source,
                   }
                 : {}),
@@ -186,6 +266,10 @@ export function VoiceAgentDialog({
           const copy = leadSubmitErrorCopy(response?.status, responseBody);
           const notify = responseBody?.persisted ? toast.warning : toast.error;
           notify(copy.title, { description: copy.description });
+          trackIntakeEvent("intake_submit_failure", {
+            ...analytics,
+            failure_class: response ? "server_rejected" : "network",
+          });
           return {
             ok: false,
             error: responseBody?.error ?? "lead_submission_failed",
@@ -204,13 +288,18 @@ export function VoiceAgentDialog({
             void postVoiceReviewSnapshot(
               review,
               buildVoiceReviewSnapshot(review, leadState, connectionStatusRef.current, {
+                snapshotSequence: nextSnapshotSequence(review.id),
                 leadId: responseBody?.id ?? null,
                 submittedAt: Date.now(),
+                entryPoint,
+                entryMethod,
+                submissionMethod,
               }),
-            );
+            ).catch(() => null);
           }
         }
         setStatus("submitted");
+        trackIntakeEvent("intake_submit_success", analytics);
         trackEvent(source === "voice" ? "voice_lead_submitted" : "lead_submitted", {
           segment: leadState.segment,
           source,
@@ -228,18 +317,60 @@ export function VoiceAgentDialog({
         setSubmitting(false);
       }
     },
-    [currentReviewCredentials],
+    [currentReviewCredentials, focusCapturedField, nextSnapshotSequence],
   );
 
   const runtime = useVoiceRuntime({
     initialSegment: intent ?? "other",
     prefillEmail: prefill?.email,
-    submitLead: (leadState) => submit("voice", leadState),
+    submitLead: (leadState) => submit("voice_command", leadState),
     onEndVoice: () => teardownVoiceRef.current?.("manual"),
     onToolDuration: (sample) => recordToolDurationRef.current?.(sample),
-    onCaptureNeedsAttention: (key) => formRef.current?.setFocus(key),
+    onCaptureNeedsAttention: (key) => focusCapturedField(key),
+    onClearFields: forgetHandoff,
   });
   const { segment, captured, emailVerification, transcript, stateRef } = runtime;
+  const emailValid = leadFormSchema.shape.email.safeParse(captured.email).success;
+  const handoffReady = emailValid;
+  const markEmailEditorFocused = useCallback(() => {
+    emailEditorOwnedFocusRef.current = true;
+  }, []);
+  const handleCapturedChange = useCallback(
+    (key: keyof CapturedLead, value: string) => {
+      const activeField =
+        document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement
+          ? document.activeElement
+          : null;
+      const retainFieldFocus = activeField === mobileEmailRef.current || activeField?.getAttribute("name") === key;
+      runtime.updateCaptured(key, value);
+      if (key === "email") {
+        setEmailTouched(true);
+        setEmailAttention(leadFormSchema.shape.email.safeParse(value).success ? null : "rejected");
+      }
+      if (retainFieldFocus) {
+        window.requestAnimationFrame(() => {
+          // Controlled-value synchronization may briefly drop focus to body,
+          // but never steal it back after the visitor has moved to another
+          // field between this change event and the next animation frame.
+          if (document.activeElement === activeField || document.activeElement === document.body) {
+            activeField?.focus({ preventScroll: true });
+          }
+        });
+      }
+    },
+    [runtime.updateCaptured],
+  );
+
+  useEffect(() => {
+    const verificationMatches =
+      Boolean(captured.email.trim()) &&
+      emailVerification?.value.trim().toLowerCase() === captured.email.trim().toLowerCase();
+    if (emailVerification?.status === "confirmed" && verificationMatches) {
+      setEmailAttention(null);
+      return;
+    }
+    if (emailVerification?.status === "pending" && captured.email.trim()) setEmailAttention("pending");
+  }, [captured.email, emailVerification]);
 
   const form = useForm<CapturedLead>({
     defaultValues: { ...emptyCapturedLead, email: prefill?.email ?? "" },
@@ -249,6 +380,62 @@ export function VoiceAgentDialog({
     values: captured,
   });
   formRef.current = form;
+
+  // The compact editor owns email below 1024px and the handoff form owns it
+  // above that breakpoint. Preserve a visitor's focus and draft when a device
+  // rotates or a browser window crosses that ownership boundary.
+  useEffect(() => {
+    if (!open) return;
+    const media = window.matchMedia("(min-width: 64rem)");
+    let settleTimer: number | undefined;
+    let transferGeneration = 0;
+    const visibleEmailEditor = () => {
+      if (media.matches) {
+        return dialogContentRef.current?.querySelector<HTMLInputElement>('input[name="email"]') ?? null;
+      }
+      return mobileEmailRef.current;
+    };
+    const transferFocusedEmail = () => {
+      if (!emailEditorOwnedFocusRef.current) return;
+      const generation = ++transferGeneration;
+      window.clearTimeout(settleTimer);
+      let attempts = 0;
+      const settleFocus = () => {
+        if (generation !== transferGeneration || !emailEditorOwnedFocusRef.current) return;
+        visibleEmailEditor()?.focus({ preventScroll: true });
+        attempts += 1;
+        // Base UI's focus scope also reacts when the old editor becomes
+        // display:none. Reassert focus through that bounded transition only.
+        if (attempts < 10) settleTimer = window.setTimeout(settleFocus, 50);
+      };
+      window.requestAnimationFrame(settleFocus);
+    };
+    const trackDialogFocus = (event: FocusEvent) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement) || !dialogContentRef.current?.contains(target)) return;
+      const isEmailEditor =
+        target === mobileEmailRef.current || (target instanceof HTMLInputElement && target.name === "email");
+      if (isEmailEditor) {
+        emailEditorOwnedFocusRef.current = true;
+        return;
+      }
+      if (target.matches('input, textarea, select, button, a[href], [tabindex]:not([tabindex="-1"])')) {
+        emailEditorOwnedFocusRef.current = false;
+        transferGeneration += 1;
+        window.clearTimeout(settleTimer);
+      }
+    };
+    media.addEventListener("change", transferFocusedEmail);
+    window.addEventListener("resize", transferFocusedEmail);
+    document.addEventListener("focusin", trackDialogFocus);
+    return () => {
+      media.removeEventListener("change", transferFocusedEmail);
+      window.removeEventListener("resize", transferFocusedEmail);
+      document.removeEventListener("focusin", trackDialogFocus);
+      transferGeneration += 1;
+      window.clearTimeout(settleTimer);
+    };
+  }, [open]);
 
   const {
     connectVoice,
@@ -311,7 +498,7 @@ export function VoiceAgentDialog({
     };
   }, []);
   const switchVoiceVariant = useCallback(
-    (variantId: string) => {
+    (variantId: VoiceVariantId) => {
       if (variantId === (voiceVariant ?? DEFAULT_VOICE_VARIANT_ID)) return;
       const live = connectionStatus !== "idle";
       setVoiceVariant(variantId);
@@ -334,16 +521,41 @@ export function VoiceAgentDialog({
     // segment come back from local memory; the brief always starts fresh.
     const remembered = recallHandoff();
     // Resume the in-flight conversation if the visitor reopens soon after a
-    // drop; otherwise this starts a fresh thread.
-    setConversationId(resolveConversationId());
-    runtime.reset({
-      segment: intent ?? remembered?.segment ?? "other",
-      email: prefill?.email || remembered?.email,
-      name: remembered?.name,
-      org: remembered?.org,
-    });
+    // drop or closes an unfinished typed form. Form mode only controls focus;
+    // an explicit external email prefill starts a different handoff.
+    const explicitFreshHandoff = Boolean(prefill?.email);
+    if (explicitFreshHandoff) endConversation();
+    const nextConversationId = resolveConversationId();
+    const resumesInFlightConversation = shouldResumeVoiceConversation(
+      conversationIdRef.current,
+      nextConversationId,
+      {
+        transcriptLength: stateRef.current.transcript.length,
+        hasDraftHandoff:
+          stateRef.current.segment !== "other" ||
+          Object.values(stateRef.current.captured).some((value) => value.trim().length > 0),
+      },
+      explicitFreshHandoff,
+    );
+    if (!resumesInFlightConversation || !activeEntryPointRef.current || !activeEntryMethodRef.current) {
+      activeEntryPointRef.current = prefill?.entryPoint ?? "unknown";
+      activeEntryMethodRef.current = prefill?.entryMethod ?? "unknown";
+    }
+    conversationIdRef.current = nextConversationId;
+    setConversationId(nextConversationId);
+    if (!resumesInFlightConversation) {
+      runtime.reset({
+        segment: intent ?? remembered?.segment ?? "other",
+        email: prefill?.email || remembered?.email,
+        name: remembered?.name,
+        org: remembered?.org,
+      });
+    }
     setStatus("idle");
     setActiveTopicId(null);
+    setEmailAttention(null);
+    setEmailTouched(false);
+    emailEditorOwnedFocusRef.current = false;
     setSubmitting(false);
     submittingRef.current = false;
     submittedLeadIdRef.current = null;
@@ -352,12 +564,7 @@ export function VoiceAgentDialog({
     reviewRef.current = null;
     setReviewMetadata(null);
     localReviewRef.current = null;
-    if (prefill?.mode === "form") {
-      // Hero email capture opens in form intent: land the cursor on the name field.
-      const timer = window.setTimeout(() => formRef.current?.setFocus("name"), 80);
-      return () => window.clearTimeout(timer);
-    }
-  }, [intent, open, prefill, runtime.reset]);
+  }, [intent, open, prefill, runtime.reset, stateRef]);
 
   useEffect(() => {
     if (status === "submitted") teardownVoice("manual");
@@ -387,6 +594,7 @@ export function VoiceAgentDialog({
   useEffect(() => {
     if (!open) {
       autoStartedRef.current = false;
+      voiceStartTrackedRef.current = false;
       return;
     }
     if (!prefill?.autoStart || autoStartedRef.current || status !== "idle") return;
@@ -394,6 +602,20 @@ export function VoiceAgentDialog({
     setVoiceActivation(prefill.activation);
     void connectVoice();
   }, [open, prefill?.activation, prefill?.autoStart, status, connectVoice, setVoiceActivation]);
+
+  useEffect(() => {
+    if (
+      !open ||
+      voiceStartTrackedRef.current ||
+      (connectionStatus !== "requesting_mic" && connectionStatus !== "connecting" && connectionStatus !== "listening")
+    )
+      return;
+    voiceStartTrackedRef.current = true;
+    trackIntakeEvent("voice_start", {
+      entry_point: activeEntryPointRef.current ?? "unknown",
+      entry_method: activeEntryMethodRef.current ?? "unknown",
+    });
+  }, [connectionStatus, open]);
 
   // Closing the workspace must always release the microphone — a live mic
   // behind a closed dialog is a privacy bug, not a resumable session.
@@ -449,7 +671,10 @@ export function VoiceAgentDialog({
   }, [captured, connectionStatus, emailVerification, segment, sendClientEvents]);
 
   const postReviewSnapshot = useCallback(
-    (overrides: Parameters<typeof buildVoiceReviewSnapshot>[3] = {}, options: { allowLocalReview?: boolean } = {}) => {
+    (
+      overrides: Parameters<typeof buildVoiceReviewSnapshot>[3] = {},
+      options: { allowLocalReview?: boolean; includeEntry?: boolean } = {},
+    ) => {
       const review =
         options.allowLocalReview === false ? (reviewRef.current ?? localReviewRef.current) : currentReviewCredentials();
       if (!review) return;
@@ -458,13 +683,20 @@ export function VoiceAgentDialog({
       void postVoiceReviewSnapshot(
         review,
         buildVoiceReviewSnapshot(review, snapshotState, connectionStatusRef.current, {
+          snapshotSequence: nextSnapshotSequence(review.id),
+          ...(options.includeEntry === false || !activeEntryPointRef.current
+            ? {}
+            : { entryPoint: activeEntryPointRef.current }),
+          ...(options.includeEntry === false || !activeEntryMethodRef.current
+            ? {}
+            : { entryMethod: activeEntryMethodRef.current }),
           ...overrides,
           ...(leadId ? { leadId } : {}),
         }),
         { keepalive: Boolean(overrides.closedAt) },
       ).catch(() => null);
     },
-    [captured, currentReviewCredentials, segment, stateRef, transcript],
+    [captured, currentReviewCredentials, nextSnapshotSequence, segment, stateRef, transcript],
   );
 
   postCloseSnapshotRef.current = (reason: VoiceCloseReason) => {
@@ -474,7 +706,7 @@ export function VoiceAgentDialog({
   useEffect(() => {
     if (open || !reviewMetadata?.prewarmedAt || prewarmSnapshotIdsRef.current.has(reviewMetadata.id)) return;
     prewarmSnapshotIdsRef.current.add(reviewMetadata.id);
-    const timeout = window.setTimeout(() => postReviewSnapshot({ status: "idle" }), 200);
+    const timeout = window.setTimeout(() => postReviewSnapshot({ status: "idle" }, { includeEntry: false }), 200);
     return () => window.clearTimeout(timeout);
   }, [open, postReviewSnapshot, reviewMetadata]);
 
@@ -546,13 +778,11 @@ export function VoiceAgentDialog({
           region.scrollTop = 0;
           region.scrollLeft = 0;
         }
-        if (!desktopLayout.matches) dialogContentRef.current?.focus({ preventScroll: true });
       });
     };
     resetResponsiveScroll();
-    // Base UI finishes its focus-trap setup after the opening frame. Reassert
-    // the popup focus once that settles so a lower form field cannot scroll a
-    // short mobile viewport to the middle or summon its keyboard on open.
+    // Base UI finishes its layout after the opening frame. Reset scroll once
+    // that settles without moving focus away from a control the visitor chose.
     settledReset = window.setTimeout(resetResponsiveScroll, 120);
     desktopLayout.addEventListener("change", resetResponsiveScroll);
     return () => {
@@ -576,10 +806,11 @@ export function VoiceAgentDialog({
         )}
         data-voice-agent-dialog
         initialFocus={() =>
-          window.matchMedia("(max-width: 79.999rem)").matches
+          window.matchMedia("(max-width: 63.999rem)").matches
             ? dialogContentRef.current
-            : (dialogContentRef.current?.querySelector<HTMLInputElement>('input[name="name"]') ??
-              dialogContentRef.current)
+            : (dialogContentRef.current?.querySelector<HTMLInputElement>(
+                `input[name="${prefill?.email ? "name" : "email"}"]`,
+              ) ?? dialogContentRef.current)
         }
       >
         <DialogTitle className="sr-only">Talk to Reka</DialogTitle>
@@ -651,10 +882,34 @@ export function VoiceAgentDialog({
                 turnPhase={turnPhase}
                 onLocalSpeechEnded={recordLocalSpeechEnded}
                 onRemoteAudioStarted={recordRemoteAudioStarted}
+                emailAttention={emailAttention}
+                emailInputRef={mobileEmailRef}
+                emailTouched={emailTouched}
+                emailValid={emailValid}
+                onEmailBlur={() => {
+                  runtime.endCapturedEdit("email");
+                  setEmailTouched(true);
+                  if (!emailValid) setEmailAttention("rejected");
+                }}
+                onEmailChange={(value) => handleCapturedChange("email", value)}
+                onEmailFocus={() => {
+                  markEmailEditorFocused();
+                  runtime.beginCapturedEdit("email");
+                }}
+                onEmailSubmit={() => {
+                  void submit("handoff_button", {
+                    ...stateRef.current,
+                    captured: form.getValues(),
+                    segment,
+                    transcript,
+                  });
+                }}
+                emailSubmitting={submitting}
               />
             </main>
 
             <aside
+              aria-label="Choose partner type"
               className="order-2 border-t border-white/10 p-5 lg:order-none lg:col-start-1 lg:row-start-1 lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:border-t-0 lg:border-r"
               data-voice-partner-region
             >
@@ -682,16 +937,19 @@ export function VoiceAgentDialog({
               className="order-3 lg:order-none lg:col-start-3 lg:row-start-1 lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:border-t-0"
               emailVerification={emailVerification}
               form={form}
-              onChange={runtime.updateCaptured}
+              onChange={handleCapturedChange}
+              onEmailFocus={markEmailEditorFocused}
+              onFieldBlur={runtime.endCapturedEdit}
+              onFieldFocus={runtime.beginCapturedEdit}
               onSubmit={(values) =>
-                submit("form", {
+                submit("handoff_button", {
                   ...stateRef.current,
                   captured: values,
                   segment,
                   transcript,
                 })
               }
-              ready={true}
+              ready={handoffReady}
               selectedSegment={selectedSegment}
               submitted={submitted}
               submitting={submitting}

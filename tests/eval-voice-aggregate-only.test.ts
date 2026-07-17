@@ -33,6 +33,16 @@ function voiceSession(overrides: Record<string, unknown> = {}) {
       version: 1,
       activation: { tapToLiveMs: 500, tapToAudibleMs: 900 },
       turns: [],
+      toolCalls: [
+        {
+          sequence: 1,
+          name: "clear_fields",
+          outcome: "success",
+          executionMs: 7,
+          responseCreatedToCallMs: 13,
+          responseCreatedToResultMs: 20,
+        },
+      ],
     },
     routeRequested: false,
     runtimeProfile: "baseline",
@@ -47,7 +57,7 @@ afterEach(async () => {
 });
 
 describe("eval-voice aggregate-only mode", () => {
-  it("queries Convex once and emits identifier-free JSON without writing files", async () => {
+  it("enriches profile attribution read-only and emits identifier-free JSON without writing files", async () => {
     const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
     const sessions = [
       voiceSession(),
@@ -65,9 +75,14 @@ describe("eval-voice aggregate-only mode", () => {
         body += chunk;
       });
       request.on("end", () => {
-        requests.push({ url: request.url ?? "", body: JSON.parse(body) as Record<string, unknown> });
+        const parsedBody = JSON.parse(body) as Record<string, unknown>;
+        requests.push({ url: request.url ?? "", body: parsedBody });
         response.writeHead(200, { "content-type": "application/json" });
-        response.end(JSON.stringify({ status: "success", value: sessions }));
+        const value =
+          parsedBody.path === "leads:voiceSessionByReviewId"
+            ? { ...sessions[0], voice: "marin", speed: 1.22, variant: "kl-polished" }
+            : sessions;
+        response.end(JSON.stringify({ status: "success", value }));
       });
     });
     await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
@@ -104,16 +119,33 @@ describe("eval-voice aggregate-only mode", () => {
           customerCallRows: 1,
           conversations: 1,
         },
-        aggregate: { sessionCount: 1, droppedMidTurnCount: 1 },
+        aggregate: {
+          sessionCount: 1,
+          droppedMidTurnCount: 1,
+          toolLatency: {
+            overall: { samples: 1, executionP50Ms: 7, responseCreatedToResultP95Ms: 20 },
+            byName: { clear_fields: { samples: 1, executionP50Ms: 7, responseCreatedToResultP50Ms: 20 } },
+          },
+        },
+        experimentAggregates: {
+          "baseline/control/low/kl-polished/marin/1.22": { sessionCount: 1 },
+        },
       });
       expect(serialized).not.toMatch(
         /private-review-id|private-session-id|private-conversation-id|private transcript sentinel/,
       );
       expect(serialized).not.toMatch(/reviewId|sessionId|conversationId|transcript|worstSessions/);
-      expect(requests).toHaveLength(1);
+      expect(requests).toHaveLength(2);
       expect(requests[0]).toMatchObject({
         url: "/api/query",
         body: { path: "leads:voiceSessionsForEval" },
+      });
+      expect(requests[1]).toMatchObject({
+        url: "/api/query",
+        body: {
+          path: "leads:voiceSessionByReviewId",
+          args: [{ ingestSecret: "test-ingest-secret", reviewId: "private-review-id" }],
+        },
       });
       expect(await readdir(cwd)).toEqual([]);
     } finally {

@@ -1,3 +1,10 @@
+import { type Browser, chromium } from "playwright";
+import {
+  type GooglePublicBuildConfiguration,
+  googlePublicBuildConfigurationFromEnv,
+  isExpectedGoogleAnalyticsAsset,
+  readGoogleSiteVerification,
+} from "./lib/google-release";
 import {
   CONTROL_VOICE_CELL,
   governedVoiceCell,
@@ -13,13 +20,15 @@ type Args = {
   target: ReleaseTargetName | "both";
   checks: number;
   stagingModelCell: "control" | "candidate";
+  stagingPickerMode: "clean" | "audition";
 };
 
 function parseArgs(argv: string[]): Args {
   let sha = "";
   let target: Args["target"] = "both";
   let checks = 5;
-  let stagingModelCell: Args["stagingModelCell"] = "control";
+  let stagingModelCell: Args["stagingModelCell"] | undefined;
+  let stagingPickerMode: Args["stagingPickerMode"] = "clean";
   const normalizedArgv = argv.filter((argument) => argument !== "--");
   for (let index = 0; index < normalizedArgv.length; index += 1) {
     const flag = normalizedArgv[index];
@@ -42,9 +51,15 @@ function parseArgs(argv: string[]): Args {
       }
       stagingModelCell = value;
       index += 1;
+    } else if (flag === "--staging-picker-mode") {
+      if (value !== "clean" && value !== "audition") {
+        throw new Error("--staging-picker-mode must be clean or audition");
+      }
+      stagingPickerMode = value;
+      index += 1;
     } else if (flag === "--help") {
       process.stdout.write(
-        "Usage: pnpm release:verify -- --sha <40-char-sha> [--target staging|production|both] [--checks 5] [--staging-model-cell control|candidate]\n",
+        "Usage: pnpm release:verify -- --sha <40-char-sha> [--target staging|production|both] [--checks 5] [--staging-model-cell control|candidate] [--staging-picker-mode clean|audition]\n",
       );
       process.exit(0);
     } else {
@@ -55,10 +70,14 @@ function parseArgs(argv: string[]): Args {
   if (shaFailures.length > 0) throw new Error(shaFailures.join("; "));
   if (!Number.isInteger(checks) || checks < 1 || checks > 10)
     throw new Error("--checks must be an integer from 1 to 10");
+  stagingModelCell ??= target === "production" ? "control" : "candidate";
   if (target === "production" && stagingModelCell !== "control") {
     throw new Error("--staging-model-cell candidate is invalid when verifying production only");
   }
-  return { sha, target, checks, stagingModelCell };
+  if (target === "production" && stagingPickerMode !== "clean") {
+    throw new Error("--staging-picker-mode audition is invalid when verifying production only");
+  }
+  return { sha, target, checks, stagingModelCell, stagingPickerMode };
 }
 
 async function get(url: string, redirect: RequestRedirect = "follow") {
@@ -72,13 +91,17 @@ async function get(url: string, redirect: RequestRedirect = "follow") {
 }
 
 async function verifyTarget(
+  browser: Browser,
   name: ReleaseTargetName,
   expectedSha: string,
   checks: number,
   stagingModelCell: Args["stagingModelCell"],
+  stagingPickerMode: Args["stagingPickerMode"],
+  googleBuildEnvironment: GooglePublicBuildConfiguration,
 ) {
   const target = RELEASE_TARGETS[name];
-  const expectedVoiceCell = name === "staging" ? governedVoiceCell(stagingModelCell) : CONTROL_VOICE_CELL;
+  const expectedVoiceCell =
+    name === "staging" ? governedVoiceCell(stagingModelCell, stagingPickerMode) : CONTROL_VOICE_CELL;
   const healthChecks: unknown[] = [];
   for (let index = 0; index < checks; index += 1) {
     const response = await get(`${target.origin}/api/health`);
@@ -92,7 +115,10 @@ async function verifyTarget(
   const configResponse = await get(`${target.origin}/api/client-config`);
   if (!configResponse.ok) throw new Error(`${name} client config returned HTTP ${configResponse.status}`);
   const config = (await configResponse.json()) as { voiceVariantPicker?: unknown };
-  if (config.voiceVariantPicker !== false) throw new Error(`${name} voiceVariantPicker must be false`);
+  const expectedVariantPicker = expectedVoiceCell.variantPicker;
+  if (config.voiceVariantPicker !== expectedVariantPicker) {
+    throw new Error(`${name} voiceVariantPicker must be ${expectedVariantPicker}`);
+  }
 
   const canonicalResponse = await get(`${target.origin}/`, "manual");
   if (canonicalResponse.status !== 200)
@@ -100,6 +126,11 @@ async function verifyTarget(
   if (hasCloudflareEdgeHeaders(canonicalResponse.headers)) {
     throw new Error(`${name} unexpectedly returned Cloudflare edge headers`);
   }
+  const canonicalHtml = await canonicalResponse.text();
+  if (readGoogleSiteVerification(canonicalHtml) !== googleBuildEnvironment.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION) {
+    throw new Error(`${name} Google site verification meta does not match the managed release environment`);
+  }
+  await verifyGoogleAnalyticsConsentBoundary(browser, name, target.origin, googleBuildEnvironment);
 
   const legacyResponse = await get(`${target.legacyOrigin}/`, "manual");
   if (legacyResponse.status !== 301) throw new Error(`${name} legacy host returned HTTP ${legacyResponse.status}`);
@@ -114,20 +145,101 @@ async function verifyTarget(
     version: expectedSha,
     consecutiveHealthChecks: healthChecks.length,
     convex: true,
-    voiceVariantPicker: false,
+    voiceVariantPicker: expectedVariantPicker,
     voiceModel: expectedVoiceCell.model,
     voiceModelCell: expectedVoiceCell.modelCell,
     cloudflareEdgeHeaders: false,
     legacyRedirect: expectedLocation,
+    googleSiteVerification: true,
+    googleAnalyticsConsentGate: true,
+    googleAnalyticsAdminExcluded: true,
   };
+}
+
+async function verifyGoogleAnalyticsConsentBoundary(
+  browser: Browser,
+  name: ReleaseTargetName,
+  origin: string,
+  expected: GooglePublicBuildConfiguration,
+) {
+  const publicContext = await browser.newContext();
+  const publicAssetRequests: string[] = [];
+  await publicContext.route("https://www.googletagmanager.com/**", (route) => route.abort());
+  try {
+    const page = await publicContext.newPage();
+    page.on("request", (request) => {
+      if (request.url().startsWith("https://www.googletagmanager.com/")) {
+        publicAssetRequests.push(request.url());
+      }
+    });
+    await page.goto(origin, { waitUntil: "networkidle", timeout: 30_000 });
+    const prompt = page.getByRole("region", { name: "Analytics privacy choices" });
+    await prompt.waitFor({ state: "visible", timeout: 10_000 });
+    if (publicAssetRequests.length > 0) {
+      throw new Error(`${name} requested Google Analytics before explicit consent`);
+    }
+
+    const expectedAssetRequest = page.waitForRequest(
+      (request) => isExpectedGoogleAnalyticsAsset(request.url(), expected.NEXT_PUBLIC_GA_MEASUREMENT_ID),
+      { timeout: 10_000 },
+    );
+    await prompt.getByRole("button", { name: "Allow analytics" }).click();
+    await expectedAssetRequest;
+    if (
+      publicAssetRequests.filter((url) => isExpectedGoogleAnalyticsAsset(url, expected.NEXT_PUBLIC_GA_MEASUREMENT_ID))
+        .length !== 1
+    ) {
+      throw new Error(`${name} did not request the expected Google Analytics asset exactly once after consent`);
+    }
+  } finally {
+    await publicContext.close();
+  }
+
+  const adminContext = await browser.newContext();
+  const adminAssetRequests: string[] = [];
+  await adminContext.addInitScript(() => {
+    window.localStorage.setItem("oriental_analytics_consent_v1", "granted");
+  });
+  await adminContext.route("https://www.googletagmanager.com/**", (route) => route.abort());
+  try {
+    const page = await adminContext.newPage();
+    page.on("request", (request) => {
+      if (request.url().startsWith("https://www.googletagmanager.com/")) {
+        adminAssetRequests.push(request.url());
+      }
+    });
+    await page.goto(`${origin}/admin/session-review`, { waitUntil: "networkidle", timeout: 30_000 });
+    if (adminAssetRequests.length > 0) throw new Error(`${name} requested Google Analytics on an admin surface`);
+  } finally {
+    await adminContext.close();
+  }
 }
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  const googleBuildEnvironment = googlePublicBuildConfigurationFromEnv(process.env);
   const names: ReleaseTargetName[] = args.target === "both" ? ["staging", "production"] : [args.target];
   const results = [];
-  for (const name of names) {
-    results.push(await verifyTarget(name, args.sha, args.checks, args.stagingModelCell));
+  const browser = await chromium.launch({
+    headless: true,
+    ...(process.env.PLAYWRIGHT_CHROMIUM_PATH ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } : {}),
+  });
+  try {
+    for (const name of names) {
+      results.push(
+        await verifyTarget(
+          browser,
+          name,
+          args.sha,
+          args.checks,
+          args.stagingModelCell,
+          args.stagingPickerMode,
+          googleBuildEnvironment,
+        ),
+      );
+    }
+  } finally {
+    await browser.close();
   }
   process.stdout.write(`${JSON.stringify({ ok: true, results }, null, 2)}\n`);
 }

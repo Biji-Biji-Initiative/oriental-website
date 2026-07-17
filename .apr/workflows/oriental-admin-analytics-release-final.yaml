@@ -1,0 +1,34 @@
+name: oriental-admin-analytics-release-final
+description: Final independent APR gate after Oriental admin analytics blocker closure
+
+documents:
+  readme: docs/12-CHAT-RELEASE-RUNBOOK.md
+  spec: .apr/specs/oriental-admin-analytics-release.md
+  implementation: .apr/evidence/oriental-admin-analytics-release.md
+
+oracle:
+  model: "gpt-5.2-pro"
+
+rounds:
+  output_dir: .apr/rounds/oriental-admin-analytics-release-final
+  impl_every_n: 1
+
+template: |
+  Perform a final adversarial exact-tree pre-merge review after the documented
+  blocker closure. Treat privacy leakage, analytics before consent, weak
+  authorization, unbounded or duplicative evaluation spend, inaccessible
+  overlays, broken enquiry search, misleading telemetry, weakened lead
+  durability, broken production build/deploy wiring, or release-contract
+  regressions as blockers. This is a code merge gate; do not demand post-merge
+  live evidence. End with exactly `VERDICT: MERGE ADMIN ANALYTICS` or
+  `VERDICT: DO NOT MERGE`.
+
+template_with_impl: |
+  Perform a final adversarial exact-tree pre-merge review against the attached
+  implementation evidence after the documented blocker closure. Treat privacy
+  leakage, analytics before consent, weak authorization, unbounded or
+  duplicative evaluation spend, inaccessible overlays, broken enquiry search,
+  misleading telemetry, weakened lead durability, broken production
+  build/deploy wiring, or release-contract regressions as blockers. This is a
+  code merge gate; do not demand post-merge live evidence. End with exactly
+  `VERDICT: MERGE ADMIN ANALYTICS` or `VERDICT: DO NOT MERGE`.

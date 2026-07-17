@@ -36,8 +36,9 @@ Separate workstream, separate repo, behind auth.
 
 ### Analytics
 
-- No analytics script is currently shipped. If analytics is approved, prefer a
-  small server-side event endpoint with an explicit privacy review.
+- GA4 wiring is consent-gated: the script is not requested until the visitor
+  explicitly allows analytics, admin/API paths are excluded, and query strings
+  are stripped. `/privacy` provides English/Bahasa notice and withdrawal controls.
 - Add **event tracking** through a small server-side analytics endpoint:
   `/api/track` accepting `{ event, props }`. No third-party JS.
 - Events: `voice_opened`, `voice_session_started`, `voice_submitted`,

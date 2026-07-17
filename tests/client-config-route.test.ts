@@ -16,32 +16,16 @@ describe("client config route", () => {
   it("enables the picker only for an explicit QA environment", async () => {
     vi.stubEnv("VOICE_VARIANT_PICKER", "true");
 
-    const response = await GET();
+    const response = await GET(new Request("https://staging.oriental.mereka.io/api/client-config"));
 
     await expect(response.json()).resolves.toMatchObject({ voiceVariantPicker: true });
   });
+  it("fails closed when production accidentally carries the picker flag", async () => {
+    vi.stubEnv("VOICE_VARIANT_PICKER", "true");
+    vi.stubEnv("APP_ENV", "staging");
 
-  it("serves a valid GA measurement id from runtime env", async () => {
-    vi.stubEnv("NEXT_PUBLIC_GA_MEASUREMENT_ID", "G-52MHKNK87D");
+    const response = await GET(new Request("https://oriental.mereka.io/api/client-config"));
 
-    const response = await GET();
-
-    await expect(response.json()).resolves.toMatchObject({ gaMeasurementId: "G-52MHKNK87D" });
-  });
-
-  it("returns null instead of a malformed GA id", async () => {
-    vi.stubEnv("NEXT_PUBLIC_GA_MEASUREMENT_ID", "<script>alert(1)</script>");
-
-    const response = await GET();
-
-    await expect(response.json()).resolves.toMatchObject({ gaMeasurementId: null });
-  });
-
-  it("returns null when GA is not configured", async () => {
-    vi.stubEnv("NEXT_PUBLIC_GA_MEASUREMENT_ID", "");
-
-    const response = await GET();
-
-    await expect(response.json()).resolves.toMatchObject({ gaMeasurementId: null });
+    await expect(response.json()).resolves.toMatchObject({ voiceVariantPicker: false });
   });
 });

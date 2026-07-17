@@ -1,5 +1,8 @@
+import { isValidAdminActor } from "../lib/admin-permissions";
 import { hasShellEscapedQuoteWrapper, unwrapEnvValue } from "../lib/env";
+import { isAllowedAdminEvalModel } from "../lib/eval/admin-models";
 import { activeVoiceExperimentDimensions } from "../lib/voice/experiments";
+import { MANAGED_APPLICATION_ENVIRONMENT_KEYS } from "./lib/managed-app-environment";
 
 const required = [
   "OPENAI_API_KEY",
@@ -9,61 +12,30 @@ const required = [
   "CONVEX_INGEST_SECRET",
   "TURNSTILE_SITE_KEY",
   "TURNSTILE_SECRET_KEY",
+  "TURNSTILE_ENFORCEMENT",
   "IP_HASH_SECRET",
   "OWNER_TENANCY",
   "OWNER_EDUCATION",
   "OWNER_PROGRAMME",
   "OWNER_TECHNOLOGY",
-  "OWNER_AI",
-  "OWNER_CULTURAL",
   "OWNER_COMMUNITY",
   "OWNER_OTHER",
+  "VOICE_SESSION_DAILY_LIMIT",
 ];
 
 const smtpRequired = ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SES_FROM_ADDRESS"];
 const sesRequired = ["AWS_REGION", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "SES_FROM_ADDRESS"];
 const slackRequired = ["SLACK_BOT_TOKEN", "SLACK_CHANNEL_ID"];
 const sentryRequired = ["SENTRY_DSN", "NEXT_PUBLIC_SENTRY_DSN", "SENTRY_ORG", "SENTRY_PROJECT"];
-const adminRequired = ["ADMIN_REVIEW_TOKEN"];
+const adminRequired = [
+  "ADMIN_REVIEW_ACTOR",
+  "ADMIN_REVIEW_ROLE",
+  "ADMIN_REVIEW_TOKEN",
+  "OPS_AUTOMATION_TOKEN",
+  "PRIVACY_ADMIN_TOKEN",
+];
 const opsAlertRequired = ["OPS_ALERT_SLACK_CHANNEL_ID"];
 const clickUpRequired = ["CLICKUP_API_TOKEN", "CLICKUP_LIST_ID"];
-
-const managedEnvironment = [
-  ...required,
-  ...smtpRequired,
-  ...sesRequired,
-  ...slackRequired,
-  ...sentryRequired,
-  ...adminRequired,
-  ...opsAlertRequired,
-  ...clickUpRequired,
-  "NEXT_PUBLIC_TURNSTILE_SITE_KEY",
-  "OPENAI_REALTIME_MODEL_CANDIDATE",
-  "OPENAI_REALTIME_VOICE",
-  "OPENAI_REALTIME_SPEED",
-  "OPENAI_REALTIME_TRANSCRIPTION_MODEL",
-  "VOICE_RUNTIME_PROFILE",
-  "VOICE_MODEL_CELL",
-  "VOICE_REASONING_CELL",
-  "VOICE_EMAIL_CAPTURE_MODE",
-  "VOICE_VARIANT_PICKER",
-  "VOICE_MAX_DURATION_MS",
-  "VOICE_IDLE_TIMEOUT_MS",
-  "VOICE_IDLE_GOODBYE_GRACE_MS",
-  "REDIS_URL",
-  "SENTRY_ENVIRONMENT",
-  "NEXT_PUBLIC_SENTRY_ENVIRONMENT",
-  "SES_REPLY_TO",
-  "TEAM_NOTIFICATION_EMAIL",
-  "TEAM_NOTIFICATION_CC_EMAILS",
-  "COOLIFY_ORIENTAL_APPLICATION_UUID",
-  "CONVEX_DEPLOY_KEY",
-  "SENTRY_AUTH_TOKEN",
-  "EVAL_JUDGE_MODEL",
-  "EVAL_AUTO_ON_CLOSE",
-  "NEXT_PUBLIC_GA_MEASUREMENT_ID",
-  "NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION",
-];
 
 const supportedRealtimeVoices = new Set([
   "alloy",
@@ -83,7 +55,7 @@ if (!process.env.INFISICAL_TOKEN && !process.env.CONVEX_DEPLOY_KEY && process.en
   process.exit(0);
 }
 
-const malformed = [...new Set(managedEnvironment)].filter((name) => hasShellEscapedQuoteWrapper(process.env[name]));
+const malformed = MANAGED_APPLICATION_ENVIRONMENT_KEYS.filter((name) => hasShellEscapedQuoteWrapper(process.env[name]));
 if (malformed.length > 0) {
   console.error(`Malformed shell-escaped environment variables: ${malformed.join(", ")}`);
   process.exit(1);
@@ -118,6 +90,29 @@ if (process.env.NODE_ENV === "production") {
   const missingAdmin = adminRequired.filter((name) => !envValue(name));
   if (missingAdmin.length > 0) {
     console.error(`Missing admin review variables: ${missingAdmin.join(", ")}`);
+    process.exit(1);
+  }
+
+  const adminRole = envValue("ADMIN_REVIEW_ROLE");
+  if (adminRole !== "viewer" && adminRole !== "operator" && adminRole !== "admin") {
+    console.error("ADMIN_REVIEW_ROLE must be explicitly viewer, operator, or admin.");
+    process.exit(1);
+  }
+
+  const adminActor = envValue("ADMIN_REVIEW_ACTOR");
+  if (!adminActor || !isValidAdminActor(adminActor)) {
+    console.error("ADMIN_REVIEW_ACTOR must be 1-80 printable characters.");
+    process.exit(1);
+  }
+
+  const credentialNames = ["ADMIN_REVIEW_TOKEN", "OPS_AUTOMATION_TOKEN", "PRIVACY_ADMIN_TOKEN"];
+  const credentials = credentialNames.map((name) => envValue(name) ?? "");
+  if (credentials.some((credential) => credential.length < 32)) {
+    console.error("Admin review, ops automation, and privacy admin tokens must each be at least 32 characters.");
+    process.exit(1);
+  }
+  if (new Set(credentials).size !== credentials.length) {
+    console.error("Admin review, ops automation, and privacy admin tokens must be distinct.");
     process.exit(1);
   }
 
@@ -167,9 +162,27 @@ if (modelCell && modelCell !== "control" && modelCell !== "candidate") {
   process.exit(1);
 }
 
+const evalJudgeModel = envValue("EVAL_JUDGE_MODEL");
+if (evalJudgeModel && !isAllowedAdminEvalModel(evalJudgeModel)) {
+  console.error("EVAL_JUDGE_MODEL must be one of the approved admin evaluation models.");
+  process.exit(1);
+}
+
 const emailCaptureMode = envValue("VOICE_EMAIL_CAPTURE_MODE");
 if (emailCaptureMode && emailCaptureMode !== "strict" && emailCaptureMode !== "adaptive") {
   console.error("VOICE_EMAIL_CAPTURE_MODE must be strict or adaptive.");
+  process.exit(1);
+}
+
+const turnstileEnforcement = envValue("TURNSTILE_ENFORCEMENT");
+if (turnstileEnforcement !== "relaxed" && turnstileEnforcement !== "required") {
+  console.error("TURNSTILE_ENFORCEMENT must be explicitly relaxed or required.");
+  process.exit(1);
+}
+
+const voiceSessionDailyLimit = Number(envValue("VOICE_SESSION_DAILY_LIMIT"));
+if (!Number.isSafeInteger(voiceSessionDailyLimit) || voiceSessionDailyLimit < 1 || voiceSessionDailyLimit > 10_000) {
+  console.error("VOICE_SESSION_DAILY_LIMIT must be an integer from 1 to 10000.");
   process.exit(1);
 }
 if (modelCell === "candidate" && !envValue("OPENAI_REALTIME_MODEL_CANDIDATE")) {
@@ -192,8 +205,13 @@ if (activeExperimentDimensions.length > 1) {
   );
   process.exit(1);
 }
-if (activeExperimentDimensions.length > 0 && envValue("VOICE_VARIANT_PICKER") === "true") {
-  console.error("VOICE_VARIANT_PICKER must be false while a runtime, model, or reasoning experiment is active.");
+const deploymentEnvironment = envValue("APP_ENV") ?? envValue("SENTRY_ENVIRONMENT");
+if (
+  activeExperimentDimensions.length > 0 &&
+  envValue("VOICE_VARIANT_PICKER") === "true" &&
+  deploymentEnvironment !== "staging"
+) {
+  console.error("VOICE_VARIANT_PICKER may accompany an active experiment only in staging.");
   process.exit(1);
 }
 

@@ -34,6 +34,15 @@ export function rememberHandoff(captured: Pick<CapturedLead, "name" | "email" | 
   }
 }
 
+/** Forget a previously submitted identity when the visitor asks to clear all. */
+export function forgetHandoff() {
+  try {
+    window.localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Storage can be unavailable; the live runtime is still cleared separately.
+  }
+}
+
 export function recallHandoff(): RememberedHandoff | null {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);

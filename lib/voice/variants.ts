@@ -15,8 +15,8 @@
  *
  * This module is the single source of truth: the server resolves the selected
  * id when minting a session (so voice/speed/persona are never client-supplied),
- * and the tuning picker (dev, or production with /?voices=1) renders the same
- * list.
+ * and the tuning picker (development or an explicitly enabled staging runtime)
+ * renders the same list. Production remains disabled server-side.
  */
 export type VoiceVariant = {
   id: string;
@@ -36,7 +36,7 @@ export type VoiceVariant = {
   personaNote: string;
 };
 
-export const VOICE_VARIANTS: readonly VoiceVariant[] = [
+export const VOICE_VARIANTS = [
   {
     id: "kl-polished",
     label: "Reka · Polished",
@@ -44,7 +44,7 @@ export const VOICE_VARIANTS: readonly VoiceVariant[] = [
     voice: "marin",
     speed: 1.22,
     personaNote:
-      "Register for this variant: the polished Klang Valley professional — the host who welcomes partners in a Bangsar studio or a partner boardroom. Clean, articulate Malaysian English in crisp, efficient sentences: lead with the answer, then one sharp follow-up question. Signature moves: 'Quick one —' before a qualifying question, a confident 'can' when confirming something is possible, at most one light 'ya?' in a beat and never stacked particles. A sharp KL creative-industry founder — warm, direct, zero fluff.",
+      "Register for this variant: the polished Klang Valley professional — the host who welcomes partners in a Bangsar studio or a partner boardroom. Clean, articulate Malaysian English in crisp, efficient sentences: lead with the answer, then one sharp follow-up question. Ask qualifying questions directly without a stock preamble; use a confident 'can' when confirming something is possible, at most one light 'ya?' in a beat and never stacked particles. A sharp KL creative-industry founder — warm, direct, zero fluff.",
   },
   {
     id: "malay-warm",
@@ -82,9 +82,11 @@ export const VOICE_VARIANTS: readonly VoiceVariant[] = [
     personaNote:
       "Register for this variant: the young KL host — peer energy, like a sharp twenty-something showing a friend around, never corporate. Contractions everywhere, short punchy sentences, and a quick genuine reaction before the info: 'Okay that's actually cool', 'honestly', 'super'. In most beats, one light local marker — an 'okay can', 'confirm', or a casual 'lah' where it lands naturally — never more than one, never forced. A little cheeky and direct is good ('normal office? this is not that'). Current and effortless, never try-hard, and still gets every detail right.",
   },
-] as const;
+] as const satisfies readonly VoiceVariant[];
 
-export const VOICE_VARIANT_IDS = VOICE_VARIANTS.map((variant) => variant.id);
+export type VoiceVariantId = (typeof VOICE_VARIANTS)[number]["id"];
+
+export const VOICE_VARIANT_IDS: readonly VoiceVariantId[] = VOICE_VARIANTS.map((variant) => variant.id);
 
 /** Sensible, low-risk starting point for the picker's "recommended" hint. */
 export const DEFAULT_VOICE_VARIANT_ID = "kl-polished";

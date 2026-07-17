@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
-import { StagingSiteLoader } from "@/components/brand-motion/StagingSiteLoader";
+import { MerekaSiteLoader } from "@/components/brand-motion/MerekaSiteLoader";
 import { TurnstileProvider } from "@/components/security/TurnstileProvider";
 import { PublicChrome } from "@/components/site/PublicChrome";
 import { Toaster } from "@/components/ui/sonner";
 import { VoiceProvider } from "@/components/voice-agent/voice-state";
-import { BRAND_MOTION_PREVIEW_ENABLED } from "@/lib/brand-motion";
 import { siteMeta } from "@/lib/content";
 import "./globals.css";
 
@@ -70,9 +69,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${poppins.variable} ${fraunces.variable} scroll-smooth antialiased`}>
+    <html
+      lang="en"
+      className={`${poppins.variable} ${fraunces.variable} scroll-smooth antialiased`}
+      data-scroll-behavior="smooth"
+    >
       <body className="min-h-svh bg-mk-paper text-mk-off-black">
-        {BRAND_MOTION_PREVIEW_ENABLED ? <StagingSiteLoader enabled /> : null}
+        <MerekaSiteLoader />
         {/* Warm the TLS connection the voice flow depends on while the visitor
             is still reading; React hoists this into <head>. */}
         <link href="https://api.openai.com" rel="preconnect" />

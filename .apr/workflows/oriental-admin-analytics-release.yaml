@@ -1,0 +1,34 @@
+name: oriental-admin-analytics-release
+description: Exact-tree merge gate for Oriental admin analytics and eval release
+
+documents:
+  readme: docs/12-CHAT-RELEASE-RUNBOOK.md
+  spec: .apr/specs/oriental-admin-analytics-release.md
+  implementation: .apr/evidence/oriental-admin-analytics-release.md
+
+oracle:
+  model: "gemini-3.1-pro"
+
+rounds:
+  output_dir: .apr/rounds/oriental-admin-analytics-release
+  impl_every_n: 1
+
+template: |
+  Perform the requested adversarial exact-tree pre-merge review. Treat privacy
+  leakage, analytics before consent, weak authorization, unbounded or
+  duplicative evaluation spend, inaccessible overlays, misleading telemetry,
+  weakened lead durability, broken build/deploy wiring, and regressions of the
+  established release contract as blockers. This is a code merge gate; do not
+  demand correctly sequenced live evidence that can only exist after merge.
+  End with exactly `VERDICT: MERGE ADMIN ANALYTICS` or
+  `VERDICT: DO NOT MERGE`.
+
+template_with_impl: |
+  Perform the requested adversarial exact-tree pre-merge review against the
+  attached implementation evidence. Treat privacy leakage, analytics before
+  consent, weak authorization, unbounded or duplicative evaluation spend,
+  inaccessible overlays, misleading telemetry, weakened lead durability,
+  broken build/deploy wiring, and regressions of the established release
+  contract as blockers. This is a code merge gate; do not demand live evidence
+  that can only exist after merge. End with exactly
+  `VERDICT: MERGE ADMIN ANALYTICS` or `VERDICT: DO NOT MERGE`.

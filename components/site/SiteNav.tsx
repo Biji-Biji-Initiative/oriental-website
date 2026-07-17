@@ -61,7 +61,7 @@ export function SiteNav() {
       if (event.code === "Escape") setMenuOpen(false);
       if (event.code === "Space" && event.target === document.body && !menuOpen) {
         event.preventDefault();
-        voice.open(undefined, { autoStart: false, mode: "form" });
+        voice.open(undefined, { autoStart: false, mode: "form", entryPoint: "keyboard_shortcut" });
       }
     };
     window.addEventListener("keydown", handler);
@@ -139,7 +139,7 @@ export function SiteNav() {
                 ? "border border-white/16 bg-white/10 hover:bg-white/18"
                 : "border border-mk-off-black/12 bg-white/75 text-mk-off-black shadow-sm hover:bg-white",
             )}
-            onClick={() => voice.open(undefined, { autoStart: false, mode: "form" })}
+            onClick={() => voice.open(undefined, { autoStart: false, mode: "form", entryPoint: "nav_desktop" })}
             type="button"
           >
             <MerekaMiniMark size={24} />
@@ -172,7 +172,7 @@ export function SiteNav() {
               className="site-nav__mobile-voice"
               onClick={() => {
                 closeMenu();
-                voice.open(undefined, { autoStart: false, mode: "form" });
+                voice.open(undefined, { autoStart: false, mode: "form", entryPoint: "nav_mobile" });
               }}
               type="button"
             >

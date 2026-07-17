@@ -1,7 +1,9 @@
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 import { adminCookieName, createAdminSessionCookie } from "../../lib/server/admin-auth";
 
 const adminPassword = process.env.E2E_ADMIN_SHARED_PASSWORD ?? process.env.ADMIN_REVIEW_TOKEN;
+const adminOrigin = new URL(process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3011").origin;
 
 test.describe("admin session review console", () => {
   test.beforeEach(async ({ context, page }) => {
@@ -27,6 +29,7 @@ test.describe("admin session review console", () => {
     await context.clearCookies();
     const login = await context.request.post("/api/admin/login", {
       data: { token: adminPassword },
+      headers: { origin: adminOrigin },
     });
     expect(login.status()).toBe(200);
 
@@ -37,6 +40,7 @@ test.describe("admin session review console", () => {
 
     const protectedMutation = await context.request.patch("/api/admin/leads/lead-cookie-proof", {
       data: { status: "archived" },
+      headers: { origin: adminOrigin },
     });
     expect(protectedMutation.status()).toBe(400);
     await expect(protectedMutation.json()).resolves.toMatchObject({
@@ -159,6 +163,110 @@ test.describe("admin session review console", () => {
     await expect(page.getByText("This page couldn’t load")).toHaveCount(0);
   });
 
+  test("keeps admin dialogs, selects, and menus inside the dark theme boundary", async ({ page }, testInfo) => {
+    await page.goto("/admin/session-review?view=leads");
+    const workspace = page.locator("[data-admin-enquiry-table]");
+
+    await workspace.getByLabel("Status").click();
+    const listbox = page.locator('[data-slot="select-content"]');
+    await expect(listbox).toBeVisible();
+    await expect(listbox).toHaveCSS("background-color", "rgb(13, 19, 34)");
+    expect(await listbox.evaluate((element) => Boolean(element.closest(".admin-root")))).toBe(true);
+    await page.keyboard.press("Escape");
+
+    await workspace.getByRole("button", { name: "Choose visible columns" }).click();
+    const columnsMenu = page.getByRole("menu");
+    await expect(columnsMenu).toBeVisible();
+    await expect(columnsMenu).toHaveCSS("background-color", "rgb(13, 19, 34)");
+    expect(await columnsMenu.evaluate((element) => Boolean(element.closest(".admin-root")))).toBe(true);
+    await page.keyboard.press("Escape");
+
+    const row = workspace.locator(
+      `${testInfo.project.name === "mobile" ? "article" : "[data-crm-table] tr"}[data-lead-id="lead-critical-1"]`,
+    );
+    await row.getByRole("button", { name: "Actions for Aisha Rahman" }).click();
+    await page.getByText("Edit workflow", { exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Edit enquiry workflow" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toHaveCSS("background-color", "rgb(11, 16, 30)");
+    expect(await dialog.evaluate((element) => Boolean(element.closest(".admin-root")))).toBe(true);
+  });
+
+  test("gives the command palette a named modal, trapped focus, and deterministic focus restoration", async ({
+    page,
+  }, testInfo) => {
+    const trigger = page.getByRole("button", { name: "Search the admin console" });
+    await trigger.click();
+
+    const dialog = page.getByRole("dialog", { name: "Search the admin console" });
+    const search = dialog.getByRole("textbox", { name: "Search the admin console" });
+    await expect(dialog).toBeVisible();
+    await expect(search).toBeFocused();
+    expect(
+      await page
+        .locator("main")
+        .evaluate((element) => element.hasAttribute("inert") || element.getAttribute("aria-hidden") === "true"),
+    ).toBe(true);
+
+    // Next's development-only devtools shadow host can enter the browser tab
+    // order despite Base UI marking it inert. It does not exist in production,
+    // so exclude that harness chrome from the product focus-cycle proof.
+    await page.locator("nextjs-portal").evaluateAll((portals) => {
+      for (const portal of portals) (portal as HTMLElement).inert = true;
+    });
+
+    for (let index = 0; index < 4; index += 1) {
+      await page.keyboard.press(index === 0 ? "Shift+Tab" : "Tab");
+      const focusState = await dialog.evaluate((element) => {
+        const active = document.activeElement;
+        return {
+          active: active instanceof HTMLElement ? active.outerHTML.slice(0, 240) : String(active),
+          insidePortal: Boolean(element.closest("[data-base-ui-portal]")?.contains(active)),
+        };
+      });
+      expect(focusState.insidePortal, `focus step ${index + 1}: ${focusState.active}`).toBe(true);
+    }
+
+    const accessibility = await new AxeBuilder({ page })
+      .include('[role="dialog"]')
+      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+      .analyze();
+    const seriousOrCritical = accessibility.violations.filter(
+      (violation) => violation.impact === "serious" || violation.impact === "critical",
+    );
+    await testInfo.attach("admin-command-palette-a11y.json", {
+      body: JSON.stringify({ seriousOrCritical }, null, 2),
+      contentType: "application/json",
+    });
+    expect(seriousOrCritical).toHaveLength(0);
+
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(trigger).toBeFocused();
+
+    const signOut = page.getByRole("button", { name: "Sign out" });
+    await signOut.focus();
+    await page.keyboard.press("/");
+    await expect(search).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(signOut).toBeFocused();
+  });
+
+  test("finds a fixture enquiry in the command palette and opens its CRM record", async ({ page }) => {
+    await page.getByRole("button", { name: "Search the admin console" }).click();
+
+    const dialog = page.getByRole("dialog", { name: "Search the admin console" });
+    await dialog.getByRole("textbox", { name: "Search the admin console" }).fill("Aisha Rahman");
+    await expect(dialog.getByText("Enquiries", { exact: true })).toBeVisible();
+
+    const result = dialog.getByRole("button", { name: /Aisha Rahman.*Impact Robotics Lab/ });
+    await expect(result).toBeVisible();
+    await result.click();
+
+    await expect(page).toHaveURL(/view=leads.*lead=lead-critical-1.*#crm-record/);
+    await expect(page.locator("#crm-record").getByRole("heading", { name: "Aisha Rahman" })).toBeVisible();
+  });
+
   test("shows account portfolio and owner workload as CRM tables", async ({ page }, testInfo) => {
     await page.goto("/admin/session-review?view=leads");
     await expect(page.getByRole("heading", { name: "Account portfolio & ownership" })).toBeVisible();
@@ -254,7 +362,9 @@ test.describe("admin session review console", () => {
     await workspace.getByRole("button", { name: "Archive 1" }).click();
 
     const dialog = page.getByRole("dialog", { name: "Archive enquiries" });
-    await expect(dialog.getByText(/no customer, transcript, delivery, or audit data is deleted/i)).toBeVisible();
+    await expect(
+      dialog.getByText(/archiving does not delete them now.*published two-year retention window/i),
+    ).toBeVisible();
     await expect(dialog.getByLabel("Reason")).toBeVisible();
     await expect(dialog.getByText(/atomic action.*revision checked/i)).toBeVisible();
     await expect(dialog.getByRole("button", { name: "Archive records" })).toBeDisabled();
@@ -266,6 +376,36 @@ test.describe("admin session review console", () => {
     await expect(page.getByRole("heading", { name: "Enquiry pipeline" })).toBeVisible();
     await expect(page.getByText("CRM data")).toBeVisible();
     await expect(page.getByText("Aisha Rahman").filter({ visible: true }).first()).toBeVisible();
+
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow).toBeLessThanOrEqual(1);
+  });
+
+  test("separates submitted-lead attribution from the engaged voice capture funnel", async ({ page }) => {
+    await page.goto("/admin/session-review?view=audit");
+
+    await expect(page.getByText("Submitted leads — conversion attribution", { exact: true })).toBeVisible();
+    const funnel = page.locator("[data-voice-capture-funnel]");
+    await expect(funnel.getByText("All engaged voice conversations — capture funnel", { exact: true })).toBeVisible();
+    await expect(funnel.getByText("2 logical conversations", { exact: true })).toBeVisible();
+    await expect(funnel.getByText(/2 engaged of 2 loaded session rows became 2 logical conversations/i)).toBeVisible();
+    await expect(funnel.getByText("Closed without sending", { exact: true })).toBeVisible();
+    await expect(funnel.getByText("Submitted conversations sent with", { exact: true })).toBeVisible();
+    await expect(funnel.getByText("Final email state", { exact: true })).toBeVisible();
+    await expect(funnel.getByText("Persistent header navigation", { exact: true })).toBeVisible();
+
+    await funnel.getByText("All engaged voice conversations — per-field completion and editing").click();
+    const email = funnel.locator('[data-voice-capture-field="email"]');
+    await expect(email.getByText("2/2", { exact: true })).toBeVisible();
+    await expect(email.getByText("conversations completed · 0 missing", { exact: true })).toBeVisible();
+
+    const contrast = await new AxeBuilder({ page })
+      .include("[data-voice-capture-funnel]")
+      .withRules(["color-contrast"])
+      .analyze();
+    expect(contrast.violations).toHaveLength(0);
 
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,

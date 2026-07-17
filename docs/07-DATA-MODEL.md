@@ -23,7 +23,11 @@ capture.
 |---|---|---|
 | `_id` / `_creationTime` | Convex-managed | Internal document identity and creation time. |
 | `leadId` | string | App-generated UUID from `routeLead`; returned to the browser. |
-| `source` | `"voice" | "form" | "hero-email"` | Entry surface. |
+| `source` | `"voice" | "form" | "hero-email"` | Coarse interaction channel retained for compatibility. |
+| `entryPoint` | string? | Bounded CTA category (`hero_primary`, `nav_desktop`, etc.); no URL or copy. |
+| `entryMethod` | string? | Independent opening method: `voice_button`, `form`, `email_capture`, or `unknown`. |
+| `submissionMethod` | string? | `voice_command`, `handoff_button`, or `email_capture_button`. |
+| `fieldProvenance` | object? | PII-free fixed six-field capture method and bounded edit/correction/clear counters. |
 | `segment` | string | One of the segment IDs in `lib/segments.ts`; Convex keeps it string-typed. |
 | `routedTo` | string | Denormalised owner name at write time. |
 | `routedToEmail` | string \| null | Resolved from `OWNER_*`; nullable so non-production can still capture. |
@@ -91,6 +95,8 @@ submission.
 | `connectionStatus` | string | WebRTC state from the client. |
 | `deviceProfile` / `deploymentEnvironment` | optional | Evidence attribution for device class and local/staging/production traffic. |
 | `activationAttempted` | boolean? | Explicit post-mint user activation; distinguishes an empty failed attempt from an unused prewarm or legacy unknown row. |
+| `entryPoint` / `entryMethod` / `submissionMethod` | optional | Bounded entry surface, opening method, and final submission categories. Unused prewarms carry no entry attribution; heartbeats never erase an already persisted submission method. |
+| `fieldProvenance` | object? | PII-free source/correction summary for the six captured fields; no captured values. |
 | `model` / `voice` / `speed` | optional | Realtime render settings used for the session. |
 | `runtimeProfile` / `modelCell` / `reasoningCell` | optional | Controlled experiment dimensions; only one may differ from control in a release. |
 | `latency` | object? | Bounded activation and turn timing, including tap-to-live and tap-to-audible. |
@@ -113,7 +119,10 @@ Indexes:
 ## Write Path
 
 1. Route handler validates a request with Zod (`lib/schemas.ts`).
-2. Turnstile is verified server-side.
+2. Signed review credentials are verified for voice-origin submissions.
+   Unsigned form submissions verify Turnstile only when
+   `TURNSTILE_ENFORCEMENT=required`; `relaxed` keeps the Redis-backed limiter as
+   the active abuse boundary.
 3. `routeLead()` resolves segment owner metadata from `lib/segments.ts` and
    `OWNER_*` environment variables.
 4. `persistLead()` calls Convex with `{ lead, ingestSecret }`.
@@ -140,7 +149,7 @@ returns `ok: true`. Production secret checks require Convex configuration.
 Segment IDs are owned by `lib/segments.ts`:
 
 ```ts
-tenancy | education | programme | technology | ai | cultural | community | other
+tenancy | education | programme | technology | community | other
 ```
 
 Owner email variables:
@@ -150,11 +159,13 @@ OWNER_TENANCY=
 OWNER_EDUCATION=
 OWNER_PROGRAMME=
 OWNER_TECHNOLOGY=
-OWNER_AI=
-OWNER_CULTURAL=
 OWNER_COMMUNITY=
 OWNER_OTHER=
 ```
+
+Historical `OWNER_AI` and `OWNER_CULTURAL` values are retired deployment
+tombstones. AI enquiries route through `technology`; cultural enquiries that
+do not fit another segment route through `other`.
 
 Owner names live in code so historical lead displays remain stable. Owner
 emails live in environment variables so operations can rotate routing without a
@@ -195,15 +206,26 @@ CONVEX_DEPLOY_KEY= # deploy only, not app runtime
 
 ## Retention
 
-No automated retention job exists yet. Until PDPA/legal policy is finalized,
-Convex lead documents and transcripts are retained indefinitely.
+The published policy is enforced by the nightly `analytics-ops.yml` retention
+job and a bounded `leads.applyDataRetention` mutation:
 
-Launch follow-ups:
+- unsubmitted voice-session diagnostics are deleted after 30 days;
+- submitted voice-session diagnostics are deleted after 90 days;
+- transcript content copied onto a lead is stripped after 90 days;
+- archived leads and their workflow events are deleted after 730 days;
+- PII-free aggregate analytics can be retained beyond the source-record window.
 
-- Define retention/deletion policy for leads and transcripts.
-- Decide whether IP-derived abuse data should ever be persisted. It is not
-  stored today.
-- Add export and richer CRM integration once a downstream CRM owner exists.
+Each API call deletes a bounded batch and reports `hasMore`; the workflow calls
+up to ten batches and fails visibly if a backlog remains. The protected
+`DELETE /api/admin/privacy` path lets an admin execute a verified data-subject
+deletion by normalized email. It removes matching leads, workflow events, and
+linked or email-matching voice sessions only after addressable Slack/ClickUp
+copies have been removed and manual email/legacy-copy cleanup has been
+confirmed. It returns counts only and writes a contact-free audit record keyed
+by the operator's request UUID.
+
+IP-derived abuse identities are not persisted in Convex. Add richer CRM export
+only once a downstream owner and its own retention contract exist.
 
 ## CRM Intelligence
 

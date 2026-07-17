@@ -41,13 +41,19 @@ MUST NOT be reported as complete.
 - [ ] Populate an isolated `dev` scope and dedicated staging upstream services; the staging Infisical contract exists, but its Convex/notification accounts are still shared
 - [x] `REDIS_URL` is present in production and API logs show `rateLimitStore: "redis"`
 - [x] `COOLIFY_ORIENTAL_APPLICATION_UUID` is set to `mtrl2z6a7zvoyevxvufpntij` for deploy scripts
-- [x] `ADMIN_REVIEW_TOKEN` is present in `/deploy/oriental-website`
+- [x] Distinct `ADMIN_REVIEW_TOKEN`, `OPS_AUTOMATION_TOKEN`, and
+      `PRIVACY_ADMIN_TOKEN` credentials plus explicit `ADMIN_REVIEW_ROLE` /
+      `ADMIN_REVIEW_ACTOR` are present in `/deploy/oriental-website`
 - [x] Sentry `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_ORG`, and
       `SENTRY_PROJECT=oriental-website` are present
 - [x] `OPS_ALERT_SLACK_CHANNEL_ID=C01AVSGACFN` targets `#tech-team-test`
+- [ ] Governed production deploy reads back the exact managed GA4 and Google
+      verification values with both Coolify build-time and runtime enabled
 
 ## Optional Cloudflare Turnstile
 
+- [x] `TURNSTILE_ENFORCEMENT=relaxed` is explicit in the managed staging and
+      production contract; Redis-backed route limits remain active
 - [x] Client Turnstile UI is deliberately disabled; Redis remains the active abuse-control layer
 - [x] Site and secret keys are held in Infisical for a deliberate future enablement
 - [x] Required-enforcement tests reject missing and tampered tokens for unsigned form/newsletter intake
@@ -62,7 +68,8 @@ MUST NOT be reported as complete.
 - [ ] `leads` table accepts a staging/prod test lead
 - [ ] `leadEvents` receives the matching `created` event
 - [ ] `CONVEX_INGEST_SECRET` rejects an invalid secret
-- [ ] Backup/export ownership and retention are documented
+- [x] Runtime retention windows and verified deletion handling are documented
+- [ ] Backup/export ownership and restore-time retention reapplication are assigned
 
 ## OpenAI Realtime
 
@@ -164,14 +171,18 @@ Walk through every user path on the staging URL:
       Slack, WhatsApp, X, LinkedIn, iMessage
 - [ ] `sitemap.xml` and `robots.txt` served
 - [ ] Canonical URL set to `https://oriental.mereka.io/`
+- [ ] Live root renders the exact managed `google-site-verification` meta tag
+- [ ] Search Console ownership is verified and `/sitemap.xml` is submitted
 
 ## Legal / privacy
 
 - [ ] PDPA privacy notice copy approved
-- [ ] Privacy notice link visible in the voice modal footer
-- [ ] Privacy notice link in main footer
+- [x] Privacy notice link visible in the voice handoff
+- [x] Privacy notice link in main footer
 - [ ] "No recordings kept" claim verified against actual behaviour
-- [ ] Cookie-banner decision confirmed with legal; no analytics script is currently shipped
+- [x] Analytics fails closed behind explicit opt-in; legal copy approval remains a human sign-off gate
+- [ ] Live browser proof observes no GA asset before opt-in or on admin, and the
+      expected GA asset only after explicit public consent
 
 ## Stakeholder sign-off
 

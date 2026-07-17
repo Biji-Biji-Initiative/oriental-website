@@ -1,6 +1,7 @@
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import { summarizeAdminLeads } from "@/lib/admin-lead-counts";
+import type { PrivacyDeletionReason } from "@/lib/data-retention";
 import { readEnv } from "@/lib/env";
 import type {
   AdminLeadArchiveRequest,
@@ -22,9 +23,28 @@ export async function persistLead(lead: StoredLead) {
     const result = await client.mutation(api.leads.createLead, { lead, ingestSecret });
     return { id: result.id, persisted: true as const };
   } catch (error) {
-    if (lead.voiceRuntimeProfile || lead.voiceInputPolicy || lead.voiceModelCell || lead.voiceReasoningCell) {
-      const { voiceRuntimeProfile: _runtimeProfile, voiceInputPolicy: _inputPolicy, ...legacyLead } = lead;
-      const { voiceModelCell: _modelCell, voiceReasoningCell: _reasoningCell, ...compatibleLead } = legacyLead;
+    if (
+      isConvexForwardFieldValidationError(error) &&
+      (lead.voiceRuntimeProfile ||
+        lead.voiceInputPolicy ||
+        lead.voiceModelCell ||
+        lead.voiceReasoningCell ||
+        lead.entryPoint ||
+        lead.entryMethod ||
+        lead.submissionMethod ||
+        lead.fieldProvenance)
+    ) {
+      const {
+        voiceRuntimeProfile: _runtimeProfile,
+        voiceInputPolicy: _inputPolicy,
+        voiceModelCell: _modelCell,
+        voiceReasoningCell: _reasoningCell,
+        entryPoint: _entryPoint,
+        entryMethod: _entryMethod,
+        submissionMethod: _submissionMethod,
+        fieldProvenance: _fieldProvenance,
+        ...compatibleLead
+      } = lead;
       const result = await client.mutation(api.leads.createLead, { lead: compatibleLead, ingestSecret });
       return { id: result.id, persisted: true as const };
     }
@@ -56,6 +76,10 @@ export async function recordLeadNotificationStatus(
     notificationDelivered: delivered,
     emailOk: notifications.email?.ok === true,
     slackOk: notifications.slack?.ok === true,
+    slackMessageId:
+      notifications.slack?.ok === true && notifications.slack.transport === "slack"
+        ? notifications.slack.externalId
+        : undefined,
     clickupOk: notifications.clickup?.ok === true,
     clickupTaskId:
       notifications.clickup?.ok === true && notifications.clickup.transport === "clickup"
@@ -80,23 +104,34 @@ export async function persistVoiceReviewSnapshot(input: VoiceReviewSnapshotReque
       ingestSecret: client.ingestSecret,
       snapshot: convexInput,
     });
-    return { ok: result.ok, id: result.id };
+    return {
+      ok: result.ok,
+      id: result.id,
+      applied: result.applied ?? true,
+      autoEvalQueued: result.autoEvalQueued ?? false,
+    };
   } catch (error) {
     // Forward-compatibility: a Convex deployment that predates evolvable
     // telemetry fields rejects them as unknown arguments. Retry once without
     // telemetry so review persistence never regresses on deploy ordering.
     if (
-      convexInput.transport ||
-      convexInput.latency ||
-      convexInput.runtimeProfile ||
-      convexInput.inputPolicy ||
-      convexInput.modelCell ||
-      convexInput.reasoningCell ||
-      convexInput.deviceProfile ||
-      convexInput.deploymentEnvironment ||
-      convexInput.emailVerification ||
-      convexInput.emailCaptureMode ||
-      typeof convexInput.activationAttempted === "boolean"
+      isConvexForwardFieldValidationError(error) &&
+      (convexInput.transport ||
+        convexInput.latency ||
+        convexInput.runtimeProfile ||
+        convexInput.inputPolicy ||
+        convexInput.modelCell ||
+        convexInput.reasoningCell ||
+        convexInput.deviceProfile ||
+        convexInput.deploymentEnvironment ||
+        convexInput.emailVerification ||
+        convexInput.emailCaptureMode ||
+        convexInput.entryPoint ||
+        convexInput.entryMethod ||
+        convexInput.submissionMethod ||
+        convexInput.fieldProvenance ||
+        typeof convexInput.snapshotSequence === "number" ||
+        typeof convexInput.activationAttempted === "boolean")
     ) {
       const {
         transport: _transport,
@@ -109,6 +144,11 @@ export async function persistVoiceReviewSnapshot(input: VoiceReviewSnapshotReque
         deploymentEnvironment: _deploymentEnvironment,
         emailVerification: _emailVerification,
         emailCaptureMode: _emailCaptureMode,
+        entryPoint: _entryPoint,
+        entryMethod: _entryMethod,
+        submissionMethod: _submissionMethod,
+        fieldProvenance: _fieldProvenance,
+        snapshotSequence: _snapshotSequence,
         activationAttempted: _activationAttempted,
         ...rest
       } = convexInput;
@@ -116,10 +156,23 @@ export async function persistVoiceReviewSnapshot(input: VoiceReviewSnapshotReque
         ingestSecret: client.ingestSecret,
         snapshot: rest,
       });
-      return { ok: result.ok, id: result.id };
+      return {
+        ok: result.ok,
+        id: result.id,
+        applied: result.applied ?? true,
+        autoEvalQueued: result.autoEvalQueued ?? false,
+      };
     }
     throw error;
   }
+}
+
+function isConvexForwardFieldValidationError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    /ArgumentValidationError|validator/i.test(message) &&
+    /unexpected field|extra field|unknown (?:argument|field)|not in (?:the )?validator/i.test(message)
+  );
 }
 
 export async function getAdminReviewDashboard(limit = 50) {
@@ -135,7 +188,7 @@ export async function getAdminReviewDashboard(limit = 50) {
 }
 
 export async function getAdminLeadTable(limit = 500) {
-  const take = Math.min(Math.max(Math.floor(limit), 1), 1000);
+  const take = Math.min(Math.max(Math.floor(limit), 1), 500);
   const fixturePath = readEnv("ADMIN_REVIEW_DASHBOARD_FIXTURE");
   if (fixturePath && process.env.NODE_ENV !== "production") {
     const fixture = await readAdminReviewDashboardFixture(fixturePath);
@@ -158,6 +211,56 @@ export async function getAdminLeadTable(limit = 500) {
     }),
   ]);
   return { ok: true as const, leads, counts };
+}
+
+export async function getAdminLeadSlaSnapshot(maxUnownedMs: number) {
+  const client = createConvexClient();
+  if (!client) return { ok: false as const, reason: "convex_unconfigured" };
+  const data = await client.client.query(api.leads.adminLeadSlaSnapshot, {
+    ingestSecret: client.ingestSecret,
+    maxUnownedMs,
+  });
+  return { ok: true as const, data };
+}
+
+export async function applyDataRetention(now: number) {
+  const client = createConvexClient();
+  if (!client) return { ok: false as const, reason: "convex_unconfigured" as const };
+  const result = await client.client.mutation(api.leads.applyDataRetention, {
+    ingestSecret: client.ingestSecret,
+    now,
+  });
+  return { ok: true as const, ...result };
+}
+
+export async function getPrivacyDeletionPlan(email: string) {
+  const client = createConvexClient();
+  if (!client) return { ok: false as const, reason: "convex_unconfigured" as const };
+  await client.client.mutation(api.leads.normalizeLegacyPrivacyEmails, {
+    ingestSecret: client.ingestSecret,
+  });
+  const plan = await client.client.query(api.leads.privacyDeletionPlanByEmail, {
+    ingestSecret: client.ingestSecret,
+    email,
+  });
+  return { ok: true as const, ...plan };
+}
+
+export async function deletePersonalData(input: {
+  email: string;
+  reason: PrivacyDeletionReason;
+  requestId: string;
+  actor: string;
+  downstreamCleanupComplete?: boolean;
+}) {
+  const client = createConvexClient();
+  if (!client) return { ok: false as const, reason: "convex_unconfigured" as const };
+  const result = await client.client.mutation(api.leads.deletePersonalData, {
+    ingestSecret: client.ingestSecret,
+    ...input,
+    downstreamCleanupComplete: input.downstreamCleanupComplete === true,
+  });
+  return { ok: true as const, ...result };
 }
 
 export async function getAdminVoiceSession(reviewId: string) {

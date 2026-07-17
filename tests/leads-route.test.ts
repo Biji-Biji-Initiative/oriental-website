@@ -30,6 +30,7 @@ vi.mock("@/lib/server/notifications", async (importOriginal) => {
 const originalEnv = process.env;
 
 function leadBody(overrides: Record<string, unknown> = {}) {
+  const review = createVoiceReviewCredentials();
   return {
     source: "voice",
     segment: "technology",
@@ -42,7 +43,8 @@ function leadBody(overrides: Record<string, unknown> = {}) {
       message: "We want to run public AI literacy demos.",
     },
     transcript: [{ role: "user", text: "We want to run public AI literacy demos." }],
-    voiceReviewId: "5a8c25b1-cd50-4e47-89bf-84947c805add",
+    voiceReviewId: review.id,
+    voiceReviewToken: review.token,
     voiceSessionId: "sess_123",
     voiceVariant: "kl-polished",
     voiceModel: "gpt-realtime-2",
@@ -54,6 +56,9 @@ function leadBody(overrides: Record<string, unknown> = {}) {
     voiceInputPolicy: "fast",
     voiceEmailVerified: true,
     voiceEmailVerificationSource: "speech",
+    entryPoint: "hero_primary",
+    entryMethod: "voice_button",
+    submissionMethod: "voice_command",
     turnstileToken: "local-dev",
     utm: {},
     ...overrides,
@@ -131,7 +136,7 @@ describe("POST /api/leads", () => {
     );
     expect(mocks.persistLead).toHaveBeenCalledWith(
       expect.objectContaining({
-        voiceReviewId: "5a8c25b1-cd50-4e47-89bf-84947c805add",
+        voiceReviewId: expect.any(String),
         voiceSessionId: "sess_123",
         voiceVariant: "kl-polished",
         voiceModel: "gpt-realtime-2",
@@ -141,6 +146,9 @@ describe("POST /api/leads", () => {
         voiceSpeed: 1.22,
         voiceRuntimeProfile: "instant-v1",
         voiceInputPolicy: "fast",
+        entryPoint: "hero_primary",
+        entryMethod: "voice_button",
+        submissionMethod: "voice_command",
       }),
     );
     expect(mocks.persistLead.mock.calls[0]?.[0]).not.toHaveProperty("voiceReviewToken");
@@ -231,15 +239,59 @@ describe("POST /api/leads", () => {
     expect(mocks.notifySubmitter).not.toHaveBeenCalled();
   });
 
-  it("rejects unsigned voice leads when Turnstile enforcement is required and no token is present", async () => {
+  it("rejects an impossible source and submission-method pair before side effects", async () => {
+    const response = await POST(request({ source: "form", submissionMethod: "voice_command" }));
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body).toMatchObject({ ok: false, error: "invalid_payload" });
+    expect(mocks.persistLead).not.toHaveBeenCalled();
+    expect(mocks.notifyOwner).not.toHaveBeenCalled();
+    expect(mocks.notifySubmitter).not.toHaveBeenCalled();
+  });
+
+  it("rejects a voice command without signed review linkage before side effects", async () => {
+    const response = await POST(request({ voiceReviewId: undefined, voiceReviewToken: undefined }));
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body).toMatchObject({ ok: false, error: "invalid_payload" });
+    expect(mocks.persistLead).not.toHaveBeenCalled();
+    expect(mocks.notifyOwner).not.toHaveBeenCalled();
+  });
+
+  it("rejects a voice-attributed handoff button without signed review linkage", async () => {
+    const response = await POST(
+      request({
+        submissionMethod: "handoff_button",
+        voiceReviewId: undefined,
+        voiceReviewToken: undefined,
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ ok: false, error: "invalid_payload" });
+    expect(mocks.persistLead).not.toHaveBeenCalled();
+    expect(mocks.notifyOwner).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid voice-review credentials even when Turnstile could otherwise pass", async () => {
     process.env.TURNSTILE_ENFORCEMENT = "required";
     process.env.TURNSTILE_SECRET_KEY = "turnstile-secret";
 
-    const response = await POST(request({ turnstileToken: undefined }, "203.0.113.10"));
+    const response = await POST(
+      request(
+        {
+          voiceReviewToken: "invalid-review-token-that-is-long-enough",
+          turnstileToken: "local-dev",
+        },
+        "203.0.113.10",
+      ),
+    );
     const body = await response.json();
 
     expect(response.status).toBe(403);
-    expect(body).toMatchObject({ ok: false, error: "turnstile_failed" });
+    expect(body).toMatchObject({ ok: false, error: "voice_review_invalid" });
     expect(mocks.persistLead).not.toHaveBeenCalled();
   });
 
@@ -251,6 +303,8 @@ describe("POST /api/leads", () => {
       request(
         {
           source: "form",
+          entryMethod: "form",
+          submissionMethod: "handoff_button",
           turnstileToken: undefined,
           voiceReviewId: undefined,
           voiceSessionId: undefined,

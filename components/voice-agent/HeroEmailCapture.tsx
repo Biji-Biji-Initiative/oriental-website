@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useVoice } from "@/components/voice-agent/voice-state";
 import { trackEvent } from "@/lib/analytics";
+import { trackIntakeEvent } from "@/lib/client-analytics";
 
 const emailPattern = /^\S+@\S+\.\S+$/;
 
@@ -32,6 +33,10 @@ export function HeroEmailCapture() {
       setError("Could not save that yet. Try again or email team@mereka.io.");
       return;
     }
+    trackIntakeEvent("newsletter_submit_success", {
+      entry_point: "hero_updates",
+      entry_method: "email_capture",
+    });
     setSubmitted(true);
     trackEvent("newsletter_signup", { placement: "hero" });
   }
@@ -57,7 +62,7 @@ export function HeroEmailCapture() {
             Want to tell us more?{" "}
             <button
               className="hero-email__link"
-              onClick={() => voice.open("other", { email, mode: "form" })}
+              onClick={() => voice.open("other", { email, mode: "form", entryPoint: "hero_updates_followup" })}
               type="button"
             >
               Take 2 minutes →

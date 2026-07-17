@@ -3,7 +3,7 @@ title: "Oriental Governed Release Runbook"
 type: "release_spec_and_runbook"
 status: "implemented"
 owner: "Mereka Engineering"
-last_updated: "2026-07-16"
+last_updated: "2026-07-17"
 ---
 
 # 12 — Governed Release Runbook
@@ -34,14 +34,34 @@ cannot affect the runtime image.
 - At a production promotion boundary, the proven staging candidate and
   production MUST use the same source SHA. Shared staging may move afterward
   for another controlled experiment; its live SHA must never be inferred from
-  production or a historical document. Image tags remain distinct because
-  staging may bake preview-only public flags.
+  production or a historical document. Image tags remain distinct for release
+  ownership, but the approved Mereka M nebula and non-blocking, once-per-tab
+  public entrance treatment ship on both canonical hosts. Admin/API and
+  reduced-motion loads omit the entrance treatment.
 - `staging.oriental.mereka.io` and `oriental.mereka.io` are canonical. The
   `*.deploy.mereka.io` names MUST remain redirects only.
 - Cloudflare MUST remain authoritative DNS only; Coolify Traefik terminates TLS.
 - Infisical is canonical configuration. Coolify's environment-variable store
   and staging's host-local `.env` are separate materialized copies and MUST be
   compared with Infisical before release.
+- The staging deployer MUST stream the complete native staging Infisical export
+  over the encrypted fleet connection and atomically converge the host `.env`.
+  The production deployer MUST reconcile and read back every approved runtime
+  key from the native production application scope before changing the frozen
+  SHA, explicitly clear values retired from Infisical, and re-read the
+  `running:healthy` expected-current Coolify SHA immediately before every first
+  mutation boundary. Retirement requires a code-reviewed entry in
+  `RETIRED_MANAGED_APPLICATION_ENVIRONMENT_KEYS`; missing injection never
+  authorizes clearing a live value. Concrete Infisical values are written as
+  Coolify literals. The bulk API must acknowledge every exact write and its
+  multiline/runtime/build scope; values are compared when the token may read
+  them, while locked values remain hidden and are verified in the running
+  container after release. Add a retirement tombstone in the same reviewed PR that
+  removes the native Infisical value and retain it as ownership history; a
+  later reintroduced source value wins safely. `NEXT_PUBLIC_*` keys are also
+  build-time values. The Coolify credential needs scoped `read`, `write`, and
+  `deploy` access; `read:sensitive` is deliberately unnecessary and values are
+  never written to process arguments or logs.
 - Production voice MUST remain `baseline/control/low/adaptive`. A staging-only
   model trial MUST be explicit, hold runtime/reasoning/capture constant, and
   never imply production promotion.
@@ -63,11 +83,15 @@ artifact or writing judge results, run:
 pnpm eval:voice -- --aggregate-only --limit 100
 ```
 
-This mode performs only the Convex evaluation query, excludes synthetic smoke
-rows, disables the LLM judge and Convex mutations, writes no report, and emits a
-single aggregate/gate JSON document. It omits transcripts, contact data, session
-identifiers, and identifier-bearing attention lists. `--persist` and `--out` are
-rejected in this mode.
+This mode performs only read-only Convex evaluation queries, excludes synthetic
+smoke rows, disables the LLM judge and every Convex mutation, writes no report,
+and emits a single aggregate/gate JSON document. It may use the existing
+per-session query to enrich missing historical `variant`, `voice`, and `speed`
+with bounded concurrency. It omits transcripts, contact data, session
+identifiers, and identifier-bearing attention lists. `--persist` and `--out`
+are rejected in this mode. PII-free tool-call telemetry is included as overall
+and per-tool sample/outcome counts plus execution, response-to-call, and
+response-to-result p50/p95 distributions.
 
 The command fetches and computes local/main Git state, both public health SHAs,
 the non-secret live voice cells, branches and PRs containing deployed SHAs,
@@ -120,25 +144,28 @@ infisical run \
   --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
   --env staging \
   --path /deploy/oriental-website \
-  -- pnpm release:verify:voice-cell -- --model-cell candidate
+  -- pnpm release:verify:voice-cell -- --model-cell candidate --picker-mode clean
 infisical run \
   --domain https://secrets.mereka.io \
   --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
   --env prod \
   --path /deploy/oriental-website \
-  -- pnpm release:verify:voice-cell -- --model-cell control
+  -- pnpm release:verify:voice-cell -- --model-cell control --picker-mode clean
 infisical run \
   --domain https://secrets.mereka.io \
   --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
   --env prod \
   --path /deploy/oriental-website \
-  -- pnpm release:preflight -- --sha "$sha"
+  -- env NODE_ENV=production pnpm release:preflight -- --sha "$sha"
 ```
 
-Managed-environment validation is the default. This staging preview requires
-`baseline/candidate/low/adaptive` with `gpt-realtime-2.1`; production requires
-`baseline/control/low/adaptive` with `gpt-realtime-2`. Both require the QA
-picker off. `--allow-unmanaged` exists only
+Managed-environment validation is the default. The clean staging candidate
+requires `baseline/candidate/low/adaptive` with `gpt-realtime-2.1`; production
+requires `baseline/control/low/adaptive` with `gpt-realtime-2`. Both clean
+candidate and production control require the QA picker off. A separately
+declared staging audition uses `--picker-mode audition`; it cannot be promotion
+evidence.
+`--allow-unmanaged` exists only
 for testing the Git/static contract and MUST NOT be used as production release
 evidence. The fast parity command runs against both native Infisical
 environments before the full production-env preflight, preventing staging
@@ -146,7 +173,10 @@ source drift from being hidden by the deployer's host-side safe defaults.
 The managed preflight deliberately runs Vitest through
 `scripts/run-release-tests.ts`, which retains only process/tooling variables and
 forces `NODE_ENV=test`. Live application secrets stay injected for
-`check-secrets`, the production build, and the final SHA/cell checks, but cannot
+the production build and final SHA/cell checks. The preflight itself forces
+`NODE_ENV=production` only for `check-secrets`, so production-only routing,
+admin, observability, notification, and Turnstile requirements cannot be
+silently skipped, while application secrets cannot
 select production React or leak notification/routing configuration into test
 fixtures.
 
@@ -158,34 +188,115 @@ include release docs before the first deployment.
 ## Phase 3 — Deploy dependencies and staging
 
 1. Deploy Convex first only when the reviewed diff changes schema or functions.
+   This release adds canonical `clear_fields` support to the bounded tool-name
+   validator and optional intake-attribution fields (`entryPoint`,
+   `entryMethod`, `submissionMethod`, and bounded per-field provenance), so its
+   reviewed Convex schema/functions are a required dependency. The additions
+   remain optional: the previous web image must still write valid rows during
+   deployment and after an application rollback. The lead mutation is
+   idempotent on the application-generated lead UUID. The web adapter may retry
+   once only after a confirmed unknown/extra-field validator rejection and must
+   reuse that UUID while stripping the forward fields; generic validation,
+   transport, timeout, and ambiguous post-commit failures are never retry
+   triggers.
+   Aggregate-only evaluation remains read-only and cannot perform this deploy.
+   Do not add a lossy `clear_fields` → `clear_field` application fallback.
 2. Build the distinct `staging-<sha>` image and recreate host-managed staging:
 
    ```bash
    current_staging_sha="$(curl -fsS https://staging.oriental.mereka.io/api/health | jq -r .version)"
-   scripts/deploy-coolify-host.sh --target staging \
-     --expected-current-sha "$current_staging_sha" \
-     --voice-model-cell candidate "$sha"
+   infisical run \
+     --domain https://secrets.mereka.io \
+     --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
+     --env staging \
+     --path /deploy/oriental-website \
+     -- scripts/deploy-coolify-host.sh --target staging \
+       --expected-current-sha "$current_staging_sha" \
+       --voice-model-cell candidate \
+       --voice-picker-mode clean "$sha"
    ```
 
    The script rechecks that SHA while holding the host deployment lock. If
    staging moved, stop and coordinate with its current owner; never overwrite an
-   unknown experiment. As part of the same atomic `.env` update, it materializes
-   the selected governed non-secret voice cell. Candidate is legal only for
-   staging and resolves to `baseline/candidate/low/adaptive`; every production
-   host path rejects it. The picker is explicitly off and the full secret set
-   must already be reconciled from Infisical.
+   unknown experiment. Before the build, it streams the complete native staging
+   Infisical dotenv export to the host through stdin and atomically converges
+   every managed key without exposing values or replacing Compose-owned keys.
+   It then materializes the selected governed non-secret voice cell. Candidate
+   is legal only for staging and resolves to
+   `baseline/candidate/low/adaptive`; every production host path rejects it. The
+   picker is explicitly off in clean mode. Native Linux and WSL's Windows
+   Tailscale client are selected automatically. `--voice-picker-mode audition`
+   is an approved staging-only listening surface; its variant-tagged sessions
+   are not valid candidate-model promotion evidence. For a human voice audition,
+   redeploy with that mode, verify with `--staging-picker-mode audition`, run the
+   smoke with `VOICE_SMOKE_MODE=audition`, then return staging to `clean` before
+   model comparison or promotion.
 
 3. Run the deterministic public verifier:
 
    ```bash
-   pnpm release:verify -- --sha "$sha" --target staging \
-     --staging-model-cell candidate
+   infisical run \
+     --domain https://secrets.mereka.io \
+     --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
+     --env staging \
+     --path /deploy/oriental-website \
+     -- pnpm release:verify -- --sha "$sha" --target staging \
+       --staging-model-cell candidate --staging-picker-mode clean
    ```
 
-4. Run `pnpm smoke:staging:voice` when voice, OpenAI configuration, WebRTC,
-   session persistence, or voice UI changed.
+4. Run `pnpm smoke:staging:voice` in the default clean mode when voice, OpenAI
+   configuration, WebRTC, session persistence, or voice UI changed.
 5. Inspect the running container—not only Infisical—for the expected revision,
    deployment environment, and voice cells.
+6. Drain the bounded legacy backfill and retention sweep before trusting the
+   admin, evaluation, SLA, or count views. The first drain intentionally applies
+   the published 30/90/730-day deletion windows and is not reversed by a web
+   rollback. Inspect the aggregate-only counts on every batch and continue until
+   the route explicitly returns `hasMore=false`; an arbitrary fixed number of
+   successful calls is not completion evidence:
+
+   ```bash
+   infisical run \
+     --domain https://secrets.mereka.io \
+     --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
+     --env staging \
+     --path /deploy/oriental-website \
+     -- bash -ceu '
+       has_more=true
+       for attempt in $(seq 1 500); do
+         response=$(curl -fsS -X POST \
+           https://staging.oriental.mereka.io/api/admin/retention \
+           -H "Authorization: Bearer $OPS_AUTOMATION_TOKEN" \
+           -H "Content-Type: application/json" \
+           -d "{}")
+         echo "$response" | jq -e ".ok == true and (.hasMore | type == \"boolean\")" >/dev/null
+         echo "$response" | jq -c "{hasMore,deleted,redacted}"
+         has_more=$(echo "$response" | jq -r .hasMore)
+         [ "$has_more" = false ] && break
+       done
+       [ "$has_more" = false ]
+     '
+   ```
+
+   The 500-call guard is a runaway safety limit, not an allowed residual
+   backlog. If it is reached, stop and diagnose; do not promote with hidden
+   legacy rows.
+7. Prove authenticated, Convex-backed admin reads independently of `/api/health`
+   and discard the response body so lead/session content does not enter the
+   release log:
+
+   ```bash
+   infisical run \
+     --domain https://secrets.mereka.io \
+     --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
+     --env staging \
+     --path /deploy/oriental-website \
+     -- bash -ceu '
+       curl -fsS https://staging.oriental.mereka.io/api/admin/review \
+         -H "Authorization: Bearer $ADMIN_REVIEW_TOKEN" \
+         | jq -e ".ok == true" >/dev/null
+     '
+   ```
 
 Do not submit a staging lead casually: staging still shares production Convex,
 OpenAI, Redis, and notification accounts.
@@ -201,27 +312,83 @@ OpenAI, Redis, and notification accounts.
      --domain https://secrets.mereka.io \
      --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
      --env prod \
-     --path /platform/coolify \
-     -- pnpm release:deploy:production -- \
-       --sha "$sha" \
-       --expected-current-sha "$current_production_sha"
+     --path /deploy/oriental-website \
+     -- infisical run \
+       --domain https://secrets.mereka.io \
+       --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
+       --env prod \
+       --path /platform/coolify \
+       -- pnpm release:deploy:production -- \
+         --sha "$sha" \
+         --expected-current-sha "$current_production_sha"
    ```
 
    The deployer fails unless staging currently runs the candidate SHA,
    production still runs the expected rollback SHA, and the candidate is an
    ancestor of `origin/main`. It pins Coolify's `git_commit_sha`, reads it back,
    starts the application, and refuses success unless the deployment record and
-   public production health both resolve to the full frozen SHA.
+   public production health both resolve to the full frozen SHA. Before changing
+   the SHA, it creates or updates every approved runtime key supplied by the
+   application scope, requires an exact bulk-write acknowledgement, and reads
+   back scope parity. Locked values remain hidden from the least-privilege
+   token; inspect the running container against Infisical after the release.
+   Public browser
+   keys are enabled at build time as well as runtime. After deployment it also
+   requires Coolify `running:healthy`, an enabled health check, and loopback
+   health ownership at `127.0.0.1`. A terminal deployment may briefly precede
+   application-status/public-health convergence, so the deployer waits up to 90
+   seconds before treating it as a candidate failure.
+   Once the candidate pin is attempted, every later failure automatically
+   cancels a known candidate deployment, re-pins the previous SHA, redeploys
+   it, and proves both Coolify health ownership and the exact public SHA. Lost
+   PATCH or deploy-trigger responses are treated as ambiguous mutations:
+   rollback reads back the pin and safely converges the same previous SHA. If
+   Coolify briefly resolves a stale commit after re-pinning, that rollback
+   deployment is cancelled and retried up to three times. A
+   successfully restored rollback still exits non-zero because the candidate
+   release did not succeed.
 3. Require terminal `finished`; do not infer success from a queued build.
 4. Verify both environments together:
 
    ```bash
-   pnpm release:verify -- --sha "$sha" --target both
+   infisical run \
+     --domain https://secrets.mereka.io \
+     --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
+     --env prod \
+     --path /deploy/oriental-website \
+     -- pnpm release:verify -- --sha "$sha" --target both \
+       --staging-model-cell candidate --staging-picker-mode clean
    ```
 
-5. Confirm Coolify reports `running:healthy`, its health-check host is
+   For `staging` and `both`, the verifier defaults to the established candidate
+   staging cell; `--staging-model-cell control` remains available for an
+   intentional rollback cell. This browser-backed verifier requires Playwright Chromium (or
+   `PLAYWRIGHT_CHROMIUM_PATH`). It proves the exact Search Console meta tag,
+   observes no GA request before consent, observes the expected GA asset only
+   after clicking **Allow analytics**, and proves an already-consented admin
+   surface still emits no GA request.
+
+5. Confirm the deployer's result reports Coolify `running:healthy`, its health-check host is
    `127.0.0.1`, and the production container exposes the intended runtime cells.
-6. For voice releases, rerun the dry evaluator and report `insufficient_data`
+6. Repeat the bounded retention drain against
+   `https://oriental.mereka.io/api/admin/retention` with the production
+   `OPS_AUTOMATION_TOKEN` until `hasMore=false`, then prove
+   `https://oriental.mereka.io/api/admin/review` with the production
+   `ADMIN_REVIEW_TOKEN` exactly as in staging. This independently proves the
+   production routes, credentials, and Convex reads.
+7. Manually dispatch `.github/workflows/analytics-ops.yml` from merged `main`
+   and require every job to pass. This is the release proof for the separately
+   stored GitHub `OPS_AUTOMATION_TOKEN`; Infisical/Coolify parity cannot prove a
+   GitHub Actions secret:
+
+   ```bash
+   gh workflow run analytics-ops.yml --ref main
+   run_id=$(gh run list --workflow analytics-ops.yml --branch main \
+     --event workflow_dispatch --limit 1 --json databaseId --jq '.[0].databaseId')
+   gh run watch "$run_id" --exit-status
+   ```
+
+8. For voice releases, rerun the dry evaluator and report `insufficient_data`
    honestly when its minimum evidence gate is not met.
 
 ## Failure handling
@@ -229,8 +396,9 @@ OpenAI, Redis, and notification accounts.
 | Symptom | Required response |
 |---|---|
 | CI fails | Fix in the same PR; do not deploy. |
-| Staging health fails | Diagnose the image/container contract; production remains unchanged. |
-| Coolify candidate health fails | Keep the old container serving; inspect binding, probe host, logs, and runtime env. |
+| Staging health fails | The host deployer restores the timestamped Compose/`.env` pair, recreates the previous image, and proves its public SHA before exiting non-zero. Diagnose the candidate; production remains unchanged. |
+| Coolify candidate health fails | The API deployer re-pins, redeploys, and publicly proves the prior SHA before exiting non-zero. Inspect binding, probe host, logs, and runtime env. |
+| Automatic rollback reports unknown state | Stop. Do not retry. Preserve the printed backup paths and reconcile control-plane, host files, container, and public health ownership manually. |
 | Public SHA differs | Stop. Determine whether the wrong source or image was deployed. |
 | Staging moved before deploy | Stop. Another workflow owns the shared environment; coordinate instead of overwriting it. |
 | Coolify deployment record resolves another commit | Cancel the candidate; production remains on the prior healthy SHA. |
@@ -263,19 +431,29 @@ early convergence and fail-closed checks, not repeated manual verification.
 - Email capture: restore `VOICE_EMAIL_CAPTURE_MODE=strict` to require exact
   readback and explicit confirmation without rolling back the web image.
 - Staging: restore the timestamped Compose/`.env` backup or previous
-  `staging-<sha>` image.
+  `staging-<sha>` image. The host helper performs this automatically for every
+  failure after file mutation and refuses to call it restored until the old
+  image is recreated and the canonical health endpoint reports `ok: true` with
+  the exact previous SHA.
 - Convex: use backward-compatible schema/function changes; never assume an app
-  image rollback also rolls back Convex.
+  image rollback also rolls back Convex. Additive persisted fields remain
+  optional until every supported old web image is retired. Keep compatibility
+  fallbacks limited to confirmed unknown/extra-field validation errors and keep
+  the corresponding mutation idempotent; never mask a generic or ambiguous
+  persistence failure with a retry.
 
 ## Acceptance criteria mapping
 
 - [x] Exact SHA, clean `main`, image-tag, health-binding, runbook, and mandatory
   managed-cell checks: `scripts/release-preflight.ts`.
-- [x] Exact staging/current-production preconditions, immutable Coolify commit
-  pin/readback, deployment-record commit, terminal status, and post-deploy
-  production health: `scripts/deploy-coolify-production.ts`.
+- [x] Exact staging/current-production preconditions, full Infisical→host and
+  Infisical→Coolify runtime convergence, public build-variable readback,
+  immutable Coolify commit pin/readback, deployment-record commit, terminal
+  status, Coolify loopback-health ownership, and post-deploy public health:
+  `scripts/deploy-coolify-production.ts`.
 - [x] Canonical hosts, exact health SHA, Convex presence, QA picker, DNS-only
-  request path, and compatibility redirects: `scripts/release-verify.ts`.
+  request path, compatibility redirects, Search Console meta, and browser-proven
+  GA opt-in/admin exclusion: `scripts/release-verify.ts`.
 - [x] Pure governance contracts: `tests/release-governance.test.ts`.
 - [x] Context-independent takeover state and privacy-safe evidence summary:
   `scripts/ops-status.ts`, `tests/ops-status.test.ts`.

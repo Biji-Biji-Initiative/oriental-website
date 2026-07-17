@@ -64,6 +64,17 @@ describe("POST /api/newsletter", () => {
       },
     });
     expect(mocks.notifyNewsletterSubscriber).toHaveBeenCalledWith("asha@example.com");
+    expect(mocks.persistLead).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entryPoint: "hero_updates",
+        entryMethod: "email_capture",
+        submissionMethod: "email_capture_button",
+        fieldProvenance: expect.objectContaining({
+          email: expect.objectContaining({ method: "form", lastInput: "form", editCount: 1 }),
+          name: expect.objectContaining({ method: "unknown", editCount: 0 }),
+        }),
+      }),
+    );
     expect(mocks.recordLeadNotificationStatus).toHaveBeenCalledWith(
       "lead_news",
       { confirmation: body.notifications.confirmation },

@@ -959,8 +959,7 @@
   }
 }
 
-/* Mereka brand motion. The voice mark is the production visual; the entrance
-   loader remains a staging-only build/host preview. */
+/* Approved Mereka brand motion shared by staging and production. */
 .brand-site-loader {
   position: fixed;
   inset: 0;
@@ -968,13 +967,14 @@
   display: grid;
   place-items: center;
   overflow: hidden;
+  pointer-events: none;
   color: #17385f;
   background:
     radial-gradient(circle at 50% 44%, rgba(201, 213, 236, 0.58), transparent 31%),
     linear-gradient(145deg, #f7f4ec 0%, #ece9e1 48%, #f6f1e7 100%);
   transition:
-    opacity 520ms cubic-bezier(0.4, 0, 1, 1),
-    visibility 520ms linear;
+    opacity 240ms cubic-bezier(0.4, 0, 1, 1),
+    visibility 240ms linear;
 }
 
 .brand-site-loader[data-phase="leaving"] {
@@ -999,7 +999,7 @@
   display: grid;
   justify-items: center;
   width: min(72vw, 310px);
-  animation: brand-loader-enter 720ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: brand-loader-enter 380ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .brand-site-loader__mark {
@@ -1076,7 +1076,7 @@
   content: "";
   background: linear-gradient(90deg, transparent, #2d6a7a 45%, #c9d5ec 76%, transparent);
   transform: translateX(-100%);
-  animation: brand-loader-rule 1.15s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: brand-loader-rule 450ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .voice-orb.voice-orb--nebula,
@@ -1163,6 +1163,10 @@
 }
 
 @media (max-width: 1279px) and (max-height: 500px) {
+  [data-voice-global-picker][data-voice-global-picker] {
+    bottom: 1.25rem;
+  }
+
   [data-voice-agent-dialog] {
     height: calc(100dvh - 1rem);
     max-height: calc(100dvh - 1rem);
@@ -1207,11 +1211,30 @@
   z-index: -1;
   border-radius: 50%;
   content: "";
-  background: rgba(92, 125, 184, 0.22);
+  background:
+    radial-gradient(circle at 48% 44%, rgba(201, 213, 236, 0.34), transparent 54%),
+    radial-gradient(circle, rgba(92, 125, 184, 0.44), rgba(55, 180, 198, 0.2) 58%, transparent 76%);
   filter: blur(42px);
-  opacity: calc(0.38 + var(--voice-level, 0) * 0.55 + var(--user-level, 0) * 0.35);
-  transform: scale(calc(0.92 + var(--voice-level, 0) * 0.2 + var(--user-level, 0) * 0.12));
-  transition: opacity 180ms ease;
+  opacity: calc(0.32 + var(--voice-level, 0) * 0.78 + var(--user-level, 0) * 0.62);
+  transform: scale(calc(0.9 + var(--voice-level, 0) * 0.28 + var(--user-level, 0) * 0.24));
+  transition: opacity 90ms linear;
+  will-change: opacity, transform;
+}
+
+.mereka-nebula::after {
+  position: absolute;
+  inset: 13%;
+  z-index: -1;
+  border: 1px solid rgba(122, 196, 212, 0.7);
+  border-radius: 50%;
+  content: "";
+  box-shadow:
+    0 0 26px rgba(122, 196, 212, 0.46),
+    inset 0 0 24px rgba(201, 213, 236, 0.34);
+  opacity: calc(var(--user-level, 0) * 0.9 + var(--voice-level, 0) * 0.36);
+  transform: scale(calc(0.72 + var(--user-level, 0) * 0.42 + var(--voice-level, 0) * 0.22));
+  transition: opacity 70ms linear;
+  will-change: opacity, transform;
 }
 
 .mereka-nebula__canvas,
@@ -1236,9 +1259,12 @@
   padding: 24%;
   overflow: visible;
   fill: #c9d5ec;
-  filter: drop-shadow(0 0 28px rgba(201, 213, 236, 0.42));
+  filter: drop-shadow(0 0 calc(8px + var(--voice-level, 0) * 24px) rgba(201, 213, 236, 0.78));
   opacity: 0.42;
-  transition: opacity 360ms ease;
+  transform: scale(calc(1 + var(--voice-level, 0) * 0.035 + var(--user-level, 0) * 0.075));
+  transition:
+    opacity 360ms ease,
+    transform 100ms linear;
 }
 
 .mereka-nebula[data-ready="true"] .mereka-nebula__fallback {

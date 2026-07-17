@@ -2,6 +2,7 @@ import { ConvexHttpClient } from "convex/browser";
 import OpenAI from "openai";
 import { api } from "@/convex/_generated/api";
 import { readEnv } from "@/lib/env";
+import { ADMIN_EVAL_MODEL_CHOICES, DEFAULT_EVAL_JUDGE_MODEL, isAllowedAdminEvalModel } from "@/lib/eval/admin-models";
 import {
   buildJudgeUserPrompt,
   buildSessionEval,
@@ -11,34 +12,47 @@ import {
   type JudgeScore,
   mergeConversationSessions,
   parseJudgeResponse,
+  piiFreeJudgeSummary,
   type SessionEval,
   type VoiceEvalSession,
 } from "@/lib/eval/voice-eval";
 
 const JUDGE_CONCURRENCY = 3;
+const JUDGE_TIMEOUT_MS = 30_000;
+const JUDGE_PHASE_BUDGET_MS = 60_000;
+const ADMIN_EVAL_FETCH_WINDOW = 200;
 /** Hard ceiling per admin-triggered run so a single click cannot fan out unbounded model spend. */
-export const MAX_ADMIN_EVAL_SESSIONS = 50;
+export const MAX_ADMIN_EVAL_SESSIONS = 12;
+/**
+ * A run must finish before its shared limiter lease expires. This prevents a
+ * second request from starting while a slow first run is still spending.
+ */
+export const ADMIN_EVAL_RUN_DEADLINE_MS = 90_000;
+export const ADMIN_EVAL_RUN_LEASE_MS = 5 * 60_000;
+export const ADMIN_EVAL_FAILURE_CATEGORIES = [
+  "run_deadline",
+  "provider_timeout",
+  "provider_rate_limited",
+  "provider_auth",
+  "provider_error",
+  "empty_response",
+  "invalid_response",
+] as const;
 
-export const DEFAULT_EVAL_JUDGE_MODEL = "gpt-4o-mini";
+export type AdminEvalFailureCategory = (typeof ADMIN_EVAL_FAILURE_CATEGORIES)[number];
+type AdminEvalWindow = { fetched: number; conversations: number; alreadyEvaluated: number };
 
-/** Small curated list the admin UI offers; env EVAL_JUDGE_MODEL stays the default. */
-export const ADMIN_EVAL_MODEL_CHOICES = ["gpt-5.6-luna", "gpt-4o-mini"] as const;
-
-const MODEL_ID_PATTERN = /^[a-zA-Z0-9._-]{1,64}$/;
+export { ADMIN_EVAL_MODEL_CHOICES, DEFAULT_EVAL_JUDGE_MODEL };
 
 export function configuredEvalJudgeModel() {
   return readEnv("EVAL_JUDGE_MODEL")?.trim() || DEFAULT_EVAL_JUDGE_MODEL;
 }
 
-export function isValidEvalModelId(model: string) {
-  return MODEL_ID_PATTERN.test(model);
-}
-
 export type AdminEvalRunResult =
   | {
       ok: false;
-      reason: "unconfigured" | "convex_failed" | "no_sessions";
-      window?: { fetched: number; conversations: number; alreadyEvaluated: number };
+      reason: "unconfigured" | "invalid_model" | "convex_failed" | "no_sessions" | "deadline_exceeded";
+      window?: AdminEvalWindow;
     }
   | {
       ok: true;
@@ -49,7 +63,9 @@ export type AdminEvalRunResult =
       judged: number;
       persisted: number;
       failures: number;
-      failureSamples: string[];
+      failureCategories: Record<AdminEvalFailureCategory, number>;
+      /** Bounded category names only; raw provider messages never cross the API boundary. */
+      failureSamples: AdminEvalFailureCategory[];
     };
 
 /**
@@ -63,6 +79,8 @@ export async function runAdminVoiceEvals(options: {
   reviewIds?: string[];
   /** Re-judge sessions that already have a persisted evaluation. */
   force?: boolean;
+  /** Internal auto-eval calls target one conversation without forcing a replay. */
+  rescoreTargeted?: boolean;
 }): Promise<AdminEvalRunResult> {
   const convexUrl = readEnv("CONVEX_URL") ?? readEnv("NEXT_PUBLIC_CONVEX_URL");
   const ingestSecret = readEnv("CONVEX_INGEST_SECRET");
@@ -70,119 +88,213 @@ export async function runAdminVoiceEvals(options: {
   if (!convexUrl || !ingestSecret || !openaiKey) return { ok: false, reason: "unconfigured" };
 
   const model = options.model?.trim() || configuredEvalJudgeModel();
-  const limit = Math.min(Math.max(options.limit ?? 25, 1), MAX_ADMIN_EVAL_SESSIONS);
+  if (!isAllowedAdminEvalModel(model)) return { ok: false, reason: "invalid_model" };
+  const limit = Math.min(Math.max(options.limit ?? 6, 1), MAX_ADMIN_EVAL_SESSIONS);
   const targetReviewIds = options.reviewIds?.length ? new Set(options.reviewIds) : null;
+  const runController = new AbortController();
+  const runTimer = setTimeout(() => runController.abort(new AdminEvalDeadlineError()), ADMIN_EVAL_RUN_DEADLINE_MS);
 
-  const convex = new ConvexHttpClient(convexUrl);
-  let fetchedSessions: VoiceEvalSession[];
   try {
-    // Always fetch a wide window: `limit` bounds how many conversations we
-    // JUDGE, never how far back we look. Recent rows are often judge-less
-    // prewarms, so a narrow fetch silently starves the batch.
-    fetchedSessions = (await convex.query(api.leads.voiceSessionsForEval, {
-      ingestSecret,
-      limit: MAX_ADMIN_EVAL_SESSIONS * 4,
-    })) as VoiceEvalSession[];
-  } catch {
-    return { ok: false, reason: "convex_failed" };
-  }
-
-  const customerSessions = fetchedSessions.filter((session) => !isSyntheticVoiceSession(session));
-  // Stitch dropped-and-resumed call rows into one conversation before judging,
-  // so a single intake is scored once — not once per reconnect.
-  const conversations = mergeConversationSessions(customerSessions).filter((session) => {
-    if (!targetReviewIds) return true;
-    if (targetReviewIds.has(session.reviewId)) return true;
-    return (session.callReviewIds ?? []).some((id) => targetReviewIds.has(id));
-  });
-  const judgeableAll = conversations.filter(isJudgeable);
-  // Untargeted runs spend tokens on NEW conversations only; a targeted run
-  // (auto-eval on close, per-record button) re-judges so a resumed
-  // conversation's score reflects the full stitched thread.
-  const conversationEvaluated = (session: VoiceEvalSession & { callReviewIds?: string[] }) =>
-    typeof session.evaluatedAt === "number" && session.evaluatedAt > 0;
-  const pending =
-    targetReviewIds || options.force ? judgeableAll : judgeableAll.filter((s) => !conversationEvaluated(s));
-  const alreadyEvaluated = judgeableAll.length - (targetReviewIds || options.force ? 0 : pending.length);
-  const judgeable = pending.slice(0, limit);
-  if (judgeable.length === 0) {
-    return {
-      ok: false,
-      reason: "no_sessions",
-      window: { fetched: customerSessions.length, conversations: conversations.length, alreadyEvaluated },
-    };
-  }
-
-  const client = new OpenAI({ apiKey: openaiKey });
-  const scores = new Map<string, JudgeScore | null>();
-  const failureSamples: string[] = [];
-  await mapPool(judgeable, JUDGE_CONCURRENCY, async (session) => {
-    const judged = await judgeSession(client, model, session);
-    if (!judged.score && judged.error && failureSamples.length < 3) failureSamples.push(judged.error);
-    scores.set(session.reviewId, judged.score);
-  });
-
-  const evals: SessionEval[] = judgeable.map((session) =>
-    buildSessionEval(session, scores.get(session.reviewId) ?? null),
-  );
-  const payloads = evals
-    .filter((entry): entry is SessionEval & { score: NonNullable<SessionEval["score"]> } => entry.score !== null)
-    .map((entry) => ({
-      reviewId: entry.reviewId,
-      routingCorrect: entry.score.routingCorrect,
-      captureCompleteness: entry.score.captureCompleteness,
-      conversationQuality: entry.score.conversationQuality,
-      frustration: entry.score.frustration,
-      summary: entry.score.summary,
-      droppedMidTurn: entry.transport.droppedMidTurn,
-      model,
-    }));
-
-  let persisted = 0;
-  if (payloads.length > 0) {
+    const convex = new ConvexHttpClient(convexUrl);
+    let fetchedSessions: VoiceEvalSession[];
     try {
-      const result = (await convex.mutation(api.leads.recordVoiceEvals, { ingestSecret, evals: payloads })) as {
-        updated: number;
-      };
-      persisted = result.updated;
-    } catch {
-      return { ok: false, reason: "convex_failed" };
+      fetchedSessions = (await raceWithAbort(
+        convex.query(api.leads.voiceSessionsForEval, {
+          ingestSecret,
+          // `limit` bounds spend, never discovery depth. A wide fixed scan keeps
+          // recent prewarms or already-scored rows from starving older work.
+          limit: ADMIN_EVAL_FETCH_WINDOW,
+        }) as Promise<VoiceEvalSession[]>,
+        runController.signal,
+      )) as VoiceEvalSession[];
+    } catch (error) {
+      return isAdminEvalDeadline(error)
+        ? { ok: false, reason: "deadline_exceeded" }
+        : { ok: false, reason: "convex_failed" };
     }
-  }
 
-  return {
-    ok: true,
-    model,
-    fetched: customerSessions.length,
-    conversations: conversations.length,
-    alreadyEvaluated,
-    judged: judgeable.length,
-    persisted,
-    failures: judgeable.length - payloads.length,
-    failureSamples,
-  };
+    const customerSessions = fetchedSessions.filter((session) => !isSyntheticVoiceSession(session));
+    // Stitch dropped-and-resumed call rows into one conversation before judging,
+    // so a single intake is scored once — not once per reconnect.
+    const conversations = mergeConversationSessions(customerSessions).filter((session) => {
+      if (!targetReviewIds) return true;
+      if (targetReviewIds.has(session.reviewId)) return true;
+      return (session.callReviewIds ?? []).some((id) => targetReviewIds.has(id));
+    });
+    const judgeableAll = conversations.filter(isJudgeable);
+    const deliberateRescore = options.force === true || (Boolean(targetReviewIds) && options.rescoreTargeted !== false);
+    const pending = judgeableAll.filter((session) => needsAdminEvaluation(session, model, deliberateRescore));
+    const alreadyEvaluated = judgeableAll.length - pending.length;
+    const judgeable = pending.slice(0, limit);
+    if (judgeable.length === 0) {
+      return {
+        ok: false,
+        reason: "no_sessions",
+        window: { fetched: customerSessions.length, conversations: conversations.length, alreadyEvaluated },
+      };
+    }
+
+    // One bounded retry absorbs a transient provider edge failure without turning
+    // an operator click into a retry storm. The shorter judge budget reserves time
+    // for the final Convex mutation inside the whole-run deadline.
+    const client = new OpenAI({ apiKey: openaiKey, maxRetries: 1, timeout: JUDGE_TIMEOUT_MS });
+    const judgeController = new AbortController();
+    const abortJudgeWithRun = () => judgeController.abort(new AdminEvalDeadlineError());
+    runController.signal.addEventListener("abort", abortJudgeWithRun, { once: true });
+    const judgeTimer = setTimeout(() => judgeController.abort(new AdminEvalDeadlineError()), JUDGE_PHASE_BUDGET_MS);
+    const outcomes = new Map<string, JudgeOutcome>();
+    try {
+      await mapPool(judgeable, JUDGE_CONCURRENCY, async (session) => {
+        outcomes.set(session.reviewId, await judgeSession(client, model, session, judgeController.signal));
+      });
+    } finally {
+      clearTimeout(judgeTimer);
+      runController.signal.removeEventListener("abort", abortJudgeWithRun);
+    }
+
+    if (runController.signal.aborted) return { ok: false, reason: "deadline_exceeded" };
+    const evals: SessionEval[] = judgeable.map((session) =>
+      buildSessionEval(session, outcomes.get(session.reviewId)?.score ?? null),
+    );
+    const payloads = evals
+      .filter((entry): entry is SessionEval & { score: NonNullable<SessionEval["score"]> } => entry.score !== null)
+      .map((entry) => ({
+        reviewId: entry.reviewId,
+        routingCorrect: entry.score.routingCorrect,
+        captureCompleteness: entry.score.captureCompleteness,
+        conversationQuality: entry.score.conversationQuality,
+        frustration: entry.score.frustration,
+        summary: piiFreeJudgeSummary(entry.score),
+        droppedMidTurn: entry.transport.droppedMidTurn,
+        model,
+      }));
+
+    let persisted = 0;
+    if (payloads.length > 0) {
+      try {
+        const result = (await raceWithAbort(
+          convex.mutation(api.leads.recordVoiceEvals, { ingestSecret, evals: payloads }) as Promise<{
+            updated: number;
+          }>,
+          runController.signal,
+        )) as { updated: number };
+        persisted = result.updated;
+      } catch (error) {
+        return isAdminEvalDeadline(error)
+          ? { ok: false, reason: "deadline_exceeded" }
+          : { ok: false, reason: "convex_failed" };
+      }
+    }
+
+    const failureCategories = Object.fromEntries(
+      ADMIN_EVAL_FAILURE_CATEGORIES.map((category) => [
+        category,
+        [...outcomes.values()].filter((outcome) => outcome.failure === category).length,
+      ]),
+    ) as Record<AdminEvalFailureCategory, number>;
+    const failureSamples = [...outcomes.values()]
+      .flatMap((outcome) => (outcome.failure ? [outcome.failure] : []))
+      .slice(0, 3);
+
+    return {
+      ok: true,
+      model,
+      fetched: customerSessions.length,
+      conversations: conversations.length,
+      alreadyEvaluated,
+      judged: judgeable.length,
+      persisted,
+      failures: judgeable.length - payloads.length,
+      failureCategories,
+      failureSamples,
+    };
+  } finally {
+    clearTimeout(runTimer);
+  }
 }
+
+/** Bulk runs are idempotent; explicit targets and force are deliberate rescoring paths. */
+export function needsAdminEvaluation(session: VoiceEvalSession, model: string, deliberateRescore: boolean) {
+  if (deliberateRescore) return true;
+  if (session.eval?.model) return session.eval.model !== model;
+  return !(typeof session.evaluatedAt === "number" && session.evaluatedAt > 0);
+}
+
+type JudgeOutcome = { score: JudgeScore | null; failure?: AdminEvalFailureCategory };
 
 async function judgeSession(
   client: OpenAI,
   model: string,
   session: VoiceEvalSession,
-): Promise<{ score: JudgeScore | null; error?: string }> {
+  signal: AbortSignal,
+): Promise<JudgeOutcome> {
+  if (signal.aborted) return { score: null, failure: "run_deadline" };
   try {
-    const completion = await client.chat.completions.create({
-      model,
-      temperature: 0,
-      messages: [
-        { role: "system", content: JUDGE_SYSTEM_PROMPT },
-        { role: "user", content: buildJudgeUserPrompt(session) },
-      ],
-    });
+    const completion = await raceWithAbort(
+      client.chat.completions.create(
+        {
+          model,
+          temperature: 0,
+          messages: [
+            { role: "system", content: JUDGE_SYSTEM_PROMPT },
+            { role: "user", content: buildJudgeUserPrompt(session) },
+          ],
+        },
+        { signal },
+      ),
+      signal,
+    );
     const content = completion.choices[0]?.message?.content;
-    const score = content ? parseJudgeResponse(content) : null;
-    return score ? { score } : { score: null, error: "judge_response_unparseable" };
+    if (!content) return { score: null, failure: "empty_response" };
+    const score = parseJudgeResponse(content);
+    return score ? { score } : { score: null, failure: "invalid_response" };
   } catch (error) {
-    return { score: null, error: error instanceof Error ? error.message.slice(0, 160) : "judge_call_failed" };
+    if (signal.aborted) return { score: null, failure: "run_deadline" };
+    return { score: null, failure: classifyJudgeError(error) };
   }
+}
+
+class AdminEvalDeadlineError extends Error {
+  constructor() {
+    super("Admin evaluation run exceeded its deadline");
+    this.name = "AdminEvalDeadlineError";
+  }
+}
+
+function isAdminEvalDeadline(error: unknown): boolean {
+  return error instanceof AdminEvalDeadlineError;
+}
+
+/** Reject promptly when the shared run deadline expires; late promises are safely observed. */
+function raceWithAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(signal.reason ?? new AdminEvalDeadlineError());
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason ?? new AdminEvalDeadlineError());
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
+}
+
+export function classifyJudgeError(error: unknown): AdminEvalFailureCategory {
+  const candidate = error as { code?: unknown; name?: unknown; status?: unknown } | null;
+  const status = typeof candidate?.status === "number" ? candidate.status : 0;
+  const code = typeof candidate?.code === "string" ? candidate.code.toLowerCase() : "";
+  const name = typeof candidate?.name === "string" ? candidate.name.toLowerCase() : "";
+  if (name.includes("timeout") || name === "aborterror" || code.includes("timeout") || code === "etimedout") {
+    return "provider_timeout";
+  }
+  if (status === 429) return "provider_rate_limited";
+  if (status === 401 || status === 403) return "provider_auth";
+  return "provider_error";
 }
 
 /** Run an async mapper over items with a fixed concurrency. */

@@ -1,6 +1,9 @@
+import { cleanup, render } from "@testing-library/react";
 import { NextRequest } from "next/server";
+import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { POST } from "@/app/api/admin/login/route";
+import { AdminLoginForm } from "@/components/admin/AdminLoginForm";
 import { adminCookieName } from "@/lib/server/admin-auth";
 import { resetRateLimitBucketsForTest } from "@/lib/server/security";
 
@@ -11,6 +14,8 @@ describe("admin login route", () => {
     process.env = {
       ...originalEnv,
       NODE_ENV: "test",
+      ADMIN_REVIEW_ACTOR: "Test operator",
+      ADMIN_REVIEW_ROLE: "operator",
       ADMIN_REVIEW_TOKEN: "admin-review-token-123456789",
       IP_HASH_SECRET: "admin-login-test-hash-secret",
       REDIS_URL: undefined,
@@ -21,6 +26,7 @@ describe("admin login route", () => {
   });
 
   afterEach(() => {
+    cleanup();
     resetRateLimitBucketsForTest();
     process.env = originalEnv;
   });
@@ -50,12 +56,35 @@ describe("admin login route", () => {
     const otherIp = await POST(loginRequest("admin-review-token-123456789", "198.51.100.24"));
     expect(otherIp.status).toBe(200);
   });
+
+  it("rejects cross-origin and non-JSON login attempts before consuming credentials", async () => {
+    const crossOrigin = await POST(
+      loginRequest("admin-review-token-123456789", "203.0.113.8", "https://attacker.test"),
+    );
+    expect(crossOrigin.status).toBe(403);
+    await expect(crossOrigin.json()).resolves.toEqual({ ok: false, error: "csrf" });
+
+    const nonJson = new NextRequest("http://localhost/api/admin/login", {
+      body: "token=admin-review-token-123456789",
+      headers: { "content-type": "application/x-www-form-urlencoded", origin: "http://localhost" },
+      method: "POST",
+    });
+    expect((await POST(nonJson)).status).toBe(403);
+  });
+
+  it("uses a native POST fallback so pre-hydration submits cannot put the token in the URL", () => {
+    const { container } = render(createElement(AdminLoginForm, {}));
+    const form = container.querySelector("form");
+
+    expect(form).toHaveAttribute("method", "post");
+    expect(form).toHaveAttribute("action", "/api/admin/login");
+  });
 });
 
-function loginRequest(token: string, ip: string) {
+function loginRequest(token: string, ip: string, origin = "http://localhost") {
   return new NextRequest("http://localhost/api/admin/login", {
     body: JSON.stringify({ token }),
-    headers: { "content-type": "application/json", "x-forwarded-for": ip },
+    headers: { "content-type": "application/json", origin, "x-forwarded-for": ip },
     method: "POST",
   });
 }

@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/nextjs";
+import { scrubSentryEvent, scrubSentrySpan } from "@/lib/sentry-privacy";
 
 Sentry.init({
   dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
@@ -8,10 +9,18 @@ Sentry.init({
   tracesSampleRate: Number(process.env.NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE ?? "0.05"),
   replaysSessionSampleRate: 0,
   replaysOnErrorSampleRate: 0,
-  beforeSend(event) {
-    delete event.user;
-    return event;
+  dataCollection: {
+    cookies: false,
+    genAI: { inputs: false, outputs: false },
+    httpBodies: [],
+    httpHeaders: { request: false, response: false },
+    queryParams: false,
+    stackFrameVariables: false,
+    userInfo: false,
   },
+  beforeSend: scrubSentryEvent,
+  beforeSendSpan: scrubSentrySpan,
+  beforeSendTransaction: scrubSentryEvent,
 });
 
 export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;

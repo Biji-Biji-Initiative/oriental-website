@@ -36,6 +36,21 @@ export function isConversationId(value: unknown): value is string {
   return typeof value === "string" && UUID_PATTERN.test(value);
 }
 
+/** Reopening the same active intake keeps its context; a new id starts clean. */
+export function shouldResumeVoiceConversation(
+  previousId: string,
+  nextId: string,
+  context: { transcriptLength: number; hasDraftHandoff: boolean },
+  explicitFreshHandoff = false,
+) {
+  return Boolean(
+    !explicitFreshHandoff &&
+      previousId &&
+      previousId === nextId &&
+      (context.transcriptLength > 0 || context.hasDraftHandoff),
+  );
+}
+
 function write(id: string, at: number) {
   if (typeof window === "undefined") return;
   try {

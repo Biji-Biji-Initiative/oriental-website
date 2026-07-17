@@ -15,6 +15,8 @@ export type AdminLeadCounts = {
   highPriorityActive: number;
   clickUpGaps: number;
   newToday: number;
+  /** Counts are lower bounds when the byte-safe Convex window is saturated. */
+  truncated?: boolean;
 };
 
 const KUALA_LUMPUR_OFFSET_MS = 8 * 60 * 60 * 1000;

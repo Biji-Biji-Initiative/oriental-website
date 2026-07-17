@@ -42,6 +42,15 @@ type VoiceSessionStageProps = {
   onTopicToggle: (topicId: string) => void;
   onLocalSpeechEnded: (at: number) => void;
   onRemoteAudioStarted: (at: number) => void;
+  emailAttention?: "rejected" | "pending" | "route_blocked" | null;
+  emailInputRef?: RefObject<HTMLInputElement | null>;
+  emailTouched?: boolean;
+  emailValid?: boolean;
+  onEmailBlur?: () => void;
+  onEmailChange?: (value: string) => void;
+  onEmailFocus?: () => void;
+  onEmailSubmit?: () => void;
+  emailSubmitting?: boolean;
   selectedSegment: ReturnType<typeof getSegment>;
   status: "idle" | "submitted";
   turnPhase: VoiceTurnPhase;
@@ -61,6 +70,15 @@ export function VoiceSessionStage({
   onTopicToggle,
   onLocalSpeechEnded,
   onRemoteAudioStarted,
+  emailAttention,
+  emailInputRef,
+  emailTouched = false,
+  emailValid,
+  onEmailBlur,
+  onEmailChange,
+  onEmailFocus,
+  onEmailSubmit,
+  emailSubmitting = false,
   selectedSegment,
   status,
   turnPhase,
@@ -80,6 +98,7 @@ export function VoiceSessionStage({
   const orbRef = useRef<HTMLDivElement | null>(null);
   const brandMotionLevelsRef = useRef({ user: 0, voice: 0 });
   const [draft, setDraft] = useState("");
+  const showEmailError = emailTouched && emailValid === false;
   const micPermission = useMicrophonePermissionState();
   useVoiceAudioLevel(audioRef, orbRef, connectionStatus === "listening", {
     onLevel: (level) => {
@@ -99,6 +118,20 @@ export function VoiceSessionStage({
     const text = draft.trim();
     if (!text) return;
     if (onSendText(text)) setDraft("");
+  };
+
+  const handleEmailBlur = () => {
+    onEmailBlur?.();
+    window.requestAnimationFrame(() => {
+      // Let the touched/verification state commit first, then reveal the whole
+      // compact editor. scrollIntoView accounts for every clipping ancestor;
+      // checking only the outer dialog can still leave the helper hidden in a
+      // short landscape viewport.
+      window.requestAnimationFrame(() => {
+        const quickCapture = emailInputRef?.current?.closest<HTMLElement>("[data-email-quick-capture]");
+        quickCapture?.scrollIntoView({ behavior: "instant", block: "nearest", inline: "nearest" });
+      });
+    });
   };
 
   if (status === "submitted") {
@@ -155,7 +188,7 @@ export function VoiceSessionStage({
             className="mt-8 max-w-2xl text-[clamp(1.8rem,3vw,2.9rem)] font-medium leading-tight text-balance"
             data-voice-stage-headline
           >
-            What would you like to build at Oriental?
+            Build with Mereka at Oriental.
           </p>
         )}
         <p className="mt-3 max-w-xl text-sm leading-6 text-white/58" data-voice-stage-detail>
@@ -188,6 +221,72 @@ export function VoiceSessionStage({
             ? "Choose your browser’s every-visit option to remember the mic. One-time access will ask again later."
             : "Speak or type anytime. Reka says a quick goodbye if you go quiet, and your typed details stay here."}
         </p>
+
+        <div
+          className={cn(
+            "mt-5 w-full max-w-xl rounded-xl border bg-white/[0.045] p-3 text-left lg:hidden",
+            showEmailError
+              ? "border-mk-error/65 shadow-[0_0_0_1px_rgba(255,122,122,0.12)]"
+              : emailAttention
+                ? "border-[#f2d38a]/65 shadow-[0_0_0_1px_rgba(242,211,138,0.12)]"
+                : "border-white/12",
+          )}
+          data-email-quick-capture
+          data-email-state={showEmailError ? "invalid" : emailAttention ? "attention" : "ready"}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <label className="text-xs font-semibold text-white/82" htmlFor="voice-quick-email">
+              Email to follow up
+            </label>
+            <span className="text-[11px] text-white/48">Only required</span>
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <Input
+              aria-describedby="voice-quick-email-help"
+              aria-errormessage={showEmailError ? "voice-quick-email-help" : undefined}
+              aria-invalid={showEmailError || undefined}
+              aria-required="true"
+              className="min-w-0 flex-1"
+              id="voice-quick-email"
+              onBlur={handleEmailBlur}
+              onChange={(event) => onEmailChange?.(event.target.value)}
+              onFocus={onEmailFocus}
+              placeholder="name@example.com"
+              ref={emailInputRef}
+              required
+              type="email"
+              value={captured.email}
+              variant="glass"
+            />
+            <Button
+              aria-label="Send enquiry"
+              className="size-11 shrink-0 rounded-full bg-mk-horizon px-3 text-xs font-semibold text-mk-off-black hover:bg-white disabled:opacity-55 sm:w-auto sm:px-4"
+              disabled={!emailValid || emailSubmitting}
+              onClick={onEmailSubmit}
+              type="button"
+            >
+              <SendIcon data-icon="inline-start" />
+              <span className="hidden sm:inline">{emailSubmitting ? "Sending" : "Send"}</span>
+            </Button>
+          </div>
+          <p
+            aria-live="polite"
+            className={cn(
+              "mt-2 text-xs leading-5",
+              showEmailError ? "text-mk-error-soft" : emailAttention ? "text-[#f2d38a]" : "text-white/48",
+            )}
+            id="voice-quick-email-help"
+            role={showEmailError ? "alert" : undefined}
+          >
+            {showEmailError
+              ? "Enter a valid email, such as name@example.com."
+              : emailAttention
+                ? "Check this once or edit it here. Reka will keep the conversation moving—no spelling loop."
+                : captured.email.trim()
+                  ? "Email added · ready to send."
+                  : "Say it naturally or type it here whenever you are ready."}
+          </p>
+        </div>
 
         {connectionStatus === "listening" ? (
           <form className="mt-6 flex w-full max-w-xl gap-2" data-voice-stage-composer onSubmit={handleComposerSubmit}>

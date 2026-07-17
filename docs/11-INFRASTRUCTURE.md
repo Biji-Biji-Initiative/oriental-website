@@ -48,7 +48,13 @@ production and `staging.<service>.mereka.io` records above.
 
 ### Turnstile
 
-Turnstile protects form-style intake only when `TURNSTILE_ENFORCEMENT=required`:
+`TURNSTILE_ENFORCEMENT` is an explicit managed policy cell:
+
+- `relaxed` (current staging and production): Redis-backed route limits remain
+  active and no Turnstile challenge is required
+- `required`: form-style intake must provide a valid Turnstile token
+
+The `required` cell protects:
 
 - `POST /api/leads` for unsigned form submissions
 - `POST /api/newsletter`
@@ -60,7 +66,9 @@ Runtime details:
 - client shim: `components/security/TurnstileProvider.tsx` currently returns an empty token because Turnstile UI is disabled for this microsite
 - server verifier: `verifyTurnstile()` in `lib/server/security.ts`
 - local loopback fallback: `local-dev` token when no site key is configured
-- production: set `TURNSTILE_ENFORCEMENT=required` only if Cloudflare verification is deliberately re-enabled for form/newsletter paths
+- staging and production: keep `TURNSTILE_ENFORCEMENT=relaxed` while the client
+  challenge is disabled; switch to `required` only in the same reviewed release
+  that deliberately re-enables and proves the form/newsletter challenge
 
 ### WAF / Cache
 
@@ -108,15 +116,42 @@ folder through the app at runtime: an operator must reconcile the values into
 Coolify's environment-variable store, and into staging's host-local `.env`,
 before recreating containers. The app reads `process.env.*` and has no
 Infisical SDK runtime dependency. Source checks alone are insufficient; inspect
-the running container after every configuration release.
+the running container after every configuration release. The governed staging
+deployer streams the complete native staging export through encrypted stdin and
+atomically merges managed keys into the host `.env`. The production deployer
+creates or updates every approved runtime entry, enables `NEXT_PUBLIC_*` values
+at build time as well, requires exact bulk-write acknowledgement, and reads back
+scope parity before it may
+change the release SHA. An absent injected value is never implicit retirement:
+the deployer stops before writes unless that key is already empty/absent or is
+listed in the code-reviewed `RETIRED_MANAGED_APPLICATION_ENVIRONMENT_KEYS` set.
+Add the tombstone in the same PR that removes the native Infisical value and
+retain it as durable ownership history; a later source value safely overrides
+the tombstone.
+Infisical exports are materialized as Coolify literal values, so `$...` inside a
+concrete secret cannot be expanded a second time. Locked values remain hidden
+from the deploy token and are compared inside the running container after a
+configuration release. The token needs scoped `read`, `write`, and `deploy`
+permissions, not `read:sensitive`; values are never written to process arguments
+or logs.
 
 `pnpm release:verify:voice-cell` is the fast, non-secret parity check. Run it
 under `infisical run` with `--model-cell candidate` for native staging and
 `--model-cell control` for native production before the full release preflight.
-Both require baseline runtime, low reasoning, adaptive capture, the exact model
-for the selected cell, and an explicitly false picker.
+Both require baseline runtime, low reasoning, adaptive capture, and the exact
+model for the selected cell. Clean candidate evidence requires the picker
+explicitly off. A separate staging audition check adds `--picker-mode audition`
+and requires it on; production control always requires it off.
 
 Secret contract is enforced by `scripts/check-secrets.ts`.
+
+Admin authority is split across three distinct managed credentials. The
+configured `ADMIN_REVIEW_TOKEN` / role / actor is for interactive review and
+ordinary admin APIs; `OPS_AUTOMATION_TOKEN` is bearer-only and can run only
+eval, SLA, and retention jobs; `PRIVACY_ADMIN_TOKEN` is bearer-only and can run
+only verified privacy deletion. Production preflight rejects missing, short, or
+duplicate credentials. The scheduled GitHub Actions workflow references only
+the ops credential.
 
 ## Coolify
 
@@ -140,28 +175,44 @@ Staging is available at `https://staging.oriental.mereka.io`, following the
 on the same Coolify app host under
 `/data/coolify/applications/oriental-staging`. Staging images use the distinct
 `mtrl2z6a7zvoyevxvufpntij:staging-<sha>` tag while production uses
-`mtrl2z6a7zvoyevxvufpntij:<sha>`; build-time staging previews must never mutate
-or replace a production image tag. Staging is routed through the Coolify
+`mtrl2z6a7zvoyevxvufpntij:<sha>`; the distinct tags isolate release ownership,
+while the approved Mereka M nebula and public entrance treatment are built
+identically for staging and production. The entrance treatment is
+non-interactive, never locks scrolling, runs once per tab for no more than 700
+ms, and is omitted on admin/API and reduced-motion loads. Staging is routed through the Coolify
 Traefik network with `coolify.managed=false`, so it is host-managed rather than
 a full Coolify UI application until a dedicated Coolify staging app/API token
 is provisioned.
 The Infisical `staging` environment contains the complete application contract
-plus the explicit baseline/candidate/low/adaptive model-only preview,
-staging-Sentry, and QA-picker-off overrides. The host-managed staging container
-still materializes those values
-through its host-local env file; Infisical is the canonical comparison source,
-not a runtime SDK dependency. Staging and production still share upstream
+plus the explicit baseline/candidate/low/adaptive cell and staging Sentry. The
+picker state is selected independently as clean or audition. The host-managed
+staging container still materializes those values through its host-local env
+file; Infisical is the canonical comparison source, not a runtime SDK
+dependency. Staging and production still share upstream
 Convex, SES/SMTP, Slack, Redis, and OpenAI accounts. Redis keys are separated by
 environment, and new voice snapshots carry deployment attribution, but do not
 treat staging submissions as a fully isolated data/notification sandbox until
 dedicated staging services are provisioned.
 
-The governed host deployer renders and atomically replaces staging's `.env`,
+The governed host deployer first converges the complete staging application
+scope from Infisical, then renders and atomically replaces staging's `.env`,
 rewriting the five non-secret voice-cell values to the explicitly selected
-control or candidate model cell with the picker off, alongside the exact SHA.
-Candidate is rejected for every production host path. The deployer does not
-copy secrets or replace the full Infisical reconciliation; it prevents a stale
-or implicit experiment cell from surviving a release recreation.
+control or candidate model cell and the explicit clean or audition picker mode,
+alongside the exact SHA. Clean is the default and is required for evidence;
+audition is staging-only. Candidate and audition are rejected for every
+production host path. The deployer recognizes both native `tailscale` and WSL's
+`tailscale.exe` without splitting paths.
+
+Picker-enabled sessions are voice auditions, not clean model-only evidence.
+Voice evals persist `clear_fields` as the canonical clear-all tool name and
+aggregate PII-free tool latency both overall and by canonical tool name; it is
+never rewritten to the distinct single-field `clear_field` operation. Cohorts
+also retain `variant`, `voice`, and `speed`, and the experiment validator
+rejects any row that changes both model and voice variant. Aggregate-only eval
+uses read-only Convex queries and may enrich missing historical profile fields
+through the existing per-session query; it never deploys functions or writes
+sessions, judgments, or reports. Collect the clean picker-off candidate cohort
+before considering automatic model promotion.
 
 Staging rollback/removal is host-local:
 
@@ -174,16 +225,27 @@ Deploy flow:
 
 1. PR opens → GitHub `verify` workflow runs.
 2. Merge once to `main`, run release preflight, and freeze the full SHA.
-3. Reconcile Infisical with Coolify and the host-managed staging `.env`.
+3. Inject staging's application scope for the host deployer; inject both the
+   application scope and operator-only Coolify scope for production. Each
+   deployer performs and verifies its own reconciliation.
 4. Build/prove the distinct staging image.
 5. Run `pnpm release:deploy:production` with the frozen SHA, live production
-   SHA, and operator credential from Infisical `/platform/coolify`.
-6. The deployer pins and reads back Coolify's commit, inspects the deployment
-   record, and proves public health; Coolify swaps traffic only after the
-   candidate is healthy.
-7. Run `pnpm release:verify -- --sha <sha> --target both`.
+   SHA, the managed application values from `/deploy/oriental-website`, and the
+   operator credential from Infisical `/platform/coolify`.
+6. The deployer reconciles and reads back the complete approved runtime scope
+   before it pins and reads back Coolify's commit, inspects the deployment
+   record, waits through terminal-to-health eventual consistency, proves
+   `running:healthy` with a loopback health-check host, and proves public health;
+   Coolify swaps traffic only after the candidate is healthy.
+7. Run `pnpm release:verify -- --sha <sha> --target both --staging-model-cell
+   candidate --staging-picker-mode clean` under the managed
+   application scope. The verifier uses Playwright to prove the Search Console
+   meta tag and the GA public-consent/admin-exclusion boundary.
 
-Convex function deployment is separate:
+Convex function deployment is separate. A release that adds a canonical tool
+name to the bounded session validator, including `clear_fields`, MUST deploy
+the reviewed Convex schema/functions before either web environment. Never hide
+an older function deployment by rewriting `clear_fields` to `clear_field`:
 
 ```bash
 CONVEX_DEPLOY_KEY='prod:...' pnpm exec convex deploy
@@ -306,8 +368,10 @@ Rotation means updating Infisical/Coolify and redeploying the app.
 ## Disaster Recovery
 
 - GitHub holds source, docs, and static assets.
-- Convex is the launch data plane; backup/export ownership still needs an ops
-  decision before public launch.
+- Convex is the launch data plane. The nightly bounded retention job deletes
+  expired diagnostics and archived lead records according to the public notice;
+  backup/export restoration remains an explicit ops decision because restored
+  data must not resurrect expired personal records.
 - Infisical backup/restore is handled by the shared secrets platform.
 - Coolify rollback should be tested before launch.
 - Cloudflare DNS export should live in the infra repo.
@@ -317,7 +381,8 @@ Rotation means updating Infisical/Coolify and redeploying the app.
 - Confirm final Coolify resource limits in the live UI.
 - Retain Cloudflare zone ownership evidence; do not require WAF rules while the
   canonical records intentionally remain DNS-only.
-- Define Convex backup/export process and retention.
+- Define the Convex backup/export restoration process, including reapplying the
+  retention sweep before restored records become operator-visible.
 - Tune Sentry alerts, Slack alert thresholds, and dashboard review cadence after
   the first real traffic.
 - Complete human listening QA for Reka's Malaysian-English voice quality.

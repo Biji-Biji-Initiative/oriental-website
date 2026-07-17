@@ -114,7 +114,7 @@ export function AdminLoginForm({ reason }: { reason?: string }) {
               </div>
             ) : null}
             <Form {...form}>
-              {/* method="post" keeps the token out of the URL if a submit fires before hydration */}
+              {/* Native POST is a fail-closed fallback: the JSON-only API rejects it without placing the token in a URL. */}
               <form
                 action="/api/admin/login"
                 className="mt-6 grid gap-5"

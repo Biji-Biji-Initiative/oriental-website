@@ -51,7 +51,11 @@ export function Hero() {
             for future learning, technology, creativity, culture, and community — in the heart of Kuala Lumpur.
           </p>
           <div className="hero-actions">
-            <VoiceButton autoStart={false} className="hero-voice-button" prefill={{ mode: "form" }}>
+            <VoiceButton
+              autoStart={false}
+              className="hero-voice-button"
+              prefill={{ mode: "form", entryPoint: "hero_primary" }}
+            >
               <span className="min-w-0">
                 Tell us why you&apos;re here
                 <span className="block text-xs font-normal text-mk-off-black/58">
@@ -215,7 +219,7 @@ export function Closing() {
           is the moment to enter the conversation.
         </p>
         <div className="mt-10 flex flex-col gap-4 sm:flex-row sm:items-center">
-          <VoiceButton autoStart={false} prefill={{ mode: "form" }}>
+          <VoiceButton autoStart={false} prefill={{ mode: "form", entryPoint: "closing_cta" }}>
             Start the conversation
           </VoiceButton>
           <a
@@ -260,7 +264,7 @@ export function Footer() {
               <VoiceButton
                 autoStart={false}
                 className="bg-white/10 text-white hover:bg-white hover:text-mk-off-black"
-                prefill={{ mode: "form" }}
+                prefill={{ mode: "form", entryPoint: "footer_cta" }}
               >
                 Or · Talk to Mereka
               </VoiceButton>
@@ -316,7 +320,12 @@ export function Footer() {
         </div>
         <div className="mt-14 flex flex-col justify-between gap-4 border-t border-white/10 pt-6 text-sm text-white/55 md:flex-row">
           <span>© 2026 · Mereka × Biji-biji Initiative</span>
-          <span>Oriental Building · A new chapter for a historic Kuala Lumpur landmark</span>
+          <span className="flex flex-wrap gap-x-4 gap-y-2">
+            <a className="underline-offset-4 hover:text-white hover:underline" href="/privacy">
+              Privacy · Privasi
+            </a>
+            <span>Oriental Building · A new chapter for a historic Kuala Lumpur landmark</span>
+          </span>
         </div>
       </div>
     </footer>

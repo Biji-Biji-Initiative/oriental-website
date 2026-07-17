@@ -21,7 +21,7 @@
     "eval:voice": "tsx scripts/eval-voice.ts",
     "smoke:staging:intake": "tsx scripts/smoke-staging-intake.ts",
     "smoke:staging:voice": "tsx scripts/smoke-staging-voice.ts",
-    "release:preflight": "pnpm lint && pnpm typecheck && tsx scripts/run-release-tests.ts && pnpm check-secrets && pnpm build && tsx scripts/release-preflight.ts",
+    "release:preflight": "pnpm lint && pnpm typecheck && tsx scripts/run-release-tests.ts && env NODE_ENV=production pnpm check-secrets && pnpm build && tsx scripts/release-preflight.ts",
     "release:verify:voice-cell": "tsx scripts/release-preflight.ts --voice-cell-only",
     "release:deploy:production": "tsx scripts/deploy-coolify-production.ts",
     "release:verify": "tsx scripts/release-verify.ts",

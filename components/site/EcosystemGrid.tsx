@@ -19,7 +19,7 @@ export function EcosystemGrid() {
             <button
               className="eco-cell group"
               key={cell.number}
-              onClick={() => voice.open(cell.intent, { autoStart: false, mode: "form" })}
+              onClick={() => voice.open(cell.intent, { autoStart: false, mode: "form", entryPoint: "ecosystem" })}
               type="button"
             >
               <div className="eco-cell__num">{cell.number}</div>
@@ -38,7 +38,7 @@ export function EcosystemGrid() {
         </p>
         <button
           className="voice-cta"
-          onClick={() => voice.open(undefined, { autoStart: false, mode: "form" })}
+          onClick={() => voice.open(undefined, { autoStart: false, mode: "form", entryPoint: "ecosystem" })}
           type="button"
         >
           <span className="voice-cta__orb">

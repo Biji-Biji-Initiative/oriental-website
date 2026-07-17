@@ -13,8 +13,10 @@ RUN --mount=type=cache,id=oriental-pnpm-store,target=/pnpm/store \
   pnpm install --frozen-lockfile --store-dir /pnpm/store
 
 FROM base AS builder
-ARG NEXT_PUBLIC_BRAND_MOTION_PREVIEW=false
-ENV NEXT_PUBLIC_BRAND_MOTION_PREVIEW=$NEXT_PUBLIC_BRAND_MOTION_PREVIEW
+ARG NEXT_PUBLIC_GA_MEASUREMENT_ID=""
+ARG NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION=""
+ENV NEXT_PUBLIC_GA_MEASUREMENT_ID=$NEXT_PUBLIC_GA_MEASUREMENT_ID
+ENV NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION=$NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN --mount=type=cache,id=oriental-next-cache,target=/app/.next/cache \

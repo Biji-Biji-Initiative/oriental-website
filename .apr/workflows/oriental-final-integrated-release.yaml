@@ -1,0 +1,56 @@
+name: oriental-final-integrated-release
+description: Final adversarial exact-tree gate for the complete Oriental release
+
+documents:
+  readme: docs/12-CHAT-RELEASE-RUNBOOK.md
+  spec: .apr/specs/oriental-final-integrated-release.md
+  implementation: .apr/evidence/oriental-final-implementation.patch
+
+oracle:
+  model: "gemini-3.1-pro"
+
+rounds:
+  output_dir: .apr/rounds/oriental-final-integrated-release
+  impl_every_n: 1
+
+template: |
+  Perform the post-tombstone, bulk-acknowledgement closure pass: an adversarial
+  exact-tree pre-merge review of the complete Oriental release. Independently
+  verify explicit secret retirement, fail-before-mutation behavior, exact
+  Coolify bulk-write acknowledgement plus scope/runtime proof for deliberately
+  locked values, and fail-open browser storage. Also verify principal-bound
+  admin authorization, downstream privacy erasure, byte-safe indexed retention,
+  monotonic snapshots, explicit retention drain to `hasMore=false`,
+  authenticated Convex-backed admin proof, and rollback convergence. Treat
+  unified-diff hunk labels as context rather than removed lines; specifically
+  verify the full-context SLA route import. Recheck the native POST login
+  fallback and retryable partial-erasure response from the prior round. Treat
+  privacy leakage, analytics before consent, weak authorization,
+  unbounded evaluation spend, inaccessible or overflowing UI, misleading brand
+  or experiment gates, lost capture state, misleading telemetry, weakened lead
+  durability, incomplete managed-environment convergence, unsafe production
+  model changes, or broken exact-SHA proof as blockers. This is a code merge
+  gate; do not require post-merge live proof. End with exactly
+  `VERDICT: MERGE ORIENTAL RELEASE` or `VERDICT: DO NOT MERGE`.
+
+template_with_impl: |
+  Perform the post-tombstone, bulk-acknowledgement closure pass: an adversarial
+  exact-tree pre-merge review of the complete Oriental release against the
+  attached exact source/test/config patch. Independently verify explicit secret
+  retirement, fail-before-mutation behavior, exact Coolify bulk-write
+  acknowledgement plus scope/runtime proof for deliberately locked values, and
+  fail-open browser storage. Verify principal-bound admin authorization,
+  downstream privacy erasure, byte-safe indexed retention, monotonic snapshots,
+  explicit retention drain to `hasMore=false`, authenticated Convex-backed
+  admin proof, and rollback convergence. Treat unified-diff hunk labels as
+  context rather than removed lines; specifically verify the full-context SLA
+  route import. Recheck the native POST login fallback and retryable partial-
+  erasure response from the prior round. Verify claims against the
+  checked-out implementation. Treat privacy leakage, analytics before consent,
+  weak authorization, unbounded evaluation spend, inaccessible or overflowing
+  UI, misleading brand or experiment gates, lost capture state, misleading
+  telemetry, weakened lead durability, incomplete managed-environment
+  convergence, unsafe production model changes, or broken exact-SHA proof as
+  blockers. This is a code merge gate; do not require post-merge live proof.
+  End with exactly `VERDICT: MERGE ORIENTAL RELEASE` or
+  `VERDICT: DO NOT MERGE`.

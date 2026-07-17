@@ -1,29 +1,52 @@
+// @vitest-environment jsdom
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { trackEvent } from "@/lib/analytics";
+import type { IntakeAnalyticsParametersByEvent } from "@/lib/client-analytics";
 
 describe("GA4 event helper", () => {
   afterEach(() => {
-    // @ts-expect-error test cleanup of the injected stub
-    delete globalThis.window;
+    window.localStorage.clear();
+    window.gtag = undefined;
   });
 
-  it("no-ops without a window (SSR, tests)", () => {
-    expect(() => trackEvent("newsletter_signup")).not.toThrow();
-  });
-
-  it("no-ops when gtag is not configured", () => {
-    // @ts-expect-error minimal window stub
-    globalThis.window = {};
-    expect(() => trackEvent("lead_submitted", { segment: "technology" })).not.toThrow();
-  });
-
-  it("forwards conversion events to gtag with parameters", () => {
+  it("forwards bounded conversion events only after explicit consent", () => {
     const gtag = vi.fn();
-    // @ts-expect-error minimal window stub
-    globalThis.window = { gtag };
+    window.gtag = gtag;
 
+    trackEvent("voice_lead_submitted", { segment: "technology", source: "voice" });
+    expect(gtag).not.toHaveBeenCalled();
+
+    window.localStorage.setItem("oriental_analytics_consent_v1", "granted");
     trackEvent("voice_lead_submitted", { segment: "technology", source: "voice" });
 
     expect(gtag).toHaveBeenCalledWith("event", "voice_lead_submitted", { segment: "technology", source: "voice" });
+  });
+
+  it("stops future conversion events after consent withdrawal even when gtag remains", () => {
+    const gtag = vi.fn();
+    window.gtag = gtag;
+    window.localStorage.setItem("oriental_analytics_consent_v1", "denied");
+
+    trackEvent("newsletter_signup", { placement: "hero" });
+
+    expect(gtag).not.toHaveBeenCalled();
+  });
+
+  it("drops unexpected, free-form, and invalid conversion parameters at runtime", () => {
+    const gtag = vi.fn();
+    window.gtag = gtag;
+    window.localStorage.setItem("oriental_analytics_consent_v1", "granted");
+
+    trackEvent("voice_session_started", {
+      segment: "technology",
+      voice_variant: "made-up-variant",
+      email: "person@example.com",
+      error: "user-controlled text",
+    } as unknown as IntakeAnalyticsParametersByEvent["voice_session_started"]);
+
+    expect(gtag).toHaveBeenCalledWith("event", "voice_session_started", { segment: "technology" });
+    expect(JSON.stringify(gtag.mock.calls)).not.toContain("person@example.com");
+    expect(JSON.stringify(gtag.mock.calls)).not.toContain("user-controlled text");
   });
 });

@@ -9,14 +9,16 @@ The voice agent is the heart of the partner intake. This document is the
 
 A single fullscreen overlay acts as a collaborative workspace. Voice and typing
 are available at the same time; the user never has to choose a separate mode.
-The right-hand handoff panel is always editable and uses shadcn form primitives
-with Zod validation.
+The handoff panel uses shadcn form primitives with Zod validation. Below 1024px,
+a single compact email editor stays beside the voice controls so correction
+never scrolls the live conversation away; the desktop panel owns the email
+editor at 1024px and above.
 
 | Surface | Purpose |
 |---|---|
 | **Partner rail** | Segment intent and routing owner hint. |
 | **Voice stage** | Reka voice controls, audio-reactive orb, story cues, live audio state, and a typed-chat composer while voice is live. |
-| **Handoff panel** | Editable Name, Email, Organisation, and brief fields. |
+| **Handoff panel** | Email-first submission plus optional Name, Organisation, Phone, Website, and brief fields. |
 | **Live notes** | Recent transcript snippets for user confidence and debugging. |
 
 The design principle is: let the user talk naturally, but let them type or fix
@@ -29,7 +31,7 @@ exactly like speech.
 
 ## 2. Partner segments
 
-Eight segments. Each is a top-level intent that determines (a) which person at
+Six segments. Each is a top-level intent that determines (a) which person at
 Mereka the lead routes to, and (b) the voice agent's opener line.
 
 | `id` | Label | Blurb | Routed to | Role |
@@ -38,8 +40,6 @@ Mereka the lead routes to, and (b) the voice agent's opener line.
 | `education` | Education | Run learning programmes with us | **Lala** | Programmes Lead |
 | `programme` | Programme | Bring recurring workshops & trainings | **Jey** | Programmes Lead |
 | `technology` | Technology | Showcase tools & embed demos | **Gurpreet** | Innovation Lead |
-| `ai` | AI | AI labs, agents, literacy & applied research | **Gurpreet** | Innovation Lead |
-| `cultural` | Cultural | Exhibitions, residencies, performances | **AVI** | Culture Curator |
 | `community` | Community | NGO, social impact, community-driven | **Ambika** | Community Lead |
 | `other` | Other | Press, investor, or just exploring | **Nadia** | Partnerships |
 
@@ -52,7 +52,7 @@ constant matching the prototype's `voice-agent.jsx`.
 ## 3. Conversation flow (voice)
 
 ```
-1. Greeting        → "Hi, I'm Reka. What would you like to build at Oriental?"
+1. Greeting        → "Hi, I'm Reka from Mereka. What would you like to build with us at Oriental Building?"
 2. Segment pick    → tool_call: set_partner_type(segment)
 3. Opener          → voiceOpener for the picked segment
 4. Discovery       → free dialogue, agent batches grounded reversible fields with capture_fields()
@@ -67,18 +67,28 @@ agent re-routes.
 
 In governed `adaptive` mode, a speech email is sendable only after syntax,
 model-evidence, and latest-turn grounding pass; exact evidence is high
-confidence and bounded ASR drift with an explicit email cue is medium. It stays
-visible/editable and does not require a blanket confirmation turn. A correction
-invalidates the earlier verification before any route can submit it, then the
-replacement is grounded from scratch. Duplicate email tool calls pass through
-the same grounding rule. A pending transcription may relax fresh native-audio
-capture to medium confidence only when no completed turn already contradicts
-the proposed value. Non-PII turn sequence and Realtime item identity preserve
-that decision across form edits and out-of-order transcription completion. A
-typed form edit versions any already-active response stale for email capture,
-confirmation, clearing, and routing, so older tool output cannot overwrite or
-submit the typed value.
-`strict` restores exact
+confidence and is immediately usable only when the complete literal or spoken
+evidence canonicalizes to that exact address. Bounded ASR substitution applies
+only to a complete spoken-form candidate with an explicit email cue; it is
+medium confidence and stays pending in the visible email editor; Reka points to
+that editor once and continues without a spoken readback or spelling loop. A
+voice-command send still requires confirmation, while pressing the visible Send
+button explicitly checks/submits the shown address. A literal email that differs from the proposed
+address never enters the approximate path. The address is always
+visible/editable; exact high-confidence captures do not pay a blanket
+confirmation turn.
+
+A correction or failed replacement invalidates the earlier verification before
+any route can submit it, then grounds the replacement from scratch. Duplicate
+email tool calls pass through the same grounding rule. A pending native-audio
+transcription may yield medium confidence only when no completed turn already
+contradicts the proposed value, and it never bypasses the visible check.
+Non-PII turn sequence and Realtime item identity preserve that decision across
+form edits and out-of-order transcription completion. Clear-all also clears the
+remembered handoff and fences every pre-clear ASR completion by Realtime item
+identity. A typed form edit versions any already-active response stale for email
+capture, confirmation, clearing, and routing, so older tool output cannot
+overwrite or submit the typed value. `strict` restores exact
 readback plus explicit confirmation. Email supplied through the hero prefill or
 edited directly in the handoff form is confirmed by that typed action. Both the
 client runtime and `/api/leads` reject invalid, stale, or pending email state.
@@ -140,7 +150,7 @@ claim a handoff succeeded before `route_to_team` returns success.
 | Input audio | Browser-default mic; page load imports the voice bundle and preconnects, but Realtime token minting happens only while permission is currently granted or after the visitor grants a first/expired one-time prompt. The app releases tracks on close. |
 | Session length cap | **10 minutes** by default from the typed policy in `lib/voice/session-policy.ts`; bounded override `VOICE_MAX_DURATION_MS` accepts 1–30 minutes. `/api/voice/session` returns the resolved value to the client. |
 | Turn detection | `baseline` uses semantic VAD `auto`. `instant-v1` uses `high` for normal turns, switches deterministically to `low` after Reka asks for an email, then returns to `high` on the next response. `VOICE_RUNTIME_PROFILE=baseline` is the rollback. |
-| Email capture | `adaptive` accepts only syntactically valid, independently grounded speech email evidence and keeps it visible/editable without a blanket confirmation turn. `strict` restores exact readback plus explicit confirmation. |
+| Email capture | `adaptive` immediately confirms exact high-confidence speech evidence; medium ASR substitution stays pending in the visible editor without a spoken readback. Voice-command send waits; the visible Send button is an explicit check/submit. `strict` restores exact readback plus explicit confirmation. |
 | Input transcription | `gpt-4o-transcribe` by default via `OPENAI_REALTIME_TRANSCRIPTION_MODEL`, with a multilingual domain `prompt` covering Malaysian English, Bahasa Melayu, Mandarin, and Tamil plus spoken-email patterns and brand terms. Transcription feeds the visible transcript, review snapshots, and capture grounding; the model itself hears audio natively |
 | Noise reduction | `near_field` for mobile user agents, `far_field` for desktops, chosen at mint time in `/api/voice/session` |
 | Idle behaviour | Reka speaks a one-sentence goodbye in a grace window (`idleGoodbyeGraceMs`, 6 s) before the 20 s idle cutoff; the goodbye cannot extend the session and the visitor speaking cancels the close |
@@ -232,17 +242,21 @@ right person follows up").
   stored in `voiceSessions` — including sessions that were never submitted.
 - Following up with visitors who shared contact details in voice but did not
   press send (the admin "Recoverable voice leads" queue) is sanctioned.
-- Privacy notice (PDPA) is linked from the voice modal footer — link target
-  TBD.
+- The English and Bahasa Melayu privacy notices are linked from the voice modal
+  footer at `/privacy`.
 
 ## 10. Submission
 
-On `route_to_team` (voice) or "Send to Mereka" (form), the client POSTs
+On `route_to_team` (voice) or "Send enquiry" (visible button), the client POSTs
 `/api/leads` with:
 
 ```json
 {
   "source": "voice" | "form",
+  "entryPoint": "hero_primary" | "nav_desktop" | "...bounded enum",
+  "entryMethod": "voice_button" | "form" | "email_capture" | "unknown",
+  "submissionMethod": "voice_command" | "handoff_button",
+  "fieldProvenance": { "email": { "method": "voice" | "form" | "chat" | "prefill" | "mixed" | "unknown", "correctionCount": 0, "...": "bounded counters only" } },
   "segment": "education",
   "form": { "name": "...", "email": "...", "org": "...", "message": "..." },
   "transcript": [ { "role": "user", "text": "..." }, ... ],
@@ -255,8 +269,11 @@ On `route_to_team` (voice) or "Send to Mereka" (form), the client POSTs
 
 Server then:
 
-1. Verifies Turnstile.
-2. Validates payload (zod) and rejects voice email without a verified readback/edit marker.
+1. Verifies signed review credentials for every voice-origin submission. For
+   unsigned form submissions, Turnstile is checked only when
+   `TURNSTILE_ENFORCEMENT=required`; the governed `relaxed` cell relies on the
+   Redis-backed route limiter instead.
+2. Validates payload (zod) and rejects a voice-command email without a verified marker. A visible-button submission is itself the visitor's explicit check of the editable address.
 3. Inserts a row into `leads` through the Convex `leads.createLead` mutation.
 4. Inserts a row into `leadEvents` (`kind: "created"`).
 5. Attempts owner email via SMTP or SES, depending on configured secrets.

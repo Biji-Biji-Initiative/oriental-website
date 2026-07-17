@@ -5,11 +5,11 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { ADMIN_EVAL_MODEL_CHOICES } from "@/lib/eval/admin-models";
 
 const MODEL_CHOICES = [
   { value: "", label: "Configured judge model" },
-  { value: "gpt-5.6-luna", label: "gpt-5.6-luna" },
-  { value: "gpt-4o-mini", label: "gpt-4o-mini" },
+  ...ADMIN_EVAL_MODEL_CHOICES.map((value) => ({ value, label: value })),
 ];
 
 type AdminRunEvalsButtonProps = {
@@ -36,7 +36,14 @@ export function AdminRunEvalsButton({ reviewIds, compact, children }: AdminRunEv
         }),
       });
       const body = (await response.json().catch(() => null)) as
-        | { ok: true; model: string; judged: number; persisted: number; failures: number }
+        | {
+            ok: true;
+            model: string;
+            judged: number;
+            persisted: number;
+            failures: number;
+            failureCategories: Record<string, number>;
+          }
         | { ok: false; error?: string }
         | null;
       if (!response.ok || !body?.ok) {
@@ -45,14 +52,21 @@ export function AdminRunEvalsButton({ reviewIds, compact, children }: AdminRunEv
           description:
             error === "unconfigured"
               ? "OPENAI_API_KEY or Convex credentials are missing in this environment."
-              : error === "no_sessions"
-                ? "No judgeable customer sessions found in the recent window."
-                : (error ?? `HTTP ${response.status}`),
+              : error === "invalid_model"
+                ? "The configured judge model is not in the approved model list."
+                : error === "rate_limited"
+                  ? "An evaluation run recently started. Wait five minutes before running another batch."
+                  : error === "no_sessions"
+                    ? "No judgeable customer sessions found in the recent window."
+                    : (error ?? `HTTP ${response.status}`),
         });
         return;
       }
       toast.success(`Scored ${body.persisted} of ${body.judged} sessions with ${body.model}.`, {
-        description: body.failures > 0 ? `${body.failures} session(s) could not be judged — retry later.` : undefined,
+        description:
+          body.failures > 0
+            ? `${body.failures} session(s) could not be judged (${failureSummary(body.failureCategories)}).`
+            : undefined,
       });
       router.refresh();
     });
@@ -91,4 +105,11 @@ export function AdminRunEvalsButton({ reviewIds, compact, children }: AdminRunEv
       </Button>
     </div>
   );
+}
+
+function failureSummary(categories: Record<string, number>) {
+  const failures = Object.entries(categories)
+    .filter(([, count]) => count > 0)
+    .map(([category, count]) => `${category.replaceAll("_", " ")}: ${count}`);
+  return failures.join(", ") || "unknown provider response";
 }

@@ -1,15 +1,39 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+function fieldProvenanceSchema() {
+  const entry = () =>
+    v.object({
+      method: v.string(),
+      lastInput: v.optional(v.string()),
+      editCount: v.number(),
+      correctionCount: v.number(),
+      clearCount: v.number(),
+    });
+  return v.object({
+    name: entry(),
+    email: entry(),
+    org: entry(),
+    phone: entry(),
+    website: entry(),
+    message: entry(),
+  });
+}
+
 export default defineSchema({
   leads: defineTable({
     leadId: v.string(),
     source: v.union(v.literal("voice"), v.literal("form"), v.literal("hero-email")),
+    entryPoint: v.optional(v.string()),
+    entryMethod: v.optional(v.string()),
+    submissionMethod: v.optional(v.string()),
+    fieldProvenance: v.optional(fieldProvenanceSchema()),
     segment: v.string(),
     routedTo: v.string(),
     routedToEmail: v.optional(v.union(v.string(), v.null())),
     name: v.string(),
     email: v.string(),
+    emailNormalized: v.optional(v.string()),
     org: v.string(),
     phone: v.optional(v.string()),
     website: v.optional(v.string()),
@@ -51,18 +75,30 @@ export default defineSchema({
     notificationDelivered: v.optional(v.boolean()),
     notificationEmailOk: v.optional(v.boolean()),
     notificationSlackOk: v.optional(v.boolean()),
+    notificationSlackMessageId: v.optional(v.string()),
     notificationClickUpOk: v.optional(v.boolean()),
     notificationClickUpTaskId: v.optional(v.string()),
     notificationClickUpTaskUrl: v.optional(v.string()),
     notificationConfirmationOk: v.optional(v.boolean()),
     notificationSummary: v.optional(v.string()),
     lastNotificationAt: v.optional(v.number()),
+    transcriptRetentionExpiresAt: v.optional(v.number()),
+    hasRetainedTranscript: v.optional(v.boolean()),
+    retentionExpiresAt: v.optional(v.number()),
+    payloadSafe: v.optional(v.boolean()),
     createdAt: v.number(),
   })
     .index("by_lead_id", ["leadId"])
     .index("by_email", ["email"])
+    .index("by_email_normalized", ["emailNormalized"])
     .index("by_segment", ["segment"])
-    .index("by_status", ["status"]),
+    .index("by_status", ["status"])
+    .index("by_retained_transcript_expires_at", ["hasRetainedTranscript", "transcriptRetentionExpiresAt"])
+    .index("by_safe_status_retention_expires_at", ["payloadSafe", "status", "retentionExpiresAt"])
+    .index("by_payload_safe_created_at", ["payloadSafe", "createdAt"])
+    .index("by_payload_safe_status_created_at", ["payloadSafe", "status", "createdAt"])
+    .index("by_payload_safe_status_owner_created_at", ["payloadSafe", "status", "owner", "createdAt"])
+    .index("by_payload_safe_notification_delivered_created_at", ["payloadSafe", "notificationDelivered", "createdAt"]),
   leadEvents: defineTable({
     leadId: v.string(),
     kind: v.string(),
@@ -83,9 +119,21 @@ export default defineSchema({
     ),
     createdAt: v.number(),
   }).index("by_lead", ["leadId"]),
+  privacyEvents: defineTable({
+    requestId: v.string(),
+    reason: v.string(),
+    actor: v.string(),
+    deletedLeads: v.number(),
+    deletedVoiceSessions: v.number(),
+    deletedLeadEvents: v.number(),
+    downstreamCleanupComplete: v.boolean(),
+    completed: v.boolean(),
+    createdAt: v.number(),
+  }).index("by_created_at", ["createdAt"]),
   voiceSessions: defineTable({
     reviewId: v.string(),
     sessionId: v.string(),
+    snapshotSequence: v.optional(v.number()),
     // Stable id shared by every call/reconnect in one intake conversation, so a
     // dropped-and-resumed call reads as one conversation, not many rows.
     conversationId: v.optional(v.string()),
@@ -99,6 +147,10 @@ export default defineSchema({
     // Explicit post-mint user activation. This distinguishes failed attempts
     // with missing latency payloads from unused permission-aware prewarms.
     activationAttempted: v.optional(v.boolean()),
+    entryPoint: v.optional(v.string()),
+    entryMethod: v.optional(v.string()),
+    submissionMethod: v.optional(v.string()),
+    fieldProvenance: v.optional(fieldProvenanceSchema()),
     prewarmedAt: v.optional(v.number()),
     connectStartedAt: v.optional(v.number()),
     connectedAt: v.optional(v.number()),
@@ -120,11 +172,13 @@ export default defineSchema({
       website: v.optional(v.string()),
       message: v.string(),
     }),
+    capturedEmailNormalized: v.optional(v.string()),
     emailVerification: v.optional(
       v.object({
         source: v.union(v.literal("prefill"), v.literal("speech"), v.literal("typed")),
         status: v.union(v.literal("confirmed"), v.literal("pending")),
         matchesCaptured: v.boolean(),
+        confidence: v.optional(v.union(v.literal("high"), v.literal("medium"))),
       }),
     ),
     emailCaptureMode: v.optional(v.union(v.literal("strict"), v.literal("adaptive"))),
@@ -194,6 +248,7 @@ export default defineSchema({
                 v.literal("confirm_email"),
                 v.literal("lookup_oriental"),
                 v.literal("clear_field"),
+                v.literal("clear_fields"),
                 v.literal("summarise_lead"),
                 v.literal("route_to_team"),
                 v.literal("wait_for_user"),
@@ -257,9 +312,16 @@ export default defineSchema({
     updatedAt: v.number(),
     submittedAt: v.optional(v.number()),
     followedUpAt: v.optional(v.number()),
+    autoEvalQueuedAt: v.optional(v.number()),
+    retentionExpiresAt: v.optional(v.number()),
+    payloadSafe: v.optional(v.boolean()),
   })
     .index("by_review_id", ["reviewId"])
     .index("by_session_id", ["sessionId"])
     .index("by_conversation", ["conversationId"])
+    .index("by_lead_updated_at", ["leadId", "updatedAt"])
+    .index("by_captured_email_normalized", ["capturedEmailNormalized"])
+    .index("by_safe_retention_expires_at", ["payloadSafe", "retentionExpiresAt"])
+    .index("by_payload_safe_updated_at", ["payloadSafe", "updatedAt"])
     .index("by_updated_at", ["updatedAt"]),
 });

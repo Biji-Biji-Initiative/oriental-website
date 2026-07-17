@@ -97,16 +97,16 @@ docs/                     # handover specs — reference, not auto-synced to cod
 | Nav active section underline | `components/site/SiteNav.tsx`, `.site-nav__link--active` |
 | Partner segments, openers, routing labels | `lib/segments.ts` |
 | Voice persona, guardrails, tool descriptions, VAD/transcription/timeouts | `lib/voice/profile.ts` |
-| Voice A/B variants (distinct Malaysian registers: voice/speed/persona) + tuning picker (dev, or prod via `/?voices=1`) | `lib/voice/variants.ts`, `components/voice-agent/VoiceVariantPicker.tsx`; selected voice persists in localStorage/cookie |
+| Voice A/B variants (distinct Malaysian registers: voice/speed/persona) + tuning picker (dev, or explicitly enabled staging; `/?voices=1` cannot bypass server authority) | `lib/voice/variants.ts`, `components/voice-agent/VoiceVariantPicker.tsx`; selected voice persists in localStorage/cookie |
 | Realtime protocol / transcript state machine / capture grounding | `lib/voice/realtime-events.ts` + `tests/realtime-events.test.ts` |
 | Voice UI / WebRTC wiring | `components/voice-agent/useRealtimeVoiceSession.ts`, `useVoiceRuntime.ts`, `VoiceAgentDialog.tsx`, `VoiceSessionStage.tsx` |
-| Voice orb look & motion | `components/voice-agent/VoiceSessionStage.tsx`, `.voice-orb*` in `app/globals.css`, level source in `useVoiceAudioLevel.ts` |
+| Production Mereka M motion + loader | `components/voice-agent/VoiceSessionStage.tsx`, `components/brand-motion/{NebulaM,MerekaSiteLoader}.tsx`, `.voice-orb*` / `.brand-site-loader*` in `app/globals.css`, level source in `useVoiceAudioLevel.ts` |
 | Session token + server session config | `app/api/voice/session/route.ts`, `lib/server/openai-realtime.ts` |
 | Admin session review | `app/admin/session-review/page.tsx`, `app/api/admin/*`, `components/admin/*` |
 | Admin dark theme / login / command palette | `app/admin/layout.tsx`, `app/admin/theme.css`, `components/admin/AdminLoginForm.tsx`, `components/admin/AdminCommandPalette.tsx` |
 | On-demand voice evals (admin) | `app/api/admin/evals/route.ts`, `lib/server/voice-evals.ts`, `components/admin/AdminRunEvalsButton.tsx`; judge model via `EVAL_JUDGE_MODEL` |
 | GA4 conversion events | `lib/analytics.ts` (client helper, PII rule in JSDoc); fired from `HeroEmailCapture` and `VoiceAgentDialog`; key events managed in GA4 property 545999652 |
-| Scheduled evals + lead SLA alerts | `.github/workflows/analytics-ops.yml` (nightly evals, hourly `POST /api/admin/sla-check`); GH secret `ADMIN_REVIEW_TOKEN` |
+| Scheduled evals, retention + lead SLA alerts | `.github/workflows/analytics-ops.yml` (nightly evals and bounded `POST /api/admin/retention`, hourly `POST /api/admin/sla-check`); bearer-only GH secret `OPS_AUTOMATION_TOKEN` |
 | Sentry setup | `sentry.*.config.ts`, `instrumentation.ts`, `instrumentation-client.ts`, `next.config.ts` |
 | Ops Slack alerts | `lib/server/ops-alerts.ts`; production target is `OPS_ALERT_SLACK_CHANNEL_ID` |
 | Lead payload validation | `lib/schemas.ts` |
@@ -142,11 +142,11 @@ pnpm check-secrets          # validate expected env keys (local)
 pnpm local:ngrok -- --check  # prove ngrok secret lookup without opening a tunnel
 pnpm smoke:staging:voice    # real canonical-staging WebRTC/audio/persistence proof
 pnpm smoke:staging:intake   # grounded adaptive email capture/no-confirmation/no-submit proof
-pnpm eval:voice -- --aggregate-only --limit 100  # Convex query-only aggregate/gate JSON; no PII report or writes
+pnpm eval:voice -- --aggregate-only --limit 100  # Query-only aggregate/gates + PII-free tool latency; no reports/writes
 pnpm --silent ops:status --json  # machine-readable live/repo/review/work-queue truth
 pnpm release:preflight -- --sha <full-main-sha>  # requires managed release env
 pnpm release:deploy:production -- --sha <full-sha> --expected-current-sha <full-sha>
-pnpm release:verify -- --sha <full-sha> --target staging|production|both
+pnpm release:verify -- --sha <full-sha> --target staging|production|both  # run under managed app env; needs Chromium
 pnpm voice:debug             # inspect latest local voice debug snapshots
 pnpm exec convex deploy     # needs CONVEX_DEPLOY_KEY
 ```
@@ -165,12 +165,32 @@ before any deployment. For runtime work:
 
 1. Put runtime code, tests, specs/docs, configuration contract, and relevant
    agent guidance in one PR.
+   Persisted request and telemetry fields must remain optional in both the web
+   request contract and Convex until the backward-compatibility window is
+   deliberately retired. Deploy the additive Convex schema/functions before
+   the web image so the previous web image remains valid during deployment and
+   rollback. A web compatibility retry is permitted only for a confirmed
+   unknown/extra-field validator rejection, must reuse the
+   application-generated UUID, and must strip only the forward fields. Never
+   retry a generic validation, transport, timeout, or ambiguous post-commit
+   failure; the corresponding Convex mutation must be idempotent on that UUID.
 2. Merge once, update local `main`, and freeze the full merge SHA.
 3. Inject the production app contract from Infisical and run
-   `pnpm release:preflight -- --sha <sha>`; managed cell validation is mandatory.
+   `env NODE_ENV=production pnpm release:preflight -- --sha <sha>`; managed
+   cell validation and production-only secret checks are mandatory.
 4. Deploy/prove staging, then deploy production through the Coolify API.
-5. Run `pnpm release:verify -- --sha <sha> --target both` and inspect the
-   running containers' revision and cells.
+5. Run `pnpm release:verify -- --sha <sha> --target both
+   --staging-model-cell candidate --staging-picker-mode clean` under the managed
+   application environment. It proves the running revisions/cells, exact Google
+   verification meta, GA's explicit-consent boundary, and admin exclusion in
+   Chromium. The deployers must first reconcile and read back the complete
+   approved Infisical scope; production additionally proves Coolify
+   `running:healthy` with health ownership on `127.0.0.1`.
+   Production never infers retirement from an absent process value: a removed
+   managed key must be declared in the reviewed
+   `RETIRED_MANAGED_APPLICATION_ENVIRONMENT_KEYS` set before it may be cleared.
+   Add that tombstone in the same PR that removes the Infisical value and retain
+   it as ownership history; a later reintroduced Infisical value safely wins.
 
 Do not force an application rebuild for a docs/operator-only commit with no
 runtime impact. Do not create late cleanup PRs after the final-SHA freeze; if a
@@ -183,8 +203,15 @@ Staging is shared. `scripts/deploy-coolify-host.sh --target staging` requires
 environment. Stop and coordinate—never overwrite an unknown staging proof.
 Model previews also require explicit `--voice-model-cell candidate`; the
 default is control and every production host path rejects candidate. Verify a
-candidate staging deployment with `--staging-model-cell candidate` while
-production remains control.
+clean candidate staging deployment with `--staging-model-cell candidate` and
+`--staging-picker-mode clean` while production remains control. The independent
+`--voice-picker-mode audition` staging option exposes the voice-register picker
+for human audition only; it is never model-promotion evidence. Production
+always rejects audition mode. The approved Mereka M nebula and public entrance
+loader are normal visuals on both canonical hosts and are not experiment flags.
+The entrance treatment is non-interactive, never locks scrolling, appears at
+most once per tab, lasts no more than 700 ms, and is skipped for admin/API and
+reduced-motion loads; internal admin navigation must use the Next router.
 `VOICE_VARIANT_PICKER=false` governs both `/api/client-config` and the actual
 browser controls. Client tuner code must fetch that runtime route and fail
 closed; query strings or local storage may hide an allowed picker but must
@@ -253,9 +280,13 @@ sequenceDiagram
 ```
 
 - **Profile:** `VOICE_PROFILE` in `lib/voice/profile.ts` drives instructions, tools, turn detection, truncation.
-- **Capture:** governed staging/production use `VOICE_EMAIL_CAPTURE_MODE=adaptive`; accept only syntax-valid, independently grounded latest-turn evidence. A completed correction immediately invalidates the prior email verification before routing; duplicate email tool calls re-ground, and pending transcription relaxes capture only when no completed turn contradicts it. Typed edits also invalidate any already-active response for email mutation or routing. `strict` is the exact-readback/confirmation rollback. Never loosen the reducer or API submission boundary to achieve lower friction.
+- **Capture:** governed staging/production use `VOICE_EMAIL_CAPTURE_MODE=adaptive`; accept only syntax-valid, independently grounded latest-turn evidence. Exact/high-confidence speech is immediately usable. A bounded medium-confidence substitution stays pending in the visible email editor: do not read it back or start a spelling loop. Voice-command routing remains blocked until confirmed, while an explicit click on the visible Send button is the visitor's check/submit action. A completed correction immediately invalidates the prior email verification before routing; duplicate email tool calls re-ground, and pending transcription relaxes capture only when no completed turn contradicts it. Typed edits also invalidate any already-active response for email mutation or routing. `strict` is the exact-readback/confirmation rollback. Never weaken syntax or grounding to achieve lower friction.
 - **Events:** `lib/voice/realtime-events.ts` handles grounded state/tool events; `lib/voice/latency.ts` handles bounded turn and PII-free per-tool timings. Persist each completed tool sample to review metadata immediately—`wait_for_user` may have no later response. Never persist arguments, call IDs, contact values, or raw browser timestamps. Add focused tests for either reducer.
-- **Responsive voice UI:** preserve explicit proof at 320x568, 360x800, 390x844, 844x390, 1024x600, 1280x720, and 1440x900 plus mobile-to-desktop resize. Assert the primary Start Voice action is initially visible before any scroll; `scrollIntoView` proves reachability, not fit. At >=1024 all three panes scroll independently.
+- **Attribution:** every explicit intake open carries a bounded CTA surface (`entryPoint`) and independent opening method (`entryMethod`: voice button, form, or email capture); every accepted lead carries a bounded `submissionMethod` and PII-free six-field provenance summary. Preserve the distinction between entry surface, entry method, voice/form submission, and per-field voice, form, typed-chat, prefill, or mixed capture. Never put field values, transcripts, URLs, IDs, timestamps, or free-form text into analytics/provenance.
+- **Attribution trust:** provenance counters are bounded client reports. A signed voice review authenticates the session linkage, not the truth of each counter. Label this limitation in operator surfaces and never use provenance alone to promote an experiment.
+- **Capture evidence cohorts:** never present successful-lead provenance as the whole voice funnel. Keep submitted-lead attribution separate from all engaged logical voice conversations, deduplicate reconnects by `conversationId`, exclude unused prewarms, and disclose bounded-window/truncation limits. Rejection, pending-email, correction, clear, abandonment, and typed-fallback metrics must remain PII-free.
+- **Retention and privacy requests:** code-owned windows are 30 days for unsubmitted voice diagnostics, 90 days for submitted voice diagnostics, and 730 days after archival for leads plus workflow events. Keep the nightly mutation bounded and fail visibly on backlog. Only the dedicated bearer-only `PRIVACY_ADMIN_TOKEN` principal may use `DELETE /api/admin/privacy`; never echo the subject email into its response, logs, or audit row.
+- **Responsive voice UI:** preserve explicit proof at 320x568, 360x800, 390x844, 844x390, 1023x600, 1024x390, 1024x600, 1280x720, and 1440x900 plus mobile-to-desktop resize. Below 1024 the single visible email editor stays beside the primary voice controls and must never focus-scroll them away; at >=1024 all three panes scroll independently.
 - **Specs:** `docs/05-VOICE-AGENT-SPEC.md` covers product flow and `docs/13-VOICE-INSTANT-RELEASE-SPEC.md` covers the staged latency/endpointing release contract; verify both against code before assuming parity.
 
 ---

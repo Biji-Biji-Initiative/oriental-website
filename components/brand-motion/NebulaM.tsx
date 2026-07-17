@@ -28,6 +28,7 @@ const VERTEX_SHADER = `
   uniform vec2 uTilt;
 
   varying float vAlpha;
+  varying float vEnergy;
   varying vec3 vColor;
 
   mat3 rotateX(float a) {
@@ -42,6 +43,12 @@ const VERTEX_SHADER = `
     return mat3(c, 0.0, s, 0.0, 1.0, 0.0, -s, 0.0, c);
   }
 
+  mat2 rotateZ(float a) {
+    float c = cos(a);
+    float s = sin(a);
+    return mat2(c, -s, s, c);
+  }
+
   void main() {
     float start = aDelay * 0.38;
     float arrival = clamp((uResolve - start) / (1.0 - start), 0.0, 1.0);
@@ -50,13 +57,19 @@ const VERTEX_SHADER = `
     float orbitAngle = uTime * (0.075 + aSeed * 0.035) + aSeed * 6.2831853;
     vec3 nebula = rotateY(orbitAngle) * aNebula;
     nebula = rotateX(sin(uTime * 0.11 + aSeed * 4.0) * 0.12) * nebula;
+    float userWave = 0.5 + 0.5 * sin(uTime * 7.2 - length(nebula.xy) * 11.0 + aSeed * 5.0);
+    nebula.xy = rotateZ(uUser * (0.1 + userWave * 0.13)) * nebula.xy;
+    nebula *= 1.0 + uUser * (0.07 + userWave * 0.13);
     nebula.xy += vec2(
       sin(uTime * 0.41 + aSeed * 18.0),
       cos(uTime * 0.33 + aSeed * 13.0)
-    ) * (0.012 + uVoice * 0.025 + uUser * 0.018);
+    ) * (0.012 + uVoice * 0.045 + uUser * 0.07);
 
     vec3 home = aHome;
-    home.z += sin(uTime * 0.8 + aSeed * 21.0) * (0.006 + uVoice * 0.018);
+    float homeRadius = length(home.xy);
+    float voiceWave = sin(homeRadius * 18.0 - uTime * 8.2 + aSeed * 1.7);
+    home.xy *= 1.0 + uVoice * (0.018 + voiceWave * 0.014);
+    home.z += sin(uTime * 0.8 + aSeed * 21.0) * 0.006 + voiceWave * uVoice * 0.072;
     vec3 position = mix(nebula, home, arrival);
     position = rotateY(uTilt.x) * rotateX(uTilt.y) * position;
 
@@ -66,15 +79,18 @@ const VERTEX_SHADER = `
 
     float pulse = 0.82 + 0.18 * sin(uTime * 1.6 + aSeed * 32.0);
     float depthScale = clamp(1.28 - position.z * 0.16, 0.72, 1.55);
-    gl_PointSize = (1.1 + aSeed * 2.35 + (uVoice + uUser) * 1.5) * uDpr * depthScale * pulse;
+    float audioSpark = uVoice * (2.5 + max(0.0, voiceWave) * 2.2) + uUser * (2.8 + userWave * 1.8);
+    gl_PointSize = (1.1 + aSeed * 2.35 + audioSpark) * uDpr * depthScale * pulse;
 
     vec3 deepBlue = vec3(0.17, 0.34, 0.62);
     vec3 horizon = vec3(0.79, 0.84, 0.93);
     vec3 cyan = vec3(0.48, 0.77, 0.83);
+    vec3 voiceLight = vec3(0.88, 0.75, 1.0);
     vColor = mix(deepBlue, horizon, 0.28 + aSeed * 0.72);
-    vColor = mix(vColor, cyan, uUser * (0.25 + aSeed * 0.4));
-    vColor += vec3(0.12, 0.1, 0.18) * uVoice;
-    vAlpha = mix(0.52 + aSeed * 0.42, 0.72 + aSeed * 0.28, arrival);
+    vColor = mix(vColor, cyan, uUser * (0.52 + aSeed * 0.36));
+    vColor = mix(vColor, voiceLight, uVoice * (0.32 + max(0.0, voiceWave) * 0.34));
+    vEnergy = max(uVoice, uUser);
+    vAlpha = min(1.0, mix(0.52 + aSeed * 0.42, 0.72 + aSeed * 0.28, arrival) + vEnergy * 0.18);
   }
 `;
 
@@ -82,15 +98,16 @@ const FRAGMENT_SHADER = `
   precision mediump float;
 
   varying float vAlpha;
+  varying float vEnergy;
   varying vec3 vColor;
 
   void main() {
     float distanceFromCenter = length(gl_PointCoord - vec2(0.5)) * 2.0;
     float core = smoothstep(0.72, 0.05, distanceFromCenter);
     float glow = smoothstep(1.0, 0.12, distanceFromCenter);
-    float alpha = (core * 0.72 + glow * 0.32) * vAlpha;
+    float alpha = (core * (0.72 + vEnergy * 0.18) + glow * (0.32 + vEnergy * 0.24)) * vAlpha;
     if (alpha < 0.015) discard;
-    gl_FragColor = vec4(vColor * (0.92 + core * 0.38), alpha);
+    gl_FragColor = vec4(vColor * (0.92 + core * 0.38 + vEnergy * 0.22), alpha);
   }
 `;
 

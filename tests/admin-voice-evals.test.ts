@@ -1,0 +1,210 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  query: vi.fn(),
+  mutation: vi.fn(),
+  create: vi.fn(),
+  openAiOptions: vi.fn(),
+}));
+
+vi.mock("convex/browser", () => ({
+  ConvexHttpClient: class {
+    query = mocks.query;
+    mutation = mocks.mutation;
+  },
+}));
+
+vi.mock("openai", () => ({
+  default: class {
+    chat = { completions: { create: mocks.create } };
+
+    constructor(options: unknown) {
+      mocks.openAiOptions(options);
+    }
+  },
+}));
+
+import { ADMIN_EVAL_RUN_DEADLINE_MS, ADMIN_EVAL_RUN_LEASE_MS, runAdminVoiceEvals } from "@/lib/server/voice-evals";
+
+const originalEnv = process.env;
+
+describe("admin voice evaluation runner", () => {
+  beforeEach(() => {
+    process.env = {
+      ...originalEnv,
+      NODE_ENV: "test",
+      CONVEX_URL: "https://example.convex.cloud",
+      CONVEX_INGEST_SECRET: "test-ingest-secret",
+      OPENAI_API_KEY: "test-openai-key",
+    };
+    mocks.query.mockResolvedValue([judgeableSession()]);
+    mocks.mutation.mockResolvedValue({ ok: true, updated: 1 });
+    mocks.create.mockResolvedValue({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              routingCorrect: 4,
+              captureCompleteness: 5,
+              conversationQuality: 4,
+              frustration: 0,
+              summary: "John / john@example.com / Acme had a clear handoff.",
+            }),
+          },
+        },
+      ],
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    process.env = originalEnv;
+    vi.clearAllMocks();
+  });
+
+  it("uses bounded provider settings and persists only the score payload", async () => {
+    const result = await runAdminVoiceEvals({ limit: 1, model: "gpt-4o-mini" });
+
+    expect(result).toMatchObject({ ok: true, judged: 1, persisted: 1, failures: 0 });
+    expect(mocks.openAiOptions).toHaveBeenCalledWith({ apiKey: "test-openai-key", maxRetries: 1, timeout: 30_000 });
+    expect(mocks.query).toHaveBeenCalledWith(expect.anything(), {
+      ingestSecret: "test-ingest-secret",
+      limit: 200,
+    });
+    expect(mocks.create.mock.calls[0]?.[1]).toMatchObject({ signal: expect.any(AbortSignal) });
+    expect(mocks.mutation).toHaveBeenCalledTimes(1);
+    const payload = mocks.mutation.mock.calls[0]?.[1] as { evals?: Array<Record<string, unknown>> };
+    expect(payload.evals).toHaveLength(1);
+    expect(payload.evals?.[0]).toMatchObject({
+      reviewId: "review-1",
+      model: "gpt-4o-mini",
+      routingCorrect: 4,
+      summary: "Routing 4/5 · Capture 5/5 · Conversation 4/5 · Frustration 0/5.",
+    });
+    expect(JSON.stringify(payload.evals)).not.toMatch(/John|john@example\.com|Acme/i);
+    expect(payload.evals?.[0]).not.toHaveProperty("transcript");
+    expect(payload.evals?.[0]).not.toHaveProperty("captured");
+  });
+
+  it("skips an untargeted session already scored by the selected model", async () => {
+    mocks.query.mockResolvedValue([judgeableSession({ eval: { model: "gpt-4o-mini", evaluatedAt: Date.now() } })]);
+
+    const result = await runAdminVoiceEvals({ limit: 1, model: "gpt-4o-mini" });
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "no_sessions",
+      window: { fetched: 1, conversations: 1, alreadyEvaluated: 1 },
+    });
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(mocks.mutation).not.toHaveBeenCalled();
+  });
+
+  it("keeps an internally targeted auto-eval idempotent when the session is already scored", async () => {
+    mocks.query.mockResolvedValue([judgeableSession({ eval: { model: "gpt-4o-mini", evaluatedAt: Date.now() } })]);
+
+    const result = await runAdminVoiceEvals({
+      limit: 1,
+      model: "gpt-4o-mini",
+      reviewIds: ["review-1"],
+      rescoreTargeted: false,
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "no_sessions",
+      window: { fetched: 1, conversations: 1, alreadyEvaluated: 1 },
+    });
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(mocks.mutation).not.toHaveBeenCalled();
+  });
+
+  it("scans past 25 already-evaluated rows to progress an older unscored session", async () => {
+    mocks.query.mockResolvedValue([
+      ...Array.from({ length: 26 }, (_, index) =>
+        judgeableSession({
+          reviewId: `evaluated-${index}`,
+          sessionId: `evaluated-session-${index}`,
+          eval: { model: "gpt-4o-mini", evaluatedAt: Date.now() },
+        }),
+      ),
+      judgeableSession({ reviewId: "older-unscored", sessionId: "older-unscored-session" }),
+    ]);
+
+    const result = await runAdminVoiceEvals({ limit: 1, model: "gpt-4o-mini" });
+
+    expect(result).toMatchObject({ ok: true, fetched: 27, judged: 1, persisted: 1 });
+    const payload = mocks.mutation.mock.calls[0]?.[1] as { evals?: Array<{ reviewId?: string }> };
+    expect(payload.evals).toEqual([expect.objectContaining({ reviewId: "older-unscored" })]);
+    expect(mocks.query).toHaveBeenCalledWith(expect.anything(), {
+      ingestSecret: "test-ingest-secret",
+      limit: 200,
+    });
+  });
+
+  it("aborts slow judge work inside the run lease and reports only an aggregate deadline category", async () => {
+    vi.useFakeTimers();
+    // Deliberately ignore AbortSignal here: the runner's own deadline race must
+    // still settle even if a provider client fails to cooperate with cancellation.
+    mocks.create.mockImplementation(() => new Promise(() => undefined));
+
+    const run = runAdminVoiceEvals({ limit: 1, model: "gpt-4o-mini" });
+    await vi.advanceTimersByTimeAsync(60_000);
+    const result = await run;
+
+    expect(ADMIN_EVAL_RUN_DEADLINE_MS).toBeLessThan(ADMIN_EVAL_RUN_LEASE_MS);
+    expect(result).toMatchObject({
+      ok: true,
+      judged: 1,
+      persisted: 0,
+      failures: 1,
+      failureCategories: { run_deadline: 1 },
+    });
+    expect(mocks.mutation).not.toHaveBeenCalled();
+  });
+
+  it("settles the whole run at its hard deadline when the data source hangs", async () => {
+    vi.useFakeTimers();
+    mocks.query.mockImplementation(() => new Promise(() => undefined));
+
+    const run = runAdminVoiceEvals({ model: "gpt-4o-mini" });
+    await vi.advanceTimersByTimeAsync(ADMIN_EVAL_RUN_DEADLINE_MS);
+
+    await expect(run).resolves.toEqual({ ok: false, reason: "deadline_exceeded" });
+    expect(ADMIN_EVAL_RUN_DEADLINE_MS).toBeLessThan(ADMIN_EVAL_RUN_LEASE_MS);
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(mocks.mutation).not.toHaveBeenCalled();
+  });
+
+  it("returns aggregate timeout telemetry without persisting a failed score", async () => {
+    mocks.create.mockRejectedValue(Object.assign(new Error("upstream detail"), { name: "APIConnectionTimeoutError" }));
+
+    const result = await runAdminVoiceEvals({ limit: 1, model: "gpt-4o-mini" });
+
+    expect(result).toMatchObject({
+      ok: true,
+      judged: 1,
+      persisted: 0,
+      failures: 1,
+      failureCategories: { provider_timeout: 1 },
+    });
+    expect(mocks.mutation).not.toHaveBeenCalled();
+  });
+});
+
+function judgeableSession(overrides: Record<string, unknown> = {}) {
+  return {
+    reviewId: "review-1",
+    sessionId: "session-1",
+    segment: "education",
+    status: "idle",
+    connectionStatus: "idle",
+    transcript: [{ role: "user", text: "I want to run a workshop." }],
+    captured: { name: "", email: "", org: "", phone: "", website: "", message: "" },
+    errors: [],
+    routeRequested: false,
+    createdAt: Date.now() - 1000,
+    updatedAt: Date.now(),
+    ...overrides,
+  };
+}

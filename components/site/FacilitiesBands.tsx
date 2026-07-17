@@ -21,7 +21,7 @@ export function FacilitiesBands() {
             <button
               className="facilities-aud"
               key={audience}
-              onClick={() => voice.open(undefined, { autoStart: false, mode: "form" })}
+              onClick={() => voice.open(undefined, { autoStart: false, mode: "form", entryPoint: "facilities" })}
               type="button"
             >
               <span className="facilities-aud__num">{String(index + 1).padStart(2, "0")}</span>
@@ -43,7 +43,7 @@ export function FacilitiesBands() {
             <button
               className="facilities-pillar group"
               key={pillar.name}
-              onClick={() => voice.open(pillar.intent, { autoStart: false, mode: "form" })}
+              onClick={() => voice.open(pillar.intent, { autoStart: false, mode: "form", entryPoint: "facilities" })}
               type="button"
             >
               <span className="facilities-pillar__num">{String(index + 1).padStart(2, "0")}</span>
@@ -73,7 +73,7 @@ export function FacilitiesBands() {
             <button
               className="facilities-space group"
               key={space.number}
-              onClick={() => voice.open(space.intent, { autoStart: false, mode: "form" })}
+              onClick={() => voice.open(space.intent, { autoStart: false, mode: "form", entryPoint: "facilities" })}
               type="button"
             >
               <div className="facilities-space__img">

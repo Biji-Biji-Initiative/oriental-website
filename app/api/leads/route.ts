@@ -46,12 +46,26 @@ export async function POST(request: NextRequest) {
     return noStoreJson({ ok: false, error: "invalid_payload", details: parsed.error.flatten() }, { status: 400 });
   }
 
-  const turnstileOk = voiceLeadHasSignedReview(parsed.data) || (await verifyTurnstile(parsed.data.turnstileToken, ip));
+  const signedVoiceReview = voiceLeadHasSignedReview(parsed.data);
+  if (parsed.data.source === "voice" && !signedVoiceReview) {
+    logWarn("lead.voice_review_invalid", {
+      requestId,
+      ipHash,
+      reviewId: parsed.data.voiceReviewId ?? null,
+      durationMs: durationSince(startedAt),
+    });
+    return noStoreJson({ ok: false, error: "voice_review_invalid" }, { status: 403 });
+  }
+
+  const turnstileOk = signedVoiceReview || (await verifyTurnstile(parsed.data.turnstileToken, ip));
   if (!turnstileOk) {
     logWarn("lead.turnstile_failed", {
       requestId,
       ipHash,
       source: parsed.data.source,
+      entryPoint: parsed.data.entryPoint ?? "unknown",
+      entryMethod: parsed.data.entryMethod ?? "unknown",
+      submissionMethod: parsed.data.submissionMethod ?? "unknown",
       segment: parsed.data.segment,
       durationMs: durationSince(startedAt),
     });
@@ -135,6 +149,9 @@ export async function POST(request: NextRequest) {
       requestId,
       leadId: lead.id,
       source: lead.source,
+      entryPoint: lead.entryPoint ?? "unknown",
+      entryMethod: lead.entryMethod ?? "unknown",
+      submissionMethod: lead.submissionMethod ?? "unknown",
       segment: lead.segment,
       reason: persistence.reason,
       notificationDelivered: delivered,
@@ -181,6 +198,9 @@ export async function POST(request: NextRequest) {
       requestId,
       leadId: lead.id,
       source: lead.source,
+      entryPoint: lead.entryPoint ?? "unknown",
+      entryMethod: lead.entryMethod ?? "unknown",
+      submissionMethod: lead.submissionMethod ?? "unknown",
       segment: lead.segment,
       persisted: true,
       notifications,
@@ -210,6 +230,9 @@ export async function POST(request: NextRequest) {
     requestId,
     leadId: lead.id,
     source: lead.source,
+    entryPoint: lead.entryPoint ?? "unknown",
+    entryMethod: lead.entryMethod ?? "unknown",
+    submissionMethod: lead.submissionMethod ?? "unknown",
     segment: lead.segment,
     routedTo: lead.routedTo,
     persisted: persistence.persisted,
