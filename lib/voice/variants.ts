@@ -36,7 +36,7 @@ export type VoiceVariant = {
   personaNote: string;
 };
 
-export const VOICE_VARIANTS: readonly VoiceVariant[] = [
+export const VOICE_VARIANTS = [
   {
     id: "kl-polished",
     label: "Reka · Polished",
@@ -82,9 +82,11 @@ export const VOICE_VARIANTS: readonly VoiceVariant[] = [
     personaNote:
       "Register for this variant: the young KL host — peer energy, like a sharp twenty-something showing a friend around, never corporate. Contractions everywhere, short punchy sentences, and a quick genuine reaction before the info: 'Okay that's actually cool', 'honestly', 'super'. In most beats, one light local marker — an 'okay can', 'confirm', or a casual 'lah' where it lands naturally — never more than one, never forced. A little cheeky and direct is good ('normal office? this is not that'). Current and effortless, never try-hard, and still gets every detail right.",
   },
-] as const;
+] as const satisfies readonly VoiceVariant[];
 
-export const VOICE_VARIANT_IDS = VOICE_VARIANTS.map((variant) => variant.id);
+export type VoiceVariantId = (typeof VOICE_VARIANTS)[number]["id"];
+
+export const VOICE_VARIANT_IDS: readonly VoiceVariantId[] = VOICE_VARIANTS.map((variant) => variant.id);
 
 /** Sensible, low-risk starting point for the picker's "recommended" hint. */
 export const DEFAULT_VOICE_VARIANT_ID = "kl-polished";

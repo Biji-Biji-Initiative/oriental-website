@@ -1,5 +1,7 @@
+import { SEGMENT_IDS, type SegmentId } from "@/lib/segments";
 import type { SubmissionMethod, VoiceEntryMethod, VoiceEntryPoint } from "@/lib/voice/interaction-attribution";
 import { SUBMISSION_METHODS, VOICE_ENTRY_METHODS, VOICE_ENTRY_POINTS } from "@/lib/voice/interaction-attribution";
+import { VOICE_VARIANT_IDS, type VoiceVariantId } from "@/lib/voice/variants";
 
 const ANALYTICS_CONSENT_STORAGE_KEY = "oriental_analytics_consent_v1";
 
@@ -9,7 +11,11 @@ export type IntakeAnalyticsEvent =
   | "intake_submit_attempt"
   | "intake_submit_success"
   | "intake_submit_failure"
-  | "newsletter_submit_success";
+  | "newsletter_submit_success"
+  | "lead_submitted"
+  | "voice_lead_submitted"
+  | "voice_session_started"
+  | "newsletter_signup";
 
 type EntryAttribution = {
   entry_point: VoiceEntryPoint;
@@ -35,6 +41,10 @@ export type IntakeAnalyticsParametersByEvent = {
     failure_class: "email_check_required" | "invalid_fields" | "server_rejected" | "network";
   };
   newsletter_submit_success: EntryAttribution;
+  lead_submitted: { segment: SegmentId; source: "form" };
+  voice_lead_submitted: { segment: SegmentId; source: "voice" };
+  voice_session_started: { segment: SegmentId; voice_variant: VoiceVariantId | "default" };
+  newsletter_signup: { placement: "hero" };
 };
 
 type IntakeAnalyticsParameter =
@@ -48,7 +58,11 @@ type IntakeAnalyticsParameter =
   | "manual_field_count"
   | "mixed_field_count"
   | "corrected_field_count"
-  | "failure_class";
+  | "failure_class"
+  | "segment"
+  | "source"
+  | "voice_variant"
+  | "placement";
 
 const EVENT_PARAMETER_ALLOWLIST = {
   intake_open: ["entry_point", "entry_method", "intended_mode"],
@@ -88,6 +102,10 @@ const EVENT_PARAMETER_ALLOWLIST = {
     "failure_class",
   ],
   newsletter_submit_success: ["entry_point", "entry_method"],
+  lead_submitted: ["segment", "source"],
+  voice_lead_submitted: ["segment", "source"],
+  voice_session_started: ["segment", "voice_variant"],
+  newsletter_signup: ["placement"],
 } as const satisfies Record<IntakeAnalyticsEvent, readonly IntakeAnalyticsParameter[]>;
 
 const FIELD_COUNT_PARAMETERS = new Set<IntakeAnalyticsParameter>([
@@ -105,6 +123,10 @@ const CATEGORY_VALUES: Partial<Record<IntakeAnalyticsParameter, ReadonlySet<stri
   submission_method: new Set(SUBMISSION_METHODS),
   session_mode: new Set(["voice", "form"]),
   failure_class: new Set(["email_check_required", "invalid_fields", "server_rejected", "network"]),
+  segment: new Set(SEGMENT_IDS),
+  source: new Set(["voice", "form"]),
+  voice_variant: new Set(["default", ...VOICE_VARIANT_IDS]),
+  placement: new Set(["hero"]),
 };
 
 /**

@@ -40,6 +40,7 @@ export const ADMIN_EVAL_FAILURE_CATEGORIES = [
 ] as const;
 
 export type AdminEvalFailureCategory = (typeof ADMIN_EVAL_FAILURE_CATEGORIES)[number];
+type AdminEvalWindow = { fetched: number; conversations: number; alreadyEvaluated: number };
 
 export { ADMIN_EVAL_MODEL_CHOICES, DEFAULT_EVAL_JUDGE_MODEL };
 
@@ -51,16 +52,20 @@ export type AdminEvalRunResult =
   | {
       ok: false;
       reason: "unconfigured" | "invalid_model" | "convex_failed" | "no_sessions" | "deadline_exceeded";
+      window?: AdminEvalWindow;
     }
   | {
       ok: true;
       model: string;
       fetched: number;
       conversations: number;
+      alreadyEvaluated: number;
       judged: number;
       persisted: number;
       failures: number;
       failureCategories: Record<AdminEvalFailureCategory, number>;
+      /** Bounded category names only; raw provider messages never cross the API boundary. */
+      failureSamples: AdminEvalFailureCategory[];
     };
 
 /**
@@ -72,6 +77,8 @@ export async function runAdminVoiceEvals(options: {
   limit?: number;
   model?: string;
   reviewIds?: string[];
+  /** Re-judge sessions that already have a persisted evaluation. */
+  force?: boolean;
 }): Promise<AdminEvalRunResult> {
   const convexUrl = readEnv("CONVEX_URL") ?? readEnv("NEXT_PUBLIC_CONVEX_URL");
   const ingestSecret = readEnv("CONVEX_INGEST_SECRET");
@@ -92,8 +99,8 @@ export async function runAdminVoiceEvals(options: {
       fetchedSessions = (await raceWithAbort(
         convex.query(api.leads.voiceSessionsForEval, {
           ingestSecret,
-          // Always scan Convex's bounded window before filtering. Otherwise a
-          // run of recently evaluated rows can starve older unscored sessions.
+          // `limit` bounds spend, never discovery depth. A wide fixed scan keeps
+          // recent prewarms or already-scored rows from starving older work.
           limit: ADMIN_EVAL_FETCH_WINDOW,
         }) as Promise<VoiceEvalSession[]>,
         runController.signal,
@@ -112,15 +119,22 @@ export async function runAdminVoiceEvals(options: {
       if (targetReviewIds.has(session.reviewId)) return true;
       return (session.callReviewIds ?? []).some((id) => targetReviewIds.has(id));
     });
-    const judgeable = conversations
-      .filter(isJudgeable)
-      .filter((session) => needsAdminEvaluation(session, model, Boolean(targetReviewIds)))
-      .slice(0, limit);
-    if (judgeable.length === 0) return { ok: false, reason: "no_sessions" };
+    const judgeableAll = conversations.filter(isJudgeable);
+    const deliberateRescore = Boolean(targetReviewIds) || options.force === true;
+    const pending = judgeableAll.filter((session) => needsAdminEvaluation(session, model, deliberateRescore));
+    const alreadyEvaluated = judgeableAll.length - pending.length;
+    const judgeable = pending.slice(0, limit);
+    if (judgeable.length === 0) {
+      return {
+        ok: false,
+        reason: "no_sessions",
+        window: { fetched: customerSessions.length, conversations: conversations.length, alreadyEvaluated },
+      };
+    }
 
     // One bounded retry absorbs a transient provider edge failure without turning
-    // an operator click into a long retry storm. All calls also share a shorter
-    // judge-phase budget, reserving time for the final Convex mutation.
+    // an operator click into a retry storm. The shorter judge budget reserves time
+    // for the final Convex mutation inside the whole-run deadline.
     const client = new OpenAI({ apiKey: openaiKey, maxRetries: 1, timeout: JUDGE_TIMEOUT_MS });
     const judgeController = new AbortController();
     const abortJudgeWithRun = () => judgeController.abort(new AdminEvalDeadlineError());
@@ -176,25 +190,32 @@ export async function runAdminVoiceEvals(options: {
         [...outcomes.values()].filter((outcome) => outcome.failure === category).length,
       ]),
     ) as Record<AdminEvalFailureCategory, number>;
+    const failureSamples = [...outcomes.values()]
+      .flatMap((outcome) => (outcome.failure ? [outcome.failure] : []))
+      .slice(0, 3);
 
     return {
       ok: true,
       model,
       fetched: customerSessions.length,
       conversations: conversations.length,
+      alreadyEvaluated,
       judged: judgeable.length,
       persisted,
       failures: judgeable.length - payloads.length,
       failureCategories,
+      failureSamples,
     };
   } finally {
     clearTimeout(runTimer);
   }
 }
 
-/** Bulk runs are idempotent per judge model; an explicit target is a deliberate rescore. */
-export function needsAdminEvaluation(session: VoiceEvalSession, model: string, targeted: boolean) {
-  return targeted || session.eval?.model !== model;
+/** Bulk runs are idempotent; explicit targets and force are deliberate rescoring paths. */
+export function needsAdminEvaluation(session: VoiceEvalSession, model: string, deliberateRescore: boolean) {
+  if (deliberateRescore) return true;
+  if (session.eval?.model) return session.eval.model !== model;
+  return !(typeof session.evaluatedAt === "number" && session.evaluatedAt > 0);
 }
 
 type JudgeOutcome = { score: JudgeScore | null; failure?: AdminEvalFailureCategory };

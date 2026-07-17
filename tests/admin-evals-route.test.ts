@@ -32,6 +32,7 @@ describe("admin evals route", () => {
       judged: 3,
       persisted: 3,
       failures: 0,
+      alreadyEvaluated: 0,
       failureCategories: {
         run_deadline: 0,
         provider_timeout: 0,
@@ -41,6 +42,7 @@ describe("admin evals route", () => {
         empty_response: 0,
         invalid_response: 0,
       },
+      failureSamples: [],
     });
   });
 
@@ -80,6 +82,13 @@ describe("admin evals route", () => {
     expect(runMock).toHaveBeenCalledWith({ model: "gpt-5.6-luna", reviewIds: ["voice-critical-1"] });
   });
 
+  it("passes an explicit force rescore through", async () => {
+    const response = await POST(evalsRequest({ force: true, limit: 4 }));
+
+    expect(response.status).toBe(200);
+    expect(runMock).toHaveBeenCalledWith({ force: true, limit: 4 });
+  });
+
   it("rejects every model outside the curated allowlist before spending tokens", async () => {
     const response = await POST(evalsRequest({ model: "gpt-4.1-mini" }));
 
@@ -116,11 +125,20 @@ describe("admin evals route", () => {
   });
 
   it("maps an empty judgeable window to 404", async () => {
-    runMock.mockResolvedValue({ ok: false, reason: "no_sessions" });
+    runMock.mockResolvedValue({
+      ok: false,
+      reason: "no_sessions",
+      window: { fetched: 100, conversations: 92, alreadyEvaluated: 92 },
+    });
 
     const response = await POST(evalsRequest({}));
 
     expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({
+      ok: false,
+      error: "no_sessions",
+      window: { fetched: 100, conversations: 92, alreadyEvaluated: 92 },
+    });
   });
 
   it("maps a whole-run deadline to 504 without leaking internals", async () => {
@@ -138,6 +156,9 @@ describe("admin evals route", () => {
     expect(needsAdminEvaluation(evaluated as never, "gpt-4o-mini", false)).toBe(false);
     expect(needsAdminEvaluation(evaluated as never, "gpt-5.6-luna", false)).toBe(true);
     expect(needsAdminEvaluation(evaluated as never, "gpt-4o-mini", true)).toBe(true);
+    expect(needsAdminEvaluation({ reviewId: "legacy", evaluatedAt: Date.now() } as never, "gpt-4o-mini", false)).toBe(
+      false,
+    );
   });
 
   it("classifies provider failures without exposing provider messages", () => {

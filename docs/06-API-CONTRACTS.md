@@ -581,7 +581,8 @@ Untargeted batches skip sessions already scored by the selected model; explicit
 type AdminEvalsRequest = {
   model?: string; // judge model id; defaults to EVAL_JUDGE_MODEL (fallback gpt-4o-mini)
   limit?: number; // 1–12, default 6
-  reviewIds?: string[]; // target specific sessions (max 20)
+  reviewIds?: string[]; // target specific sessions (max 20); targeted runs re-judge
+  force?: boolean; // re-judge already-evaluated conversations in untargeted runs
 };
 
 type AdminEvalsResponse = {
@@ -589,11 +590,19 @@ type AdminEvalsResponse = {
   model: string;
   fetched: number; // customer sessions in the window
   conversations: number; // after stitching call segments
+  alreadyEvaluated: number; // judgeable conversations skipped because they have scores
   judged: number;
   persisted: number;
   failures: number; // judged but unscorable (judge error/parse failure)
   failureCategories: Record<string, number>; // aggregate provider/parse categories; no per-session identifiers
+  failureSamples: string[]; // bounded failure-category names only; never provider messages or session identifiers
 };
+
+Sessions are also scored automatically when a call closes with transcript
+turns (`EVAL_AUTO_ON_CLOSE`, default on): the voice debug route schedules a
+targeted run after responding, so resumed/cut-off conversations re-score as a
+whole thread. Non-ok outcomes log `admin_evals.not_run` /
+`voice_review.auto_eval_skipped`.
 ```
 
 Errors:
@@ -607,6 +616,27 @@ Errors:
 | 502 | `convex_failed` | Convex query/mutation failed mid-run. |
 | 504 | `deadline_exceeded` | The bounded whole-run deadline elapsed. |
 | 503 | `unconfigured` / `invalid_model` | Required env is missing or `EVAL_JUDGE_MODEL` is not allowlisted. |
+
+### `POST /api/admin/sla-check`
+
+Bearer-token or admin-cookie protected sweep (permission `dashboard.read`)
+meant for an hourly cron (`.github/workflows/analytics-ops.yml`). Finds active
+leads that have been unowned longer than the window (default 4h) plus failed
+notifications, and posts one throttled ops Slack alert when breached.
+
+```ts
+type AdminSlaCheckRequest = { maxUnownedHours?: number }; // 1-72, default 4
+
+type AdminSlaCheckResponse = {
+  ok: true;
+  unownedBreaches: number;
+  failedNotifications: number;
+  activeLeads: number;
+  alerted: boolean; // false when clear, throttled, or Slack unconfigured
+};
+```
+
+Errors mirror the other admin routes (`400 invalid_request`, `401/403`, `503 convex_failed`).
 
 ## `GET /api/health`
 

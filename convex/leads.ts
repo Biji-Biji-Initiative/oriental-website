@@ -904,6 +904,7 @@ export const voiceSessionsForEval = queryGeneric({
     return sessions.map((session) => ({
       reviewId: session.reviewId,
       sessionId: session.sessionId,
+      evaluatedAt: session.eval?.evaluatedAt ?? null,
       conversationId: session.conversationId ?? null,
       segment: session.segment,
       status: session.status,

@@ -75,6 +75,8 @@ export type EvalLatency = {
 export type VoiceEvalSession = {
   reviewId: string;
   sessionId: string;
+  /** When a persisted LLM evaluation already exists for this call row. */
+  evaluatedAt?: number | null;
   conversationId?: string | null;
   segment: string;
   status: string;

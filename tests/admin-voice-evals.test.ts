@@ -91,7 +91,11 @@ describe("admin voice evaluation runner", () => {
 
     const result = await runAdminVoiceEvals({ limit: 1, model: "gpt-4o-mini" });
 
-    expect(result).toEqual({ ok: false, reason: "no_sessions" });
+    expect(result).toEqual({
+      ok: false,
+      reason: "no_sessions",
+      window: { fetched: 1, conversations: 1, alreadyEvaluated: 1 },
+    });
     expect(mocks.create).not.toHaveBeenCalled();
     expect(mocks.mutation).not.toHaveBeenCalled();
   });

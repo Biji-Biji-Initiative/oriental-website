@@ -6,6 +6,7 @@ import { preconnect } from "react-dom";
 import { type UseFormReturn, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { trackEvent } from "@/lib/analytics";
 import { trackIntakeEvent } from "@/lib/client-analytics";
 import { leadFormSchema } from "@/lib/schemas";
 import { getSegment, type SegmentId, segmentOptions } from "@/lib/segments";
@@ -49,7 +50,7 @@ import {
   postVoiceReviewSnapshot,
   type VoiceReviewCredentials,
 } from "@/lib/voice/review-snapshot";
-import { DEFAULT_VOICE_VARIANT_ID, VOICE_VARIANTS } from "@/lib/voice/variants";
+import { DEFAULT_VOICE_VARIANT_ID, VOICE_VARIANTS, type VoiceVariantId } from "@/lib/voice/variants";
 import { HandoffPanel } from "./HandoffPanel";
 import { playArmCue, playLiveCue } from "./live-chime";
 import {
@@ -90,7 +91,7 @@ type VoiceAgentDialogProps = {
   /** Bumped on talk-CTA hover/focus: pre-mint a session before the tap. */
   prewarmSignal?: number;
   /** QA voice variant id, threaded to the session mint. */
-  voiceVariant?: string;
+  voiceVariant?: VoiceVariantId;
 };
 
 export function VoiceAgentDialog({
@@ -291,6 +292,10 @@ export function VoiceAgentDialog({
         }
         setStatus("submitted");
         trackIntakeEvent("intake_submit_success", analytics);
+        trackEvent(source === "voice" ? "voice_lead_submitted" : "lead_submitted", {
+          segment: leadState.segment,
+          source,
+        });
         toast.success(`Sent to ${routedTo.name}.`, {
           description: notificationDelivered(responseBody)
             ? responseBody?.persisted
@@ -454,6 +459,17 @@ export function VoiceAgentDialog({
   teardownVoiceRef.current = teardownVoice;
   sendClientEventsRef.current = sendClientEvents;
   connectionStatusRef.current = connectionStatus;
+  const sessionStartTrackedRef = useRef(false);
+  useEffect(() => {
+    if (connectionStatus === "idle") {
+      sessionStartTrackedRef.current = false;
+      return;
+    }
+    if (connectionStatus === "listening" && !sessionStartTrackedRef.current) {
+      sessionStartTrackedRef.current = true;
+      trackEvent("voice_session_started", { segment, voice_variant: voiceVariant ?? "default" });
+    }
+  }, [connectionStatus, segment, voiceVariant]);
   recordToolDurationRef.current = recordToolDuration;
 
   // Team voice tuning: switch Reka's register from inside the dialog. A switch
@@ -472,7 +488,7 @@ export function VoiceAgentDialog({
     };
   }, []);
   const switchVoiceVariant = useCallback(
-    (variantId: string) => {
+    (variantId: VoiceVariantId) => {
       if (variantId === (voiceVariant ?? DEFAULT_VOICE_VARIANT_ID)) return;
       const live = connectionStatus !== "idle";
       setVoiceVariant(variantId);

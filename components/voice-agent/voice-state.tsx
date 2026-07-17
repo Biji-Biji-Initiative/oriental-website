@@ -7,7 +7,7 @@ import { playArmCue } from "@/components/voice-agent/live-chime";
 import { trackIntakeEvent } from "@/lib/client-analytics";
 import type { SegmentId } from "@/lib/segments";
 import type { VoiceEntryMethod, VoiceEntryPoint } from "@/lib/voice/interaction-attribution";
-import { DEFAULT_VOICE_VARIANT_ID, VOICE_VARIANT_IDS } from "@/lib/voice/variants";
+import { DEFAULT_VOICE_VARIANT_ID, VOICE_VARIANT_IDS, type VoiceVariantId } from "@/lib/voice/variants";
 
 // The dialog pulls in the whole voice stack (forms, zod, realtime runtime), so
 // it is split out of the layout bundle and mounted shortly after first paint.
@@ -40,8 +40,8 @@ type VoiceContextValue = {
   /** Mount the dialog and pre-mint a Realtime session so the next tap is faster. */
   prewarm: () => void;
   /** Selected Reka voice register, persisted in this browser. */
-  voiceVariant: string | undefined;
-  setVoiceVariant: (variantId: string | undefined) => void;
+  voiceVariant: VoiceVariantId | undefined;
+  setVoiceVariant: (variantId: VoiceVariantId | undefined) => void;
 };
 
 const VoiceContext = createContext<VoiceContextValue | null>(null);
@@ -52,7 +52,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   const [intent, setIntent] = useState<SegmentId | undefined>();
   const [prefill, setPrefill] = useState<VoicePrefill | undefined>();
   const [prewarmSignal, setPrewarmSignal] = useState(0);
-  const [voiceVariant, setVoiceVariantState] = useState<string | undefined>(DEFAULT_VOICE_VARIANT_ID);
+  const [voiceVariant, setVoiceVariantState] = useState<VoiceVariantId | undefined>(DEFAULT_VOICE_VARIANT_ID);
 
   // Persist the visitor's voice pick so it survives reloads and return visits.
   useEffect(() => {
@@ -67,7 +67,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const setVoiceVariant = useCallback((variantId: string | undefined) => {
+  const setVoiceVariant = useCallback((variantId: VoiceVariantId | undefined) => {
     const nextVariant = normalizeVoiceVariant(variantId);
     setVoiceVariantState(nextVariant);
     try {
@@ -150,12 +150,14 @@ function readCookie(name: string) {
     ?.slice(prefix.length);
 }
 
-function normalizeVoiceVariant(variantId: string | null | undefined) {
+function normalizeVoiceVariant(variantId: string | null | undefined): VoiceVariantId {
   const decoded = variantId ? decodeURIComponent(variantId) : undefined;
-  return decoded && (VOICE_VARIANT_IDS as readonly string[]).includes(decoded) ? decoded : DEFAULT_VOICE_VARIANT_ID;
+  return decoded && (VOICE_VARIANT_IDS as readonly string[]).includes(decoded)
+    ? (decoded as VoiceVariantId)
+    : DEFAULT_VOICE_VARIANT_ID;
 }
 
-function writeVoiceVariantCookie(variantId: string) {
+function writeVoiceVariantCookie(variantId: VoiceVariantId) {
   const secure = window.location.protocol === "https:" ? "; Secure" : "";
   // biome-ignore lint/suspicious/noDocumentCookie: first-party preference cookie; Cookie Store API is not universal.
   document.cookie = `${VOICE_VARIANT_COOKIE}=${encodeURIComponent(variantId)}; Path=/; Max-Age=${VOICE_VARIANT_COOKIE_MAX_AGE}; SameSite=Lax${secure}`;
