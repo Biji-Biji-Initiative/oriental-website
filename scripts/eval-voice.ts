@@ -7,6 +7,9 @@
  *   pnpm eval:voice -- --limit 100        # judge the last 100
  *   pnpm eval:voice -- --dry              # transport/latency/engagement signals only, no LLM
  *   pnpm eval:voice -- --aggregate-only   # query-only aggregate/gate JSON; no judge, mutation, or report
+ *   pnpm eval:voice -- --aggregate-only --limit 200 \
+ *     --cohort-start 2026-07-17T15:00:00.000Z \
+ *     --cohort-environment staging --target-model-cell candidate
  *   pnpm eval:voice -- --min-quality 3.5 --max-dropped 0   # CI gate
  *   pnpm eval:voice -- --max-style-tics 0                  # ban known verbal tics
  *
@@ -48,7 +51,23 @@ import {
   type ImmutableVoiceLeadEvidenceSource,
   verifyVoiceSubmissionEvidence,
 } from "../lib/server/voice-submission-evidence";
-import { buildAggregateOnlyVoiceEvalReport } from "./lib/voice-eval-audit";
+import {
+  type AggregateOnlyHistoricalEvidenceDebt,
+  type AggregateOnlySyntheticPipeline,
+  type AggregateOnlyVoiceEvalReport,
+  buildAggregateOnlyVoiceEvalReport,
+  omitSessionAttention,
+} from "./lib/voice-eval-audit";
+
+type EvalCohortEnvironment = "local" | "staging" | "production";
+type EvalCohortModelCell = "control" | "candidate";
+
+type EvalCohort = {
+  startAt: number;
+  startAtIso: string;
+  environment: EvalCohortEnvironment;
+  targetModelCell: EvalCohortModelCell;
+};
 
 type Args = {
   limit: number;
@@ -64,11 +83,13 @@ type Args = {
   maxAvailability?: number;
   maxCaptureFailures?: number;
   maxStyleTics?: number;
+  cohort?: EvalCohort;
 };
 
 const JUDGE_CONCURRENCY = 4;
 const PROFILE_ENRICHMENT_CONCURRENCY = 8;
 const IMMUTABLE_LEAD_ATTRIBUTION_LIMIT = 500;
+const VOICE_EVAL_SESSION_LIMIT = 200;
 
 function parseArgs(argv: string[]): Args {
   const args: Args = {
@@ -80,6 +101,9 @@ function parseArgs(argv: string[]): Args {
     maxQuota: 0,
   };
   let outWasExplicit = false;
+  let cohortStart: { at: number; iso: string } | undefined;
+  let cohortEnvironment: EvalCohortEnvironment | undefined;
+  let targetModelCell: EvalCohortModelCell | undefined;
   for (let i = 0; i < argv.length; i += 1) {
     const flag = argv[i];
     const value = argv[i + 1];
@@ -90,7 +114,11 @@ function parseArgs(argv: string[]): Args {
     } else if (flag === "--persist") {
       args.persist = true;
     } else if (flag === "--limit") {
-      args.limit = Number(value) || args.limit;
+      const parsed = Number(value);
+      if (!Number.isInteger(parsed) || parsed < 1 || parsed > VOICE_EVAL_SESSION_LIMIT) {
+        throw new Error(`--limit must be an integer from 1 to ${VOICE_EVAL_SESSION_LIMIT}`);
+      }
+      args.limit = parsed;
       i += 1;
     } else if (flag === "--out") {
       args.out = value ?? args.out;
@@ -120,12 +148,53 @@ function parseArgs(argv: string[]): Args {
     } else if (flag === "--max-style-tics") {
       args.maxStyleTics = Number(value);
       i += 1;
+    } else if (flag === "--cohort-start") {
+      cohortStart = parseCohortStart(value);
+      i += 1;
+    } else if (flag === "--cohort-environment") {
+      if (value !== "local" && value !== "staging" && value !== "production") {
+        throw new Error("--cohort-environment must be local, staging, or production");
+      }
+      cohortEnvironment = value;
+      i += 1;
+    } else if (flag === "--target-model-cell") {
+      if (value !== "control" && value !== "candidate") {
+        throw new Error("--target-model-cell must be control or candidate");
+      }
+      targetModelCell = value;
+      i += 1;
     }
   }
   if (args.aggregateOnly && (args.persist || outWasExplicit)) {
     throw new Error("--aggregate-only cannot be combined with --persist or --out");
   }
+  const cohortOptionCount = [cohortStart, cohortEnvironment, targetModelCell].filter(Boolean).length;
+  if (cohortOptionCount > 0 && cohortOptionCount < 3) {
+    throw new Error("--cohort-start, --cohort-environment, and --target-model-cell must be provided together");
+  }
+  if (cohortOptionCount > 0 && !args.aggregateOnly) {
+    throw new Error("release cohort options require --aggregate-only");
+  }
+  if (cohortStart && cohortEnvironment && targetModelCell) {
+    args.cohort = {
+      startAt: cohortStart.at,
+      startAtIso: cohortStart.iso,
+      environment: cohortEnvironment,
+      targetModelCell,
+    };
+  }
   return args;
+}
+
+function parseCohortStart(value: string | undefined): { at: number; iso: string } {
+  if (!value || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(value)) {
+    throw new Error("--cohort-start must be an ISO-8601 timestamp with an explicit timezone");
+  }
+  const at = Date.parse(value);
+  if (!Number.isSafeInteger(at) || at <= 0) {
+    throw new Error("--cohort-start must be a valid ISO-8601 timestamp");
+  }
+  return { at, iso: new Date(at).toISOString() };
 }
 
 function requireEnv(...keys: string[]): string | null {
@@ -230,21 +299,28 @@ async function enrichVoiceSessionProfiles(
  * raw call row before reconnect rows are merged. This recovers attribution even
  * when the browser loses its fire-and-forget post-submit review snapshot.
  */
-async function enrichSubmittedEmailAttribution(
+async function loadImmutableVoiceLeads(
   convex: ConvexHttpClient,
   ingestSecret: string,
-  sessions: VoiceEvalSession[],
-): Promise<VoiceEvalSession[]> {
-  let rawLeads: ImmutableVoiceLeadEvidenceSource[];
+): Promise<ImmutableVoiceLeadEvidenceSource[]> {
   try {
-    rawLeads = (await convex.query(api.leads.adminLeadTable, {
+    return (await convex.query(api.leads.adminLeadTable, {
       ingestSecret,
       limit: IMMUTABLE_LEAD_ATTRIBUTION_LIMIT,
     })) as ImmutableVoiceLeadEvidenceSource[];
   } catch {
     throw new Error("Submitted email attribution query failed; capture-integrity evidence is unavailable.");
   }
+}
 
+async function enrichSubmittedEmailAttribution(
+  convex: ConvexHttpClient,
+  ingestSecret: string,
+  sessions: VoiceEvalSession[],
+  rawLeads: ImmutableVoiceLeadEvidenceSource[],
+  cohort: EvalCohort | null,
+): Promise<VoiceEvalSession[]> {
+  const requireV1 = cohort !== null;
   const sessionPairKeys = new Set(sessions.map((session) => submissionPairKey(session.reviewId, session.sessionId)));
   const sessionReviewIds = new Set(sessions.map((session) => session.reviewId));
   const sessionIds = new Set(sessions.map((session) => session.sessionId));
@@ -263,6 +339,13 @@ async function enrichSubmittedEmailAttribution(
       (leadId !== null && markedLeadIds.has(leadId));
     if (overlapsEvaluatedSession || !hasVoiceSubmissionEvidenceEnvelope(lead)) return false;
     const leadCreatedAt = typeof lead.createdAt === "number" ? lead.createdAt : null;
+    const leadModelCell = (lead as ImmutableVoiceLeadEvidenceSource & { voiceModelCell?: unknown }).voiceModelCell;
+    if (
+      cohort &&
+      (leadCreatedAt === null || leadCreatedAt < cohort.startAt || leadModelCell !== cohort.targetModelCell)
+    ) {
+      return false;
+    }
     return (
       sessions.length === 0 ||
       sessionWindowStart === null ||
@@ -302,8 +385,11 @@ async function enrichSubmittedEmailAttribution(
       (leadId !== null && markedLeadIds.has(leadId));
     if (!overlapsEvaluatedSession) {
       const leadCreatedAt = typeof lead.createdAt === "number" ? lead.createdAt : null;
+      const leadModelCell = (lead as ImmutableVoiceLeadEvidenceSource & { voiceModelCell?: unknown }).voiceModelCell;
       const orphanIsInWindow =
         hasVoiceSubmissionEvidenceEnvelope(lead) &&
+        (!cohort ||
+          (leadCreatedAt !== null && leadCreatedAt >= cohort.startAt && leadModelCell === cohort.targetModelCell)) &&
         (sessions.length === 0 ||
           sessionWindowStart === null ||
           leadCreatedAt === null ||
@@ -337,6 +423,7 @@ async function enrichSubmittedEmailAttribution(
     // legacy snapshot as release evidence. Production rows created before that
     // rollout remain auditable under explicit legacy provenance.
     const legacyAllowed =
+      !requireV1 &&
       !hasEnvelope &&
       session.modelCell !== "candidate" &&
       (session.deploymentEnvironment === "production" || session.deploymentEnvironment === "local");
@@ -370,6 +457,185 @@ function evaluatedSessionWindowStart(sessions: VoiceEvalSession[]) {
   return timestamps.length > 0 ? Math.min(...timestamps) : null;
 }
 
+type CohortPartition = {
+  windowRows: VoiceEvalSession[];
+  historicalRows: VoiceEvalSession[];
+  preCohortRowsExcluded: number;
+  otherEnvironmentRowsExcluded: number;
+  crossBoundaryRowsExcluded: number;
+};
+
+function conversationKey(session: Pick<VoiceEvalSession, "conversationId" | "reviewId">) {
+  return session.conversationId ?? session.reviewId;
+}
+
+function partitionCohortRows(sessions: VoiceEvalSession[], cohort: EvalCohort): CohortPartition {
+  const groups = new Map<string, VoiceEvalSession[]>();
+  for (const session of sessions) {
+    const key = conversationKey(session);
+    const group = groups.get(key);
+    if (group) group.push(session);
+    else groups.set(key, [session]);
+  }
+
+  const windowRows: VoiceEvalSession[] = [];
+  let preCohortRowsExcluded = 0;
+  let otherEnvironmentRowsExcluded = 0;
+  let crossBoundaryRowsExcluded = 0;
+  for (const group of groups.values()) {
+    if (group.some((session) => session.deploymentEnvironment !== cohort.environment)) {
+      otherEnvironmentRowsExcluded += group.length;
+      continue;
+    }
+    const created = group.map((session) => session.createdAt);
+    if (created.some((value) => typeof value !== "number" || !Number.isFinite(value))) {
+      crossBoundaryRowsExcluded += group.length;
+      continue;
+    }
+    const before = created.some((value) => (value as number) < cohort.startAt);
+    const current = created.some((value) => (value as number) >= cohort.startAt);
+    if (before && current) {
+      crossBoundaryRowsExcluded += group.length;
+    } else if (before) {
+      preCohortRowsExcluded += group.length;
+    } else {
+      windowRows.push(...group);
+    }
+  }
+
+  return {
+    windowRows,
+    historicalRows: sessions.filter(
+      (session) =>
+        session.deploymentEnvironment === cohort.environment &&
+        typeof session.createdAt === "number" &&
+        Number.isFinite(session.createdAt) &&
+        session.createdAt < cohort.startAt,
+    ),
+    preCohortRowsExcluded,
+    otherEnvironmentRowsExcluded,
+    crossBoundaryRowsExcluded,
+  };
+}
+
+function assessCohortQueryWindow(sessions: VoiceEvalSession[], requestedLimit: number, cohortStart: number) {
+  const timestampsValid = sessions.every(
+    (session) =>
+      typeof session.createdAt === "number" &&
+      Number.isFinite(session.createdAt) &&
+      typeof session.updatedAt === "number" &&
+      Number.isFinite(session.updatedAt) &&
+      session.updatedAt >= session.createdAt,
+  );
+  const oldestFetchedUpdatedAt =
+    timestampsValid && sessions.length > 0 ? Math.min(...sessions.map((session) => session.updatedAt as number)) : null;
+  return {
+    oldestFetchedUpdatedAt,
+    complete:
+      timestampsValid &&
+      (sessions.length < requestedLimit || (oldestFetchedUpdatedAt !== null && oldestFetchedUpdatedAt < cohortStart)),
+  };
+}
+
+function targetConversations(
+  rawRows: VoiceEvalSession[],
+  merged: VoiceEvalSession[],
+  targetModelCell: EvalCohortModelCell,
+) {
+  const keys = new Set(
+    rawRows.filter((session) => session.modelCell === targetModelCell).map((session) => conversationKey(session)),
+  );
+  return merged.filter((session) => keys.has(conversationKey(session)));
+}
+
+function classifyHistoricalEvidenceDebt(
+  historicalRows: VoiceEvalSession[],
+  rawLeads: ImmutableVoiceLeadEvidenceSource[],
+  targetModelCell: EvalCohortModelCell,
+  historicalSessionScanComplete: boolean,
+): AggregateOnlyHistoricalEvidenceDebt {
+  let validV1 = 0;
+  let missingV1Envelope = 0;
+  let invalidV1Envelope = 0;
+  let unresolvedJoin = 0;
+  const seen = new Set<string>();
+
+  for (const session of historicalRows) {
+    if (session.modelCell !== targetModelCell) continue;
+    const key = submissionPairKey(session.reviewId, session.sessionId);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const matches = rawLeads.filter((lead) => {
+      const exactPair = lead.voiceReviewId === session.reviewId && lead.voiceSessionId === session.sessionId;
+      const exactLead =
+        typeof session.leadId === "string" && session.leadId.length > 0 && lead.leadId === session.leadId;
+      return exactPair || exactLead;
+    });
+    const markedSubmitted = typeof session.submittedAt === "number" || Boolean(session.leadId);
+    if (matches.length === 0 && !markedSubmitted) continue;
+    const lead = matches[0];
+    if (
+      matches.length !== 1 ||
+      !lead ||
+      lead.voiceReviewId !== session.reviewId ||
+      lead.voiceSessionId !== session.sessionId ||
+      (session.leadId && lead.leadId !== session.leadId)
+    ) {
+      unresolvedJoin += 1;
+    } else if (!hasVoiceSubmissionEvidenceEnvelope(lead)) {
+      missingV1Envelope += 1;
+    } else if (verifyVoiceSubmissionEvidence(lead)) {
+      validV1 += 1;
+    } else {
+      invalidV1Envelope += 1;
+    }
+  }
+
+  return {
+    scope: "bounded-pre-cohort-target-cell",
+    complete:
+      historicalSessionScanComplete && rawLeads.length < IMMUTABLE_LEAD_ATTRIBUTION_LIMIT && unresolvedJoin === 0,
+    validV1,
+    missingV1Envelope,
+    invalidV1Envelope,
+    unresolvedJoin,
+    affectsReleaseGate: false,
+  };
+}
+
+function assessSyntheticPipeline(sessions: VoiceEvalSession[]): AggregateOnlySyntheticPipeline {
+  const aggregate = aggregateEvals(sessions.map((session) => buildSessionEval(session, null)));
+  if (aggregate.sessionCount === 0) {
+    return {
+      aggregate: omitSessionAttention(aggregate),
+      status: "insufficient_data",
+      failures: ["no current target synthetic conversations"],
+    };
+  }
+  if (aggregate.availability.totalFailures > 0) {
+    return {
+      aggregate: omitSessionAttention(aggregate),
+      status: "fail",
+      failures: [`synthetic availability failures ${aggregate.availability.totalFailures} > 0`],
+    };
+  }
+  if (aggregate.activation.attempts === 0) {
+    return {
+      aggregate: omitSessionAttention(aggregate),
+      status: "insufficient_data",
+      failures: ["synthetic activation evidence is unavailable"],
+    };
+  }
+  if (aggregate.activation.tapToAudibleSamples === 0) {
+    return {
+      aggregate: omitSessionAttention(aggregate),
+      status: "fail",
+      failures: ["synthetic remote audio evidence is unavailable"],
+    };
+  }
+  return { aggregate: omitSessionAttention(aggregate), status: "pass", failures: [] };
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
 
@@ -387,23 +653,42 @@ async function main() {
     ingestSecret,
     limit: args.limit,
   })) as VoiceEvalSession[];
-  const customerRows = fetchedSessions.filter((session) => !isSyntheticVoiceSession(session));
+  const cohortPartition = args.cohort ? partitionCohortRows(fetchedSessions, args.cohort) : null;
+  const selectedRows = cohortPartition?.windowRows ?? fetchedSessions;
+  const customerRows = selectedRows.filter((session) => !isSyntheticVoiceSession(session));
+  const syntheticRows = selectedRows.filter(isSyntheticVoiceSession);
   const rawSessions = await enrichVoiceSessionProfiles(convex, ingestSecret, customerRows, args.aggregateOnly);
-  const syntheticRowsExcluded = fetchedSessions.length - customerRows.length;
+  const rawSyntheticSessions = args.cohort
+    ? await enrichVoiceSessionProfiles(convex, ingestSecret, syntheticRows, args.aggregateOnly)
+    : syntheticRows;
+  const syntheticRowsExcluded = syntheticRows.length;
   if (!args.aggregateOnly && syntheticRowsExcluded > 0) {
     console.log(`Excluded ${syntheticRowsExcluded} synthetic smoke row(s).`);
   }
 
   // Stitch dropped-and-resumed call rows into one conversation before judging,
   // so a single intake is scored once — not once per reconnect.
-  const attributedRawSessions = await enrichSubmittedEmailAttribution(convex, ingestSecret, rawSessions);
+  const rawLeads = await loadImmutableVoiceLeads(convex, ingestSecret);
+  const attributedRawSessions = await enrichSubmittedEmailAttribution(
+    convex,
+    ingestSecret,
+    rawSessions,
+    rawLeads,
+    args.cohort ?? null,
+  );
   if (attributedRawSessions.length === 0 && !args.aggregateOnly) {
     console.log("No customer voice sessions to evaluate in this window.");
     return;
   }
-  const mergedSessions = mergeConversationSessions(attributedRawSessions);
-  const sessions = mergedSessions;
-  const mergedCount = rawSessions.length - mergedSessions.length;
+  const promotionSessions = mergeConversationSessions(attributedRawSessions);
+  const sessions = args.cohort
+    ? targetConversations(rawSessions, promotionSessions, args.cohort.targetModelCell)
+    : promotionSessions;
+  const mergedSyntheticSessions = mergeConversationSessions(rawSyntheticSessions);
+  const syntheticSessions = args.cohort
+    ? targetConversations(rawSyntheticSessions, mergedSyntheticSessions, args.cohort.targetModelCell)
+    : mergedSyntheticSessions;
+  const mergedCount = rawSessions.length - promotionSessions.length;
   if (!args.aggregateOnly && mergedCount > 0) {
     console.log(`Stitched ${rawSessions.length} call rows into ${sessions.length} conversations.`);
   }
@@ -433,11 +718,14 @@ async function main() {
   const evals: SessionEval[] = sessions.map((session) =>
     buildSessionEval(session, scores.get(session.reviewId) ?? null),
   );
+  const promotionEvals: SessionEval[] = promotionSessions.map((session) =>
+    buildSessionEval(session, scores.get(session.reviewId) ?? null),
+  );
   const aggregate = aggregateEvals(evals);
   const profileAggregates = aggregateEvalsByRuntimeProfile(evals);
-  const experimentAggregates = aggregateEvalsByExperimentCell(evals);
-  const experimentValidation = validateVoiceExperimentEvidence(evals);
-  const latencyAutopilotGate = assessLatencyAutopilotGate(sessions);
+  const experimentAggregates = aggregateEvalsByExperimentCell(promotionEvals);
+  const experimentValidation = validateVoiceExperimentEvidence(promotionEvals);
+  const latencyAutopilotGate = assessLatencyAutopilotGate(promotionSessions);
 
   if (args.persist && !dry) {
     const payloads = evals
@@ -469,6 +757,43 @@ async function main() {
     maxStyleTicOccurrences: args.maxStyleTics,
   };
   const thresholdGate = meetsThreshold(aggregate, thresholds);
+  const cohortWindow = args.cohort
+    ? assessCohortQueryWindow(fetchedSessions, args.limit, args.cohort.startAt)
+    : {
+        oldestFetchedUpdatedAt:
+          fetchedSessions.length > 0 &&
+          fetchedSessions.every(
+            (session) => typeof session.updatedAt === "number" && Number.isFinite(session.updatedAt),
+          )
+            ? Math.min(...fetchedSessions.map((session) => session.updatedAt as number))
+            : null,
+        complete: false,
+      };
+  const mixedTargetConversations = sessions.filter(
+    (session) => session.mixedExperimentProfile || session.mixedVoiceProfile,
+  ).length;
+  const releaseQualityFailures = args.cohort
+    ? [
+        ...(cohortWindow.complete ? [] : ["query window is incomplete for the requested cohort"]),
+        ...(sessions.length > 0 ? [] : ["current target cohort contains 0 customer conversations"]),
+        ...(mixedTargetConversations > 0
+          ? [
+              `${mixedTargetConversations} target conversation${mixedTargetConversations === 1 ? "" : "s"} crossed experiment profiles`,
+            ]
+          : []),
+        ...thresholdGate.failures,
+      ]
+    : thresholdGate.failures;
+  const releaseQualityGate = { ok: releaseQualityFailures.length === 0, failures: releaseQualityFailures };
+  const syntheticPipeline = assessSyntheticPipeline(syntheticSessions);
+  const historicalEvidenceDebt = args.cohort
+    ? classifyHistoricalEvidenceDebt(
+        (cohortPartition?.historicalRows ?? []).filter((session) => !isSyntheticVoiceSession(session)),
+        rawLeads,
+        args.cohort.targetModelCell,
+        fetchedSessions.length < args.limit,
+      )
+    : undefined;
   const gate = {
     ok: thresholdGate.ok && experimentValidation.ok,
     failures: [...experimentValidation.failures, ...thresholdGate.failures],
@@ -477,15 +802,38 @@ async function main() {
   if (args.aggregateOnly) {
     const report = buildAggregateOnlyVoiceEvalReport({
       generatedAt: new Date().toISOString(),
+      requestedLimit: args.limit,
       queriedRows: fetchedSessions.length,
+      oldestFetchedUpdatedAt: cohortWindow.oldestFetchedUpdatedAt,
+      windowComplete: args.cohort ? cohortWindow.complete : null,
+      leadRowsQueried: rawLeads.length,
       syntheticRowsExcluded,
       customerCallRows: rawSessions.length,
       conversations: sessions.length,
+      cohort: args.cohort
+        ? ({
+            enabled: true,
+            startAt: args.cohort.startAtIso,
+            environment: args.cohort.environment,
+            targetModelCell: args.cohort.targetModelCell,
+            customerCallRows: rawSessions.length,
+            customerConversations: promotionSessions.length,
+            targetConversations: sessions.length,
+            syntheticCallRows: rawSyntheticSessions.length,
+            syntheticConversations: syntheticSessions.length,
+            preCohortRowsExcluded: cohortPartition?.preCohortRowsExcluded ?? 0,
+            otherEnvironmentRowsExcluded: cohortPartition?.otherEnvironmentRowsExcluded ?? 0,
+            crossBoundaryRowsExcluded: cohortPartition?.crossBoundaryRowsExcluded ?? 0,
+          } satisfies AggregateOnlyVoiceEvalReport["cohort"])
+        : undefined,
       aggregate,
       profileAggregates,
       experimentAggregates,
       experimentValidation,
       latencyAutopilotGate,
+      syntheticPipeline,
+      historicalEvidenceDebt,
+      releaseQualityGate,
       thresholdGate,
     });
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);

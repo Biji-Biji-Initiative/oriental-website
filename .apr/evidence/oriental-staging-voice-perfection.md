@@ -42,7 +42,12 @@
 - `voice-eval.ts` and `scripts/eval-voice.ts` recover immutable lead evidence,
   join before reconnect folding, bound the lead scan to the live Convex cap,
   query exact durable sessions for signed leads outside `--limit`, and expose
-  only PII-free aggregate outcomes/tool latency.
+  only PII-free aggregate outcomes/tool latency. Aggregate schema v2 adds a
+  strict post-cutoff/environment/model cohort, proves the existing 200-row
+  updated-at window is complete, rejects empty current quality evidence,
+  separates synthetic pipeline health from customer quality and promotion,
+  and reports pre-cohort missing/invalid v1 only as bounded non-authoritative
+  evidence debt. No Convex/schema deployment or backfill is required.
 - The current contract and repo guidance explicitly forbid production, Convex,
   and backfill mutation for this staging-only release and require Oracle/APR
   only through `ssh g` or `ssh mereka`.
@@ -62,7 +67,8 @@
 - Production performance/a11y proof: LCP 476 ms, CLS 0, 420,731 initial
   JavaScript transfer bytes, and zero serious/critical accessibility findings.
 - Focused tests include 399 deterministic email/realtime cases, immutable
-  submission evidence, bounded `--limit` evaluation, versioned prefill,
+  submission evidence, 106 focused eval/data-integrity cases including strict
+  cohort completeness and historical debt partitioning, versioned prefill,
   staging/production visual gating, and the long-transcript authority-rebase
   route regression.
 

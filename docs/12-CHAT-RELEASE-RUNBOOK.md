@@ -112,6 +112,31 @@ are rejected in this mode. PII-free tool-call telemetry is included as overall
 and per-tool sample/outcome counts plus execution, response-to-call, and
 response-to-result p50/p95 distributions.
 
+A broad audit remains deliberately fail-closed when a historical candidate
+submission cannot be verified from immutable v1 evidence. Do not weaken that
+join or backfill evidence to make the command green. For an exact staging
+release window, record a UTC cutoff before the deployment and run the bounded
+schema-v2 cohort after the no-submit smoke:
+
+```bash
+pnpm eval:voice -- --aggregate-only --limit 200 \
+  --cohort-start "$cohort_start" \
+  --cohort-environment staging \
+  --target-model-cell candidate
+```
+
+All three cohort options are required together. The evaluator proves that the
+updated-at-ordered 200-row query contains the complete post-cutoff window,
+rejects a truncated or empty target cohort, requires verified v1 evidence for
+every current submission, and reports older missing/invalid evidence only as
+bounded PII-free `historicalEvidenceDebt` that cannot make the release green or
+be treated as attribution. Customer `releaseQuality`, the synthetic activation/
+remote-audio `syntheticPipeline`, and confound-sensitive `promotionEvidence`
+are separate. A picker audition can prove the staging pipeline while remaining
+invalid model-promotion evidence. With no post-cutoff organic conversation,
+`releaseQuality` and the compatibility `gate` remain non-green; report that as
+`insufficient_data` rather than fabricating customer evidence.
+
 The command fetches and computes local/main Git state, both public health SHAs,
 the non-secret live voice cells, branches and PRs containing deployed SHAs,
 open PRs/issues, manual gates with owners, the latest checked-in APR verdict,
@@ -244,6 +269,12 @@ include release docs before the first deployment.
    smoke with `VOICE_SMOKE_MODE=audition`, then return staging to `clean` before
    model comparison or promotion.
 
+   Immediately before the staging deployment, freeze the evaluation boundary:
+
+   ```bash
+   cohort_start=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+   ```
+
 3. Run the deterministic public verifier:
 
    ```bash
@@ -257,10 +288,18 @@ include release docs before the first deployment.
    ```
 
 4. Run `pnpm smoke:staging:voice` in the default clean mode when voice, OpenAI
-   configuration, WebRTC, session persistence, or voice UI changed.
-5. Inspect the running container—not only Infisical—for the expected revision,
+   configuration, WebRTC, session persistence, or voice UI changed. For an
+   approved staging audition use `VOICE_SMOKE_MODE=audition`; neither mode may
+   submit a lead.
+5. Run the exact post-cutoff aggregate-only cohort command above. Require a
+   complete query window and `syntheticPipeline.status=pass`. Keep customer
+   quality and promotion status honest: no organic post-cutoff conversation is
+   `insufficient_data`, and picker/variant evidence is never a clean model
+   comparison. Historical evidence debt remains visible but does not authorize
+   a backfill or weaken current v1 attribution.
+6. Inspect the running container—not only Infisical—for the expected revision,
    deployment environment, and voice cells.
-6. For a production promotion or separately authorized data-maintenance window,
+7. For a production promotion or separately authorized data-maintenance window,
    drain the bounded legacy backfill and retention sweep before trusting the
    admin, evaluation, SLA, or count views. The first drain intentionally applies
    the published 30/90/730-day deletion windows and is not reversed by a web
@@ -294,7 +333,7 @@ include release docs before the first deployment.
    The 500-call guard is a runaway safety limit, not an allowed residual
    backlog. If it is reached, stop and diagnose; do not promote with hidden
    legacy rows. Skip this entire step during a staging-only/no-backfill hold.
-7. Prove authenticated, Convex-backed admin reads independently of `/api/health`
+8. Prove authenticated, Convex-backed admin reads independently of `/api/health`
    and discard the response body so lead/session content does not enter the
    release log:
 
