@@ -84,6 +84,20 @@ notes are reference-only until a future PR reintroduces 3D.
 | Lead persistence | `lib/server/convex.ts`, `convex/leads.ts`, `convex/schema.ts` |
 | Notifications | `lib/server/notifications.ts`, `lib/server/smtp.ts` |
 
+## Admin Operations
+
+| Runtime surface | Production path | Client? | Notes |
+|---|---|---:|---|
+| Admin review page | `app/admin/session-review/page.tsx` | Server | Authenticated view routing and the shared Convex dashboard read. |
+| Command center | `components/admin/AdminCommandCenter.tsx` | Server | Default Overview with operating pulse, ranked attention table, pipeline, readiness, account, acquisition, routing, and Reka quality intelligence. |
+| Command model | `lib/admin-command-center.ts` | — | Pure full-dataset KPI, mix, coverage, stage, and action-ranking derivation; never mutates lead data. |
+| CRM workspace | `components/admin/EnquiryCrmWorkspace.tsx` | Mixed | Complete enquiry table/mobile queue, record details, account portfolio, ownership, ClickUp links, and workflow update form. |
+
+Keep the default Overview server-rendered and action-first. New executive
+metrics should use the full dataset, expose their denominator, and return an
+unavailable state when the denominator is empty. Detailed debugging evidence
+belongs in the dedicated Reka or Voice QA views rather than the first viewport.
+
 ## Accessibility Notes
 
 Prototype `div onClick` regions are now real buttons in the key interactive

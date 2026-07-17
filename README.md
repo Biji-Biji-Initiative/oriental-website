@@ -171,11 +171,17 @@ During local testing, run `pnpm voice:debug` after a call to inspect the latest 
 
 The internal review surface lives at `/admin/session-review`. It is protected by
 `ADMIN_REVIEW_TOKEN`, sets a signed HTTP-only admin cookie, and reads recent
-Convex `leads` plus `voiceSessions` snapshots. Use it as the enquiry CRM:
-scan the latest pipeline in a Tailwind table, sort by recency or operator
-attention, review organization accounts and returning contacts, balance owner
-workload, open the exact ClickUp task, update workflow state, and inspect Reka
-scores or transcripts when needed.
+Convex `leads` plus `voiceSessions` snapshots. Its default Overview is the
+executive command layer: full-dataset enquiry, assignment, SLA, delivery, and
+qualification KPIs; a ranked next-action queue; stage and data-readiness health;
+account, repeat-contact, source, routing, and Reka quality intelligence. Open
+Enquiries for the complete Tailwind CRM table, organization portfolio, owner
+workload, exact ClickUp task, and workflow updates. Reka and Voice QA retain the
+evaluation register, recovery queue, transcripts, timing, and runtime evidence.
+
+The command layer is read-only and derived at request time. It does not merge,
+delete, or rewrite enquiry documents, and it renders unavailable denominators as
+`--` rather than inventing zero performance.
 
 ClickUp task references can be recovered without recreating tasks or changing
 lead payloads:

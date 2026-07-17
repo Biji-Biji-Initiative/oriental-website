@@ -219,3 +219,15 @@ The admin CRM derives customer context from the complete lead set at read time:
 
 This keeps every enquiry independently auditable while giving operators
 account-level context.
+
+## Admin Command Center
+
+The default admin Overview derives an action-first command model from the same
+complete lead set. It ranks active enquiries by delivery failure, declared
+priority, missing owner, SLA age, follow-up readiness, ClickUp linkage, and
+returning customer/account context. It also calculates pipeline stage, source,
+segment, route, assignment, delivery, enrichment, and Reka coverage summaries.
+
+These are read-time views only. No command-center calculation mutates, merges,
+deduplicates, or discards source records. Ratios with no valid denominator stay
+unavailable instead of being reported as zero.
