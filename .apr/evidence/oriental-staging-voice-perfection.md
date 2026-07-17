@@ -2,9 +2,9 @@
 
 ## Exact candidate and live boundary
 
-- Candidate implementation: `b9ed899442eef01a19104b918b3534a73f1d795e`.
+- Candidate implementation: `1b2fd629bdfc625da3227686f80aebba945405cf`.
 - Base: `82b95bf97cd53dbb68687f557dd06c064947415b` (`origin/main`).
-- The candidate implementation is eleven commits ahead and zero commits behind
+- The candidate implementation is thirteen commits ahead and zero commits behind
   main; the following evidence-only commit does not alter runtime code.
 - `pnpm --silent ops:status --json` on 2026-07-17 reported both canonical
   environments healthy on the unchanged base SHA. Production reported
@@ -50,18 +50,26 @@
   `clear_field` alias and retains its sequence, outcome, execution and response
   timings, turn aggregates, transport, runtime/model/voice/variant attribution,
   and email-verification metadata. There is no candidate diff under `convex/`.
+- `components/voice-agent/VoiceAgentDialog.tsx` treats ordinary hidden-tab and
+  BFCache transitions as non-terminal keepalive snapshots, while a real page
+  exit shares a per-review one-shot close guard with normal teardown.
+  `app/api/voice/debug/route.ts` requires a persisted snapshot, a close reason,
+  and `closedAt` before auto-evaluation, deduplicates successful scoring, and
+  deliberately permits a repost to retry when every judge produced zero
+  persisted scores.
 
 ## Executed evidence on the rebased candidate
 
-- `pnpm test`: 63 files, 670 tests passed.
+- `pnpm test`: 63 files, 673 tests passed.
 - Focused realtime/fuzz/notification proof: 289 tests passed.
 - Focused evaluator matrix: 5 files, 99 tests passed.
 - `pnpm lint`: 237 files clean.
 - `pnpm typecheck`: passed.
 - `pnpm build`: passed, including Next.js route generation.
 - `pnpm test:e2e`: 38 passed; 38 token-gated admin cases skipped as designed.
-- `pnpm test:performance`: mobile performance budget passed with 368 ms LCP,
-  zero CLS, and zero serious/critical accessibility violations.
+- `pnpm test:performance`: mobile performance budget passed against the exact
+  production build with 564 ms LCP, zero CLS, and zero serious/critical
+  accessibility violations.
 - Managed Infisical contracts passed in both environments with production-mode
   secret validation. Staging is candidate/picker-on; production is
   control/picker-off. ClickUp token presence and staging/production token parity
@@ -79,6 +87,10 @@
   completions, duplicates, unknown/reused IDs, and untagged events. All P1
   findings were fixed. The final reserved-local-part P2 is covered by ten full
   wrapper regressions and equality checks after every wrapper-removal step.
+- Independent lifecycle review verified hidden-tab heartbeat, BFCache,
+  terminal one-shot, `closedAt` gating, successful-eval deduplication, and the
+  zero-persisted retry path. Its focused matrix passed 14 tests, typecheck,
+  Biome, and diff-check after the final fix.
 - `git diff --check`: clean. The worktree was clean before this evidence file.
 - Zero-shared-Convex compatibility proof: 2 focused files, 18 tests passed;
   typecheck passed. The integration test proves a legacy bulk row is enriched

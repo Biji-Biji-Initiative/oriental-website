@@ -1,6 +1,6 @@
 # Mereka at Oriental staging voice perfection — release contract
 
-Review implementation commit `b9ed899442eef01a19104b918b3534a73f1d795e` for merge and
+Review implementation commit `1b2fd629bdfc625da3227686f80aebba945405cf` for merge and
 staging-only deployment. This contract does not authorize a production web
 deployment.
 
