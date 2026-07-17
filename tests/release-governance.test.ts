@@ -154,7 +154,9 @@ describe("release governance", () => {
     expect(productionDeployer).toContain(
       'readPublicHealth(RELEASE_TARGETS.production.origin, args.sha, "new production", CONTROL_VOICE_CELL)',
     );
-    expect(productionDeployer).toContain("validateHealthPayload(payload, expectedSha, expectedVoiceCell)");
+    expect(productionDeployer).toContain(
+      "validateHealthPayload(payload, expectedSha, expectedVoiceCell, validationOptions)",
+    );
   });
 
   it("pins the staging voice smoke to the governed candidate instead of public health", () => {
@@ -205,6 +207,36 @@ describe("release governance", () => {
       ),
     ).toEqual([]);
     expect(validateHealthPayload({ ok: true, version: "wrong", convex: false }, sha)).toHaveLength(3);
+  });
+
+  it("allows only current-production migration checks to bridge the legacy missing email mode", () => {
+    const legacyHealth = {
+      ok: true,
+      version: sha,
+      convex: true,
+      voice: {
+        runtime_profile: "baseline",
+        model_cell: "control",
+        model: "gpt-realtime-2",
+        reasoning_cell: "low",
+        variant_picker: false,
+      },
+    };
+    expect(validateHealthPayload(legacyHealth, sha)).toEqual(["health voice email_capture_mode must be adaptive"]);
+    expect(
+      validateHealthPayload(legacyHealth, sha, CONTROL_VOICE_CELL, { allowMissingEmailCaptureMode: true }),
+    ).toEqual([]);
+    expect(
+      validateHealthPayload(
+        { ...legacyHealth, voice: { ...legacyHealth.voice, email_capture_mode: "strict" } },
+        sha,
+        CONTROL_VOICE_CELL,
+        { allowMissingEmailCaptureMode: true },
+      ),
+    ).toEqual(["health voice email_capture_mode must be adaptive"]);
+    expect(productionDeployer).toContain(
+      '"current production",\n    CONTROL_VOICE_CELL,\n    { allowMissingEmailCaptureMode: true }',
+    );
   });
 
   it("rejects Cloudflare edge response markers", () => {

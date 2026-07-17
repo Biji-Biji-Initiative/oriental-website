@@ -10,6 +10,7 @@ import {
 import {
   CONTROL_VOICE_CELL,
   type GovernedVoiceCell,
+  type HealthPayloadValidationOptions,
   RELEASE_TARGETS,
   STAGING_CANDIDATE_VOICE_CELL,
   validateHealthPayload,
@@ -109,11 +110,12 @@ async function readPublicHealth(
   expectedSha: string,
   label: string,
   expectedVoiceCell: GovernedVoiceCell,
+  validationOptions: HealthPayloadValidationOptions = {},
 ) {
   const response = await fetchWithTimeout(`${origin}/api/health`);
   if (!response.ok) throw new Error(`${label} health returned HTTP ${response.status}`);
   const payload: unknown = await response.json();
-  const failures = validateHealthPayload(payload, expectedSha, expectedVoiceCell);
+  const failures = validateHealthPayload(payload, expectedSha, expectedVoiceCell, validationOptions);
   if (failures.length > 0) throw new Error(`${label} health: ${failures.join("; ")}`);
 }
 
@@ -202,6 +204,7 @@ async function main() {
     args.expectedCurrentSha,
     "current production",
     CONTROL_VOICE_CELL,
+    { allowMissingEmailCaptureMode: true },
   );
 
   const application = await coolifyRequest<CoolifyApplication>(baseUrl, token, `applications/${applicationUuid}`);
