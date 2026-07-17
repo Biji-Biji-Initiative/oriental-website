@@ -14,8 +14,10 @@ rounds:
   impl_every_n: 1
 
 template: |
-  Perform an adversarial exact-tree pre-merge review of the complete Oriental
-  release. Treat privacy leakage, analytics before consent, weak authorization,
+  Perform the post-tombstone, literal-parity closure pass: an adversarial
+  exact-tree pre-merge review of the complete Oriental release. Independently
+  verify explicit secret retirement, fail-before-mutation behavior, effective
+  Coolify value/scope parity, and fail-open browser storage. Treat privacy leakage, analytics before consent, weak authorization,
   unbounded evaluation spend, inaccessible or overflowing UI, misleading brand
   or experiment gates, lost capture state, misleading telemetry, weakened lead
   durability, incomplete managed-environment convergence, unsafe production
@@ -24,8 +26,11 @@ template: |
   `VERDICT: MERGE ORIENTAL RELEASE` or `VERDICT: DO NOT MERGE`.
 
 template_with_impl: |
-  Perform an adversarial exact-tree pre-merge review of the complete Oriental
-  release against the attached executable evidence. Verify claims against the
+  Perform the post-tombstone, literal-parity closure pass: an adversarial
+  exact-tree pre-merge review of the complete Oriental release against the
+  attached executable evidence. Independently verify explicit secret
+  retirement, fail-before-mutation behavior, effective Coolify value/scope
+  parity, and fail-open browser storage. Verify claims against the
   checked-out implementation. Treat privacy leakage, analytics before consent,
   weak authorization, unbounded evaluation spend, inaccessible or overflowing
   UI, misleading brand or experiment gates, lost capture state, misleading
