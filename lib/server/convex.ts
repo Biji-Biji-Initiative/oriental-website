@@ -74,11 +74,18 @@ export async function recordLeadNotificationStatus(
 export async function persistVoiceReviewSnapshot(input: VoiceReviewSnapshotRequest["snapshot"] & { reviewId: string }) {
   const client = createConvexClient();
   if (!client) return { ok: false as const, reason: "convex_unconfigured" };
-  const convexInput = input;
+  // The shared Convex validator predates the clear-all tool label. The API has
+  // already emitted its PII-free structured log with canonical clear_fields at
+  // this point, so alias only that durable wire label while preserving every
+  // sample, timing, outcome, and all other telemetry fields.
+  const convexInput = withLegacyClearFieldsToolLabel(input) ?? input;
   try {
     const result = await client.client.mutation(api.leads.recordVoiceSession, {
       ingestSecret: client.ingestSecret,
-      snapshot: convexInput,
+      // The locally validated wire value is deliberately compatible with the
+      // deployed legacy function, whose generated type cannot express the
+      // app-only canonical label before it is aliased above.
+      snapshot: convexInput as never,
     });
     return { ok: result.ok, id: result.id };
   } catch (error) {
@@ -120,6 +127,23 @@ export async function persistVoiceReviewSnapshot(input: VoiceReviewSnapshotReque
     }
     throw error;
   }
+}
+
+function withLegacyClearFieldsToolLabel(
+  snapshot: VoiceReviewSnapshotRequest["snapshot"] & { reviewId: string },
+): (VoiceReviewSnapshotRequest["snapshot"] & { reviewId: string }) | null {
+  const latency = snapshot.latency;
+  const toolCalls = latency?.toolCalls;
+  if (!latency || !toolCalls?.some((sample) => sample.name === "clear_fields")) return null;
+  return {
+    ...snapshot,
+    latency: {
+      ...latency,
+      toolCalls: toolCalls.map((sample) =>
+        sample.name === "clear_fields" ? { ...sample, name: "clear_field" as const } : sample,
+      ),
+    },
+  };
 }
 
 export async function getAdminReviewDashboard(limit = 50) {

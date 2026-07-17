@@ -60,6 +60,7 @@ type Args = {
 };
 
 const JUDGE_CONCURRENCY = 4;
+const PROFILE_ENRICHMENT_CONCURRENCY = 8;
 
 function parseArgs(argv: string[]): Args {
   const args: Args = {
@@ -170,6 +171,51 @@ async function mapPool<T, R>(items: T[], concurrency: number, mapper: (item: T) 
   return results;
 }
 
+type RawVoiceSessionProfile = {
+  voice?: unknown;
+  speed?: unknown;
+  variant?: unknown;
+};
+
+/**
+ * The shared production Convex query predates voice-variant attribution, but
+ * its existing per-session query returns the complete stored record. Enrich
+ * only missing bulk rows through that read-only path so staging can prove its
+ * exact picker cell without deploying shared Convex functions first.
+ */
+async function enrichVoiceSessionProfiles(
+  convex: ConvexHttpClient,
+  ingestSecret: string,
+  sessions: VoiceEvalSession[],
+  silent: boolean,
+): Promise<VoiceEvalSession[]> {
+  return mapPool(sessions, PROFILE_ENRICHMENT_CONCURRENCY, async (session) => {
+    const needsProfile = session.voice == null || session.speed == null || typeof session.variant === "undefined";
+    if (!needsProfile) return session;
+
+    try {
+      const raw = (await convex.query(api.leads.voiceSessionByReviewId, {
+        ingestSecret,
+        reviewId: session.reviewId,
+      })) as RawVoiceSessionProfile | null;
+      if (!raw) return session;
+      return {
+        ...session,
+        voice: typeof raw.voice === "string" ? raw.voice : (session.voice ?? null),
+        speed: typeof raw.speed === "number" && Number.isFinite(raw.speed) ? raw.speed : (session.speed ?? null),
+        variant: typeof raw.variant === "string" || raw.variant === null ? raw.variant : (session.variant ?? null),
+      };
+    } catch (error) {
+      if (!silent) {
+        console.warn(
+          `  ! profile attribution unavailable for ${session.reviewId}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      return session;
+    }
+  });
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
 
@@ -187,8 +233,9 @@ async function main() {
     ingestSecret,
     limit: args.limit,
   })) as VoiceEvalSession[];
-  const rawSessions = fetchedSessions.filter((session) => !isSyntheticVoiceSession(session));
-  const syntheticRowsExcluded = fetchedSessions.length - rawSessions.length;
+  const customerRows = fetchedSessions.filter((session) => !isSyntheticVoiceSession(session));
+  const rawSessions = await enrichVoiceSessionProfiles(convex, ingestSecret, customerRows, args.aggregateOnly);
+  const syntheticRowsExcluded = fetchedSessions.length - customerRows.length;
   if (!args.aggregateOnly && syntheticRowsExcluded > 0) {
     console.log(`Excluded ${syntheticRowsExcluded} synthetic smoke row(s).`);
   }

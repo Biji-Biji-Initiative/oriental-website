@@ -498,4 +498,64 @@ describe("persistVoiceReviewSnapshot", () => {
     expect(retryArgs.snapshot).not.toHaveProperty("activationAttempted");
     expect(retryArgs.snapshot).toMatchObject({ reviewId: "review_1" });
   });
+
+  it("preserves telemetry through the deployed clear-all tool-label boundary", async () => {
+    mocks.mutation.mockResolvedValueOnce({ ok: true, id: "review_1" });
+
+    const clearAllSnapshot = {
+      ...snapshot,
+      voice: "marin",
+      speed: 1.22,
+      variant: "kl-polished",
+      latency: {
+        ...snapshot.latency,
+        toolCalls: [
+          {
+            sequence: 1,
+            name: "capture_field" as const,
+            outcome: "success" as const,
+            executionMs: 11,
+          },
+          {
+            sequence: 2,
+            name: "clear_fields" as const,
+            outcome: "success" as const,
+            executionMs: 7,
+            responseCreatedToCallMs: 13,
+            responseCreatedToResultMs: 20,
+          },
+        ],
+      },
+    };
+
+    await expect(persistVoiceReviewSnapshot(clearAllSnapshot)).resolves.toEqual({ ok: true, id: "review_1" });
+    expect(mocks.mutation).toHaveBeenCalledTimes(1);
+    const retryArgs = mocks.mutation.mock.calls[0]?.[1] as {
+      snapshot: typeof clearAllSnapshot;
+    };
+    expect(retryArgs.snapshot).toMatchObject({
+      reviewId: "review_1",
+      voice: "marin",
+      speed: 1.22,
+      variant: "kl-polished",
+      runtimeProfile: "instant-v1",
+      inputPolicy: "fast",
+      modelCell: "candidate",
+      reasoningCell: "minimal",
+      deviceProfile: "desktop",
+      deploymentEnvironment: "staging",
+      emailCaptureMode: "adaptive",
+      transport: clearAllSnapshot.transport,
+      latency: {
+        turns: clearAllSnapshot.latency.turns,
+        toolCalls: [
+          clearAllSnapshot.latency.toolCalls[0],
+          {
+            ...clearAllSnapshot.latency.toolCalls[1],
+            name: "clear_field",
+          },
+        ],
+      },
+    });
+  });
 });
