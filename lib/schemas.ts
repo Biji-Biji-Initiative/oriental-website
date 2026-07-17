@@ -2,7 +2,7 @@ import { z } from "zod";
 import {
   ADMIN_LEAD_OWNERS,
   ADMIN_LEAD_PRIORITIES,
-  ADMIN_LEAD_STATUSES,
+  ADMIN_WORKFLOW_LEAD_STATUSES,
   validateAdminLeadWorkflow,
 } from "@/lib/admin-workflow";
 import { SEGMENT_IDS } from "@/lib/segments";
@@ -73,7 +73,7 @@ export const adminLoginSchema = z.object({
 
 export const adminLeadWorkflowSchema = z
   .object({
-    status: z.enum(ADMIN_LEAD_STATUSES),
+    status: z.enum(ADMIN_WORKFLOW_LEAD_STATUSES),
     priority: z.enum(ADMIN_LEAD_PRIORITIES),
     owner: z.string().trim().max(80),
     note: z.string().trim().max(600).optional(),
@@ -115,6 +115,21 @@ export const adminLeadBulkAssignmentSchema = z
       });
     }
   });
+
+export const adminLeadArchiveSchema = z.object({
+  action: z.enum(["archive", "restore"]),
+  leads: z
+    .array(
+      z.object({
+        leadId: z.string().trim().min(1).max(160),
+        expectedRevision: z.number().int().nonnegative(),
+      }),
+    )
+    .min(1)
+    .max(50)
+    .refine((leads) => new Set(leads.map((lead) => lead.leadId)).size === leads.length, "Duplicate lead IDs"),
+  reason: z.string().trim().min(3).max(300),
+});
 
 export const adminVoiceFollowUpSchema = z.object({
   followedUp: z.boolean(),
@@ -302,4 +317,5 @@ export type NewsletterRequest = z.infer<typeof newsletterRequestSchema>;
 export type VoiceSessionRequest = z.infer<typeof voiceSessionRequestSchema>;
 export type AdminLeadWorkflowRequest = z.infer<typeof adminLeadWorkflowSchema>;
 export type AdminLeadBulkAssignmentRequest = z.infer<typeof adminLeadBulkAssignmentSchema>;
+export type AdminLeadArchiveRequest = z.infer<typeof adminLeadArchiveSchema>;
 export type VoiceReviewSnapshotRequest = z.infer<typeof voiceReviewSnapshotSchema>;

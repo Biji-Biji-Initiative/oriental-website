@@ -1,21 +1,21 @@
 import { randomUUID } from "node:crypto";
-import { adminLeadWorkflowSchema } from "@/lib/schemas";
+import { adminLeadArchiveSchema } from "@/lib/schemas";
 import { adminAuthFailureStatus, verifyAdminPermission } from "@/lib/server/admin-auth";
-import { updateAdminLeadWorkflow } from "@/lib/server/convex";
+import { archiveAdminLeads } from "@/lib/server/convex";
 import { logInfo, logWarn } from "@/lib/server/logger";
 import { noStoreJson } from "@/lib/server/security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function PATCH(request: Request, context: RouteContext<"/api/admin/leads/[leadId]">) {
-  const auth = verifyAdminPermission(request, "leads.update");
+export async function POST(request: Request) {
+  const auth = verifyAdminPermission(request, "leads.archive");
   if (!auth.ok) {
     return noStoreJson({ ok: false, error: auth.reason }, { status: adminAuthFailureStatus(auth) });
   }
 
   const raw = await request.json().catch(() => null);
-  const parsed = adminLeadWorkflowSchema.safeParse(raw);
+  const parsed = adminLeadArchiveSchema.safeParse(raw);
   if (!parsed.success) {
     return noStoreJson(
       {
@@ -29,14 +29,10 @@ export async function PATCH(request: Request, context: RouteContext<"/api/admin/
     );
   }
 
-  const { leadId } = await context.params;
   const requestId = normalizedRequestId(request.headers.get("x-request-id"));
-  const result = await updateAdminLeadWorkflow(decodeURIComponent(leadId), parsed.data, {
-    actor: auth.actor,
-    requestId,
-  }).catch((error) => {
-    logWarn("admin_lead.workflow_update_failed", { error: error instanceof Error ? error.message : "unknown" });
-    return { ok: false as const, reason: "convex_failed" };
+  const result = await archiveAdminLeads(parsed.data, { actor: auth.actor, requestId }).catch((error) => {
+    logWarn("admin_lead.archive_failed", { error: error instanceof Error ? error.message : "unknown" });
+    return { ok: false as const, reason: "convex_failed" as const };
   });
 
   if (!result.ok) {
@@ -45,32 +41,25 @@ export async function PATCH(request: Request, context: RouteContext<"/api/admin/
         ? 404
         : result.reason === "conflict"
           ? 409
-          : result.reason === "invalid_workflow" || result.reason === "archive_boundary"
+          : result.reason === "invalid_state"
             ? 400
             : 503;
     return noStoreJson(
       {
         ok: false,
         error: result.reason,
-        ...(result.reason === "conflict" && "currentRevision" in result
-          ? { currentRevision: result.currentRevision }
-          : {}),
+        ...(result.reason !== "convex_failed" && "leadIds" in result ? { leadIds: result.leadIds } : {}),
       },
       { status },
     );
   }
 
-  logInfo("admin_lead.workflow_updated", {
-    leadId: decodeURIComponent(leadId),
-    status: parsed.data.status,
-    priority: parsed.data.priority,
-    ownerAssigned: parsed.data.owner.trim().length > 0,
-    noteAdded: Boolean(parsed.data.note?.trim()),
+  logInfo(`admin_lead.${parsed.data.action}d`, {
+    actor: auth.actor,
+    count: result.count,
     requestId,
-    revision: result.revision,
   });
-
-  return noStoreJson({ ok: true, changed: result.changed, revision: result.revision });
+  return noStoreJson({ ok: true, action: parsed.data.action, count: result.count });
 }
 
 function normalizedRequestId(value: string | null) {

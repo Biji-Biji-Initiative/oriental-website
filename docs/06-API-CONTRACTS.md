@@ -424,8 +424,9 @@ Production errors:
 
 ### `POST /api/admin/login`
 
-Validates `ADMIN_REVIEW_TOKEN` and sets the signed `oriental_admin` HTTP-only
-cookie scoped to `/admin`.
+Validates `ADMIN_REVIEW_TOKEN` and sets the signed `oriental_admin` HTTP-only,
+SameSite=Lax cookie with `Path=/`, so the same session authenticates both the
+`/admin` UI and `/api/admin/*` routes. Production cookies also set `Secure`.
 
 ### `GET /api/admin/review`
 
@@ -441,23 +442,79 @@ Convex lead workflow fields and appends a `workflow_update` event to
 
 ```ts
 type AdminLeadWorkflowRequest = {
-  status: "new" | "reviewing" | "contacted" | "qualified" | "archived";
+  status: "new" | "reviewing" | "contacted" | "qualified";
   priority: "low" | "normal" | "high" | "urgent";
   owner?: string; // trim, max 80
   note?: string; // trim, max 600
+  nextActionAt: number | null;
+  nextActionNote?: string; // trim, max 500
+  outcomeReason?: string; // required for qualified
+  expectedRevision: number;
+  reason: string; // trim, 3-300; audit reason
 };
 
-type AdminLeadWorkflowResponse = { ok: true };
+type AdminLeadWorkflowResponse = {
+  ok: true;
+  changed: boolean;
+  revision: number;
+};
 ```
 
 Errors:
 
 | HTTP | `error` | Cause |
 |---|---|---|
-| 400 | `invalid_payload` | Zod validation failed. |
+| 400 | `invalid_payload` | Zod validation failed, including any request for `archived` status. |
+| 400 | `archive_boundary` | The canonical lead is archived; restore it through the archive endpoint before editing. |
 | 401 | `missing` / `invalid` | Missing or invalid admin bearer/cookie auth. |
+| 403 | `forbidden` | The authenticated admin role lacks update permission. |
 | 404 | `not_found` | No Convex lead matched the route `leadId`. |
+| 409 | `conflict` | The submitted workflow revision is stale; no fields were overwritten. |
 | 503 | `unconfigured` | `ADMIN_REVIEW_TOKEN` is missing. |
+| 503 | `convex_unconfigured` / `convex_failed` | Convex env is missing or the mutation failed. |
+
+### `POST /api/admin/leads/bulk`
+
+Applies one owner and dated next action to 1-50 active leads. The request carries
+the expected revision for every lead. Convex validates every target before
+writing; a missing, terminal, invalid, or stale target rejects the entire batch.
+
+### `POST /api/admin/leads/archive`
+
+Archives or restores 1-50 leads as one revision-checked Convex mutation.
+
+```ts
+type AdminLeadArchiveRequest = {
+  action: "archive" | "restore";
+  leads: Array<{ leadId: string; expectedRevision: number }>;
+  reason: string; // trim, 3-300
+};
+
+type AdminLeadArchiveResponse = {
+  ok: true;
+  action: "archive" | "restore";
+  count: number;
+};
+```
+
+Archive is a reversible workflow state, never a physical delete. Archive and
+restore transitions are exclusive to this endpoint: the ordinary workflow PATCH
+rejects both active-to-archived and archived-to-active changes. The canonical
+lead retains contact data, request, transcript, notification outcomes, ClickUp
+references, evaluations, and every prior event. Convex stores archive actor,
+timestamp, reason, and prior status. Restore returns to the recorded prior
+status (or the new inbox state for legacy archived rows), increments the
+workflow revision, retains archive provenance, and appends a restore event.
+
+Errors:
+
+| HTTP | `error` | Cause |
+|---|---|---|
+| 400 | `invalid_payload` / `invalid_state` | Invalid payload, duplicate IDs, or action does not match current state. |
+| 401 | `missing` / `invalid` | Missing or invalid admin bearer/cookie auth. |
+| 403 | `forbidden` | The authenticated admin role lacks archive permission. |
+| 404 | `not_found` | At least one target lead does not exist; none were changed. |
+| 409 | `conflict` | At least one revision is stale; none were changed. |
 | 503 | `convex_unconfigured` / `convex_failed` | Convex env is missing or the mutation failed. |
 
 ### `PATCH /api/admin/voice-sessions/[reviewId]`
