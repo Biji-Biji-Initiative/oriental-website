@@ -4,12 +4,14 @@ export const CONTROL_VOICE_CELL = {
   model: "gpt-realtime-2",
   reasoningCell: "low",
   emailCaptureMode: "adaptive",
+  variantPicker: false,
 } as const;
 
 export const STAGING_CANDIDATE_VOICE_CELL = {
   ...CONTROL_VOICE_CELL,
   modelCell: "candidate",
   model: "gpt-realtime-2.1",
+  variantPicker: true,
 } as const;
 
 export type GovernedVoiceCell = typeof CONTROL_VOICE_CELL | typeof STAGING_CANDIDATE_VOICE_CELL;
@@ -89,8 +91,9 @@ export function validateManagedVoiceCell(
   if (env.VOICE_EMAIL_CAPTURE_MODE !== expected.emailCaptureMode) {
     failures.push(`VOICE_EMAIL_CAPTURE_MODE must be ${expected.emailCaptureMode}`);
   }
-  if (env.VOICE_VARIANT_PICKER !== "false") {
-    failures.push("VOICE_VARIANT_PICKER must be explicitly false for a governed release");
+  const expectedPicker = String(expected.variantPicker);
+  if (env.VOICE_VARIANT_PICKER !== expectedPicker) {
+    failures.push(`VOICE_VARIANT_PICKER must be explicitly ${expectedPicker} for the ${expected.modelCell} cell`);
   }
   return failures;
 }
@@ -126,7 +129,9 @@ export function validateHealthPayload(
     if (voice.email_capture_mode !== expected.emailCaptureMode && !missingLegacyEmailCaptureMode) {
       failures.push(`health voice email_capture_mode must be ${expected.emailCaptureMode}`);
     }
-    if (voice.variant_picker !== false) failures.push("health voice variant_picker must be false");
+    if (voice.variant_picker !== expected.variantPicker) {
+      failures.push(`health voice variant_picker must be ${expected.variantPicker}`);
+    }
   }
   return failures;
 }

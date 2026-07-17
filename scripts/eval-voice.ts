@@ -8,6 +8,7 @@
  *   pnpm eval:voice -- --dry              # transport/latency/engagement signals only, no LLM
  *   pnpm eval:voice -- --aggregate-only   # query-only aggregate/gate JSON; no judge, mutation, or report
  *   pnpm eval:voice -- --min-quality 3.5 --max-dropped 0   # CI gate
+ *   pnpm eval:voice -- --max-style-tics 0                  # ban known verbal tics
  *
  * Quota failures are hard-gated at zero by default. Override only when
  * reviewing a known historical incident; exhausted billing is never capacity.
@@ -55,6 +56,7 @@ type Args = {
   maxQuota: number;
   maxAvailability?: number;
   maxCaptureFailures?: number;
+  maxStyleTics?: number;
 };
 
 const JUDGE_CONCURRENCY = 4;
@@ -105,6 +107,9 @@ function parseArgs(argv: string[]): Args {
       i += 1;
     } else if (flag === "--max-capture-failures") {
       args.maxCaptureFailures = Number(value);
+      i += 1;
+    } else if (flag === "--max-style-tics") {
+      args.maxStyleTics = Number(value);
       i += 1;
     }
   }
@@ -261,6 +266,7 @@ async function main() {
     maxQuotaFailures: args.maxQuota,
     maxAvailabilityFailures: args.maxAvailability,
     maxCaptureIntegrityFailures: args.maxCaptureFailures,
+    maxStyleTicOccurrences: args.maxStyleTics,
   };
   const thresholdGate = meetsThreshold(aggregate, thresholds);
   const gate = {
@@ -338,7 +344,12 @@ function printSummary(
   console.log(
     `capture integrity:     ${aggregate.captureIntegrity.totalFailures} failures across ` +
       `${aggregate.captureIntegrity.failedSessions} sessions ` +
-      `(rejected ${aggregate.captureIntegrity.rejectedCaptures}, unconfirmed email ${aggregate.captureIntegrity.unconfirmedEmailFailures})`,
+      `(rejected ${aggregate.captureIntegrity.rejectedCaptures}, rejected email ${aggregate.captureIntegrity.rejectedEmailCaptures}, ` +
+      `unconfirmed email ${aggregate.captureIntegrity.unconfirmedEmailFailures}, stale email submissions ${aggregate.captureIntegrity.staleEmailSubmissions})`,
+  );
+  console.log(
+    `conversation style:    ${aggregate.conversationStyle.bannedPhraseOccurrences} banned tic occurrences across ` +
+      `${aggregate.conversationStyle.failedSessions} sessions`,
   );
   console.log(`submit rate:         ${(aggregate.submitRate * 100).toFixed(0)}%`);
   console.log(

@@ -157,7 +157,7 @@ test("lead form prevents duplicate posts while submission is pending", async ({ 
   await page.getByLabel("Name").fill("Asha");
   await page.getByLabel("Email").fill("asha@example.com");
   await page.getByLabel("Organisation").fill("Future Lab");
-  await page.getByLabel("What would you bring to Oriental?").fill("We want to run AI literacy demos.");
+  await page.getByLabel("What would you build with Mereka?").fill("We want to run AI literacy demos.");
 
   await page.getByRole("button", { name: "Send complete handoff" }).first().dblclick();
   await expect.poll(() => leadRequests).toBe(1);
@@ -190,7 +190,7 @@ test("lead form submits the latest typed handoff values", async ({ page }) => {
   await page.getByLabel("Name").fill("Mei Ling");
   await page.getByLabel("Email").fill("mei@example.com");
   await page.getByLabel("Organisation").fill("Fresh Typed Org");
-  await page.getByLabel("What would you bring to Oriental?").fill("A last-moment typed brief for the handoff.");
+  await page.getByLabel("What would you build with Mereka?").fill("A last-moment typed brief for the handoff.");
   await page.getByRole("button", { name: "Send complete handoff" }).click();
 
   await expect(page.getByRole("heading", { name: /Sent to/i })).toBeVisible();
@@ -228,7 +228,7 @@ test("lead form surfaces a partial failure when the lead saves but notifications
   await page.getByLabel("Name").fill("Asha");
   await page.getByLabel("Email").fill("asha@example.com");
   await page.getByLabel("Organisation").fill("Future Lab");
-  await page.getByLabel("What would you bring to Oriental?").fill("We want to run AI literacy demos.");
+  await page.getByLabel("What would you build with Mereka?").fill("We want to run AI literacy demos.");
   await page.getByRole("button", { name: "Send complete handoff" }).click();
 
   await expect(page.getByText("Saved, but notifications need attention.")).toBeVisible();
@@ -251,6 +251,24 @@ test("voice variant picker appears, switches voice, and persists the selection",
       })),
     )
     .toMatchObject({ stored: "malay-warm", cookie: expect.stringContaining("oriental_voice_variant=malay-warm") });
+});
+
+test("expanded staging voice picker stays reachable in a short landscape viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.goto("/?voices=1");
+  await page.getByRole("button", { name: /Choose Reka voice/i }).click();
+
+  const picker = page.getByRole("region", { name: /Choose Reka voice/i });
+  await expect(picker).toBeVisible();
+  await expect(page.getByRole("button", { name: "Collapse voice picker" })).toBeInViewport({ ratio: 1 });
+  await expect
+    .poll(() =>
+      picker.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return rect.top >= 0 && rect.bottom <= window.innerHeight;
+      }),
+    )
+    .toBe(true);
 });
 
 test("page-load voice warmup does not mint a session before microphone permission", async ({ page }) => {

@@ -120,8 +120,9 @@ or logs.
 `pnpm release:verify:voice-cell` is the fast, non-secret parity check. Run it
 under `infisical run` with `--model-cell candidate` for native staging and
 `--model-cell control` for native production before the full release preflight.
-Both require baseline runtime, low reasoning, adaptive capture, the exact model
-for the selected cell, and an explicitly false picker.
+Both require baseline runtime, low reasoning, adaptive capture, and the exact
+model for the selected cell. Candidate staging requires the picker explicitly
+on; production control requires it explicitly off.
 
 Secret contract is enforced by `scripts/check-secrets.ts`.
 
@@ -153,8 +154,8 @@ Traefik network with `coolify.managed=false`, so it is host-managed rather than
 a full Coolify UI application until a dedicated Coolify staging app/API token
 is provisioned.
 The Infisical `staging` environment contains the complete application contract
-plus the explicit baseline/candidate/low/adaptive model-only preview,
-staging-Sentry, and QA-picker-off overrides. The host-managed staging container
+plus the explicit baseline/candidate/low/adaptive preview, staging-Sentry, and
+QA-picker-on override. The host-managed staging container
 still materializes those values
 through its host-local env file; Infisical is the canonical comparison source,
 not a runtime SDK dependency. Staging and production still share upstream
@@ -166,9 +167,17 @@ dedicated staging services are provisioned.
 The governed host deployer first converges the complete staging application
 scope from Infisical, then renders and atomically replaces staging's `.env`,
 rewriting the five non-secret voice-cell values to the explicitly selected
-control or candidate model cell with the picker off, alongside the exact SHA.
-Candidate is rejected for every production host path. The deployer recognizes
-both native `tailscale` and WSL's `tailscale.exe` without splitting paths.
+control or candidate model cell and the explicit clean or audition picker mode,
+alongside the exact SHA. Clean is the default and is required for evidence;
+audition is staging-only. Candidate and audition are rejected for every
+production host path. The deployer recognizes both native `tailscale` and WSL's
+`tailscale.exe` without splitting paths.
+
+Picker-enabled candidate sessions are voice auditions, not clean model-only
+evidence. Voice evals persist and group `variant`, `voice`, and `speed`, and the
+experiment validator rejects any row that changes both model and voice variant.
+Disable the picker and collect an isomorphic candidate cohort before considering
+automatic model promotion.
 
 Staging rollback/removal is host-local:
 

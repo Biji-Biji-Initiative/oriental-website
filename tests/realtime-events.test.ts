@@ -37,12 +37,50 @@ describe("reduceRealtimeServerEvent", () => {
     expect(example.captured.email).toBe("");
   });
 
-  it("never overwrites an email the visitor already edited", () => {
+  it("replaces an existing email when the visitor explicitly supplies a new one", () => {
     const result = appendTypedUserMessage(
-      state({ captured: { ...emptyCapturedLead, email: "correct@example.com" } }),
+      state({
+        captured: { ...emptyCapturedLead, email: "correct@example.com" },
+        emailVerification: { value: "correct@example.com", source: "prefill", status: "confirmed" },
+      }),
       "My email is other@example.com",
     );
-    expect(result.captured.email).toBe("correct@example.com");
+    expect(result.captured.email).toBe("other@example.com");
+    expect(result.emailVerification).toEqual({ value: "other@example.com", source: "typed", status: "confirmed" });
+  });
+
+  it("uses the final literal address in a same-turn correction", () => {
+    const result = appendTypedUserMessage(
+      state({ emailCaptureMode: "adaptive" }),
+      "My email is old@example.com; actually use new@example.com.",
+    );
+
+    expect(result.captured.email).toBe("new@example.com");
+    expect(result.emailVerification).toMatchObject({ status: "confirmed" });
+  });
+
+  it.each([
+    "Sorry, I meant new.",
+    "No, I said new.",
+  ])("invalidates a current email after a short contextual correction: %s", (correction) => {
+    let current = appendTypedUserMessage(state(), "My email is old@example.com.");
+    current = appendTypedUserMessage(current, correction);
+
+    expect(current.captured.email).toBe("");
+    expect(current.emailVerification).toBeUndefined();
+  });
+
+  it("keeps a current email when a short correction follows unrelated context", () => {
+    let current = appendTypedUserMessage(
+      state({
+        captured: { ...emptyCapturedLead, email: "old@example.com" },
+        emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+      }),
+      "The meeting is on Monday.",
+    );
+    current = appendTypedUserMessage(current, "Sorry, I meant Tuesday.");
+
+    expect(current.captured.email).toBe("old@example.com");
   });
 
   it("captures function call fields from response.done output items", () => {
@@ -147,7 +185,7 @@ describe("reduceRealtimeServerEvent", () => {
     expect(routed.commands).toEqual([{ type: "submit_voice", callId: "call_adaptive_route", segment: "technology" }]);
   });
 
-  it("keeps bounded ASR drift smooth but reports medium confidence", () => {
+  it("keeps bounded ASR drift editable and pending behind one exact read-back", () => {
     const result = reduceRealtimeServerEvent(
       {
         type: "response.done",
@@ -167,15 +205,59 @@ describe("reduceRealtimeServerEvent", () => {
           ],
         },
       },
-      state({ transcript: [{ role: "user", text: "My email is asia.lim@example.my." }] }),
+      state({ transcript: [{ role: "user", text: "My email is asia dot lim at example dot my." }] }),
     );
 
     expect(result.state.emailVerification).toMatchObject({
-      status: "confirmed",
+      status: "pending",
       source: "speech",
       confidence: "medium",
     });
-    expect(result.commands[0]).toMatchObject({ output: { emailConfirmationRequired: false } });
+    expect(result.commands[0]).toMatchObject({
+      output: {
+        emailConfirmationRequired: true,
+        emailReadback: "asha dot lim at example dot my",
+      },
+    });
+  });
+
+  it.each([
+    "sora.kim@gmail.com",
+    "saraxlim@gmail.com",
+    "sara_lim@gmail.com",
+    "sara-lim@gmail.com",
+    "sara+lim@gmail.com",
+    "sara.lim@gmajl.com",
+  ])("never auto-confirms an approximate spoken mailbox: %s", (modelEmail) => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: `call_spoken_substitution_${modelEmail}`,
+              arguments: JSON.stringify({
+                key: "email",
+                value: modelEmail,
+                evidence: "sara dot lim at gmail dot com",
+              }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "My email is sara dot lim at gmail dot com." }] }),
+    );
+
+    expect(result.state.emailVerification).toMatchObject({
+      value: modelEmail,
+      source: "speech",
+      status: "pending",
+      confidence: "medium",
+    });
+    expect(result.commands[0]).toMatchObject({ output: { emailConfirmationRequired: true } });
   });
 
   it("re-evaluates a corrected adaptive email and still blocks an invented replacement", () => {
@@ -280,6 +362,36 @@ describe("reduceRealtimeServerEvent", () => {
     );
   });
 
+  it("never applies approximate matching to a different literal address", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_literal_email_near_miss",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "sora.kim@gmail.com",
+                evidence: "sara.lim@gmail.com",
+              }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "My email is sara.lim@gmail.com." }] }),
+    );
+
+    expect(result.state.captured.email).toBe("");
+    expect(result.state.emailVerification).toBeUndefined();
+    expect(result.commands[0]).toMatchObject({
+      output: { ok: false, error: "ungrounded_identity_capture", key: "email" },
+    });
+  });
+
   it("keeps a native-audio email as a pending draft when ASR spelling drifts", () => {
     const result = reduceRealtimeServerEvent(
       {
@@ -299,7 +411,7 @@ describe("reduceRealtimeServerEvent", () => {
           ],
         },
       },
-      state({ transcript: [{ role: "user", text: "My email is asia.lim@example.my." }] }),
+      state({ transcript: [{ role: "user", text: "My email is asia dot lim at example dot my." }] }),
     );
 
     expect(result.state.captured.email).toBe("asha.lim@example.my");
@@ -460,6 +572,131 @@ describe("reduceRealtimeServerEvent", () => {
       confirmation.state,
     );
     expect(route.commands).toEqual([{ type: "submit_voice", callId: "call_route_confirmed", segment: "technology" }]);
+  });
+
+  it.each([
+    "I heard x sora dot kim at gmail dot com. Is that right?",
+    "I heard sora dot kim at gmail dot com x. Is that right?",
+  ])("rejects an email embedded inside a different read-back: %s", (readback) => {
+    const captured = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_capture_bounded_readback",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "sora.kim@gmail.com",
+                evidence: "sora dot kim at gmail dot com",
+              }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "sora dot kim at gmail dot com" }] }),
+    );
+    const withReadback = reduceRealtimeServerEvent(
+      { type: "response.output_audio_transcript.done", transcript: readback },
+      captured.state,
+    ).state;
+    const withConfirmation = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        transcript: "Yes, correct.",
+      },
+      withReadback,
+    ).state;
+    const confirmation = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "confirm_email",
+              call_id: "call_confirm_bounded_readback",
+              arguments: JSON.stringify({ evidence: "Yes, correct." }),
+            },
+          ],
+        },
+      },
+      withConfirmation,
+    );
+
+    expect(confirmation.state.emailVerification?.status).toBe("pending");
+    expect(confirmation.commands[0]).toMatchObject({
+      output: { ok: false, error: "email_readback_missing", key: "email" },
+    });
+  });
+
+  it.each([
+    "right",
+    "great",
+    "perfect",
+    "thanks",
+    "so",
+    "and",
+    "okay",
+    "ok",
+    "alright",
+    "confirm",
+  ])("does not strip a valid wrapped read-back local part named %s", (localPart) => {
+    const email = `${localPart}@example.com`;
+    const captured = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: `call_capture_${localPart}`,
+              arguments: JSON.stringify({
+                key: "email",
+                value: email,
+                evidence: `${localPart} at example dot com`,
+              }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: `${localPart} at example dot com` }] }),
+    );
+    const withReadback = reduceRealtimeServerEvent(
+      {
+        type: "response.output_audio_transcript.done",
+        transcript: `Okay, just to confirm your email is ${localPart} at example dot com. Is that exactly right?`,
+      },
+      captured.state,
+    ).state;
+    const withConfirmation = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        transcript: "Yes, correct.",
+      },
+      withReadback,
+    ).state;
+    const confirmation = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "confirm_email",
+              call_id: `call_confirm_${localPart}`,
+              arguments: JSON.stringify({ evidence: "Yes, correct." }),
+            },
+          ],
+        },
+      },
+      withConfirmation,
+    );
+
+    expect(confirmation.state.emailVerification).toMatchObject({ value: email, status: "confirmed" });
   });
 
   it("rejects strict confirmation when the same completed turn replaces the read-back email", () => {
@@ -721,9 +958,38 @@ describe("reduceRealtimeServerEvent", () => {
         fields: [{ key: "message", mode: "replace" }],
         rejectedFields: [{ index: 1 }],
         detail: { error: "ungrounded_identity_capture", key: "email" },
-        retry: expect.stringContaining("only the rejected fields"),
+        retry: expect.stringContaining("visible email field"),
       },
     });
+  });
+
+  it("records every rejected identity field and preserves email attribution in a partial batch", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_fields",
+              call_id: "call_multi_identity_reject",
+              arguments: JSON.stringify({
+                fields: [
+                  { key: "name", value: "Invented Name", evidence: "Invented Name" },
+                  { key: "email", value: "invented@example.com", evidence: "invented@example.com" },
+                ],
+              }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "We have a robotics project." }] }),
+    );
+
+    expect(result.state.errors).toEqual([
+      expect.objectContaining({ message: "capture_fields:ungrounded_identity_capture:name" }),
+      expect.objectContaining({ message: "capture_fields:ungrounded_identity_capture:email" }),
+    ]);
   });
 
   it("rejects duplicate keys instead of applying ambiguous batch order", () => {
@@ -1249,6 +1515,116 @@ describe("reduceRealtimeServerEvent", () => {
     );
 
     expect(result.state.captured.email).toBe("asha.lim+ai@example.com");
+  });
+
+  it("accepts ASR hyphen separators between individually spelled local-part letters", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_hyphen_spelling",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "gurpreet@example.com",
+                evidence: "g-u-r-p-r-e-e-t at example dot com",
+              }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "My email is G, g-u-r-p-r-e-e-t at example dot com." }] }),
+    );
+
+    expect(result.state.captured.email).toBe("gurpreet@example.com");
+    expect(result.state.emailVerification).toMatchObject({ status: "confirmed" });
+  });
+
+  it("preserves an explicitly spoken dash in an email", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_spoken_dash",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "g-p@example.com",
+                evidence: "g dash p at example dot com",
+              }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "My email is g dash p at example dot com." }] }),
+    );
+
+    expect(result.state.captured.email).toBe("g-p@example.com");
+  });
+
+  it("invalidates a stale confirmed prefill when a grounded replacement attempt is rejected", () => {
+    const rejected = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_bad_replacement_evidence",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "new@example.com",
+                evidence: "new at wrong dot invalid",
+              }),
+            },
+          ],
+        },
+      },
+      state({
+        captured: { ...emptyCapturedLead, email: "old@example.com" },
+        emailVerification: { value: "old@example.com", source: "prefill", status: "confirmed" },
+        transcript: [{ role: "user", text: "Actually, use new at example dot com for my email." }],
+      }),
+    );
+
+    expect(rejected.state.captured.email).toBe("");
+    expect(rejected.state.emailVerification).toBeUndefined();
+    expect(rejected.commands[0]).toMatchObject({
+      output: {
+        ok: false,
+        previousEmailInvalidated: true,
+        nextAction: expect.stringContaining("visible email field"),
+      },
+    });
+
+    const route = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "route_to_team",
+              call_id: "call_route_after_rejected_replacement",
+              arguments: JSON.stringify({ segment: "technology" }),
+            },
+          ],
+        },
+      },
+      rejected.state,
+    );
+    expect(route.state.routeRequested).toBeFalsy();
+    expect(route.commands[0]).toMatchObject({ output: { ok: false, error: "missing_required_fields" } });
   });
 
   it("keeps a grounded email valid across a trailing unrelated microphone transcription", () => {
@@ -3123,6 +3499,247 @@ describe("reduceRealtimeServerEvent", () => {
     });
   });
 
+  it("clears every field and email verification in one deterministic call", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "clear_fields",
+              call_id: "call_clear_all",
+              arguments: JSON.stringify({ scope: "all" }),
+            },
+          ],
+        },
+      },
+      state({
+        captured: {
+          name: "Asha",
+          email: "asha@example.com",
+          org: "Future Lab",
+          phone: "123",
+          website: "example.com",
+          message: "AI workshops",
+        },
+        emailVerification: { value: "asha@example.com", source: "typed", status: "confirmed" },
+        routeRequested: true,
+      }),
+    );
+
+    expect(result.state.captured).toEqual(emptyCapturedLead);
+    expect(result.state.emailVerification).toBeUndefined();
+    expect(result.state.routeRequested).toBe(false);
+    expect(result.commands[0]).toMatchObject({
+      output: {
+        ok: true,
+        cleared: true,
+        clearedFields: ["name", "email", "org", "phone", "website", "message"],
+      },
+    });
+  });
+
+  it("ignores a transcription that was already pending when clear-all ran", () => {
+    const cleared = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "clear_fields",
+              call_id: "call_clear_pending",
+              arguments: JSON.stringify({ scope: "all" }),
+            },
+          ],
+        },
+      },
+      state({
+        captured: { ...emptyCapturedLead, email: "old@example.com" },
+        emailVerification: { value: "old@example.com", source: "speech", status: "confirmed" },
+        pendingUserTranscripts: 1,
+        pendingUserTranscriptIds: ["old-item"],
+      }),
+    );
+
+    const late = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "old-item",
+        transcript: "My email is old@example.com.",
+      },
+      cleared.state,
+    );
+
+    expect(late.state.captured.email).toBe("");
+    expect(late.state.emailVerification).toBeUndefined();
+    expect(late.state.transcript).toEqual([]);
+    expect(late.state.ignoredUserTranscriptIds).toEqual(["old-item"]);
+  });
+
+  it("keeps clear-all safe when new and old transcriptions complete out of order", () => {
+    const oldCommitted = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.committed", item_id: "old-item" },
+      state({ captured: { ...emptyCapturedLead, email: "old@example.com" } }),
+    );
+    const cleared = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "clear_fields",
+              call_id: "call_clear_out_of_order",
+              arguments: JSON.stringify({ scope: "all" }),
+            },
+          ],
+        },
+      },
+      oldCommitted.state,
+    );
+    const newCommitted = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.committed", item_id: "new-item" },
+      cleared.state,
+    );
+    const newCompleted = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "new-item",
+        transcript: "My email is new@example.com.",
+      },
+      newCommitted.state,
+    );
+    const oldCompleted = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "old-item",
+        transcript: "My email is old@example.com.",
+      },
+      newCompleted.state,
+    );
+
+    expect(oldCompleted.state.captured.email).toBe("new@example.com");
+    expect(oldCompleted.state.transcript).toEqual([{ role: "user", text: "My email is new@example.com." }]);
+    expect(oldCompleted.state.pendingUserTranscriptIds).toEqual([]);
+    expect(oldCompleted.state.ignoredUserTranscriptIds).toEqual(["old-item"]);
+  });
+
+  it("keeps duplicate, unknown, reused, and untagged events fenced after clear-all", () => {
+    const oldCommitted = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.committed", item_id: "old-item" },
+      state({ captured: { ...emptyCapturedLead, email: "old@example.com" } }),
+    );
+    const cleared = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "clear_fields",
+              call_id: "call_clear_protocol_edges",
+              arguments: JSON.stringify({ scope: "all" }),
+            },
+          ],
+        },
+      },
+      oldCommitted.state,
+    ).state;
+
+    const oldOnce = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "old-item",
+        transcript: "My email is old@example.com.",
+      },
+      cleared,
+    ).state;
+    const oldTwice = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "old-item",
+        transcript: "My email is old@example.com.",
+      },
+      oldOnce,
+    ).state;
+    const unknown = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "unknown-item",
+        transcript: "My email is unknown@example.com.",
+      },
+      oldTwice,
+    ).state;
+    const reusedCommit = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.committed", item_id: "old-item" },
+      unknown,
+    ).state;
+    const reusedCompletion = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "old-item",
+        transcript: "My email is reused@example.com.",
+      },
+      reusedCommit,
+    ).state;
+    const untaggedCommit = reduceRealtimeServerEvent({ type: "input_audio_buffer.committed" }, reusedCompletion).state;
+    const untaggedCompletion = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        transcript: "My email is legacy@example.com.",
+      },
+      untaggedCommit,
+    ).state;
+
+    expect(untaggedCompletion.captured.email).toBe("");
+    expect(untaggedCompletion.transcript).toEqual([]);
+    expect(untaggedCompletion.pendingUserTranscripts).toBe(0);
+    expect(untaggedCompletion.pendingUserTranscriptIds).toEqual([]);
+    expect(untaggedCompletion.ignoredUserTranscriptIds).toEqual(["old-item"]);
+  });
+
+  it("deduplicates a newly committed tagged transcript after clear-all", () => {
+    const cleared = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "clear_fields",
+              call_id: "call_clear_duplicate_commit",
+              arguments: JSON.stringify({ scope: "all" }),
+            },
+          ],
+        },
+      },
+      state(),
+    ).state;
+    const firstCommit = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.committed", item_id: "new-item" },
+      cleared,
+    ).state;
+    const duplicateCommit = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.committed", item_id: "new-item" },
+      firstCommit,
+    ).state;
+    const completed = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "new-item",
+        transcript: "My email is new@example.com.",
+      },
+      duplicateCommit,
+    ).state;
+
+    expect(duplicateCommit.pendingUserTranscripts).toBe(1);
+    expect(duplicateCommit.pendingUserTranscriptIds).toEqual(["new-item"]);
+    expect(completed.captured.email).toBe("new@example.com");
+    expect(completed.pendingUserTranscripts).toBe(0);
+  });
+
   it("accepts evidence-consistent identity capture while a user transcription is still pending", () => {
     const committed = reduceRealtimeServerEvent({ type: "input_audio_buffer.committed" }, state());
     const result = reduceRealtimeServerEvent(
@@ -3278,11 +3895,11 @@ describe("reduceRealtimeServerEvent", () => {
 
     expect(result.state.captured.email).toBe("new@example.com");
     expect(result.state.emailVerification).toMatchObject({
-      status: "confirmed",
+      status: "pending",
       source: "speech",
       confidence: "medium",
     });
-    expect(result.commands[0]).toMatchObject({ output: { ok: true, emailConfirmationRequired: false } });
+    expect(result.commands[0]).toMatchObject({ output: { ok: true, emailConfirmationRequired: true } });
   });
 
   it("reconciles the same ASR-drifted email whether transcription completes before or after capture", () => {
@@ -3316,7 +3933,7 @@ describe("reduceRealtimeServerEvent", () => {
       value: "asha.lim@example.my",
       userTurnCount: 0,
     });
-    expect(captured.state.emailVerification).toMatchObject({ status: "confirmed", confidence: "medium" });
+    expect(captured.state.emailVerification).toMatchObject({ status: "pending", confidence: "medium" });
 
     const transcribed = reduceRealtimeServerEvent(
       {
@@ -3327,7 +3944,7 @@ describe("reduceRealtimeServerEvent", () => {
       captured.state,
     );
     expect(transcribed.state.emailGroundingAwaitingTranscript).toBeUndefined();
-    expect(transcribed.state.emailVerification).toMatchObject({ status: "confirmed", confidence: "medium" });
+    expect(transcribed.state.emailVerification).toMatchObject({ status: "pending", confidence: "medium" });
 
     const routed = reduceRealtimeServerEvent(
       {
@@ -3346,9 +3963,10 @@ describe("reduceRealtimeServerEvent", () => {
       },
       transcribed.state,
     );
-    expect(routed.commands).toEqual([
-      { type: "submit_voice", callId: "call_route_after_pending_asr_drift", segment: "technology" },
-    ]);
+    expect(routed.commands[0]).toMatchObject({
+      type: "function_result",
+      output: { ok: false, error: "unconfirmed_required_fields", unconfirmedFields: ["email"] },
+    });
   });
 
   it("matches pending email grounding to its transcription item when another transcript completes first", () => {
@@ -3393,7 +4011,7 @@ describe("reduceRealtimeServerEvent", () => {
       captured.state,
     );
     expect(unrelated.state.emailGroundingAwaitingTranscript).toMatchObject({ itemId: "audio_email" });
-    expect(unrelated.state.emailVerification).toMatchObject({ status: "confirmed", confidence: "medium" });
+    expect(unrelated.state.emailVerification).toMatchObject({ status: "pending", confidence: "medium" });
 
     const transcribed = reduceRealtimeServerEvent(
       {
@@ -3406,7 +4024,7 @@ describe("reduceRealtimeServerEvent", () => {
     );
     expect(transcribed.state.emailGroundingAwaitingTranscript).toBeUndefined();
     expect(transcribed.state.emailVerificationUserTurnSequence).toBe(2);
-    expect(transcribed.state.emailVerification).toMatchObject({ status: "confirmed", confidence: "medium" });
+    expect(transcribed.state.emailVerification).toMatchObject({ status: "pending", confidence: "medium" });
 
     const routed = reduceRealtimeServerEvent(
       {
@@ -3425,9 +4043,10 @@ describe("reduceRealtimeServerEvent", () => {
       },
       transcribed.state,
     );
-    expect(routed.commands).toEqual([
-      { type: "submit_voice", callId: "call_route_after_multi_pending_asr_drift", segment: "technology" },
-    ]);
+    expect(routed.commands[0]).toMatchObject({
+      type: "function_result",
+      output: { ok: false, error: "unconfirmed_required_fields", unconfirmedFields: ["email"] },
+    });
   });
 
   it("binds capture to the response input when a later interruption is also pending", () => {
@@ -3476,7 +4095,7 @@ describe("reduceRealtimeServerEvent", () => {
       captured.state,
     );
     expect(emailTranscribed.state.emailGroundingAwaitingTranscript).toBeUndefined();
-    expect(emailTranscribed.state.emailVerification).toMatchObject({ status: "confirmed", confidence: "medium" });
+    expect(emailTranscribed.state.emailVerification).toMatchObject({ status: "pending", confidence: "medium" });
 
     const interruptionTranscribed = reduceRealtimeServerEvent(
       {
@@ -3504,9 +4123,10 @@ describe("reduceRealtimeServerEvent", () => {
       },
       interruptionTranscribed.state,
     );
-    expect(routed.commands).toEqual([
-      { type: "submit_voice", callId: "call_route_after_response_bound_asr_drift", segment: "technology" },
-    ]);
+    expect(routed.commands[0]).toMatchObject({
+      type: "function_result",
+      output: { ok: false, error: "unconfirmed_required_fields", unconfirmedFields: ["email"] },
+    });
   });
 
   it("never binds an older response to a correction committed after that response began", () => {
@@ -3562,7 +4182,13 @@ describe("reduceRealtimeServerEvent", () => {
       },
       oldResponseDone.state,
     );
-    expect(corrected.state.emailVerification).toBeUndefined();
+    expect(corrected.state.captured.email).toBe("asia.lim@example.my");
+    expect(corrected.state.emailVerification).toMatchObject({
+      value: "asia.lim@example.my",
+      source: "speech",
+      status: "confirmed",
+      confidence: "high",
+    });
 
     const routed = reduceRealtimeServerEvent(
       {
@@ -3581,11 +4207,10 @@ describe("reduceRealtimeServerEvent", () => {
       },
       corrected.state,
     );
-    expect(routed.state.routeRequested).toBeFalsy();
-    expect(routed.commands[0]).toMatchObject({
-      type: "function_result",
-      output: { ok: false, error: "unconfirmed_required_fields", unconfirmedFields: ["email"] },
-    });
+    expect(routed.state.routeRequested).toBe(true);
+    expect(routed.commands).toEqual([
+      { type: "submit_voice", callId: "call_route_after_late_correction", segment: "technology" },
+    ]);
   });
 
   it("still rejects evidence-inconsistent capture while a transcription is pending", () => {

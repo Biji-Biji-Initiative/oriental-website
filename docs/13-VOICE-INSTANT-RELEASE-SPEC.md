@@ -130,13 +130,20 @@ dimension, and prove the exact staged commit before promotion.
   and MUST NOT overwrite an existing/corrected value.
 - `VOICE_EMAIL_CAPTURE_MODE=adaptive` MAY immediately confirm a speech email
   only when it passes syntax validation, the model's evidence canonicalizes to
-  the exact proposed address, and the latest visitor turn either matches it or
-  has an explicit email cue within the bounded ASR distance. Pending native
-  transcription may yield medium confidence only when no completed turn
-  contradicts the proposed value. Corrections MUST invalidate prior
-  verification before routing and re-evaluate from the latest turn; duplicate
-  email tool calls MUST pass the same grounding boundary. The address remains
-  visible and editable without a blanket confirmation turn.
+  the exact proposed address, and the complete literal or spoken evidence in the
+  latest visitor turn canonicalizes to that exact address. Such exact evidence
+  is high-confidence and immediately usable. Bounded ASR substitution MUST
+  apply only to a complete spoken-form candidate with an explicit email cue; it
+  MUST remain medium-confidence and pending until one exact readback receives
+  explicit affirmation. A differing literal email MUST never enter the
+  approximate path. Pending native transcription MAY yield medium confidence
+  only when no completed turn contradicts the proposed value, and MUST NOT
+  bypass that readback. Corrections and failed replacements MUST invalidate
+  prior verification before routing and re-evaluate from the latest turn;
+  duplicate email tool calls MUST pass the same grounding boundary. Clear-all
+  MUST clear remembered handoff state and fence every pre-clear ASR completion
+  by Realtime item identity. The address remains visible and editable; exact
+  high-confidence captures have no blanket confirmation turn.
 - `VOICE_EMAIL_CAPTURE_MODE=strict` MUST restore exact readback and grounded
   explicit confirmation. Unknown or missing values MUST resolve to `strict`.
   Typed edits and verified prefills MAY confirm their exact current value in

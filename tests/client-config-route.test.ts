@@ -16,8 +16,16 @@ describe("client config route", () => {
   it("enables the picker only for an explicit QA environment", async () => {
     vi.stubEnv("VOICE_VARIANT_PICKER", "true");
 
-    const response = await GET();
+    const response = await GET(new Request("https://staging.oriental.mereka.io/api/client-config"));
 
     await expect(response.json()).resolves.toMatchObject({ voiceVariantPicker: true });
+  });
+  it("fails closed when production accidentally carries the picker flag", async () => {
+    vi.stubEnv("VOICE_VARIANT_PICKER", "true");
+    vi.stubEnv("APP_ENV", "staging");
+
+    const response = await GET(new Request("https://oriental.mereka.io/api/client-config"));
+
+    await expect(response.json()).resolves.toMatchObject({ voiceVariantPicker: false });
   });
 });

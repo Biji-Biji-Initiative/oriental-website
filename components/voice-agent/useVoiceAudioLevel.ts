@@ -2,6 +2,7 @@
 
 import { type RefObject, useEffect, useRef } from "react";
 import { type AudioActivityState, detectAudioActivity } from "@/lib/voice/audio-activity";
+import { createAudioReactivityState, timeDomainRms, updateAudioReactivity } from "@/lib/voice/audio-reactivity";
 
 type StreamSource = () => MediaStream | null;
 type ActivityCallbacks = {
@@ -50,19 +51,30 @@ function useStreamLevel(
       analyser.smoothingTimeConstant = 0.75;
       source.connect(analyser);
       const bins = new Uint8Array(analyser.frequencyBinCount);
+      const waveform = new Uint8Array(analyser.fftSize);
+      let visualEnvelope = createAudioReactivityState();
+      let previousSampleAt = performance.now();
       const tick = () => {
         if (cancelled) return;
         analyser.getByteFrequencyData(bins);
+        analyser.getByteTimeDomainData(waveform);
         let sum = 0;
         for (const value of bins) sum += value;
-        const level = Math.min(1, (sum / bins.length / 255) * 2.4);
+        const activityLevel = Math.min(1, (sum / bins.length / 255) * 2.4);
         const at = performance.now();
-        const detected = detectAudioActivity(activity, level, at);
+        visualEnvelope = updateAudioReactivity(
+          visualEnvelope,
+          activityLevel,
+          timeDomainRms(waveform),
+          (at - previousSampleAt) / 1_000,
+        );
+        previousSampleAt = at;
+        const detected = detectAudioActivity(activity, activityLevel, at);
         activity = detected.state;
-        callbacksRef.current.onLevel?.(level);
+        callbacksRef.current.onLevel?.(visualEnvelope.level);
         if (detected.transition === "started") callbacksRef.current.onActivityStart?.(at);
         if (detected.transition === "stopped") callbacksRef.current.onActivityStop?.(at);
-        if (!reduceMotion) target.style.setProperty(cssVar, level.toFixed(3));
+        if (!reduceMotion) target.style.setProperty(cssVar, visualEnvelope.level.toFixed(3));
         frame = requestAnimationFrame(tick);
       };
       tick();

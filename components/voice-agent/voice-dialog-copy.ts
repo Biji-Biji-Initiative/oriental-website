@@ -166,7 +166,7 @@ export const reconnectVoiceInstruction =
   "The visitor reconnected to voice and the earlier conversation context was just provided. Do not repeat the opening pitch and do not greet from scratch. Acknowledge in one short sentence that you are back, then continue exactly where the conversation left off.";
 
 const openingVoiceInstructionBase =
-  "Start the intake now as Reka, pronounced REH-ka. Say exactly one opening sentence: “Hi, I'm Reka. What would you like to build at Oriental?” Then listen. Keep later responses naturally Malaysian, never forced or caricatured. Do not add a pitch, second welcome, pronunciation explanation, tool explanation, privacy note, or form explanation.";
+  "Start the intake now as Reka, pronounced REH-ka. Say exactly one opening sentence: “Hi, I'm Reka from Mereka. What would you like to build with us at Oriental Building?” Then listen. Mereka is the organisation; Oriental Building is its future location. Keep later responses naturally Malaysian, never forced or caricatured. Do not add a pitch, second welcome, pronunciation explanation, tool explanation, privacy note, or form explanation.";
 
 export function openingVoiceInstruction(knownVisitor: boolean) {
   if (!knownVisitor) return openingVoiceInstructionBase;

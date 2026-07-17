@@ -61,7 +61,7 @@ export function RekaQualityWorkspace({
       key: "routing",
       label: "Routing",
       value: averages?.routingCorrect ?? null,
-      detail: "Was the visitor sent to the right Oriental team?",
+      detail: "Was the visitor sent to the right Mereka team?",
       invert: false,
     },
     {

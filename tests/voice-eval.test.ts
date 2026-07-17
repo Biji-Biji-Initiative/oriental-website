@@ -7,6 +7,7 @@ import {
   buildJudgeUserPrompt,
   buildSessionEval,
   deriveCaptureIntegritySignals,
+  deriveConversationStyleSignals,
   deriveEngagementSignals,
   deriveLatencySignals,
   deriveTransportSignals,
@@ -440,10 +441,62 @@ describe("deriveCaptureIntegritySignals", () => {
 
     expect(signals).toEqual({
       rejectedCaptures: 2,
+      rejectedEmailCaptures: 1,
       unconfirmedEmailFailures: 1,
+      staleEmailSubmissions: 0,
       totalFailures: 3,
       failed: true,
     });
+  });
+
+  it("flags a submitted stale prefill after a rejected literal email correction", () => {
+    const signals = deriveCaptureIntegritySignals(
+      session({
+        submittedAt: 100,
+        captured: { name: "", email: "old@example.com", org: "", message: "" },
+        transcript: [
+          { role: "user", text: "My email is old@example.com." },
+          { role: "user", text: "Actually, my email is new@example.com." },
+        ],
+        errors: [{ code: "voice_capture_rejected", message: "capture_fields:ungrounded_identity_capture:email" }],
+      }),
+    );
+
+    expect(signals).toMatchObject({
+      rejectedEmailCaptures: 1,
+      staleEmailSubmissions: 1,
+      totalFailures: 2,
+      failed: true,
+    });
+  });
+
+  it("does not call a successfully replaced submitted address stale", () => {
+    const signals = deriveCaptureIntegritySignals(
+      session({
+        submittedAt: 100,
+        captured: { name: "", email: "new@example.com", org: "", message: "" },
+        transcript: [{ role: "user", text: "Actually, my email is new@example.com." }],
+        errors: [{ code: "voice_capture_rejected", message: "capture_fields:ungrounded_identity_capture:email" }],
+      }),
+    );
+
+    expect(signals.staleEmailSubmissions).toBe(0);
+  });
+});
+
+describe("deriveConversationStyleSignals", () => {
+  it("counts the known tic only in assistant turns", () => {
+    const signals = deriveConversationStyleSignals(
+      session({
+        transcript: [
+          { role: "assistant", text: "Quick one: what is your email?" },
+          { role: "user", text: "Why do you keep saying quick one?" },
+          { role: "assistant", text: "QUICK   ONE — what is your organisation?" },
+        ],
+      }),
+    );
+
+    expect(signals).toEqual({ bannedPhraseOccurrences: 2, failed: true });
   });
 });
 
@@ -562,7 +615,9 @@ describe("aggregateEvals + meetsThreshold", () => {
     expect(aggregate.captureIntegrity).toEqual({
       failedSessions: 1,
       rejectedCaptures: 1,
+      rejectedEmailCaptures: 1,
       unconfirmedEmailFailures: 1,
+      staleEmailSubmissions: 0,
       totalFailures: 2,
     });
     expect(aggregate.worstSessions).toContainEqual({
@@ -572,6 +627,28 @@ describe("aggregateEvals + meetsThreshold", () => {
     expect(meetsThreshold(aggregate, { maxCaptureIntegrityFailures: 0 })).toEqual({
       ok: false,
       failures: ["captureIntegrityFailures 2 > 0"],
+    });
+  });
+
+  it("surfaces and gates banned conversation tics deterministically", () => {
+    const aggregate = aggregateEvals([
+      buildSessionEval(
+        session({
+          reviewId: "tic-failed",
+          transcript: [{ role: "assistant", text: "Quick one. Quick one." }],
+        }),
+        null,
+      ),
+    ]);
+
+    expect(aggregate.conversationStyle).toEqual({ failedSessions: 1, bannedPhraseOccurrences: 2 });
+    expect(aggregate.worstSessions).toContainEqual({
+      reviewId: "tic-failed",
+      reason: "2 banned style-tic occurrences",
+    });
+    expect(meetsThreshold(aggregate, { maxStyleTicOccurrences: 0 })).toEqual({
+      ok: false,
+      failures: ["styleTicOccurrences 2 > 0"],
     });
   });
 
@@ -613,7 +690,9 @@ describe("aggregateEvals + meetsThreshold", () => {
     });
     expect(aggregateEvalsByRuntimeProfile(evalsWithActivation)["instant-v1"]?.activation.tapToLiveP50Ms).toBe(480);
     expect(
-      aggregateEvalsByExperimentCell(evalsWithActivation)["instant-v1/candidate/low"]?.activation.tapToLiveP50Ms,
+      aggregateEvalsByExperimentCell(evalsWithActivation)[
+        "instant-v1/candidate/low/env-default/unknown-voice/unknown-speed"
+      ]?.activation.tapToLiveP50Ms,
     ).toBe(700);
   });
 
@@ -818,8 +897,8 @@ describe("aggregateEvals + meetsThreshold", () => {
         null,
       ),
     ]);
-    expect(grouped["baseline/control/low"]?.sessionCount).toBe(1);
-    expect(grouped["baseline/candidate/minimal"]?.submitRate).toBe(1);
+    expect(grouped["baseline/control/low/env-default/unknown-voice/unknown-speed"]?.sessionCount).toBe(1);
+    expect(grouped["baseline/candidate/minimal/env-default/unknown-voice/unknown-speed"]?.submitRate).toBe(1);
   });
 
   it("rejects evidence rows that confound multiple experiment dimensions", () => {
@@ -841,5 +920,22 @@ describe("aggregateEvals + meetsThreshold", () => {
     const validation = validateVoiceExperimentEvidence([valid, confounded]);
     expect(validation.ok).toBe(false);
     expect(validation.failures[0]).toContain("runtime, model, reasoning");
+  });
+
+  it("rejects candidate-model evidence that also changes the voice variant", () => {
+    const audition = buildSessionEval(
+      session({
+        reviewId: "candidate-audition",
+        modelCell: "candidate",
+        voice: "marin",
+        speed: 1.22,
+        variant: "kl-polished",
+      }),
+      null,
+    );
+
+    const validation = validateVoiceExperimentEvidence([audition]);
+    expect(validation.ok).toBe(false);
+    expect(validation.failures[0]).toContain("model, voice variant");
   });
 });

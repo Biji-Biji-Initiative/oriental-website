@@ -146,8 +146,8 @@ infisical run \
 
 Managed-environment validation is the default. This staging preview requires
 `baseline/candidate/low/adaptive` with `gpt-realtime-2.1`; production requires
-`baseline/control/low/adaptive` with `gpt-realtime-2`. Both require the QA
-picker off. `--allow-unmanaged` exists only
+`baseline/control/low/adaptive` with `gpt-realtime-2`. Candidate staging requires
+the QA picker on; production control requires it off. `--allow-unmanaged` exists only
 for testing the Git/static contract and MUST NOT be used as production release
 evidence. The fast parity command runs against both native Infisical
 environments before the full production-env preflight, preventing staging
@@ -181,7 +181,8 @@ include release docs before the first deployment.
      --path /deploy/oriental-website \
      -- scripts/deploy-coolify-host.sh --target staging \
        --expected-current-sha "$current_staging_sha" \
-       --voice-model-cell candidate "$sha"
+       --voice-model-cell candidate \
+       --voice-picker-mode clean "$sha"
    ```
 
    The script rechecks that SHA while holding the host deployment lock. If
@@ -192,8 +193,10 @@ include release docs before the first deployment.
    It then materializes the selected governed non-secret voice cell. Candidate
    is legal only for staging and resolves to
    `baseline/candidate/low/adaptive`; every production host path rejects it. The
-   picker is explicitly off. Native Linux and WSL's Windows Tailscale client are
-   selected automatically.
+   picker is explicitly off in clean mode. Native Linux and WSL's Windows
+   Tailscale client are selected automatically. `--voice-picker-mode audition`
+   is an approved staging-only listening surface; its variant-tagged sessions
+   are not valid candidate-model promotion evidence.
 
 3. Run the deterministic public verifier:
 

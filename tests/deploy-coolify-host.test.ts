@@ -40,7 +40,7 @@ describe("Coolify host deploy image cells", () => {
     expect(deployScript).toContain('"VOICE_MODEL_CELL": voice_model_cell');
     expect(deployScript).toContain('"VOICE_REASONING_CELL": "low"');
     expect(deployScript).toContain('"VOICE_EMAIL_CAPTURE_MODE": "adaptive"');
-    expect(deployScript).toContain('"VOICE_VARIANT_PICKER": "false"');
+    expect(deployScript).toContain('"VOICE_VARIANT_PICKER": "true" if voice_model_cell == "candidate" else "false"');
     expect(deployScript).toContain(`cp -p "$target_dir/.env" "$target_dir/.env.deploy-backup-\${timestamp}"`);
     expect(deployScript).toContain("os.replace(temporary, path)");
     expect(deployScript).not.toContain("compose.write_text");

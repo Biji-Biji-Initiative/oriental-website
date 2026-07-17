@@ -102,7 +102,10 @@ async function verifyTarget(
   const configResponse = await get(`${target.origin}/api/client-config`);
   if (!configResponse.ok) throw new Error(`${name} client config returned HTTP ${configResponse.status}`);
   const config = (await configResponse.json()) as { voiceVariantPicker?: unknown };
-  if (config.voiceVariantPicker !== false) throw new Error(`${name} voiceVariantPicker must be false`);
+  const expectedVariantPicker = expectedVoiceCell.variantPicker;
+  if (config.voiceVariantPicker !== expectedVariantPicker) {
+    throw new Error(`${name} voiceVariantPicker must be ${expectedVariantPicker}`);
+  }
 
   const canonicalResponse = await get(`${target.origin}/`, "manual");
   if (canonicalResponse.status !== 200)
@@ -129,7 +132,7 @@ async function verifyTarget(
     version: expectedSha,
     consecutiveHealthChecks: healthChecks.length,
     convex: true,
-    voiceVariantPicker: false,
+    voiceVariantPicker: expectedVariantPicker,
     voiceModel: expectedVoiceCell.model,
     voiceModelCell: expectedVoiceCell.modelCell,
     cloudflareEdgeHeaders: false,
