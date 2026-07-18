@@ -456,9 +456,10 @@ describe("release governance", () => {
     expect(stagingVoiceSmoke).toContain("waitForTerminalDebug(");
     expect(stagingVoiceSmoke).toContain('isDebugSnapshotWithReason(response, "manual")');
     expect(stagingVoiceSmoke).toContain("isTerminalAvailabilityReason(reason)");
-    expect(stagingVoiceSmoke).toContain("finalReviewBody?.persisted !== true");
+    expect(stagingVoiceSmoke).toContain("finalReviewBody.applied !== true");
     expect(stagingIntakeSmoke).toContain("timeout: 60_000");
-    expect(stagingIntakeSmoke).toContain("const terminalDebugPersisted = terminalBody?.persisted === true");
+    expect(stagingIntakeSmoke).toContain("const terminalDebugApplied =");
+    expect(stagingIntakeSmoke).toContain("terminalBody.applied === true");
     expect(voiceSessionRoute).toContain("verifyVoiceSmokeProof(");
     expect(voiceSessionRoute).toContain("{ synthetic: syntheticProbe }");
     expect(voiceDebugRoute).toContain("reviewClaims?.synthetic");

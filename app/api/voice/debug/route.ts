@@ -69,7 +69,31 @@ export async function POST(request: Request) {
   };
   logVoiceSessionHealth(parsed.data.review.id, parsed.data.snapshot);
   await reportVoiceAvailabilityFailure(parsed.data.review.id, parsed.data.snapshot);
-  const persistence = verified ? await persistVoiceReviewSnapshot(snapshot).catch(() => null) : null;
+  let persistence = verified ? await persistVoiceReviewSnapshot(snapshot).catch(() => null) : null;
+  // State-change effects can race: a terminal failure request may reach Convex
+  // after a later-numbered UI snapshot. Retry a small bounded sequence window
+  // so the durable row retains the availability reason the API acknowledged.
+  // Do not jump to a server-sized sequence: a recovered/retried call must still
+  // be able to post later telemetry naturally.
+  if (
+    verified &&
+    persistence?.ok === true &&
+    persistence.applied === false &&
+    isVoiceAvailabilityFailure(snapshot.closeReason)
+  ) {
+    const initialSequence = snapshot.snapshotSequence ?? 0;
+    for (let offset = 1; offset <= 4 && persistence.applied === false; offset += 1) {
+      persistence = await persistVoiceReviewSnapshot({
+        ...snapshot,
+        snapshotSequence: initialSequence + offset,
+      }).catch(() => null);
+      if (!persistence) break;
+    }
+    logInfo("voice_review.availability_sequence_retry", {
+      reviewId: parsed.data.review.id,
+      applied: persistence?.ok === true && persistence.applied !== false,
+    });
+  }
   // Evaluate the conversation the moment a call closes with real turns, so
   // scores exist before anyone opens the console. Targeted runs re-judge the
   // stitched conversation, keeping resumed/cut-off threads scored as a whole.
@@ -124,7 +148,11 @@ export async function POST(request: Request) {
     payload: { ...snapshot, review: { id: parsed.data.review.id } },
   });
   entries.splice(20);
-  return noStoreJson({ ok: true, persisted: persistence?.ok === true });
+  return noStoreJson({
+    ok: true,
+    persisted: persistence?.ok === true,
+    applied: persistence?.ok === true && persistence.applied !== false,
+  });
 }
 
 const loggedErrorCounts = new Map<string, number>();

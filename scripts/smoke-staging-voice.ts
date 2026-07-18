@@ -95,7 +95,7 @@ async function run() {
   const sessionProfileCaptures: Array<Promise<void>> = [];
   const debugStatuses: number[] = [];
   let attemptedLeadPosts = 0;
-  const terminalDebugSnapshots: Array<{ closeReason: string; persisted: boolean }> = [];
+  const terminalDebugSnapshots: Array<{ applied: boolean; closeReason: string; persisted: boolean }> = [];
   const terminalDebugCaptures: Array<Promise<void>> = [];
   const failedResponses: Array<{
     host: string;
@@ -266,8 +266,13 @@ async function run() {
     await page.getByRole("button", { name: "End voice" }).click();
     await waitForTurn(page, "idle", undefined, 20_000);
     const finalReviewResponse = await finalReviewPersisted;
-    const finalReviewBody = (await finalReviewResponse.json().catch(() => null)) as { persisted?: unknown } | null;
-    if (finalReviewBody?.persisted !== true) throw new Error("Final voice review snapshot was not persisted");
+    const finalReviewBody = (await finalReviewResponse.json().catch(() => null)) as {
+      applied?: unknown;
+      persisted?: unknown;
+    } | null;
+    if (finalReviewBody?.persisted !== true || finalReviewBody.applied !== true) {
+      throw new Error("Final voice review snapshot was not durably applied");
+    }
 
     const healthAfter = await context.request.get(`${targetOrigin}/api/health`);
     if (!healthAfter.ok()) throw new Error(`Staging health failed after smoke: ${healthAfter.status()}`);
@@ -335,7 +340,7 @@ async function run() {
     };
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } catch (error) {
-    const terminalDebugPersisted = await waitForTerminalDebug(terminalDebugSnapshots, terminalDebugCaptures, 5_000);
+    const terminalDebugApplied = await waitForTerminalDebug(terminalDebugSnapshots, terminalDebugCaptures, 5_000);
     await Promise.allSettled(responseDiagnostics);
     const orbState = await page
       ?.locator(".voice-orb")
@@ -348,7 +353,7 @@ async function run() {
         sessionMintStatuses,
         debugStatuses,
         terminalDebugSnapshots,
-        terminalDebugPersisted,
+        terminalDebugApplied,
         attemptedLeadPosts,
         pageErrors: pageErrors.length,
         consoleErrors: consoleErrors.length,
@@ -489,7 +494,7 @@ function recordApiStatus(
   response: Response,
   sessionStatuses: number[],
   debugStatuses: number[],
-  terminalDebugSnapshots: Array<{ closeReason: string; persisted: boolean }>,
+  terminalDebugSnapshots: Array<{ applied: boolean; closeReason: string; persisted: boolean }>,
 ) {
   const pathname = new URL(response.url()).pathname;
   if (pathname === "/api/voice/session") sessionStatuses.push(response.status());
@@ -505,10 +510,11 @@ function recordApiStatus(
       .json()
       .then((body: unknown) => {
         const persisted = Boolean(body && typeof body === "object" && "persisted" in body && body.persisted === true);
-        terminalDebugSnapshots.push({ closeReason: reason, persisted });
+        const applied = Boolean(body && typeof body === "object" && "applied" in body && body.applied === true);
+        terminalDebugSnapshots.push({ applied, closeReason: reason, persisted });
       })
       .catch(() => {
-        terminalDebugSnapshots.push({ closeReason: reason, persisted: false });
+        terminalDebugSnapshots.push({ applied: false, closeReason: reason, persisted: false });
       });
   } catch {
     // Request diagnostics report schema failures separately; never retain body text here.
@@ -517,16 +523,16 @@ function recordApiStatus(
 }
 
 async function waitForTerminalDebug(
-  snapshots: Array<{ closeReason: string; persisted: boolean }>,
+  snapshots: Array<{ applied: boolean; closeReason: string; persisted: boolean }>,
   captures: Array<Promise<void>>,
   timeoutMs: number,
 ) {
   const startedAt = Date.now();
-  while (!snapshots.some((snapshot) => snapshot.persisted) && Date.now() - startedAt < timeoutMs) {
+  while (!snapshots.some((snapshot) => snapshot.persisted && snapshot.applied) && Date.now() - startedAt < timeoutMs) {
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   await Promise.allSettled(captures);
-  return snapshots.some((snapshot) => snapshot.persisted);
+  return snapshots.some((snapshot) => snapshot.persisted && snapshot.applied);
 }
 
 function isDebugSnapshotWithReason(response: Response, reason: string) {

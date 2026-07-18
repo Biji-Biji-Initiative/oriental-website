@@ -76,8 +76,11 @@ async function run() {
       await Promise.race([waitForListening(page, 45_000), upstreamFailure]);
     } catch (error) {
       const terminalResponse = await terminalDebugResponse;
-      const terminalBody = (await terminalResponse?.json().catch(() => null)) as { persisted?: unknown } | null;
-      const terminalDebugPersisted = terminalBody?.persisted === true;
+      const terminalBody = (await terminalResponse?.json().catch(() => null)) as {
+        applied?: unknown;
+        persisted?: unknown;
+      } | null;
+      const terminalDebugApplied = terminalBody?.persisted === true && terminalBody.applied === true;
       const orbState = await page
         .locator(".voice-orb")
         .evaluate((orb) => ({ status: (orb as HTMLElement).dataset.status, turn: (orb as HTMLElement).dataset.turn }))
@@ -88,7 +91,7 @@ async function run() {
           orbState,
           sessionMintStatuses,
           realtimeCallStatuses,
-          terminalDebugPersisted,
+          terminalDebugApplied,
         })}`,
       );
     }
