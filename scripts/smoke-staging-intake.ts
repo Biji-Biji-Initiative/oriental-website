@@ -1,9 +1,19 @@
 import { chromium } from "playwright";
+import { readEnv } from "../lib/env";
+import { voiceReviewSnapshotSchema } from "../lib/schemas";
+import { createVoiceSmokeProof, VOICE_SMOKE_PROOF_HEADER } from "../lib/server/voice-smoke-proof";
 
 const stagingOrigin = "https://staging.oriental.mereka.io";
 const expectedEmail = "qa.nebula@example.test";
 const pendingCopy = "Reka heard this address. Say yes after the exact read-back, or edit it here to confirm it.";
 const capturedCopy = "Captured from your voice · edit anytime.";
+const smokeSigningSecret = requireSmokeSigningSecret();
+
+function requireSmokeSigningSecret() {
+  const secret = readEnv("IP_HASH_SECRET");
+  if (!secret) throw new Error("IP_HASH_SECRET is required to identify the staging intake smoke securely");
+  return secret;
+}
 
 async function run() {
   const browser = await chromium.launch({
@@ -19,7 +29,7 @@ async function run() {
   const consoleErrors: string[] = [];
   const sessionMintStatuses: number[] = [];
   const realtimeCallStatuses: number[] = [];
-  let leadPosts = 0;
+  let attemptedLeadPosts = 0;
   let rejectUpstreamFailure: ((error: Error) => void) | undefined;
   const upstreamFailure = new Promise<never>((_, reject) => {
     rejectUpstreamFailure = reject;
@@ -29,12 +39,25 @@ async function run() {
     const context = await browser.newContext();
     await context.grantPermissions(["microphone"], { origin: stagingOrigin });
     const page = await context.newPage();
+    await page.route("**/api/voice/session", async (route) => {
+      const request = route.request();
+      if (new URL(request.url()).origin !== stagingOrigin) return route.continue();
+      await route.continue({
+        headers: {
+          ...request.headers(),
+          [VOICE_SMOKE_PROOF_HEADER]: createVoiceSmokeProof(smokeSigningSecret),
+        },
+      });
+    });
+    await page.route("**/api/leads", async (route) => {
+      const request = route.request();
+      if (request.method() !== "POST" || new URL(request.url()).origin !== stagingOrigin) return route.continue();
+      attemptedLeadPosts += 1;
+      await route.abort("blockedbyclient");
+    });
     page.on("pageerror", (error) => pageErrors.push(error.message));
     page.on("console", (message) => {
       if (message.type() === "error") consoleErrors.push(message.text());
-    });
-    page.on("request", (request) => {
-      if (request.method() === "POST" && new URL(request.url()).pathname === "/api/leads") leadPosts += 1;
     });
     page.on("response", (response) => {
       const url = new URL(response.url());
@@ -54,17 +77,28 @@ async function run() {
 
     await page.goto(stagingOrigin, { waitUntil: "load" });
     await page.locator('header button[aria-label="Talk to Mereka"]').click();
+    const terminalDebugResponse = page
+      .waitForResponse(isTerminalAvailabilitySnapshot, { timeout: 60_000 })
+      .catch(() => null);
     await page.getByRole("button", { name: "Start voice with Reka" }).click();
     try {
       await Promise.race([waitForListening(page, 45_000), upstreamFailure]);
     } catch (error) {
+      const terminalResponse = await terminalDebugResponse;
+      const terminalBody = (await terminalResponse?.json().catch(() => null)) as { persisted?: unknown } | null;
+      const terminalDebugPersisted = terminalBody?.persisted === true;
       const orbState = await page
         .locator(".voice-orb")
         .evaluate((orb) => ({ status: (orb as HTMLElement).dataset.status, turn: (orb as HTMLElement).dataset.turn }))
         .catch(() => null);
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(
-        `${message}; diagnostics=${JSON.stringify({ orbState, sessionMintStatuses, realtimeCallStatuses })}`,
+        `${message}; diagnostics=${JSON.stringify({
+          orbState,
+          sessionMintStatuses,
+          realtimeCallStatuses,
+          terminalDebugPersisted,
+        })}`,
       );
     }
 
@@ -94,7 +128,9 @@ async function run() {
     );
 
     if ((await page.getByLabel("Email").inputValue()) !== expectedEmail) throw new Error("Captured email changed");
-    if (leadPosts !== 0) throw new Error(`Probe unexpectedly submitted ${leadPosts} lead request(s)`);
+    if (attemptedLeadPosts !== 0) {
+      throw new Error(`Probe attempted ${attemptedLeadPosts} blocked lead request(s)`);
+    }
 
     await page.getByRole("button", { name: "End voice" }).click();
     await page.waitForFunction(
@@ -119,7 +155,7 @@ async function run() {
           adaptiveCaptureObserved: true,
           mandatoryConfirmationObserved: false,
           captureField,
-          leadPosts,
+          attemptedLeadPosts,
           sessionMintStatuses,
           realtimeCallStatuses,
           pageErrors: pageErrors.length,
@@ -131,6 +167,23 @@ async function run() {
     );
   } finally {
     await browser.close();
+  }
+}
+
+function isTerminalAvailabilitySnapshot(response: import("playwright").Response) {
+  if (new URL(response.url()).pathname !== "/api/voice/debug" || response.status() !== 200) return false;
+  const postData = response.request().postData();
+  if (!postData) return false;
+  try {
+    const parsed = voiceReviewSnapshotSchema.safeParse(JSON.parse(postData));
+    return Boolean(
+      parsed.success &&
+        (parsed.data.snapshot.closeReason === "realtime_quota_exhausted" ||
+          parsed.data.snapshot.closeReason === "realtime_busy" ||
+          parsed.data.snapshot.closeReason === "webrtc_failed"),
+    );
+  } catch {
+    return false;
   }
 }
 

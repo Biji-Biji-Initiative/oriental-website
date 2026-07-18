@@ -164,6 +164,13 @@ function parseArgs(argv: string[]): Args {
       }
       targetModelCell = value;
       i += 1;
+    } else if (flag === "--help") {
+      process.stdout.write(
+        "Usage: pnpm eval:voice -- [--limit 1..200] [--dry] [--aggregate-only] [--persist] [--out dir] [--min-quality n] [--min-routing n] [--max-frustration n] [--max-dropped n] [--max-quota n] [--max-availability n] [--max-capture-failures n] [--max-style-tics n] [--cohort-start iso --cohort-environment local|staging|production --target-model-cell control|candidate]\n",
+      );
+      process.exit(0);
+    } else {
+      throw new Error(`Unknown argument: ${flag}`);
     }
   }
   if (args.aggregateOnly && (args.persist || outWasExplicit)) {

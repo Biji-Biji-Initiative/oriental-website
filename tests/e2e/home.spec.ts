@@ -338,7 +338,21 @@ test("voice variant picker appears, switches voice, and persists the selection",
 test("expanded staging voice picker stays reachable in a short landscape viewport", async ({ page }) => {
   await page.setViewportSize({ width: 844, height: 390 });
   await page.goto("/?voices=1");
-  await page.getByRole("button", { name: /Choose Reka voice/i }).click();
+  const pickerTrigger = page.getByRole("button", { name: /Choose Reka voice/i });
+  const consent = page.getByRole("region", { name: "Analytics privacy choices" });
+  if (await consent.isVisible().catch(() => false)) {
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const picker = document.querySelector<HTMLElement>("[data-voice-global-picker]");
+          const prompt = document.querySelector<HTMLElement>('[aria-label="Analytics privacy choices"]');
+          if (!picker || !prompt) return null;
+          return Math.round(prompt.getBoundingClientRect().top - picker.getBoundingClientRect().bottom);
+        }),
+      )
+      .toBeGreaterThanOrEqual(12);
+  }
+  await pickerTrigger.click();
 
   const picker = page.getByRole("region", { name: /Choose Reka voice/i });
   await expect(picker).toBeVisible();
@@ -351,6 +365,18 @@ test("expanded staging voice picker stays reachable in a short landscape viewpor
       }),
     )
     .toBe(true);
+  if (await consent.isVisible().catch(() => false)) {
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const picker = document.querySelector<HTMLElement>("[data-voice-global-picker]");
+          const prompt = document.querySelector<HTMLElement>('[aria-label="Analytics privacy choices"]');
+          if (!picker || !prompt) return null;
+          return Math.round(prompt.getBoundingClientRect().top - picker.getBoundingClientRect().bottom);
+        }),
+      )
+      .toBeGreaterThanOrEqual(12);
+  }
 });
 
 test("page-load voice warmup does not mint a session before microphone permission", async ({ page }) => {
