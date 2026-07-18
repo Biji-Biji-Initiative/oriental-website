@@ -6,7 +6,8 @@ import { logInfo, logWarn } from "@/lib/server/logger";
 import { sendOpsAlert } from "@/lib/server/ops-alerts";
 import { checkRateLimit, noStoreJson, rateLimitResponseHeaders } from "@/lib/server/security";
 import { ADMIN_EVAL_RUN_LEASE_MS, runAdminVoiceEvals } from "@/lib/server/voice-evals";
-import { verifyVoiceReviewCredentials } from "@/lib/server/voice-review-token";
+import { readVoiceReviewCredentialClaims } from "@/lib/server/voice-review-token";
+import { VOICE_SMOKE_SYNTHETIC_EMAIL } from "@/lib/server/voice-smoke-proof";
 import { isVoiceAvailabilityFailure } from "@/lib/voice/realtime-call-failure";
 import { isBenignVoiceError } from "@/lib/voice/realtime-events";
 import { safeVoiceRuntimeErrorCode } from "@/lib/voice/runtime-error-code";
@@ -40,7 +41,8 @@ export async function POST(request: Request) {
     });
     return noStoreJson({ ok: false, error: "invalid_payload" }, { status: 400 });
   }
-  const verified = verifyVoiceReviewCredentials(parsed.data.review.id, parsed.data.review.token);
+  const reviewClaims = readVoiceReviewCredentialClaims(parsed.data.review.id, parsed.data.review.token);
+  const verified = reviewClaims !== null;
   if (!verified && isProductionEnv()) return noStoreJson({ ok: false, error: "unauthorized" }, { status: 401 });
   const snapshotLimit = await checkRateLimit(`voice-review:${parsed.data.review.id}`, 420, 60 * 60 * 1000);
   if (!snapshotLimit.ok) {
@@ -51,6 +53,14 @@ export async function POST(request: Request) {
   }
   const snapshot = {
     ...parsed.data.snapshot,
+    // Synthetic identity is a signed server claim minted only from a fresh
+    // staging smoke proof. Never trust a browser-supplied flag that could hide
+    // an ordinary visitor from customer-quality evaluation. The reserved,
+    // non-routable address fits the already-deployed Convex schema and keeps a
+    // quota failure identifiable even when audio never connects.
+    ...(reviewClaims?.synthetic
+      ? { captured: { ...parsed.data.snapshot.captured, email: VOICE_SMOKE_SYNTHETIC_EMAIL } }
+      : {}),
     // Provider/client prose is untrusted and can echo contact details. Keep a
     // bounded category for diagnostics without turning Convex or logs into a
     // second free-text store.

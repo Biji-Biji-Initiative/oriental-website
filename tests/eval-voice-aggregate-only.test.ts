@@ -1322,4 +1322,18 @@ describe("eval-voice aggregate-only mode", () => {
     });
     expect(await readdir(cwd)).toEqual([]);
   });
+
+  it("rejects unknown flags and documents the aggregate-only cohort contract", async () => {
+    const repositoryRoot = resolve(import.meta.dirname, "..");
+    const executable = resolve(repositoryRoot, "node_modules/.bin/tsx");
+    const script = resolve(repositoryRoot, "scripts/eval-voice.ts");
+    await expect(execFileAsync(executable, [script, "--aggregate-ony"])).rejects.toMatchObject({
+      code: 1,
+      stderr: expect.stringContaining("Unknown argument: --aggregate-ony"),
+    });
+
+    const help = await execFileAsync(executable, [script, "--help"]);
+    expect(help.stdout).toContain("--aggregate-only");
+    expect(help.stdout).toContain("--cohort-start iso");
+  });
 });

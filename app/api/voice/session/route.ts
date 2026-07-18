@@ -7,6 +7,7 @@ import { sendOpsAlert } from "@/lib/server/ops-alerts";
 import { checkRateLimit, hashIp, noStoreJson, rateLimitResponseHeaders, requestIp } from "@/lib/server/security";
 import { type ServerTimingMetrics, serializeServerTiming } from "@/lib/server/server-timing";
 import { createVoiceReviewCredentials } from "@/lib/server/voice-review-token";
+import { VOICE_SMOKE_PROOF_HEADER, verifyVoiceSmokeProof } from "@/lib/server/voice-smoke-proof";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,6 +32,13 @@ export async function POST(request: NextRequest) {
       timingStartedAt,
     );
   }
+
+  const deploymentEnvironment = detectDeploymentEnvironment(request.url);
+  const syntheticProbe = verifyVoiceSmokeProof(
+    request.headers.get(VOICE_SMOKE_PROOF_HEADER),
+    new URL(request.url).hostname,
+    readEnv("IP_HASH_SECRET"),
+  );
 
   // Page-load prewarming mints a short-lived session before a real call starts,
   // so the budget covers browsing behaviour, not only connected calls.
@@ -57,7 +65,6 @@ export async function POST(request: NextRequest) {
   let mintStartedAt: number | undefined;
   try {
     const deviceProfile = detectDeviceProfile(request.headers.get("user-agent"));
-    const deploymentEnvironment = detectDeploymentEnvironment(request.url);
     const variantId =
       deploymentEnvironment === "staging" && readEnv("VOICE_VARIANT_PICKER", "false") === "true"
         ? parsed.data.variant
@@ -71,7 +78,7 @@ export async function POST(request: NextRequest) {
       deploymentEnvironment,
     );
     timings.openai_mint = performance.now() - mintStartedAt;
-    const review = createVoiceReviewCredentials();
+    const review = createVoiceReviewCredentials(Date.now(), { synthetic: syntheticProbe });
     logInfo("voice_session.created", {
       requestId,
       ipHash,
@@ -89,6 +96,7 @@ export async function POST(request: NextRequest) {
       noiseReduction: secret.noise_reduction,
       deviceProfile,
       deploymentEnvironment,
+      syntheticProbe,
       reviewId: review.id,
       rateLimitStore: limit.store,
       remaining: limit.remaining,

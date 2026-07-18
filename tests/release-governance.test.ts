@@ -28,6 +28,12 @@ const releasePreflight = readFileSync("scripts/release-preflight.ts", "utf8");
 const releaseVerifier = readFileSync("scripts/release-verify.ts", "utf8");
 const productionDeployer = readFileSync("scripts/deploy-coolify-production.ts", "utf8");
 const stagingVoiceSmoke = readFileSync("scripts/smoke-staging-voice.ts", "utf8");
+const stagingIntakeSmoke = readFileSync("scripts/smoke-staging-intake.ts", "utf8");
+const leadsRoute = readFileSync("app/api/leads/route.ts", "utf8");
+const voiceSessionRoute = readFileSync("app/api/voice/session/route.ts", "utf8");
+const voiceDebugRoute = readFileSync("app/api/voice/debug/route.ts", "utf8");
+const voicePicker = readFileSync("components/voice-agent/VoiceVariantPicker.tsx", "utf8");
+const globalStyles = readFileSync("app/globals.css", "utf8");
 const releaseRunbook = readFileSync("docs/12-CHAT-RELEASE-RUNBOOK.md", "utf8");
 const analyticsOpsWorkflow = readFileSync(".github/workflows/analytics-ops.yml", "utf8");
 const packageScripts = JSON.parse(readFileSync("package.json", "utf8")) as { scripts: Record<string, string> };
@@ -436,6 +442,37 @@ describe("release governance", () => {
     expect(stagingVoiceSmoke).toContain("process.env.EXPECTED_REALTIME_MODEL ?? expectedVoiceCell.model");
     expect(stagingVoiceSmoke).not.toContain("?? health.voice.model");
     expect(stagingVoiceSmoke).not.toContain("?? health.voice.model_cell");
+  });
+
+  it("authenticates synthetic probes before connection and durably waits for terminal failures", () => {
+    for (const smoke of [stagingVoiceSmoke, stagingIntakeSmoke]) {
+      expect(smoke).toContain("createVoiceSmokeProof(smokeSigningSecret)");
+      expect(smoke).toContain("VOICE_SMOKE_PROOF_HEADER");
+      expect(smoke).toContain('page.route("**/api/leads"');
+      expect(smoke).toContain('route.abort("blockedbyclient")');
+      expect(smoke).toContain("attemptedLeadPosts");
+    }
+    expect(stagingVoiceSmoke).toContain("waitForTerminalDebug(");
+    expect(stagingVoiceSmoke).toContain('isDebugSnapshotWithReason(response, "manual")');
+    expect(stagingVoiceSmoke).toContain("isTerminalAvailabilityReason(reason)");
+    expect(stagingVoiceSmoke).toContain("finalReviewBody?.persisted !== true");
+    expect(stagingIntakeSmoke).toContain("timeout: 60_000");
+    expect(stagingIntakeSmoke).toContain("const terminalDebugPersisted = terminalBody?.persisted === true");
+    expect(voiceSessionRoute).toContain("verifyVoiceSmokeProof(");
+    expect(voiceSessionRoute).toContain("{ synthetic: syntheticProbe }");
+    expect(voiceDebugRoute).toContain("reviewClaims?.synthetic");
+    expect(voiceDebugRoute).toContain("VOICE_SMOKE_SYNTHETIC_EMAIL");
+    expect(leadsRoute).toContain("voiceReviewClaims?.synthetic");
+    expect(leadsRoute).toContain("synthetic_review_forbidden");
+  });
+
+  it("keeps the staging picker clear of an unresolved analytics consent panel", () => {
+    expect(voicePicker).toContain("useAnalyticsConsentClearance(enabled)");
+    expect(voicePicker).toContain("new ResizeObserver(measure)");
+    expect(voicePicker).toContain('[aria-label="Analytics privacy choices"]');
+    expect(voicePicker).toContain("voice-variant-picker--panel");
+    expect(globalStyles).toContain("bottom: calc(1.25rem + var(--voice-picker-consent-clearance, 0px))");
+    expect(globalStyles).toContain("100svh - 6.25rem - var(--voice-picker-consent-clearance, 0px)");
   });
 
   it("requires exact-SHA healthy Convex responses", () => {

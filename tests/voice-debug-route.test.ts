@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { POST } from "@/app/api/voice/debug/route";
 import { resetRateLimitBucketsForTest } from "@/lib/server/rate-limit";
 import { createVoiceReviewCredentials } from "@/lib/server/voice-review-token";
+import { VOICE_SMOKE_SYNTHETIC_EMAIL } from "@/lib/server/voice-smoke-proof";
 
 const mocks = vi.hoisted(() => ({
   persistVoiceReviewSnapshot: vi.fn(),
@@ -156,6 +157,26 @@ describe("POST /api/voice/debug", () => {
         reviewId: expect.any(String),
         variant: "kl-polished",
         latency: expect.objectContaining({ version: 1 }),
+      }),
+    );
+  });
+
+  it("persists the server-authenticated smoke marker on a pre-audio terminal snapshot", async () => {
+    const syntheticReview = createVoiceReviewCredentials(Date.now(), { synthetic: true });
+    const response = await POST(
+      snapshotRequest(syntheticReview, {
+        connectionStatus: "connecting",
+        closeReason: "realtime_quota_exhausted",
+        transcript: [],
+        captured: { name: "", email: "", org: "", phone: "", website: "", message: "" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.persistVoiceReviewSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        captured: expect.objectContaining({ email: VOICE_SMOKE_SYNTHETIC_EMAIL }),
+        closeReason: "realtime_quota_exhausted",
       }),
     );
   });

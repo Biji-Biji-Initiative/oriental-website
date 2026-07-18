@@ -14,7 +14,7 @@ import {
   requestIp,
   verifyTurnstile,
 } from "@/lib/server/security";
-import { verifyVoiceReviewCredentials } from "@/lib/server/voice-review-token";
+import { readVoiceReviewCredentialClaims, type VoiceReviewCredentialClaims } from "@/lib/server/voice-review-token";
 import { createVoiceSubmissionEvidence } from "@/lib/server/voice-submission-evidence";
 import { publicLeadUtm, VOICE_SUBMISSION_EVIDENCE_UTM_KEY } from "@/lib/voice/submission-evidence";
 
@@ -48,7 +48,8 @@ export async function POST(request: NextRequest) {
     return noStoreJson({ ok: false, error: "invalid_payload", details: parsed.error.flatten() }, { status: 400 });
   }
 
-  const signedVoiceReview = voiceLeadHasSignedReview(parsed.data);
+  const voiceReviewClaims = voiceLeadReviewClaims(parsed.data);
+  const signedVoiceReview = voiceReviewClaims !== null;
   if (parsed.data.source === "voice" && !signedVoiceReview) {
     logWarn("lead.voice_review_invalid", {
       requestId,
@@ -57,6 +58,18 @@ export async function POST(request: NextRequest) {
       durationMs: durationSince(startedAt),
     });
     return noStoreJson({ ok: false, error: "voice_review_invalid" }, { status: 403 });
+  }
+  // A smoke capability can persist review telemetry but can never cross the
+  // lead boundary. This keeps shared staging data and notifications safe even
+  // if a synthetic Realtime turn unexpectedly invokes route_to_team.
+  if (voiceReviewClaims?.synthetic) {
+    logWarn("lead.synthetic_review_forbidden", {
+      requestId,
+      ipHash,
+      reviewId: parsed.data.voiceReviewId ?? null,
+      durationMs: durationSince(startedAt),
+    });
+    return noStoreJson({ ok: false, error: "synthetic_review_forbidden" }, { status: 403 });
   }
 
   const turnstileOk = signedVoiceReview || (await verifyTurnstile(parsed.data.turnstileToken, ip));
@@ -310,13 +323,9 @@ export async function POST(request: NextRequest) {
   });
 }
 
-function voiceLeadHasSignedReview(data: LeadRequest) {
-  return (
-    data.source === "voice" &&
-    Boolean(data.voiceReviewId) &&
-    Boolean(data.voiceReviewToken) &&
-    verifyVoiceReviewCredentials(data.voiceReviewId ?? "", data.voiceReviewToken ?? "")
-  );
+function voiceLeadReviewClaims(data: LeadRequest): VoiceReviewCredentialClaims | null {
+  if (data.source !== "voice" || !data.voiceReviewId || !data.voiceReviewToken) return null;
+  return readVoiceReviewCredentialClaims(data.voiceReviewId, data.voiceReviewToken);
 }
 
 function stripLeadVerification(data: LeadRequest) {

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { POST } from "@/app/api/leads/route";
+import { resetRateLimitBucketsForTest } from "@/lib/server/rate-limit";
 import { createVoiceReviewCredentials } from "@/lib/server/voice-review-token";
 import { verifyVoiceSubmissionEvidence } from "@/lib/server/voice-submission-evidence";
 import { VOICE_SUBMISSION_EVIDENCE_UTM_KEY } from "@/lib/voice/submission-evidence";
@@ -81,6 +82,7 @@ function request(overrides: Record<string, unknown> = {}, ip = "127.0.0.1") {
 
 describe("POST /api/leads", () => {
   beforeEach(() => {
+    resetRateLimitBucketsForTest();
     process.env = {
       ...originalEnv,
       NODE_ENV: "test",
@@ -408,6 +410,19 @@ describe("POST /api/leads", () => {
     expect(response.status).toBe(403);
     expect(body).toMatchObject({ ok: false, error: "voice_review_invalid" });
     expect(mocks.persistLead).not.toHaveBeenCalled();
+  });
+
+  it("rejects a signed synthetic review before persistence or notifications", async () => {
+    const review = createVoiceReviewCredentials(Date.now(), { synthetic: true });
+    const response = await POST(request({ voiceReviewId: review.id, voiceReviewToken: review.token }));
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({ ok: false, error: "synthetic_review_forbidden" });
+    expect(mocks.persistLead).not.toHaveBeenCalled();
+    expect(mocks.notifyOwner).not.toHaveBeenCalled();
+    expect(mocks.notifySlack).not.toHaveBeenCalled();
+    expect(mocks.notifyClickUp).not.toHaveBeenCalled();
+    expect(mocks.notifySubmitter).not.toHaveBeenCalled();
   });
 
   it("still requires Turnstile for form leads when enforcement is required", async () => {

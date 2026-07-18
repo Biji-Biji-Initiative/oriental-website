@@ -1,5 +1,11 @@
 import { chromium, type Page, type Response } from "playwright";
+import { readEnv } from "../lib/env";
 import { voiceReviewSnapshotSchema } from "../lib/schemas";
+import {
+  createVoiceSmokeProof,
+  VOICE_SMOKE_PROOF_HEADER,
+  VOICE_SMOKE_SYNTHETIC_EMAIL,
+} from "../lib/server/voice-smoke-proof";
 import { DEFAULT_VOICE_VARIANT_ID, getVoiceVariant } from "../lib/voice/variants";
 import { governedVoiceCell, type VoicePickerMode } from "./lib/release-governance";
 
@@ -11,6 +17,7 @@ const expectedModel = process.env.EXPECTED_REALTIME_MODEL ?? expectedVoiceCell.m
 const expectedModelCell = process.env.EXPECTED_REALTIME_MODEL_CELL ?? expectedVoiceCell.modelCell;
 const expectedEmailCaptureMode = process.env.EXPECTED_EMAIL_CAPTURE_MODE ?? expectedVoiceCell.emailCaptureMode;
 const expectedVoiceVariant = voiceSmokeMode === "audition" ? requireDefaultVoiceVariant() : null;
+const smokeSigningSecret = requireSmokeSigningSecret();
 
 if (targetOrigin !== canonicalStagingOrigin) {
   throw new Error(`Refusing voice smoke target outside canonical staging: ${targetOrigin}`);
@@ -28,6 +35,12 @@ function readVoiceSmokeMode(): VoicePickerMode {
     throw new Error("VOICE_SMOKE_MODE must be clean or audition");
   }
   return value;
+}
+
+function requireSmokeSigningSecret() {
+  const secret = readEnv("IP_HASH_SECRET");
+  if (!secret) throw new Error("IP_HASH_SECRET is required to identify the staging smoke securely");
+  return secret;
 }
 
 type SmokeResult = {
@@ -52,6 +65,7 @@ type SmokeResult = {
   transcriptionModel: string;
   sessionMintStatuses: number[];
   debugStatuses: number[];
+  attemptedLeadPosts: number;
   pageErrors: number;
   consoleErrors: number;
 };
@@ -80,6 +94,9 @@ async function run() {
   }> = [];
   const sessionProfileCaptures: Array<Promise<void>> = [];
   const debugStatuses: number[] = [];
+  let attemptedLeadPosts = 0;
+  const terminalDebugSnapshots: Array<{ closeReason: string; persisted: boolean }> = [];
+  const terminalDebugCaptures: Array<Promise<void>> = [];
   const failedResponses: Array<{
     host: string;
     path: string;
@@ -101,12 +118,29 @@ async function run() {
     const context = await browser.newContext();
     await context.grantPermissions(["microphone"], { origin: targetOrigin });
     page = await context.newPage();
+    await page.route("**/api/voice/session", async (route) => {
+      const request = route.request();
+      if (new URL(request.url()).origin !== targetOrigin) return route.continue();
+      await route.continue({
+        headers: {
+          ...request.headers(),
+          [VOICE_SMOKE_PROOF_HEADER]: createVoiceSmokeProof(smokeSigningSecret),
+        },
+      });
+    });
+    await page.route("**/api/leads", async (route) => {
+      const request = route.request();
+      if (request.method() !== "POST" || new URL(request.url()).origin !== targetOrigin) return route.continue();
+      attemptedLeadPosts += 1;
+      await route.abort("blockedbyclient");
+    });
     page.on("pageerror", (error) => pageErrors.push(error.message));
     page.on("console", (message) => {
       if (message.type() === "error") consoleErrors.push(message.text());
     });
     page.on("response", (response) => {
-      recordApiStatus(response, sessionMintStatuses, debugStatuses);
+      const terminalCapture = recordApiStatus(response, sessionMintStatuses, debugStatuses, terminalDebugSnapshots);
+      if (terminalCapture) terminalDebugCaptures.push(terminalCapture);
       const responseUrl = new URL(response.url());
       if (responseUrl.pathname === "/api/voice/session" && response.status() === 200) {
         sessionProfileCaptures.push(
@@ -221,7 +255,9 @@ async function run() {
     const interruptionStartedAt = performance.now();
     await page
       .getByLabel("Type a message to Reka")
-      .fill("My email is qa.nebula@example.test. Please pause and tell me briefly about education partnerships.");
+      .fill(
+        `My email is ${VOICE_SMOKE_SYNTHETIC_EMAIL}. Please pause and tell me briefly about education partnerships.`,
+      );
     await page.getByRole("button", { name: "Send typed message" }).click();
     await page.waitForFunction(
       () => document.querySelector<HTMLElement>(".voice-orb")?.dataset.turn !== "assistant_speaking",
@@ -233,13 +269,14 @@ async function run() {
     const interruptionRecoveryMs = performance.now() - interruptionStartedAt;
     const audioAfterInterrupt = await remoteAudioState(page);
 
-    const finalReviewPersisted = page.waitForResponse(
-      (response) => new URL(response.url()).pathname === "/api/voice/debug" && response.status() === 200,
-      { timeout: 10_000 },
-    );
+    const finalReviewPersisted = page.waitForResponse((response) => isDebugSnapshotWithReason(response, "manual"), {
+      timeout: 10_000,
+    });
     await page.getByRole("button", { name: "End voice" }).click();
     await waitForTurn(page, "idle", undefined, 20_000);
-    await finalReviewPersisted;
+    const finalReviewResponse = await finalReviewPersisted;
+    const finalReviewBody = (await finalReviewResponse.json().catch(() => null)) as { persisted?: unknown } | null;
+    if (finalReviewBody?.persisted !== true) throw new Error("Final voice review snapshot was not persisted");
 
     const healthAfter = await context.request.get(`${targetOrigin}/api/health`);
     if (!healthAfter.ok()) throw new Error(`Staging health failed after smoke: ${healthAfter.status()}`);
@@ -271,6 +308,9 @@ async function run() {
       throw new Error(`Clean staging smoke must use the environment voice, received variant=${sessionProfile.variant}`);
     }
     if (!debugStatuses.some((status) => status === 200)) throw new Error("Voice review snapshot was not persisted");
+    if (attemptedLeadPosts !== 0) {
+      throw new Error(`Probe attempted ${attemptedLeadPosts} blocked lead request(s)`);
+    }
     await Promise.allSettled(responseDiagnostics);
     if (pageErrors.length > 0 || consoleErrors.length > 0) {
       throw new Error(`Browser errors observed: page=${pageErrors.length} console=${consoleErrors.length}`);
@@ -298,11 +338,13 @@ async function run() {
       transcriptionModel: sessionProfile.transcriptionModel,
       sessionMintStatuses,
       debugStatuses,
+      attemptedLeadPosts,
       pageErrors: pageErrors.length,
       consoleErrors: consoleErrors.length,
     };
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } catch (error) {
+    const terminalDebugPersisted = await waitForTerminalDebug(terminalDebugSnapshots, terminalDebugCaptures, 5_000);
     await Promise.allSettled(responseDiagnostics);
     const orbState = await page
       ?.locator(".voice-orb")
@@ -314,6 +356,9 @@ async function run() {
         orbState,
         sessionMintStatuses,
         debugStatuses,
+        terminalDebugSnapshots,
+        terminalDebugPersisted,
+        attemptedLeadPosts,
         pageErrors: pageErrors.length,
         consoleErrors: consoleErrors.length,
         consoleErrorMessages: consoleErrors.map(sanitizeDiagnostic),
@@ -435,10 +480,64 @@ async function assertResponsiveDialog(page: Page) {
   return viewports.length + 1;
 }
 
-function recordApiStatus(response: Response, sessionStatuses: number[], debugStatuses: number[]) {
+function recordApiStatus(
+  response: Response,
+  sessionStatuses: number[],
+  debugStatuses: number[],
+  terminalDebugSnapshots: Array<{ closeReason: string; persisted: boolean }>,
+) {
   const pathname = new URL(response.url()).pathname;
   if (pathname === "/api/voice/session") sessionStatuses.push(response.status());
-  if (pathname === "/api/voice/debug") debugStatuses.push(response.status());
+  if (pathname !== "/api/voice/debug") return;
+  debugStatuses.push(response.status());
+  const postData = response.request().postData();
+  if (!postData) return null;
+  try {
+    const parsed = voiceReviewSnapshotSchema.safeParse(JSON.parse(postData));
+    const reason = parsed.success ? parsed.data.snapshot.closeReason : undefined;
+    if (!isTerminalAvailabilityReason(reason)) return null;
+    return response
+      .json()
+      .then((body: unknown) => {
+        const persisted = Boolean(body && typeof body === "object" && "persisted" in body && body.persisted === true);
+        terminalDebugSnapshots.push({ closeReason: reason, persisted });
+      })
+      .catch(() => {
+        terminalDebugSnapshots.push({ closeReason: reason, persisted: false });
+      });
+  } catch {
+    // Request diagnostics report schema failures separately; never retain body text here.
+    return null;
+  }
+}
+
+async function waitForTerminalDebug(
+  snapshots: Array<{ closeReason: string; persisted: boolean }>,
+  captures: Array<Promise<void>>,
+  timeoutMs: number,
+) {
+  const startedAt = Date.now();
+  while (!snapshots.some((snapshot) => snapshot.persisted) && Date.now() - startedAt < timeoutMs) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  await Promise.allSettled(captures);
+  return snapshots.some((snapshot) => snapshot.persisted);
+}
+
+function isDebugSnapshotWithReason(response: Response, reason: string) {
+  if (new URL(response.url()).pathname !== "/api/voice/debug" || response.status() !== 200) return false;
+  const postData = response.request().postData();
+  if (!postData) return false;
+  try {
+    const parsed = voiceReviewSnapshotSchema.safeParse(JSON.parse(postData));
+    return parsed.success && parsed.data.snapshot.closeReason === reason;
+  } catch {
+    return false;
+  }
+}
+
+function isTerminalAvailabilityReason(reason: string | undefined): reason is string {
+  return reason === "realtime_quota_exhausted" || reason === "realtime_busy" || reason === "webrtc_failed";
 }
 
 async function waitForTurn(page: Page, status: string, turn?: string, timeout = 30_000) {

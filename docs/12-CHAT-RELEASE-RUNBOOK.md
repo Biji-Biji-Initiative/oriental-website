@@ -129,9 +129,11 @@ All three cohort options are required together. The evaluator proves that the
 updated-at-ordered 200-row query contains the complete post-cutoff window and
 that the created-at-ordered lead query either exhausts the corpus below its
 500-row cap or reaches strictly before the cutoff.
-An exact-limit result cannot claim complete reconnect history: affected target
-conversations fail release quality and all affected customer cells are removed
-from promotion evidence. The evaluator rejects a truncated or empty target
+An exact-limit result cannot prove complete reconnect history. A local browser
+can retain a conversation id even when a prior snapshot failed to persist, so a
+time horizon is not a durable completeness proof. Affected target conversations
+fail release quality and are removed from promotion evidence. The evaluator
+rejects a truncated or empty target
 cohort, requires verified v1 evidence for every current submission, and reports
 older missing/invalid evidence only as
 bounded PII-free `historicalEvidenceDebt` that cannot make the release green or
@@ -292,10 +294,37 @@ include release docs before the first deployment.
        --staging-model-cell candidate --staging-picker-mode clean
    ```
 
-4. Run `pnpm smoke:staging:voice` in the default clean mode when voice, OpenAI
-   configuration, WebRTC, session persistence, or voice UI changed. For an
-   approved staging audition use `VOICE_SMOKE_MODE=audition`; neither mode may
-   submit a lead.
+4. Run both smokes inside the staging managed environment so the short-lived
+   proof can be signed. The clean candidate smoke is the default promotion
+   evidence:
+
+   ```bash
+   infisical run \
+     --domain https://secrets.mereka.io \
+     --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
+     --env staging \
+     --path /deploy/oriental-website \
+     -- pnpm smoke:staging:voice
+   infisical run \
+     --domain https://secrets.mereka.io \
+     --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
+     --env staging \
+     --path /deploy/oriental-website \
+     -- pnpm smoke:staging:intake
+   ```
+
+   For a separately approved staging picker audition, rerun the first command
+   with `-- env VOICE_SMOKE_MODE=audition pnpm smoke:staging:voice`. Audition
+   evidence validates the picker and selected voice, but is not a clean model
+   comparison and cannot authorize production promotion.
+
+   Neither script may submit a lead: the browser aborts any lead POST and the
+   server rejects the signed synthetic capability at the lead boundary. Both
+   scripts inject a short-lived HMAC proof at the browser network boundary. The
+   server signs the resulting review as synthetic and applies the reserved
+   non-routable marker to every persisted snapshot, including quota/WebRTC
+   terminal failures. A failed smoke must wait for that terminal snapshot
+   response before the browser closes.
 5. Run the exact post-cutoff aggregate-only cohort command above. Require a
    complete session window, complete lead window, complete target reconnect
    history, and `syntheticPipeline.status=pass`. Keep customer

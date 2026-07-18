@@ -1,16 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { POST } from "@/app/api/voice/session/route";
 import { resetRateLimitBucketsForTest } from "@/lib/server/security";
+import { readVoiceReviewCredentialClaims } from "@/lib/server/voice-review-token";
+import { createVoiceSmokeProof, VOICE_SMOKE_PROOF_HEADER } from "@/lib/server/voice-smoke-proof";
 
 const originalEnv = process.env;
 
-function request(body: unknown, ip = "203.0.113.10", url = "http://127.0.0.1/api/voice/session") {
+function request(
+  body: unknown,
+  ip = "203.0.113.10",
+  url = "http://127.0.0.1/api/voice/session",
+  headers: Record<string, string> = {},
+) {
   return new Request(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "x-forwarded-for": ip,
       "user-agent": "Mozilla/5.0",
+      ...headers,
     },
     body: typeof body === "string" ? body : JSON.stringify(body),
   }) as never;
@@ -149,6 +157,49 @@ describe("POST /api/voice/session", () => {
       device_profile: "desktop",
       deployment_environment: "staging",
     });
+  });
+
+  it("mints a signed synthetic review claim only for an authenticated staging smoke", async () => {
+    const fetchMock = mockOpenAiFetch();
+    vi.stubGlobal("fetch", fetchMock);
+    const proof = createVoiceSmokeProof(process.env.IP_HASH_SECRET as string);
+    const response = await POST(
+      request({ intent: "technology" }, "203.0.113.10", "https://staging.oriental.mereka.io/api/voice/session", {
+        [VOICE_SMOKE_PROOF_HEADER]: proof,
+      }),
+    );
+    const body = await json(response);
+
+    expect(body.review?.id).toEqual(expect.any(String));
+    expect(body.review?.token).toEqual(expect.any(String));
+    expect(readVoiceReviewCredentialClaims(body.review?.id as string, body.review?.token as string)).toEqual({
+      synthetic: true,
+    });
+  });
+
+  it("cannot mark production or an unsigned staging request as synthetic", async () => {
+    const fetchMock = mockOpenAiFetch();
+    vi.stubGlobal("fetch", fetchMock);
+    const proof = createVoiceSmokeProof(process.env.IP_HASH_SECRET as string);
+    const [production, staging] = await Promise.all([
+      POST(
+        request({ intent: "technology" }, "203.0.113.10", "https://oriental.mereka.io/api/voice/session", {
+          [VOICE_SMOKE_PROOF_HEADER]: proof,
+        }),
+      ),
+      POST(
+        request({ intent: "technology" }, "203.0.113.11", "https://staging.oriental.mereka.io/api/voice/session", {
+          [VOICE_SMOKE_PROOF_HEADER]: `${proof}tampered`,
+        }),
+      ),
+    ]);
+
+    for (const response of [production, staging]) {
+      const body = await json(response);
+      expect(readVoiceReviewCredentialClaims(body.review?.id as string, body.review?.token as string)).toEqual({
+        synthetic: false,
+      });
+    }
   });
 
   it("returns the server-governed adaptive email mode to the browser", async () => {

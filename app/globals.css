@@ -708,6 +708,24 @@
 
 /* Voice orb — a living node. Layered aurora, breathing, and voice-driven
    ripples, all keyed off --voice-level (0..1) written by useVoiceAudioLevel. */
+.voice-variant-picker {
+  bottom: calc(1.25rem + var(--voice-picker-consent-clearance, 0px));
+}
+
+.voice-variant-picker--panel {
+  max-height: min(620px, calc(100svh - 2.5rem - var(--voice-picker-consent-clearance, 0px)));
+}
+
+@media (min-width: 640px) {
+  .voice-variant-picker {
+    bottom: calc(5rem + var(--voice-picker-consent-clearance, 0px));
+  }
+
+  .voice-variant-picker--panel {
+    max-height: min(620px, calc(100svh - 6.25rem - var(--voice-picker-consent-clearance, 0px)));
+  }
+}
+
 .voice-orb {
   position: relative;
   border-radius: 9999px;
@@ -1164,7 +1182,11 @@
 
 @media (max-width: 1279px) and (max-height: 500px) {
   [data-voice-global-picker][data-voice-global-picker] {
-    bottom: 1.25rem;
+    bottom: calc(1.25rem + var(--voice-picker-consent-clearance, 0px));
+  }
+
+  [data-voice-global-picker][data-voice-global-picker].voice-variant-picker--panel {
+    max-height: min(620px, calc(100svh - 2.5rem - var(--voice-picker-consent-clearance, 0px)));
   }
 
   [data-voice-agent-dialog] {

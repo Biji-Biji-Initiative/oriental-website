@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { type CSSProperties, useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { DEFAULT_VOICE_VARIANT_ID, VOICE_VARIANTS } from "@/lib/voice/variants";
 import { useVoice } from "./voice-state";
@@ -12,6 +12,10 @@ export function VoiceVariantPicker() {
   const [expanded, setExpanded] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [enabled, setEnabled] = useState(false);
+  const consentClearance = useAnalyticsConsentClearance(enabled);
+  const clearanceStyle = {
+    "--voice-picker-consent-clearance": `${consentClearance}px`,
+  } as CSSProperties;
 
   const selectedVariant = voiceVariant || DEFAULT_VOICE_VARIANT_ID;
   const activeLabel = labelFor(selectedVariant);
@@ -33,10 +37,11 @@ export function VoiceVariantPicker() {
     return (
       <button
         aria-label={`Choose Reka voice. Current voice: ${activeLabel}. ${VOICE_VARIANTS.length} voices available.`}
-        className="fixed bottom-5 left-5 z-40 inline-flex max-w-[calc(100vw-40px)] items-center gap-2.5 rounded-full border border-mk-off-black/12 bg-white/92 px-3.5 py-2 text-left text-mk-off-black shadow-2xl backdrop-blur transition hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mk-anchor-blue disabled:cursor-wait disabled:opacity-70 sm:left-auto sm:right-5 sm:bottom-20 sm:gap-3 sm:py-2.5"
+        className="voice-variant-picker fixed left-5 z-40 inline-flex max-w-[calc(100vw-40px)] items-center gap-2.5 rounded-full border border-mk-off-black/12 bg-white/92 px-3.5 py-2 text-left text-mk-off-black shadow-2xl backdrop-blur transition hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mk-anchor-blue disabled:cursor-wait disabled:opacity-70 sm:left-auto sm:right-5 sm:gap-3 sm:py-2.5"
         disabled={!hydrated}
         data-voice-global-picker
         onClick={() => setExpanded(true)}
+        style={clearanceStyle}
         type="button"
       >
         <span
@@ -56,8 +61,9 @@ export function VoiceVariantPicker() {
   return (
     <section
       aria-label="Choose Reka voice"
-      className="fixed bottom-5 left-5 z-40 max-h-[min(620px,calc(100svh-40px))] w-[min(320px,calc(100vw-40px))] overflow-y-auto rounded-xl border border-mk-off-black/12 bg-white/96 p-3 text-mk-off-black shadow-2xl backdrop-blur sm:left-auto sm:right-5 sm:bottom-20"
+      className="voice-variant-picker voice-variant-picker--panel fixed left-5 z-40 w-[min(320px,calc(100vw-40px))] overflow-y-auto rounded-xl border border-mk-off-black/12 bg-white/96 p-3 text-mk-off-black shadow-2xl backdrop-blur sm:left-auto sm:right-5"
       data-voice-global-picker
+      style={clearanceStyle}
     >
       <header className="mb-2 flex items-center justify-between gap-2">
         <span className="text-[11px] font-semibold uppercase text-mk-off-black/50">
@@ -102,6 +108,46 @@ export function VoiceVariantPicker() {
       </p>
     </section>
   );
+}
+
+function useAnalyticsConsentClearance(enabled: boolean) {
+  const [clearance, setClearance] = useState(0);
+  useEffect(() => {
+    if (!enabled) {
+      setClearance(0);
+      return;
+    }
+    let active = true;
+    let prompt: HTMLElement | null = null;
+    let resizeObserver: ResizeObserver | null = null;
+    const measure = () => {
+      if (!active) return;
+      const next = prompt ? Math.max(0, window.innerHeight - prompt.getBoundingClientRect().top) : 0;
+      setClearance(Math.ceil(next));
+    };
+    const syncPrompt = () => {
+      const next = document.querySelector<HTMLElement>('[aria-label="Analytics privacy choices"]');
+      if (next !== prompt) {
+        resizeObserver?.disconnect();
+        prompt = next;
+        resizeObserver = prompt && typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+        if (prompt) resizeObserver?.observe(prompt);
+      }
+      measure();
+    };
+    const mutationObserver = new MutationObserver(syncPrompt);
+    mutationObserver.observe(document.body, { childList: true, subtree: true });
+    window.addEventListener("resize", measure);
+    syncPrompt();
+    void document.fonts?.ready.then(measure);
+    return () => {
+      active = false;
+      resizeObserver?.disconnect();
+      mutationObserver.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [enabled]);
+  return clearance;
 }
 
 function labelFor(id: string) {
