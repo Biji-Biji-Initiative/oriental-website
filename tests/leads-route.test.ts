@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { POST } from "@/app/api/leads/route";
 import { createVoiceReviewCredentials } from "@/lib/server/voice-review-token";
+import { verifyVoiceSubmissionEvidence } from "@/lib/server/voice-submission-evidence";
+import { VOICE_SUBMISSION_EVIDENCE_UTM_KEY } from "@/lib/voice/submission-evidence";
 
 const mocks = vi.hoisted(() => ({
   persistLead: vi.fn(),
@@ -56,6 +58,7 @@ function leadBody(overrides: Record<string, unknown> = {}) {
     voiceInputPolicy: "fast",
     voiceEmailVerified: true,
     voiceEmailVerificationSource: "speech",
+    voiceEmailVerificationUserTurnSequence: 1,
     entryPoint: "hero_primary",
     entryMethod: "voice_button",
     submissionMethod: "voice_command",
@@ -223,9 +226,121 @@ describe("POST /api/leads", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body).toMatchObject({ ok: true });
+    expect(body).toMatchObject({ ok: true, acceptedAt: expect.any(Number) });
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(mocks.persistLead.mock.calls[0]?.[0]).not.toHaveProperty("voiceReviewToken");
+    const persistedLead = mocks.persistLead.mock.calls[0]?.[0];
+    expect(persistedLead).not.toHaveProperty("voiceReviewToken");
+    expect(persistedLead).not.toHaveProperty("voiceEmailVerificationUserTurnSequence");
+    expect(
+      verifyVoiceSubmissionEvidence(
+        {
+          email: persistedLead.form.email,
+          leadId: persistedLead.id,
+          transcript: persistedLead.transcript,
+          utm: persistedLead.utm,
+          voiceReviewId: persistedLead.voiceReviewId,
+          voiceSessionId: persistedLead.voiceSessionId,
+        },
+        "lead-route-test",
+      ),
+    ).toMatchObject({
+      acceptedAt: body.acceptedAt,
+      authorityTurnSequence: 1,
+      outcome: "none",
+      provenance: "v1",
+      source: "speech",
+    });
+    expect(JSON.stringify(body)).not.toMatch(/asha@example\.com|_mereka_voice_submission|[A-Za-z0-9_-]{43}/);
+  });
+
+  it("rebases email authority when bounded storage removes older user turns", async () => {
+    const review = createVoiceReviewCredentials();
+    const transcript = Array.from({ length: 100 }, (_, index) => ({
+      role: "user",
+      text: `Turn ${index + 1}: ${"context ".repeat(16)}`,
+    }));
+    const authorityTurnSequence = 95;
+
+    const response = await POST(
+      request(
+        {
+          transcript,
+          voiceReviewId: review.id,
+          voiceReviewToken: review.token,
+          voiceEmailVerificationUserTurnSequence: authorityTurnSequence,
+        },
+        "198.51.100.95",
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    const persistedLead = mocks.persistLead.mock.calls[0]?.[0];
+    const retainedUserTurns = persistedLead.transcript.filter((turn: { role: string }) => turn.role === "user").length;
+    expect(retainedUserTurns).toBeLessThan(transcript.length);
+    expect(
+      verifyVoiceSubmissionEvidence(
+        {
+          email: persistedLead.form.email,
+          leadId: persistedLead.id,
+          transcript: persistedLead.transcript,
+          utm: persistedLead.utm,
+          voiceReviewId: persistedLead.voiceReviewId,
+          voiceSessionId: persistedLead.voiceSessionId,
+        },
+        "lead-route-test",
+      ),
+    ).toMatchObject({
+      authorityTurnSequence: authorityTurnSequence - (transcript.length - retainedUserTurns),
+      provenance: "v1",
+    });
+  });
+
+  it("overwrites a client-supplied reserved evidence key", async () => {
+    const review = createVoiceReviewCredentials();
+    const response = await POST(
+      request({
+        voiceReviewId: review.id,
+        voiceReviewToken: review.token,
+        utm: { campaign: "oriental", [VOICE_SUBMISSION_EVIDENCE_UTM_KEY]: "forged" },
+      }),
+    );
+    expect(response.status).toBe(200);
+
+    const persistedLead = mocks.persistLead.mock.calls[0]?.[0];
+    expect(persistedLead.utm.campaign).toBe("oriental");
+    expect(persistedLead.utm[VOICE_SUBMISSION_EVIDENCE_UTM_KEY]).not.toBe("forged");
+    expect(
+      verifyVoiceSubmissionEvidence(
+        {
+          email: persistedLead.form.email,
+          leadId: persistedLead.id,
+          transcript: persistedLead.transcript,
+          utm: persistedLead.utm,
+          voiceReviewId: persistedLead.voiceReviewId,
+          voiceSessionId: persistedLead.voiceSessionId,
+        },
+        "lead-route-test",
+      ),
+    ).not.toBeNull();
+  });
+
+  it("rejects signed voice evidence whose authority sequence exceeds the transcript", async () => {
+    const review = createVoiceReviewCredentials();
+    const response = await POST(
+      request({
+        voiceReviewId: review.id,
+        voiceReviewToken: review.token,
+        voiceEmailVerificationUserTurnSequence: 2,
+      }),
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ ok: false, error: "voice_submission_attribution_incomplete" });
+    expect(mocks.persistLead).not.toHaveBeenCalled();
+    expect(mocks.notifyOwner).not.toHaveBeenCalled();
+    expect(mocks.notifySlack).not.toHaveBeenCalled();
+    expect(mocks.notifyClickUp).not.toHaveBeenCalled();
+    expect(mocks.notifySubmitter).not.toHaveBeenCalled();
   });
 
   it("rejects an unconfirmed voice email before persistence or notifications", async () => {

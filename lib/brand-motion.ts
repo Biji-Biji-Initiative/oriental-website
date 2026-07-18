@@ -1,3 +1,6 @@
+export const BRAND_MOTION_PREVIEW_HOST = "staging.oriental.mereka.io";
+export const BRAND_MOTION_PREVIEW_ENABLED = process.env.NEXT_PUBLIC_BRAND_MOTION_PREVIEW === "true";
+
 export const MEREKA_MARK_WIDTH = 427.76;
 export const MEREKA_MARK_HEIGHT = 342.13;
 export const MEREKA_MARK_VIEWBOX = `0 0 ${MEREKA_MARK_WIDTH} ${MEREKA_MARK_HEIGHT}`;
@@ -11,3 +14,17 @@ export const MEREKA_MARK_PATH =
 
 export const MEREKA_NEBULA_PARTICLE_COUNT = 2_100;
 export const MEREKA_TRACE_DURATION_MS = 2_600;
+
+export function isBrandMotionPreviewHost(hostname: string) {
+  const normalized = hostname.trim().toLowerCase().replace(/\.$/, "");
+  return (
+    normalized === BRAND_MOTION_PREVIEW_HOST ||
+    normalized === "localhost" ||
+    normalized === "127.0.0.1" ||
+    normalized === "::1"
+  );
+}
+
+export function isBrandMotionPreviewEnabled(buildFlag: boolean, hostname: string) {
+  return buildFlag && isBrandMotionPreviewHost(hostname);
+}

@@ -20,6 +20,7 @@ import {
 } from "@/lib/admin-workflow";
 import { getSegment } from "@/lib/segments";
 import type { getAdminReviewDashboard } from "@/lib/server/convex";
+import { publicLeadUtm } from "@/lib/voice/submission-evidence";
 
 type DashboardResult = Awaited<ReturnType<typeof getAdminReviewDashboard>>;
 type DashboardData = Extract<DashboardResult, { ok: true }>["data"];
@@ -117,6 +118,9 @@ export function EnquiryCrmWorkspace({
         initialStatusScope={filters.status || "active"}
         rows={ordered.map((lead) => ({
           ...lead,
+          // This object crosses the server/client component boundary. Strip
+          // server-owned evidence before React serializes table props.
+          utm: publicLeadUtm(lead.utm),
           recordHref: recordHref(view, filters, lead.leadId),
         }))}
         totalRows={leadCounts.total}
@@ -516,11 +520,11 @@ function CrmRecord({
             </details>
           ) : null}
 
-          {Object.keys(lead.utm ?? {}).length > 0 ? (
+          {Object.keys(publicLeadUtm(lead.utm)).length > 0 ? (
             <section>
               <SectionLabel>Acquisition metadata</SectionLabel>
               <div className="mt-3 flex flex-wrap gap-2">
-                {Object.entries(lead.utm).map(([key, value]) => (
+                {Object.entries(publicLeadUtm(lead.utm)).map(([key, value]) => (
                   <Badge key={key} tone="neutral">
                     {key}: {String(value)}
                   </Badge>

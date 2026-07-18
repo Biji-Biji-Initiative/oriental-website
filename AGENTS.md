@@ -100,7 +100,7 @@ docs/                     # handover specs — reference, not auto-synced to cod
 | Voice A/B variants (distinct Malaysian registers: voice/speed/persona) + tuning picker (dev, or explicitly enabled staging; `/?voices=1` cannot bypass server authority) | `lib/voice/variants.ts`, `components/voice-agent/VoiceVariantPicker.tsx`; selected voice persists in localStorage/cookie |
 | Realtime protocol / transcript state machine / capture grounding | `lib/voice/realtime-events.ts` + `tests/realtime-events.test.ts` |
 | Voice UI / WebRTC wiring | `components/voice-agent/useRealtimeVoiceSession.ts`, `useVoiceRuntime.ts`, `VoiceAgentDialog.tsx`, `VoiceSessionStage.tsx` |
-| Production Mereka M motion + loader | `components/voice-agent/VoiceSessionStage.tsx`, `components/brand-motion/{NebulaM,MerekaSiteLoader}.tsx`, `.voice-orb*` / `.brand-site-loader*` in `app/globals.css`, level source in `useVoiceAudioLevel.ts` |
+| Staging-only Mereka M motion + loader preview | `components/voice-agent/VoiceSessionStage.tsx`, `components/brand-motion/{NebulaM,MerekaSiteLoader}.tsx`, fail-closed host/build gate in `lib/brand-motion.ts`, `.voice-orb*` / `.brand-site-loader*` in `app/globals.css`, level source in `useVoiceAudioLevel.ts` |
 | Session token + server session config | `app/api/voice/session/route.ts`, `lib/server/openai-realtime.ts` |
 | Admin session review | `app/admin/session-review/page.tsx`, `app/api/admin/*`, `components/admin/*` |
 | Admin dark theme / login / command palette | `app/admin/layout.tsx`, `app/admin/theme.css`, `components/admin/AdminLoginForm.tsx`, `components/admin/AdminCommandPalette.tsx` |
@@ -192,6 +192,12 @@ before any deployment. For runtime work:
    Add that tombstone in the same PR that removes the Infisical value and retain
    it as ownership history; a later reintroduced Infisical value safely wins.
 
+An explicitly approved staging-only hold overrides steps 3–5 only for that
+release: deploy the exact merged SHA to staging, perform no production or
+shared-Convex mutation, run no retention/backfill job, and prove the production
+SHA/runtime cell remained unchanged. Promotion requires a new explicit release
+decision and a fresh exact-tree review; staging success never implies it.
+
 Do not force an application rebuild for a docs/operator-only commit with no
 runtime impact. Do not create late cleanup PRs after the final-SHA freeze; if a
 runtime or release-contract correction is required, return to one PR and freeze
@@ -207,8 +213,11 @@ clean candidate staging deployment with `--staging-model-cell candidate` and
 `--staging-picker-mode clean` while production remains control. The independent
 `--voice-picker-mode audition` staging option exposes the voice-register picker
 for human audition only; it is never model-promotion evidence. Production
-always rejects audition mode. The approved Mereka M nebula and public entrance
-loader are normal visuals on both canonical hosts and are not experiment flags.
+always rejects audition mode. The Mereka M nebula and public entrance loader
+are a staging-only preview gated by both `NEXT_PUBLIC_BRAND_MOTION_PREVIEW=true`
+at build time and the exact staging/local hostname. The reviewed production path
+must render the legacy orb and no Trace entrance even if one side of that gate
+is misconfigured; deploying it is outside the current staging-only release.
 The entrance treatment is non-interactive, never locks scrolling, appears at
 most once per tab, lasts no more than 700 ms, and is skipped for admin/API and
 reduced-motion loads; internal admin navigation must use the Next router.
@@ -224,8 +233,11 @@ speed/cost candidate and MUST NOT be combined with that first comparison.
 
 ### APR review (required for release-sensitive changes)
 
-Use the checked-out Automated Plan Reviser Pro binary, not browser automation,
-for adversarial review of voice, security, data-integrity, and release-governance
+Run Automated Plan Reviser Pro only inside the canonical hermetic remote proof
+plane reached through `ssh g` or `ssh mereka`; never run Oracle/APR from the
+Windows desktop, this WSL host, a browser bridge, a local listener, or an ad-hoc
+control path. Use the canonical repository checkout on the selected remote for
+adversarial review of voice, security, data-integrity, and release-governance
 changes. Keep the contract, evidence, workflow, and saved rounds under `.apr/`
 so another agent can resume without chat history.
 
@@ -234,8 +246,9 @@ apr robot validate <round> -w <workflow>
 apr robot run <round> -w <workflow> -i
 ```
 
-If `apr` is not on `PATH`, use `$HOME/automated_plan_reviser_pro/apr` or install
-the upstream tool; do not substitute a browser agent.
+If `apr` is not on the selected remote's `PATH`, use that remote's canonical APR
+installation or repair it there; do not fall back to local execution or a
+browser agent.
 
 Read `.apr/rounds/<workflow>/round_<round>.md` completely, address every ship
 blocker, update executable evidence, and rerun the next round until the workflow's

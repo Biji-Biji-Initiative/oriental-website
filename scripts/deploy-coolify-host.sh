@@ -30,12 +30,12 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     -h|--help)
-      echo "Usage: $0 --target staging|production --expected-current-sha sha [--voice-model-cell control|candidate] [--voice-picker-mode clean|audition] [--allow-emergency-production] [git-sha]"
+      echo "Usage: $0 --target staging|production --expected-current-sha sha [--voice-model-cell control|candidate] [--voice-picker-mode clean|audition] [--allow-emergency-production] git-sha"
       exit 0
       ;;
     *)
       if [[ -n "$sha" ]]; then
-        echo "Usage: $0 --target staging|production --expected-current-sha sha [--voice-model-cell control|candidate] [--voice-picker-mode clean|audition] [--allow-emergency-production] [git-sha]" >&2
+        echo "Usage: $0 --target staging|production --expected-current-sha sha [--voice-model-cell control|candidate] [--voice-picker-mode clean|audition] [--allow-emergency-production] git-sha" >&2
         exit 2
       fi
       sha="$1"
@@ -45,17 +45,17 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ "$target" != "staging" && "$target" != "production" ]]; then
-  echo "Usage: $0 --target staging|production --expected-current-sha sha [--voice-model-cell control|candidate] [--voice-picker-mode clean|audition] [--allow-emergency-production] [git-sha]" >&2
+  echo "Usage: $0 --target staging|production --expected-current-sha sha [--voice-model-cell control|candidate] [--voice-picker-mode clean|audition] [--allow-emergency-production] git-sha" >&2
   exit 2
 fi
 
 if [[ -z "$sha" ]]; then
-  git fetch origin main --quiet
-  sha="$(git rev-parse origin/main)"
+  echo "Host deploys require the full reviewed git SHA as a positional argument." >&2
+  exit 2
 fi
 
 if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
-  echo "Usage: $0 --target staging|production --expected-current-sha sha [--voice-model-cell control|candidate] [--voice-picker-mode clean|audition] [--allow-emergency-production] [git-sha]" >&2
+  echo "Usage: $0 --target staging|production --expected-current-sha sha [--voice-model-cell control|candidate] [--voice-picker-mode clean|audition] [--allow-emergency-production] git-sha" >&2
   exit 2
 fi
 
@@ -97,6 +97,10 @@ prod_dir="/data/coolify/applications/${app_uuid}"
 staging_dir="/data/coolify/applications/oriental-staging"
 ga_measurement_id="${NEXT_PUBLIC_GA_MEASUREMENT_ID:-}"
 google_site_verification="${NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION:-}"
+brand_motion_preview="false"
+if [[ "$target" == "staging" ]]; then
+  brand_motion_preview="true"
+fi
 
 if [[ ! "$ga_measurement_id" =~ ^G-[A-Z0-9]+$ ]]; then
   echo "NEXT_PUBLIC_GA_MEASUREMENT_ID must be supplied by the managed application environment." >&2
@@ -170,6 +174,10 @@ voice_model_cell="$9"
 voice_picker_mode="${10}"
 ga_measurement_id="${11}"
 google_site_verification="${12}"
+brand_motion_preview="false"
+if [[ "$target" == "staging" ]]; then
+  brand_motion_preview="true"
+fi
 short="${sha:0:7}"
 mirror="${remote_cache_dir}/repo.git"
 worktrees="${remote_cache_dir}/worktrees"
@@ -310,8 +318,8 @@ trap on_exit EXIT
 
 image="${app_uuid}:${sha}"
 if [[ "$target" == "staging" ]]; then
-  # Keep staging and production image identities isolated even though the
-  # approved visual build is now identical on both canonical hosts.
+  # Keep staging and production image identities isolated; staging alone gets
+  # the public brand-motion preview build cell.
   image="${app_uuid}:staging-${sha}"
 fi
 
@@ -324,10 +332,11 @@ if [[ ! "$google_site_verification" =~ ^[A-Za-z0-9_-]{20,256}$ ]]; then
   exit 1
 fi
 
-echo "building_image=${image} voice_model_cell=${voice_model_cell} voice_picker_mode=${voice_picker_mode} analytics_configured=true search_verification_configured=true"
+echo "building_image=${image} voice_model_cell=${voice_model_cell} voice_picker_mode=${voice_picker_mode} brand_motion_preview=${brand_motion_preview} analytics_configured=true search_verification_configured=true"
 DOCKER_BUILDKIT=1 docker build \
   --build-arg "NEXT_PUBLIC_GA_MEASUREMENT_ID=${ga_measurement_id}" \
   --build-arg "NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION=${google_site_verification}" \
+  --build-arg "NEXT_PUBLIC_BRAND_MOTION_PREVIEW=${brand_motion_preview}" \
   --progress=plain \
   -t "$image" \
   "$workdir"
@@ -378,6 +387,7 @@ overrides = {
     "GIT_SHA": sha,
     "NEXT_PUBLIC_GA_MEASUREMENT_ID": ga_measurement_id,
     "NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION": google_site_verification,
+    "NEXT_PUBLIC_BRAND_MOTION_PREVIEW": "true" if target == "staging" else "false",
 }
 if target == "staging":
     # This is the non-secret governed release cell. Infisical's staging

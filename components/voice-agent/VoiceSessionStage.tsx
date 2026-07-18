@@ -4,9 +4,11 @@ import { Mic2Icon, PhoneOffIcon, RadioIcon, SendIcon, SparklesIcon } from "lucid
 import dynamic from "next/dynamic";
 import { type FormEvent, type RefObject, useEffect, useRef, useState } from "react";
 import { MerekaMiniMark } from "@/components/orb/MerekaMiniMark";
+import { MiniOrb } from "@/components/orb/MiniOrb";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { Input } from "@/components/ui/input";
+import { BRAND_MOTION_PREVIEW_ENABLED, isBrandMotionPreviewEnabled } from "@/lib/brand-motion";
 import { tourTopics } from "@/lib/content";
 import type { getSegment } from "@/lib/segments";
 import { cn } from "@/lib/utils";
@@ -99,7 +101,11 @@ export function VoiceSessionStage({
   const brandMotionLevelsRef = useRef({ user: 0, voice: 0 });
   const [draft, setDraft] = useState("");
   const showEmailError = emailTouched && emailValid === false;
+  const [brandMotionPreview, setBrandMotionPreview] = useState(false);
   const micPermission = useMicrophonePermissionState();
+  useEffect(() => {
+    setBrandMotionPreview(isBrandMotionPreviewEnabled(BRAND_MOTION_PREVIEW_ENABLED, window.location.hostname));
+  }, []);
   useVoiceAudioLevel(audioRef, orbRef, connectionStatus === "listening", {
     onLevel: (level) => {
       brandMotionLevelsRef.current.voice = level;
@@ -171,13 +177,32 @@ export function VoiceSessionStage({
         </div>
 
         <div
-          className="voice-orb voice-orb--nebula mt-8 grid size-44 place-items-center sm:size-56"
+          className={cn(
+            "voice-orb mt-8 grid size-44 place-items-center sm:size-56",
+            brandMotionPreview && "voice-orb--nebula",
+          )}
+          data-renderer={brandMotionPreview ? "nebula-m" : "production-orb"}
           data-status={connectionStatus}
           data-turn={turnPhase}
           data-voice-stage-orb
           ref={orbRef}
         >
-          <NebulaM connectionStatus={connectionStatus} levelsRef={brandMotionLevelsRef} turnPhase={turnPhase} />
+          {brandMotionPreview ? (
+            <NebulaM connectionStatus={connectionStatus} levelsRef={brandMotionLevelsRef} turnPhase={turnPhase} />
+          ) : (
+            <>
+              <div aria-hidden className="voice-orb__aurora" />
+              <div aria-hidden className="voice-orb__glow" />
+              <div aria-hidden className="voice-orb__iris" />
+              <div aria-hidden className="voice-orb__ripple" />
+              <div aria-hidden className="voice-orb__ripple voice-orb__ripple--late" />
+              <div aria-hidden className="voice-orb__halo" />
+              <div aria-hidden className="voice-orb__halo voice-orb__halo--far" />
+              <div className="relative">
+                <MiniOrb size={120} />
+              </div>
+            </>
+          )}
         </div>
 
         {connectionStatus === "listening" && (assistantDraft || lastAssistantLine) ? (

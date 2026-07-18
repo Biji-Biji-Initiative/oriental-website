@@ -147,7 +147,7 @@ describe("createRealtimeClientSecret", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await createRealtimeClientSecret("safe-user", "technology");
+    const result = await createRealtimeClientSecret("safe-user", "technology", "desktop", undefined, "staging");
 
     expect(result).toMatchObject({
       model: "gpt-realtime-2.1",

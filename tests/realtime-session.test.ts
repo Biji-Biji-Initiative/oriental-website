@@ -44,9 +44,10 @@ describe("golden voice session", () => {
     step({ type: "response.done" });
 
     // Visitor explains their idea; the model captures the brief and segment.
-    step({ type: "input_audio_buffer.committed" });
+    step({ type: "input_audio_buffer.committed", item_id: "audio_brief" });
     step({
       type: "conversation.item.input_audio_transcription.completed",
+      item_id: "audio_brief",
       transcript: "We run AI literacy workshops and want a demo lab.",
     });
     step({ type: "response.created" });
@@ -60,15 +61,16 @@ describe("golden voice session", () => {
     expect(state.segment).toBe("technology");
     expect(state.captured.message).toContain("AI literacy");
 
-    // The transcription race: the visitor says their name and email, the
-    // model captures BEFORE the transcription completes.
-    step({ type: "input_audio_buffer.committed" });
-    step(functionCall("call_name", "capture_field", { key: "name", value: "Asha Lim", evidence: "Asha Lim" }));
-    expect(state.captured.name).toBe("Asha Lim");
+    // The visitor supplies their name; settled ASR is the current authority
+    // for the model's subsequent capture.
+    step({ type: "input_audio_buffer.committed", item_id: "audio_contact" });
     step({
       type: "conversation.item.input_audio_transcription.completed",
+      item_id: "audio_contact",
       transcript: "My name is Asha Lim.",
     });
+    step(functionCall("call_name", "capture_field", { key: "name", value: "Asha Lim", evidence: "Asha Lim" }));
+    expect(state.captured.name).toBe("Asha Lim");
     expect(state.pendingUserTranscripts).toBe(0);
 
     // The visitor types their email into the live chat instead of spelling it.
@@ -91,6 +93,7 @@ describe("golden voice session", () => {
     expect(state.assistantDraft).toBe("");
 
     // "Send it" — all fields present, the reducer hands the UI a submit command.
+    state = appendTypedUserMessage(state, "Please send it.");
     const route = step(functionCall("call_route", "route_to_team", { segment: "technology" }));
     expect(state.routeRequested).toBe(true);
     expect(route.commands).toEqual([{ type: "submit_voice", callId: "call_route", segment: "technology" }]);
@@ -103,7 +106,7 @@ describe("golden voice session", () => {
     });
 
     expect(allCommands.filter((type) => type === "submit_voice")).toHaveLength(1);
-    expect(state.transcript.map((entry) => entry.role)).toEqual(["assistant", "user", "user", "user"]);
+    expect(state.transcript.map((entry) => entry.role)).toEqual(["assistant", "user", "user", "user", "user"]);
   });
 
   it("recovers an ASR-drifted contact turn and routes only after exact email confirmation", () => {
@@ -114,8 +117,10 @@ describe("golden voice session", () => {
       return result;
     };
 
+    step({ type: "input_audio_buffer.committed", item_id: "audio_drifted_contact" });
     step({
       type: "conversation.item.input_audio_transcription.completed",
+      item_id: "audio_drifted_contact",
       transcript:
         "My name is Goodbreed and my email is asia dot lim at example dot my. We want to run digital-skills workshops.",
     });
@@ -150,7 +155,12 @@ describe("golden voice session", () => {
       type: "response.output_audio_transcript.done",
       transcript: "I have asha dot lim at example dot my. Is that exactly right?",
     });
-    step({ type: "conversation.item.input_audio_transcription.completed", transcript: "Yes, that's exactly right." });
+    step({ type: "input_audio_buffer.committed", item_id: "audio_confirm_drifted_contact" });
+    step({
+      type: "conversation.item.input_audio_transcription.completed",
+      item_id: "audio_confirm_drifted_contact",
+      transcript: "Yes, that's exactly right.",
+    });
     step(
       functionCall("call_confirm_drifted_email", "confirm_email", {
         evidence: "Yes, that's exactly right.",
@@ -158,6 +168,7 @@ describe("golden voice session", () => {
     );
     expect(runtime.emailVerification?.status).toBe("confirmed");
 
+    runtime = appendTypedUserMessage(runtime, "Please send it.");
     const routed = step(functionCall("call_route_drifted_contact", "route_to_team", { segment: "education" }));
     expect(routed.commands).toEqual([
       { type: "submit_voice", callId: "call_route_drifted_contact", segment: "education" },
@@ -172,9 +183,11 @@ describe("golden voice session", () => {
       return result;
     };
 
+    step({ type: "input_audio_buffer.committed", item_id: "audio_adaptive_contact" });
     step({
       type: "conversation.item.input_audio_transcription.completed",
-      transcript: "My email is asha dot lim at example dot my and we run digital skills workshops.",
+      item_id: "audio_adaptive_contact",
+      transcript: "My email is asha dot lim at example dot my and we run digital skills workshops. Please send it.",
     });
     const captured = step(
       functionCall("call_adaptive_contact", "capture_fields", {
@@ -190,8 +203,8 @@ describe("golden voice session", () => {
     });
     expect(runtime.emailVerification).toMatchObject({ status: "confirmed", confidence: "high" });
 
-    const routed = step(functionCall("call_adaptive_route", "route_to_team", { segment: "education" }));
-    expect(routed.commands).toEqual([{ type: "submit_voice", callId: "call_adaptive_route", segment: "education" }]);
+    const routed = step(functionCall("call_adaptive_route", "route_to_team", { segment: "technology" }));
+    expect(routed.commands).toEqual([{ type: "submit_voice", callId: "call_adaptive_route", segment: "technology" }]);
     expect(runtime.transcript.filter((entry) => entry.role === "user")).toHaveLength(1);
   });
 });

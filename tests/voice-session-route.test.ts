@@ -25,6 +25,8 @@ async function json(response: Response) {
     deployment_environment?: string;
     email_capture_mode?: string;
     variant?: string | null;
+    model?: string;
+    model_cell?: string;
     voice?: string;
     speed?: number;
   };
@@ -215,5 +217,25 @@ describe("POST /api/voice/session", () => {
     );
 
     expect(await json(response)).toMatchObject({ ok: true, variant: null, voice: "coral", speed: 1.28 });
+  });
+
+  it("forces the control model cell on the production hostname", async () => {
+    process.env.APP_ENV = "staging";
+    process.env.VOICE_MODEL_CELL = "candidate";
+    process.env.OPENAI_REALTIME_MODEL = "gpt-realtime-2";
+    process.env.OPENAI_REALTIME_MODEL_CANDIDATE = "gpt-realtime-2.1";
+    const fetchMock = mockOpenAiFetch();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await POST(
+      request({ intent: "technology" }, "203.0.113.10", "https://oriental.mereka.io/api/voice/session"),
+    );
+
+    expect(await json(response)).toMatchObject({
+      ok: true,
+      deployment_environment: "production",
+      model: "gpt-realtime-2",
+      model_cell: "control",
+    });
   });
 });

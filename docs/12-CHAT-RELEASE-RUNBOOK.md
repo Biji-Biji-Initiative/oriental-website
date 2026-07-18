@@ -35,9 +35,11 @@ cannot affect the runtime image.
   production MUST use the same source SHA. Shared staging may move afterward
   for another controlled experiment; its live SHA must never be inferred from
   production or a historical document. Image tags remain distinct for release
-  ownership, but the approved Mereka M nebula and non-blocking, once-per-tab
-  public entrance treatment ship on both canonical hosts. Admin/API and
-  reduced-motion loads omit the entrance treatment.
+  ownership. While the brand-motion preview is under staging approval, the
+  Mereka M nebula and non-blocking, once-per-tab Trace entrance require both
+  the public build flag and exact staging/local hostname. A production build
+  from the reviewed source retains the legacy orb and no Trace entrance.
+  Admin/API and reduced-motion loads omit the entrance treatment everywhere.
 - `staging.oriental.mereka.io` and `oriental.mereka.io` are canonical. The
   `*.deploy.mereka.io` names MUST remain redirects only.
 - Cloudflare MUST remain authoritative DNS only; Coolify Traefik terminates TLS.
@@ -68,6 +70,23 @@ cannot affect the runtime image.
 - A failed health check MUST stop the rollout. Never disable or weaken the gate
   to finish a release.
 
+### Staging-only hold
+
+When the approved release contract explicitly says staging-only, that boundary
+is stronger than the normal production-promotion phases below:
+
+- deploy only the exact merged SHA to canonical staging;
+- do not mutate production, shared Convex, DNS, or the production Infisical/Coolify application;
+- do not run a retention drain, migration, or backfill;
+- use synthetic no-submit verification because staging shares production data
+  and notification planes;
+- capture read-only before/after proof that the production SHA, runtime/model
+  cell, picker state, and current live brand-motion surface did not change. Do
+  not represent a reviewed-but-undeployed production fallback as live evidence.
+
+Staging success does not authorize promotion. Production requires a new
+explicit operator decision, a fresh exact-tree review, and a new release gate.
+
 ## Context-independent takeover
 
 Start every new operator or agent session with:
@@ -92,6 +111,36 @@ identifiers, and identifier-bearing attention lists. `--persist` and `--out`
 are rejected in this mode. PII-free tool-call telemetry is included as overall
 and per-tool sample/outcome counts plus execution, response-to-call, and
 response-to-result p50/p95 distributions.
+
+A broad audit remains deliberately fail-closed when a historical candidate
+submission cannot be verified from immutable v1 evidence. Do not weaken that
+join or backfill evidence to make the command green. For an exact staging
+release window, record a UTC cutoff before the deployment and run the bounded
+schema-v2 cohort after the no-submit smoke:
+
+```bash
+pnpm eval:voice -- --aggregate-only --limit 200 \
+  --cohort-start "$cohort_start" \
+  --cohort-environment staging \
+  --target-model-cell candidate
+```
+
+All three cohort options are required together. The evaluator proves that the
+updated-at-ordered 200-row query contains the complete post-cutoff window and
+that the created-at-ordered lead query either exhausts the corpus below its
+500-row cap or reaches strictly before the cutoff.
+An exact-limit result cannot claim complete reconnect history: affected target
+conversations fail release quality and all affected customer cells are removed
+from promotion evidence. The evaluator rejects a truncated or empty target
+cohort, requires verified v1 evidence for every current submission, and reports
+older missing/invalid evidence only as
+bounded PII-free `historicalEvidenceDebt` that cannot make the release green or
+be treated as attribution. Customer `releaseQuality`, the synthetic activation/
+remote-audio `syntheticPipeline`, and confound-sensitive `promotionEvidence`
+are separate. A picker audition can prove the staging pipeline while remaining
+invalid model-promotion evidence. With no post-cutoff organic conversation,
+`releaseQuality` and the compatibility `gate` remain non-green; report that as
+`insufficient_data` rather than fabricating customer evidence.
 
 The command fetches and computes local/main Git state, both public health SHAs,
 the non-secret live voice cells, branches and PRs containing deployed SHAs,
@@ -187,20 +236,13 @@ include release docs before the first deployment.
 
 ## Phase 3 — Deploy dependencies and staging
 
-1. Deploy Convex first only when the reviewed diff changes schema or functions.
-   This release adds canonical `clear_fields` support to the bounded tool-name
-   validator and optional intake-attribution fields (`entryPoint`,
-   `entryMethod`, `submissionMethod`, and bounded per-field provenance), so its
-   reviewed Convex schema/functions are a required dependency. The additions
-   remain optional: the previous web image must still write valid rows during
-   deployment and after an application rollback. The lead mutation is
-   idempotent on the application-generated lead UUID. The web adapter may retry
-   once only after a confirmed unknown/extra-field validator rejection and must
-   reuse that UUID while stripping the forward fields; generic validation,
-   transport, timeout, and ambiguous post-commit failures are never retry
-   triggers.
-   Aggregate-only evaluation remains read-only and cannot perform this deploy.
-   Do not add a lossy `clear_fields` → `clear_field` application fallback.
+1. Deploy Convex first only when the reviewed release diff changes schema or
+   functions and the release is authorized to mutate the shared data plane.
+   A staging-only hold that explicitly forbids shared-Convex mutation skips this
+   step and must prove the web path remains backward-compatible with the live
+   data plane. Aggregate-only evaluation remains read-only and cannot perform a
+   deploy. Do not add a lossy `clear_fields` → `clear_field` application
+   fallback.
 2. Build the distinct `staging-<sha>` image and recreate host-managed staging:
 
    ```bash
@@ -232,6 +274,12 @@ include release docs before the first deployment.
    smoke with `VOICE_SMOKE_MODE=audition`, then return staging to `clean` before
    model comparison or promotion.
 
+   Immediately before the staging deployment, freeze the evaluation boundary:
+
+   ```bash
+   cohort_start=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+   ```
+
 3. Run the deterministic public verifier:
 
    ```bash
@@ -245,10 +293,20 @@ include release docs before the first deployment.
    ```
 
 4. Run `pnpm smoke:staging:voice` in the default clean mode when voice, OpenAI
-   configuration, WebRTC, session persistence, or voice UI changed.
-5. Inspect the running container—not only Infisical—for the expected revision,
+   configuration, WebRTC, session persistence, or voice UI changed. For an
+   approved staging audition use `VOICE_SMOKE_MODE=audition`; neither mode may
+   submit a lead.
+5. Run the exact post-cutoff aggregate-only cohort command above. Require a
+   complete session window, complete lead window, complete target reconnect
+   history, and `syntheticPipeline.status=pass`. Keep customer
+   quality and promotion status honest: no organic post-cutoff conversation is
+   `insufficient_data`, and picker/variant evidence is never a clean model
+   comparison. Historical evidence debt remains visible but does not authorize
+   a backfill or weaken current v1 attribution.
+6. Inspect the running container—not only Infisical—for the expected revision,
    deployment environment, and voice cells.
-6. Drain the bounded legacy backfill and retention sweep before trusting the
+7. For a production promotion or separately authorized data-maintenance window,
+   drain the bounded legacy backfill and retention sweep before trusting the
    admin, evaluation, SLA, or count views. The first drain intentionally applies
    the published 30/90/730-day deletion windows and is not reversed by a web
    rollback. Inspect the aggregate-only counts on every batch and continue until
@@ -280,8 +338,8 @@ include release docs before the first deployment.
 
    The 500-call guard is a runaway safety limit, not an allowed residual
    backlog. If it is reached, stop and diagnose; do not promote with hidden
-   legacy rows.
-7. Prove authenticated, Convex-backed admin reads independently of `/api/health`
+   legacy rows. Skip this entire step during a staging-only/no-backfill hold.
+8. Prove authenticated, Convex-backed admin reads independently of `/api/health`
    and discard the response body so lead/session content does not enter the
    release log:
 
@@ -302,6 +360,10 @@ Do not submit a staging lead casually: staging still shares production Convex,
 OpenAI, Redis, and notification accounts.
 
 ## Phase 4 — Production
+
+Skip this phase completely when the active release contract is staging-only.
+Read-only production non-change proof remains required; no deploy, environment
+write, retention call, or other production mutation is allowed.
 
 1. Confirm staging proof and capture the current production rollback SHA.
 2. Inject the operator-only Coolify credential and run the exact-SHA deployer:

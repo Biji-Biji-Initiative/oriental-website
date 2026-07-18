@@ -64,6 +64,7 @@ function buildFuzzEvent(random: () => number, index: number): RealtimeServerEven
 
   const type = EVENT_TYPES[Math.floor(random() * EVENT_TYPES.length)];
   const event: Record<string, unknown> = { type };
+  if (random() < 0.75) event.item_id = `audio_${Math.floor(random() * 320)}`;
   if (random() < 0.7) event.transcript = junk();
   if (random() < 0.7) event.delta = junk();
   if (random() < 0.5) event.error = random() < 0.5 ? junk() : { message: junk(), code: junk(), event_id: junk() };
@@ -106,6 +107,12 @@ function assertInvariants(state: VoiceRuntimeState) {
   const callIds = state.handledCallIds ?? [];
   expect(new Set(callIds).size).toBe(callIds.length);
   expect(state.pendingUserTranscripts ?? 0).toBeGreaterThanOrEqual(0);
+  expect((state.pendingUserTranscriptIds ?? []).length).toBeLessThanOrEqual(256);
+  expect((state.settledUserTranscriptIds ?? []).length).toBeLessThanOrEqual(256);
+  expect((state.observedUserSpeechStartIds ?? []).length).toBeLessThanOrEqual(256);
+  expect((state.ignoredUserTranscriptIds ?? []).length).toBeLessThanOrEqual(256);
+  expect(Object.keys(state.settledUserTranscriptBuffer ?? {}).length).toBeLessThanOrEqual(256);
+  expect(Object.keys(state.settledUserTranscriptOutcomes ?? {}).length).toBeLessThanOrEqual(256);
   for (const error of state.errors ?? []) {
     expect(typeof error.message).toBe("string");
     if (error.code !== undefined) expect(typeof error.code).toBe("string");

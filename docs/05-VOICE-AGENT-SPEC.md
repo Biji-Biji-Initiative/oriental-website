@@ -157,6 +157,13 @@ claim a handoff succeeded before `route_to_team` returns success.
 | Reconnects | When a session starts with an existing transcript, the last turns are sent as context and Reka resumes instead of repeating the opener |
 | Modalities | Audio output with text events and tool-call events on the data channel; typed user messages are sent as `input_text` conversation items |
 
+The voice-reactive Mereka M nebula is a staging-only visual preview. It needs
+both `NEXT_PUBLIC_BRAND_MOTION_PREVIEW=true` at build time and the exact
+staging/local hostname; the reviewed production path keeps the legacy orb. The
+Trace M entrance uses the same gate and is absent from a production build of
+this source. WebGL failure and reduced motion retain the canonical static mark
+without affecting audio measurement.
+
 ## 7. Auth & token mint
 
 The browser **never** holds the long-lived `OPENAI_API_KEY`. The connect flow

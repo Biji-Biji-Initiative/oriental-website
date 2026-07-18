@@ -1,75 +1,68 @@
-# Mereka at Oriental voice and visual release contract
+# Mereka at Oriental staging-only voice and visual release contract
 
-Review the current integration tree based on
-`b0b0d83c7499ea4ed470430e8e3cfa80ab7bd68e` for merge and exact-SHA release.
-This contract permits the same reviewed web image to move through canonical
-staging and production. It does not permit a production candidate voice cell,
-QA picker, or unreviewed configuration mutation.
+Review the exact current integration tree based on
+`401a04f12119bd41751af172f9255bdb25bacf38` for merge and an exact-SHA deploy to
+canonical staging only. This contract does not authorize production, shared
+Convex, DNS, backfill, retention, or production Infisical/Coolify mutation.
+Production must remain on its current deployed SHA and current live visual
+surface, with `baseline/control/gpt-realtime-2/low/adaptive` and picker off. The
+reviewed candidate code must fail closed to the legacy orb and no Trace entrance
+for a future production build, but this release does not deploy that fallback.
 
 ## Required behavior
 
-1. The raw-WebGL Mereka M nebula and Trace M loader are the approved visual on
-   both `staging.oriental.mereka.io` and `oriental.mereka.io`. They MUST NOT
-   depend on a preview environment variable or hostname gate. Reduced-motion,
-   missing WebGL, and initialization failure must fall back to the approved SVG
-   mark.
-2. The nebula must remain bounded to about 2,100 point sprites, release every
-   animation/listener/GPU resource, tilt from pointer input, and react visibly
+1. The raw-WebGL Mereka M nebula and Trace M loader are staging/local previews.
+   They require both `NEXT_PUBLIC_BRAND_MOTION_PREVIEW=true` at build time and
+   the exact staging/local hostname. Either gate failing must render the legacy
+   production orb and no Trace entrance. Reduced motion, missing WebGL, and
+   initialization failure use the canonical static mark.
+2. The nebula remains bounded to about 2,100 point sprites, releases every
+   animation/listener/GPU resource, tilts from pointer input, and reacts visibly
    to both visitor microphone energy and remote assistant audio. Its adaptive
-   floor and gate hysteresis must converge inactive during sustained room noise
-   from 0.12 through 0.20 rather than treating steady noise as speech.
-3. A clean staging candidate is
-   `baseline/candidate/gpt-realtime-2.1/low/adaptive` with the picker off. A
-   separately declared staging audition may enable the picker, but those rows
-   are voice/variant evidence and MUST NOT count as clean model-comparison or
-   promotion evidence.
-4. Production must remain
-   `baseline/control/gpt-realtime-2/low/adaptive` with the picker off. Every
-   production deploy, preflight, and verification path must reject a candidate
-   model or audition picker mode even when a stale environment value requests
-   one.
-5. Dialog content and the global picker must fit and remain reachable at the
-   repository's complete responsive matrix, including 844x390 and 1024x390.
-   Returning microphone permission may prewarm but must not mint a session
-   before the browser permission state permits it.
-6. Reka must identify herself as from Mereka. Mereka is the organisation and
-   team; Oriental Building is the physical building and Mereka's future
-   location. Copy must use "Mereka at Oriental" and must not call the team
-   "Oriental". The phrase "quick one" is forbidden.
-7. Typed/prefilled and exact high-confidence speech emails are immediately
-   usable. A complete approximate/medium-confidence spoken address remains
-   visible but pending for one exact readback. A different literal address is
-   never treated as ASR approximation. A stale, corrected, contradicted, or
-   contaminated readback must never route.
-8. Typed interruption, stale model responses, out-of-order transcriptions,
-   duplicate calls, and pending transcription races must preserve the latest
-   authoritative address. Clear-all must erase captured data, route state,
-   transcript, remembered handoff, and quarantine pre-clear ASR completions by
-   Realtime item identity. A typed-only edited handoff must survive closing and
-   reopening the same intake even when the voice transcript is empty.
-9. `clear_fields` is the canonical clear-all tool name across browser events,
-   bounded schemas, Convex validation, persistence, and aggregate reporting. It
-   must remain distinct from the single-field `clear_field` operation and must
-   never be rewritten through a lossy compatibility alias.
-10. Evaluation must remain read-only in aggregate-only mode, enrich missing
-    historical voice profile fields only through existing queries, count email
-    rejections, stale submissions, and banned style tics, and report PII-free
-    per-tool latency overall and by canonical tool name. Aggregate comparisons
-    must be stratified by runtime, model, reasoning, variant, voice, and speed;
-    model/voice confounds must be rejected.
-11. Unit, lint, type, build, responsive browser, managed cell, exact-SHA
-    release, live WebRTC/audio, and no-submit intake gates must pass. When a
-    reviewed diff changes Convex validators or functions, the canonical Convex
-    deployment must precede the web image. The exact reviewed SHA may then move
-    to canonical staging and production under optimistic concurrency, with
-    production voice still fixed to the control cell.
+   gate must converge inactive during sustained room noise.
+3. Canonical staging runs an explicitly labelled human-audition cell:
+   `baseline/candidate/gpt-realtime-2.1/low/adaptive` with the voice-register
+   picker visible. Audition rows are invalid as clean model-comparison evidence.
+   Production is not deployed.
+4. Dialog content, picker, compact email editor, and actions fit and remain
+   reachable across the repository's responsive matrix, including 844x390 and
+   1024x390. Browser microphone state is queried on each visit: granted access
+   may prewarm; prompt/expired one-time access asks before quota is spent.
+5. Reka identifies herself as from Mereka. Mereka is the organisation and team;
+   Oriental Building is the physical building and Mereka's future location.
+   The phrase “quick one” is forbidden and is deterministically counted.
+6. Exact typed/prefilled and grounded high-confidence speech email is usable
+   immediately. A complete medium-confidence spoken address stays visible and
+   pending without a spelling loop. Corrections, contradictions, competing
+   literals, third-party/historical/example addresses, stale model responses,
+   out-of-order transcriptions, and duplicate calls must never route the wrong
+   address. Clear-all must revoke one-shot prefill PII and quarantine pre-clear
+   ASR completions.
+7. Signed voice submission persists a server-created, HMAC-bound, PII-free
+   evidence envelope on the immutable lead. The authority sequence is rebased
+   when bounded transcript storage removes older user turns. Missing,
+   duplicate, mismatched, ambiguous, or orphan attribution fails the evaluator
+   closed without exposing identifiers or transcripts. An evaluator `--limit`
+   window must not falsely classify a durable older session as an orphan.
+8. Aggregate-only evaluation is read-only, judge-free, report-free, and
+   aggregate-only on stdout. It keeps main's PII-safe error/tool telemetry,
+   joins raw review/session pairs before reconnect folding, excludes synthetic
+   probes, and rejects experiment confounds.
+9. One-shot open requests are versioned and compare-and-swap revoked so a late
+   close/clear from call A cannot erase call B or resurrect an old email. Main's
+   responsive focus, analytics attribution, and typed-draft continuity remain.
+10. Unit, lint, type, build, responsive browser, managed staging-cell,
+    exact-SHA, real WebRTC/audio, and synthetic no-submit gates must pass.
+    Oracle/APR must run only in the canonical hermetic plane via `ssh g` or
+    `ssh mereka`. The exact merged SHA may move only to staging under optimistic
+    concurrency. Production non-change proof is mandatory.
 
 ## Review boundary
 
-This review decides whether the code may merge for an exact-SHA staging and
-production release. The final merged SHA and post-merge live evidence cannot
-exist during a pre-merge review, so their absence is not a code blocker. A
-production candidate or picker, hidden experiment confound, false
-`clear_fields` alias, PII restoration, premature email routing, unbounded
-rendering work, inaccessible responsive controls, or false evidence
-attribution is a blocker.
+This review decides whether the code may merge for a staging-only release. A
+production mutation, shared-Convex deploy, backfill, preview-gate bypass,
+candidate/picker leakage, false evidence attribution, PII restoration,
+premature email routing, unbounded rendering, inaccessible dialog, or local/
+Windows/browser-bridge Oracle execution is a blocker. Post-merge live staging
+evidence and production non-change evidence are later release gates, not
+pre-merge code evidence.

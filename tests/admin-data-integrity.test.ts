@@ -103,4 +103,8 @@ describe("admin CRM data integrity contract", () => {
       "archive or restore records without deleting customer evidence immediately",
     );
   });
+
+  it("strips server-owned submission evidence before lead rows cross into the client table", () => {
+    expect(workspaceSource).toContain("utm: publicLeadUtm(lead.utm)");
+  });
 });

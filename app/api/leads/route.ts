@@ -15,6 +15,8 @@ import {
   verifyTurnstile,
 } from "@/lib/server/security";
 import { verifyVoiceReviewCredentials } from "@/lib/server/voice-review-token";
+import { createVoiceSubmissionEvidence } from "@/lib/server/voice-submission-evidence";
+import { publicLeadUtm, VOICE_SUBMISSION_EVIDENCE_UTM_KEY } from "@/lib/voice/submission-evidence";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -83,7 +85,61 @@ export async function POST(request: NextRequest) {
     return noStoreJson({ ok: false, error: "voice_email_unconfirmed" }, { status: 409 });
   }
 
-  const lead = routeLead(stripLeadVerification(parsed.data));
+  if (
+    parsed.data.source === "voice" &&
+    signedVoiceReview &&
+    (!parsed.data.voiceSessionId ||
+      !parsed.data.voiceEmailVerificationSource ||
+      typeof parsed.data.voiceEmailVerificationUserTurnSequence !== "number")
+  ) {
+    logWarn("lead.voice_submission_attribution_incomplete", {
+      requestId,
+      ipHash,
+      segment: parsed.data.segment,
+      reviewId: parsed.data.voiceReviewId ?? null,
+      durationMs: durationSince(startedAt),
+    });
+    return noStoreJson({ ok: false, error: "voice_submission_attribution_incomplete" }, { status: 409 });
+  }
+
+  const acceptedAt = Date.now();
+  const routedLead = routeLead(stripLeadVerification(parsed.data));
+  const evidence =
+    signedVoiceReview &&
+    parsed.data.voiceReviewId &&
+    parsed.data.voiceSessionId &&
+    parsed.data.voiceEmailVerificationSource &&
+    typeof parsed.data.voiceEmailVerificationUserTurnSequence === "number"
+      ? createVoiceSubmissionEvidence({
+          acceptedAt,
+          authorityTurnSequence: parsed.data.voiceEmailVerificationUserTurnSequence,
+          email: routedLead.form.email,
+          leadId: routedLead.id,
+          reviewId: parsed.data.voiceReviewId,
+          sessionId: parsed.data.voiceSessionId,
+          source: parsed.data.voiceEmailVerificationSource,
+          transcript: routedLead.transcript,
+        })
+      : null;
+  if (signedVoiceReview && !evidence) {
+    logWarn("lead.voice_submission_evidence_invalid", {
+      requestId,
+      ipHash,
+      segment: parsed.data.segment,
+      reviewId: parsed.data.voiceReviewId ?? null,
+      durationMs: durationSince(startedAt),
+    });
+    return noStoreJson({ ok: false, error: "voice_submission_attribution_incomplete" }, { status: 409 });
+  }
+  const lead = {
+    ...routedLead,
+    // This key is server-owned. A client-supplied value is always removed,
+    // then a signed envelope is inserted only for a complete signed voice row.
+    utm: {
+      ...publicLeadUtm(routedLead.utm),
+      ...(evidence ? { [VOICE_SUBMISSION_EVIDENCE_UTM_KEY]: evidence } : {}),
+    },
+  };
   if (!lead.routedToEmail && isProductionEnv()) {
     logError("lead.routing_unconfigured", {
       requestId,
@@ -248,6 +304,7 @@ export async function POST(request: NextRequest) {
   return noStoreJson({
     ok: true,
     id: persistence.id,
+    acceptedAt,
     persisted: persistence.persisted,
     notifications: publicNotifications,
   });
@@ -267,6 +324,7 @@ function stripLeadVerification(data: LeadRequest) {
     voiceReviewToken: _verificationOnly,
     voiceEmailVerified: _emailVerificationOnly,
     voiceEmailVerificationSource: _emailVerificationSourceOnly,
+    voiceEmailVerificationUserTurnSequence: _emailVerificationSequenceOnly,
     ...lead
   } = data;
   return lead;

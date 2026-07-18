@@ -28,6 +28,7 @@ import { getSegment } from "@/lib/segments";
 import { adminCookieName, verifyAdminSessionCookie } from "@/lib/server/admin-auth";
 import { getAdminLeadTable, getAdminReviewDashboard } from "@/lib/server/convex";
 import { isBenignVoiceError, type VoiceRuntimeError } from "@/lib/voice/realtime-events";
+import { publicLeadUtm } from "@/lib/voice/submission-evidence";
 
 export const dynamic = "force-dynamic";
 
@@ -1827,7 +1828,7 @@ function LeadContactChips({ lead }: { lead: LeadRow }) {
   const chips = [
     lead.phone ? `Phone: ${lead.phone}` : null,
     lead.website ? `Web: ${lead.website}` : null,
-    Object.keys(lead.utm ?? {}).length > 0 ? `UTM: ${Object.keys(lead.utm).join(", ")}` : null,
+    Object.keys(publicLeadUtm(lead.utm)).length > 0 ? `UTM: ${Object.keys(publicLeadUtm(lead.utm)).join(", ")}` : null,
   ].filter(Boolean);
   if (chips.length === 0) return null;
   return (
