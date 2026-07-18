@@ -151,7 +151,7 @@ describe("POST /api/voice/debug", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body).toMatchObject({ ok: true, persisted: true });
+    expect(body).toMatchObject({ ok: true, persisted: true, applied: true });
     expect(mocks.persistVoiceReviewSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
         reviewId: expect.any(String),
@@ -179,6 +179,39 @@ describe("POST /api/voice/debug", () => {
         closeReason: "realtime_quota_exhausted",
       }),
     );
+  });
+
+  it("retries an out-of-order availability snapshot until its reason is durably applied", async () => {
+    const syntheticReview = createVoiceReviewCredentials(Date.now(), { synthetic: true });
+    mocks.persistVoiceReviewSnapshot
+      .mockResolvedValueOnce({ ok: true, id: syntheticReview.id, applied: false, autoEvalQueued: false })
+      .mockResolvedValueOnce({ ok: true, id: syntheticReview.id, applied: false, autoEvalQueued: false })
+      .mockResolvedValueOnce({ ok: true, id: syntheticReview.id, applied: true, autoEvalQueued: false });
+
+    const response = await POST(
+      snapshotRequest(syntheticReview, {
+        snapshotSequence: 4,
+        connectionStatus: "connecting",
+        closeReason: "realtime_quota_exhausted",
+        transcript: [],
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ ok: true, persisted: true, applied: true });
+    expect(mocks.persistVoiceReviewSnapshot).toHaveBeenCalledTimes(3);
+    expect(mocks.persistVoiceReviewSnapshot).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ closeReason: "realtime_quota_exhausted", snapshotSequence: 5 }),
+    );
+    expect(mocks.persistVoiceReviewSnapshot).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({ closeReason: "realtime_quota_exhausted", snapshotSequence: 6 }),
+    );
+    expect(mocks.logInfo).toHaveBeenCalledWith("voice_review.availability_sequence_retry", {
+      reviewId: syntheticReview.id,
+      applied: true,
+    });
   });
 
   it("logs structured voice session health without captured PII or transcript text", async () => {

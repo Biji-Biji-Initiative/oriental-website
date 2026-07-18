@@ -323,8 +323,9 @@ include release docs before the first deployment.
    scripts inject a short-lived HMAC proof at the browser network boundary. The
    server signs the resulting review as synthetic and applies the reserved
    non-routable marker to every persisted snapshot, including quota/WebRTC
-   terminal failures. A failed smoke must wait for that terminal snapshot
-   response before the browser closes.
+   terminal failures. A failed smoke must wait until that terminal snapshot is
+   both persisted and applied before the browser closes; an out-of-order
+   acknowledgement is not durable evidence.
 5. Run the exact post-cutoff aggregate-only cohort command above. Require a
    complete session window, complete lead window, complete target reconnect
    history, and `syntheticPipeline.status=pass`. Keep customer
