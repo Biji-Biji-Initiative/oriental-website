@@ -448,6 +448,7 @@ describe("release governance", () => {
     for (const smoke of [stagingVoiceSmoke, stagingIntakeSmoke]) {
       expect(smoke).toContain("createVoiceSmokeProof(smokeSigningSecret)");
       expect(smoke).toContain("VOICE_SMOKE_PROOF_HEADER");
+      expect(smoke).toContain("smokeProof: proof");
       expect(smoke).toContain('page.route("**/api/leads"');
       expect(smoke).toContain('route.abort("blockedbyclient")');
       expect(smoke).toContain("attemptedLeadPosts");

@@ -92,6 +92,10 @@ const IMMUTABLE_LEAD_ATTRIBUTION_LIMIT = 500;
 const VOICE_EVAL_SESSION_LIMIT = 200;
 
 function parseArgs(argv: string[]): Args {
+  // pnpm preserves the conventional separator in `pnpm eval:voice -- ...`.
+  // Accept that single leading delimiter while continuing to reject unknown
+  // flags (including a misplaced second delimiter) fail-closed.
+  const normalizedArgv = argv[0] === "--" ? argv.slice(1) : argv;
   const args: Args = {
     limit: 50,
     dry: false,
@@ -105,9 +109,9 @@ function parseArgs(argv: string[]): Args {
   let cohortStart: { at: number; iso: string } | undefined;
   let cohortEnvironment: EvalCohortEnvironment | undefined;
   let targetModelCell: EvalCohortModelCell | undefined;
-  for (let i = 0; i < argv.length; i += 1) {
-    const flag = argv[i];
-    const value = argv[i + 1];
+  for (let i = 0; i < normalizedArgv.length; i += 1) {
+    const flag = normalizedArgv[i];
+    const value = normalizedArgv[i + 1];
     if (flag === "--dry") {
       args.dry = true;
     } else if (flag === "--aggregate-only") {

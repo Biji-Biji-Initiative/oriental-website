@@ -1,4 +1,4 @@
-import { chromium } from "playwright";
+import { chromium, type Route } from "playwright";
 import { readEnv } from "../lib/env";
 import { voiceReviewSnapshotSchema } from "../lib/schemas";
 import { createVoiceSmokeProof, VOICE_SMOKE_PROOF_HEADER } from "../lib/server/voice-smoke-proof";
@@ -39,16 +39,7 @@ async function run() {
     const context = await browser.newContext();
     await context.grantPermissions(["microphone"], { origin: stagingOrigin });
     const page = await context.newPage();
-    await page.route("**/api/voice/session", async (route) => {
-      const request = route.request();
-      if (new URL(request.url()).origin !== stagingOrigin) return route.continue();
-      await route.continue({
-        headers: {
-          ...request.headers(),
-          [VOICE_SMOKE_PROOF_HEADER]: createVoiceSmokeProof(smokeSigningSecret),
-        },
-      });
-    });
+    await page.route("**/api/voice/session", (route) => continueSyntheticSession(route));
     await page.route("**/api/leads", async (route) => {
       const request = route.request();
       if (request.method() !== "POST" || new URL(request.url()).origin !== stagingOrigin) return route.continue();
@@ -168,6 +159,20 @@ async function run() {
   } finally {
     await browser.close();
   }
+}
+
+async function continueSyntheticSession(route: Route) {
+  const request = route.request();
+  if (new URL(request.url()).origin !== stagingOrigin) return route.continue();
+  const proof = createVoiceSmokeProof(smokeSigningSecret);
+  const postData = request.postDataJSON() as unknown;
+  if (!postData || typeof postData !== "object" || Array.isArray(postData)) {
+    throw new Error("Staging intake smoke could not authenticate the session request body");
+  }
+  await route.continue({
+    headers: { ...request.headers(), [VOICE_SMOKE_PROOF_HEADER]: proof },
+    postData: JSON.stringify({ ...postData, smokeProof: proof }),
+  });
 }
 
 function isTerminalAvailabilitySnapshot(response: import("playwright").Response) {

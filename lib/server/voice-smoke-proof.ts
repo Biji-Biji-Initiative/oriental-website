@@ -4,6 +4,11 @@ export const VOICE_SMOKE_PROOF_HEADER = "x-mereka-voice-smoke-proof";
 export const VOICE_SMOKE_HOSTNAME = "staging.oriental.mereka.io";
 export const VOICE_SMOKE_SYNTHETIC_EMAIL = "qa.nebula@example.test";
 
+type VoiceSmokeRequestContext = {
+  hostname: string;
+  deploymentEnvironment: "local" | "staging" | "production";
+};
+
 const proofVersion = "v1";
 const proofAudience = "staging-oriental-mereka-io";
 const proofMaxAgeMs = 90_000;
@@ -21,14 +26,20 @@ export function createVoiceSmokeProof(secret: string, now = Date.now(), nonce: s
   return `${payload}.${sign(payload, secret)}`;
 }
 
-/** Only the canonical staging hostname may turn a signed proof into synthetic evidence. */
+/** Only the managed staging runtime may turn a signed proof into synthetic evidence. */
 export function verifyVoiceSmokeProof(
   proof: string | null,
-  hostname: string,
+  context: VoiceSmokeRequestContext,
   secret: string | null | undefined,
   now = Date.now(),
 ) {
-  if (!proof || !secret || hostname.toLowerCase() !== VOICE_SMOKE_HOSTNAME) return false;
+  const hostname = context.hostname.toLowerCase();
+  // Next can see an internal upstream URL behind the production reverse proxy,
+  // so the server-owned deployment environment is the authority. The public
+  // production hostname still wins even if APP_ENV were ever misconfigured.
+  if (!proof || !secret || context.deploymentEnvironment !== "staging" || hostname === "oriental.mereka.io") {
+    return false;
+  }
   const [version, issuedAtRaw, nonce, audience, signature, ...extra] = proof.split(".");
   if (
     extra.length > 0 ||
