@@ -35,8 +35,8 @@ export async function POST(request: NextRequest) {
 
   const deploymentEnvironment = detectDeploymentEnvironment(request.url);
   const syntheticProbe = verifyVoiceSmokeProof(
-    request.headers.get(VOICE_SMOKE_PROOF_HEADER),
-    new URL(request.url).hostname,
+    request.headers.get(VOICE_SMOKE_PROOF_HEADER) ?? parsed.data.smokeProof ?? null,
+    { hostname: new URL(request.url).hostname, deploymentEnvironment },
     readEnv("IP_HASH_SECRET"),
   );
 

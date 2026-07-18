@@ -1332,7 +1332,7 @@ describe("eval-voice aggregate-only mode", () => {
       stderr: expect.stringContaining("Unknown argument: --aggregate-ony"),
     });
 
-    const help = await execFileAsync(executable, [script, "--help"]);
+    const help = await execFileAsync(executable, [script, "--", "--help"]);
     expect(help.stdout).toContain("--aggregate-only");
     expect(help.stdout).toContain("--cohort-start iso");
   });

@@ -177,6 +177,21 @@ describe("POST /api/voice/session", () => {
     });
   });
 
+  it("accepts the signed body proof on a managed staging reverse-proxy URL", async () => {
+    process.env.APP_ENV = "staging";
+    const fetchMock = mockOpenAiFetch();
+    vi.stubGlobal("fetch", fetchMock);
+    const proof = createVoiceSmokeProof(process.env.IP_HASH_SECRET as string);
+    const response = await POST(
+      request({ intent: "technology", smokeProof: proof }, "203.0.113.10", "http://127.0.0.1/api/voice/session"),
+    );
+    const body = await json(response);
+
+    expect(readVoiceReviewCredentialClaims(body.review?.id as string, body.review?.token as string)).toEqual({
+      synthetic: true,
+    });
+  });
+
   it("cannot mark production or an unsigned staging request as synthetic", async () => {
     const fetchMock = mockOpenAiFetch();
     vi.stubGlobal("fetch", fetchMock);

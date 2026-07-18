@@ -145,6 +145,10 @@ export const newsletterRequestSchema = z.object({
 export const voiceSessionRequestSchema = z.object({
   turnstileToken: z.string().optional(),
   intent: segmentSchema.optional(),
+  // Only the staging Playwright runner injects this short-lived HMAC at the
+  // network boundary. The server verifies it before minting synthetic review
+  // credentials; ordinary browser values carry no authority.
+  smokeProof: z.string().max(300).optional(),
   // Voice A/B variant id; resolved against the server-side catalog (unknown ids
   // fall back to the env default). Never carries voice/persona data itself.
   variant: z.string().max(64).optional(),
