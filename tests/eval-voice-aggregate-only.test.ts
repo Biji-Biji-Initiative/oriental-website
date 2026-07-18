@@ -780,6 +780,8 @@ describe("eval-voice aggregate-only mode", () => {
 
     try {
       let stderr = "";
+      let stdout = "";
+      let code = 0;
       try {
         await execFileAsync(
           resolve(repositoryRoot, "node_modules/.bin/tsx"),
@@ -795,17 +797,27 @@ describe("eval-voice aggregate-only mode", () => {
         );
         throw new Error("expected submitted-email attribution to fail");
       } catch (error) {
-        stderr = String((error as { stderr?: string }).stderr ?? "");
+        const failure = error as { code?: number; stderr?: string; stdout?: string };
+        code = failure.code ?? 1;
+        stderr = String(failure.stderr ?? "");
+        stdout = String(failure.stdout ?? "");
       }
 
-      expect(stderr).toContain(
-        failureMode === "query-error"
-          ? "Submitted email attribution query failed; capture-integrity evidence is unavailable."
-          : "Submitted email attribution is incomplete; capture-integrity evidence is unavailable.",
-      );
+      if (failureMode !== "query-error") {
+        expect(code).toBe(2);
+        expect(JSON.parse(stdout)).toMatchObject({
+          aggregate: { captureIntegrity: { unattributedEmailSubmissions: 1 } },
+          gate: { ok: false, failures: ["captureIntegrityFailures 1 > 0"] },
+        });
+      } else {
+        expect(stderr).toContain(
+          "Submitted email attribution query failed; capture-integrity evidence is unavailable.",
+        );
+      }
       expect(stderr).not.toMatch(
         /private-lead-id|private dot address at example dot com|private upstream attribution error/i,
       );
+      expect(stdout).not.toMatch(/private-lead-id|private dot address at example dot com/i);
       expect(await readdir(cwd)).toEqual([]);
     } finally {
       await new Promise<void>((resolveClose, rejectClose) =>
@@ -1001,7 +1013,7 @@ describe("eval-voice aggregate-only mode", () => {
   it.each([
     ["missing", {}],
     ["invalid", { [VOICE_SUBMISSION_EVIDENCE_UTM_KEY]: "malformed-current-envelope" }],
-  ])("still hard-fails a current candidate submission with %s v1 evidence", async (_label, utm) => {
+  ])("reports and gates a current candidate submission with %s v1 evidence", async (_label, utm) => {
     const submitted = cleanCohortSession({
       leadId: "private-current-lead",
       submittedAt: COHORT_START + 1_500,
@@ -1028,12 +1040,19 @@ describe("eval-voice aggregate-only mode", () => {
       ],
     });
 
-    expect(result.code).toBe(1);
-    expect(result.stdout).toBe("");
-    expect(result.stderr).toContain(
-      "Submitted email attribution is incomplete; capture-integrity evidence is unavailable.",
-    );
+    expect(result.code).toBe(2);
+    const report = JSON.parse(result.stdout) as AggregateOnlyVoiceEvalReport;
+    expect(report.aggregate.captureIntegrity).toMatchObject({
+      staleEmailSubmissions: 0,
+      unattributedEmailSubmissions: 1,
+      totalFailures: 1,
+    });
+    expect(report.gates.releaseQuality).toEqual({
+      ok: false,
+      failures: ["captureIntegrityFailures 1 > 0"],
+    });
     expect(result.stderr).not.toMatch(/private-current-lead|current\.private@example\.com/i);
+    expect(JSON.stringify(report)).not.toMatch(/private-current-lead|current\.private@example\.com/i);
     expect(result.files).toEqual([]);
   });
 

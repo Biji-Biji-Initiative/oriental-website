@@ -57,38 +57,53 @@
   session mint time, and the host deployer rejects an omitted source SHA instead
   of resolving a moving `origin/main`.
 
-## Executed evidence so far
+## Executed final-tree evidence
 
-- Post-rebase focused integration proof: 11 files, 549 tests passed.
-- Full release-test harness: 82 files, 962 tests passed.
-- `pnpm typecheck`: Next route generation and TypeScript passed.
-- `pnpm lint`, `pnpm build`, and `git diff --check`: passed.
-- Responsive Playwright home proof: 42 desktop/mobile cases passed, including
-  the short-landscape picker/dialog, returning-microphone, email-correction,
-  and staging brand-motion paths.
-- Production performance/a11y proof: LCP 476 ms, CLS 0, 420,731 initial
-  JavaScript transfer bytes, and zero serious/critical accessibility findings.
-- Focused tests include 399 deterministic email/realtime cases, immutable
-  submission evidence, 106 focused eval/data-integrity cases including strict
-  cohort completeness and historical debt partitioning, versioned prefill,
-  staging/production visual gating, and the long-transcript authority-rebase
-  route regression.
+- `pnpm exec vitest run` on the five changed runtime/eval suites: 5 files,
+  1,635 tests passed. The reducer/session subset passed 1,528 tests.
+- Full `scripts/run-release-tests.ts` harness: 82 files, 2,177 tests passed.
+  This includes release governance, secret policy, deploy/rollback contracts,
+  realtime ordering/fuzzing, email authority, immutable submission evidence,
+  aggregate-only eval failure semantics, privacy, telemetry, and UI contracts.
+- `pnpm lint`, `pnpm typecheck`, `git diff --check`, and the optimized
+  `pnpm build`: passed on the exact uncommitted tree described here.
+- Full Playwright matrix: 90 cases, 44 public/voice/responsive desktop and
+  mobile cases passed; 46 credentialed admin cases were intentionally skipped.
+  Passing cases include the short-landscape picker/dialog, returning microphone
+  prewarm, viewport containment, breakpoint email correction, staging picker,
+  long captions, mobile focus/source order, and no duplicate lead posts.
+- Independent responsive review reran 62/62 visual/gating contracts and
+  1,241/1,241 runtime-to-UI boundary contracts. Independent language/authority
+  and final-diff/lifecycle reviewers both returned `MERGE` on the exact tree.
+- The deterministic correction matrix covers typed, tagged ASR, and tagged ASR
+  with an active response; single and batched capture tools; punctuation,
+  ellipsis, newline, filler, and contraction variants; final-vs-stale correction
+  ordering; third-party/department/history/example ownership; and persistence
+  across the next benign server event.
+- Earlier performance/a11y proof on the unchanged visual implementation showed
+  LCP 476 ms, CLS 0, and zero serious/critical accessibility findings. The final
+  exact browser/build gates above are release authority for this tree.
+- Read-only live evidence before merge found the current staging candidate
+  cohort historically fails promotion quality (including prior quota and email
+  failures) while the synthetic pipeline passes. This release therefore does
+  not claim a green live promotion gate before deployment; post-deploy staging
+  sessions must establish the new cohort. No eval, lead, backfill, retention, or
+  Convex mutation was used to manufacture evidence.
 
 ## Remaining release gates
 
-1. Run lint, full release tests, secret scan, production build, diff checks,
-   responsive Playwright, and relevant performance/a11y gates on the final tree.
-2. Obtain a canonical hermetic APR ship verdict via `ssh g` or `ssh mereka`.
-3. Push a clean PR, require exact-head green CI, merge once, and freeze the full
+1. Commit and push this tested tree, then obtain a canonical hermetic APR ship
+   verdict for the exact pushed SHA via `ssh g` or `ssh mereka`.
+2. Require exact-head green CI, merge once, and freeze the full
    merged SHA.
-4. Capture read-only live baselines, converge only the staging Infisical source
+3. Capture read-only live baselines, converge only the staging Infisical source
    needed for the candidate audition/picker, and deploy the exact merged SHA to
    canonical staging with `--expected-current-sha`, `--voice-model-cell
    candidate`, and `--voice-picker-mode audition`. The host deployer owns the
    staging-only brand-preview build flag and forces every production build off.
-5. Run deterministic staging verification, WebRTC/audio smoke, responsive
+4. Run deterministic staging verification, WebRTC/audio smoke, responsive
    browser proof, and synthetic no-submit intake proof. Do not create/backfill a
    real lead because staging shares production data and notification planes.
-6. Prove production remained unchanged in SHA, runtime/model cell, picker, and
+5. Prove production remained unchanged in SHA, runtime/model cell, picker, and
    current live visual surface. Do not run the production or Convex deployment
    paths.

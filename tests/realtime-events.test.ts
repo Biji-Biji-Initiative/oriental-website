@@ -60,6 +60,167 @@ describe("reduceRealtimeServerEvent", () => {
   });
 
   it.each([
+    "My email is old@example.com. Actually no, new@example.com.",
+    "My email is old@example.com. No, new@example.com.",
+    "My email is old@example.com. Actually no, it's new@example.com.",
+    "My email is old@example.com. Actually no, make that new@example.com.",
+    "My email is old@example.com. Actually no, new@example.com instead.",
+    "My email is old@example.com. Actually no, new@example.com, um.",
+    "My email is old@example.com. On second thought, make that new@example.com.",
+    "My email is old@example.com. Actually no, my correct email is new@example.com.",
+    "My email is old@example.com. Actually no, my preferred email is new@example.com.",
+    "My email is old@example.com. Actually no, it's new@example.com. Actually, the event is tomorrow.",
+    "My email is old@example.com. Actually no, my preferred email is new@example.com. Sorry, the event changed.",
+  ])("treats a bare address after a correction marker as the replacement: %s", (correction) => {
+    const result = appendTypedUserMessage(state({ emailCaptureMode: "adaptive" }), correction);
+
+    expect(result.captured.email).toBe("new@example.com");
+    expect(result.emailVerification).toMatchObject({
+      value: "new@example.com",
+      status: "confirmed",
+    });
+  });
+
+  it.each([
+    "My email is old@example.com. Actually no, new@example.com. I mean final@example.com.",
+    "My email is old@example.com. Actually no, new@example.com. Correction, final@example.com.",
+  ])("uses the last decisive address in a correction chain: %s", (correction) => {
+    const result = appendTypedUserMessage(state({ emailCaptureMode: "adaptive" }), correction);
+
+    expect(result.captured.email).toBe("final@example.com");
+    expect(result.emailVerification).toMatchObject({
+      value: "final@example.com",
+      status: "confirmed",
+    });
+  });
+
+  it.each([
+    "My email is new@example.com, forget that. old@example.com is Priya's email.",
+    "My email is new@example.com, forget that. old@example.com belongs to my colleague.",
+    "old@example.com is still my email. old@example.com is Priya's email.",
+    "old@example.com is still my email. My email is new@example.com, forget that. Actually old@example.com is Priya's email.",
+    "old@example.com is the support address.",
+    "old@example.com is the billing email.",
+    "old@example.com is the vendor email.",
+    "old@example.com is the purchasing email.",
+    "old@example.com is the sample email.",
+    "old@example.com is the reference email.",
+  ])("clears a current address disclaimed after a retracted replacement: %s", (correction) => {
+    const initial = state({
+      captured: { ...emptyCapturedLead, email: "old@example.com" },
+      emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+    });
+    const result = appendTypedUserMessage(initial, correction);
+
+    expect(result.captured.email).toBe("");
+    expect(result.emailVerification).toBeUndefined();
+    const afterBenignEvent = reduceRealtimeServerEvent({ type: "rate_limits.updated", rate_limits: [] }, result).state;
+    expect(afterBenignEvent.captured.email).toBe("");
+    expect(afterBenignEvent.emailVerification).toBeUndefined();
+  });
+
+  it.each([
+    "old@example.com is wrong. Actually no, old@example.com is correct.",
+    "old@example.com is wrong. Actually, old@example.com is still my email. My email is new@example.com, forget that.",
+  ])("lets a later explicit reaffirmation preserve the current address: %s", (correction) => {
+    const initial = state({
+      captured: { ...emptyCapturedLead, email: "old@example.com" },
+      emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+    });
+    const result = appendTypedUserMessage(initial, correction);
+
+    expect(result.captured.email).toBe("old@example.com");
+    expect(result.emailVerification).toEqual(initial.emailVerification);
+    const afterBenignEvent = reduceRealtimeServerEvent({ type: "rate_limits.updated", rate_limits: [] }, result).state;
+    expect(afterBenignEvent.captured.email).toBe("old@example.com");
+    expect(afterBenignEvent.emailVerification).toEqual(initial.emailVerification);
+  });
+
+  it.each([
+    "old@example.com is Priya's email. Actually no, it's mine.",
+    "old@example.com is the support address. Actually no, that's still my email.",
+    "old@example.com is mine. Actually no, it isn't the vendor email.",
+    "old@example.com is the vendor email. Actually no, it isn't the vendor email.",
+    "old@example.com is the vendor email. Actually no, that's not the vendor email.",
+    "old@example.com is Priya's email. Actually no, it isn't Priya's email.",
+    "old@example.com is Priya's email. Actually no, it does not belong to Priya.",
+    "old@example.com is Priya's email. Actually no, it doesn't belong to Priya.",
+  ])("lets a final anaphoric ownership correction preserve the current address: %s", (correction) => {
+    const initial = state({
+      captured: { ...emptyCapturedLead, email: "old@example.com" },
+      emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+    });
+    const result = appendTypedUserMessage(initial, correction);
+
+    expect(result.captured.email).toBe("old@example.com");
+    expect(result.emailVerification).toEqual(initial.emailVerification);
+    const afterBenignEvent = reduceRealtimeServerEvent({ type: "rate_limits.updated", rate_limits: [] }, result).state;
+    expect(afterBenignEvent.captured.email).toBe("old@example.com");
+    expect(afterBenignEvent.emailVerification).toEqual(initial.emailVerification);
+  });
+
+  it.each([
+    "old@example.com is mine. Actually no, it's the vendor email.",
+    "old@example.com is mine. Actually no, it's the support.",
+    "old@example.com is the vendor email. Actually no, it isn't the vendor email, it's the support email.",
+    "old@example.com is mine. Actually no, it isn't the vendor email, it's Priya's email.",
+  ])("clears a current address after a final anaphoric secondary-role correction: %s", (correction) => {
+    const initial = state({
+      captured: { ...emptyCapturedLead, email: "old@example.com" },
+      emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+    });
+    const result = appendTypedUserMessage(initial, correction);
+
+    expect(result.captured.email).toBe("");
+    expect(result.emailVerification).toBeUndefined();
+    const afterBenignEvent = reduceRealtimeServerEvent({ type: "rate_limits.updated", rate_limits: [] }, result).state;
+    expect(afterBenignEvent.captured.email).toBe("");
+    expect(afterBenignEvent.emailVerification).toBeUndefined();
+  });
+
+  it.each([
+    "old@example.com is mine. Actually, it's the website that needs updating.",
+    "old@example.com is mine. Actually, it's the support package I need.",
+    "old@example.com is mine. Actually, it's the purchasing workflow we need to fix.",
+    "old@example.com is mine. Actually, that is the sample project.",
+  ])("keeps email authority through an unrelated anaphoric topic pivot: %s", (correction) => {
+    const initial = state({
+      captured: { ...emptyCapturedLead, email: "old@example.com" },
+      emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+    });
+    const result = appendTypedUserMessage(initial, correction);
+
+    expect(result.captured.email).toBe("old@example.com");
+    expect(result.emailVerification).toEqual(initial.emailVerification);
+    const afterBenignEvent = reduceRealtimeServerEvent({ type: "rate_limits.updated", rate_limits: [] }, result).state;
+    expect(afterBenignEvent.captured.email).toBe("old@example.com");
+    expect(afterBenignEvent.emailVerification).toEqual(initial.emailVerification);
+  });
+
+  it("lets a final direct ownership correction replace a third-party address", () => {
+    const initial = state({
+      captured: { ...emptyCapturedLead, email: "old@example.com" },
+      emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+    });
+    const result = appendTypedUserMessage(
+      initial,
+      "Priya's email is new@example.com. Actually no, new@example.com is mine.",
+    );
+
+    expect(result.captured.email).toBe("new@example.com");
+    expect(result.emailVerification).toMatchObject({
+      value: "new@example.com",
+      status: "confirmed",
+    });
+    const afterBenignEvent = reduceRealtimeServerEvent({ type: "rate_limits.updated", rate_limits: [] }, result).state;
+    expect(afterBenignEvent.captured.email).toBe("new@example.com");
+    expect(afterBenignEvent.emailVerification).toMatchObject({
+      value: "new@example.com",
+      status: "confirmed",
+    });
+  });
+
+  it.each([
     "Actually, do not use new@example.com; keep the address already there.",
     "Actually, her email is new@example.com.",
     "Actually, Priya's email is new@example.com.",
@@ -80,6 +241,13 @@ describe("reduceRealtimeServerEvent", () => {
 
     expect(result.captured.email).toBe("old@example.com");
     expect(result.emailVerification).toEqual({
+      value: "old@example.com",
+      source: "typed",
+      status: "confirmed",
+    });
+    const afterBenignEvent = reduceRealtimeServerEvent({ type: "rate_limits.updated", rate_limits: [] }, result).state;
+    expect(afterBenignEvent.captured.email).toBe("old@example.com");
+    expect(afterBenignEvent.emailVerification).toEqual({
       value: "old@example.com",
       source: "typed",
       status: "confirmed",
@@ -1091,8 +1259,13 @@ describe("reduceRealtimeServerEvent", () => {
       prematureRoute.state,
     ).state;
     confirmedState = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.committed", item_id: "audio_exact_confirmation" },
+      confirmedState,
+    ).state;
+    confirmedState = reduceRealtimeServerEvent(
       {
         type: "conversation.item.input_audio_transcription.completed",
+        item_id: "audio_exact_confirmation",
         transcript: "Yes, that's correct. Do not send it yet.",
       },
       confirmedState,
@@ -1162,7 +1335,15 @@ describe("reduceRealtimeServerEvent", () => {
       },
       confirmation.state,
     );
-    expect(route.commands).toEqual([{ type: "submit_voice", callId: "call_route_confirmed", segment: "technology" }]);
+    expect(route.state.routeRequested).toBeFalsy();
+    expect(route.commands).toEqual([
+      {
+        type: "function_result",
+        callId: "call_route_confirmed",
+        createResponse: false,
+        output: { ok: false, error: "stale_local_edit", segment: "technology" },
+      },
+    ]);
   });
 
   it.each([
@@ -1193,12 +1374,17 @@ describe("reduceRealtimeServerEvent", () => {
       { type: "response.output_audio_transcript.done", transcript: readback },
       captured.state,
     ).state;
+    const confirmationCommitted = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.committed", item_id: "audio_confirm_embedded_readback" },
+      withReadback,
+    ).state;
     const withConfirmation = reduceRealtimeServerEvent(
       {
         type: "conversation.item.input_audio_transcription.completed",
+        item_id: "audio_confirm_embedded_readback",
         transcript: "Yes, correct.",
       },
-      withReadback,
+      confirmationCommitted,
     ).state;
     const confirmation = reduceRealtimeServerEvent(
       {
@@ -1221,6 +1407,405 @@ describe("reduceRealtimeServerEvent", () => {
     expect(confirmation.commands[0]).toMatchObject({
       output: { ok: false, error: "email_readback_missing", key: "email" },
     });
+  });
+
+  it.each([
+    "I heard alpha at example dot com. Your email is beta at example dot com, is that correct?",
+    "Your email is beta at example dot com. I may also have heard alpha at example dot com, is that correct?",
+    "I heard alpha@example.com. Your email is beta@example.com, is that correct?",
+    "I also heard alpha at example dot com at first. Your email is beta at example dot com, correct?",
+    "Do not use alpha at example dot com at all. Your email is beta at example dot com, correct?",
+    "Your email is beta at example dot com, correct? I also heard alpha at example dot com at first.",
+    "I also heard alpha at e x a m p l e dot com at first. Your email is beta at example dot com, correct?",
+    "I also heard a l p h a at e x a m p l e dot c o m at first. Your email is beta at example dot com, correct?",
+    "alpha at example dot com at first. Beta at example dot com, correct?",
+    "Beta at example dot com, correct? alpha at example dot com at first.",
+    "I also have alpha at example dot com. Your email is beta at example dot com, correct?",
+    "I noted alpha at example dot com earlier. Your email is beta at example dot com, correct?",
+    "There was alpha at example dot com before. Your email is beta at example dot com, correct?",
+    "Previously alpha at example dot com appeared. Your email is beta at example dot com, correct?",
+    "Your email is beta at example dot com, correct? I also have alpha at example dot com.",
+    "Contact us at alpha at example dot com. Your email is beta at example dot com, correct?",
+    "Reach us at alpha at example dot com. Your email is beta at example dot com, correct?",
+    "Visit us at alpha at example dot com. Your email is beta at example dot com, correct?",
+    "Read more at oriental dot mereka dot io and alpha at example dot com was also present. Your email is beta at example dot com, correct?",
+    "I also have alpha at example dot com for the meeting. Your email is beta at example dot com, correct?",
+    "I heard alpha at a b c d e f g h i j k l dot com. Your email is beta at example dot com, correct?",
+    "I heard a l p h a at i n t e r n a t i o n a l dot c o m. Your email is beta at example dot com, correct?",
+    "I heard alpha at example point com. Your email is beta at example dot com, correct?",
+    "I also heard alpha at example.com. Your email is beta at example dot com, correct?",
+    "I noted alpha@example dot com earlier. Your email is beta at example dot com, correct?",
+    "I heard alpha @ example dot com. Your email is beta at example dot com, correct?",
+    "I heard alpha at example . com. Your email is beta at example dot com, correct?",
+    "Alpha at example dot one at first. Beta at example dot com, correct?",
+    "I got alpha at example dot com. Your email is beta at example dot com, correct?",
+    "I captured alpha at example dot com. Your email is beta at example dot com, correct?",
+    "I wrote down alpha at example dot com. Your email is beta at example dot com, correct?",
+    "Another one was alpha at example dot com. Your email is beta at example dot com, correct?",
+    "The other one was alpha at example dot com. Your email is beta at example dot com, correct?",
+    "Maybe it was alpha at example dot com. Your email is beta at example dot com, correct?",
+    "I remember alpha at example dot com. Your email is beta at example dot com, correct?",
+    "I found alpha at example dot com. Your email is beta at example dot com, correct?",
+    "The transcript showed alpha at example dot com. Your email is beta at example dot com, correct?",
+    "It sounded like alpha at example dot com. Your email is beta at example dot com, correct?",
+    "Previously us at example dot com appeared. Your email is beta at example dot com, correct?",
+    "There was me at example dot com. Your email is beta at example dot com, correct?",
+    "I saw we at example dot com. Your email is beta at example dot com, correct?",
+    "It appeared as you at example dot com. Your email is beta at example dot com, correct?",
+    "The other was it at example dot com. Your email is beta at example dot com, correct?",
+    "I recalled they at example dot com. Your email is beta at example dot com, correct?",
+    "I detected them at example dot com. Your email is beta at example dot com, correct?",
+    "The audio said will at example dot com. Your email is beta at example dot com, correct?",
+    "I heard may at example dot com. Your email is beta at example dot com, correct?",
+    "I heard can at example dot com. Your email is beta at example dot com, correct?",
+    "The budget contact is alpha at example dot com. Your email is beta at example dot com, correct?",
+    "The budget owner is alpha at example dot com. Your email is beta at example dot com, correct?",
+    "The budget is handled by alpha at example dot com. Your email is beta at example dot com, correct?",
+    "The price contact was alpha at example dot com. Your email is beta at example dot com, correct?",
+    "The release owner was alpha at example dot com. Your email is beta at example dot com, correct?",
+    "The score reporter is alpha at example dot com. Your email is beta at example dot com, correct?",
+    "Workshop at example dot com. Beta at example dot com, correct?",
+    "Call at example dot com. Beta at example dot com, correct?",
+    "Event at example dot com. Beta at example dot com, correct?",
+    "Website at example dot com. Beta at example dot com, correct?",
+    "Office at example dot com. Beta at example dot com, correct?",
+  ])("rejects confirmation when the assistant read-back contains a competing address: %s", (readback) => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "confirm_email",
+              call_id: "call_confirm_contaminated_readback",
+              arguments: JSON.stringify({ evidence: "Yes, correct." }),
+            },
+          ],
+        },
+      },
+      state({
+        captured: { ...emptyCapturedLead, email: "beta@example.com" },
+        emailVerification: { value: "beta@example.com", source: "speech", status: "pending" },
+        transcript: [
+          { role: "assistant", text: readback },
+          { role: "user", text: "Yes, correct." },
+        ],
+      }),
+    );
+
+    expect(result.state.emailVerification?.status).toBe("pending");
+    expect(result.commands[0]).toMatchObject({
+      output: { ok: false, error: "email_readback_missing", key: "email" },
+    });
+  });
+
+  it("allows repeated identical read-backs and unrelated assistant context", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "confirm_email",
+              call_id: "call_confirm_repeated_readback",
+              arguments: JSON.stringify({ evidence: "Yes, correct." }),
+            },
+          ],
+        },
+      },
+      state({
+        captured: { ...emptyCapturedLead, email: "beta@example.com" },
+        emailVerification: { value: "beta@example.com", source: "speech", status: "pending" },
+        transcript: [
+          {
+            role: "assistant",
+            text: "I have beta at example dot com. The handoff will stay editable. Beta at example dot com, correct?",
+          },
+          { role: "user", text: "Yes, correct." },
+        ],
+      }),
+    );
+
+    expect(result.state.emailVerification).toMatchObject({ value: "beta@example.com", status: "confirmed" });
+  });
+
+  it.each([
+    "Your email is beta at example dot com. We will meet at level dot two.",
+    "Your email is beta at example dot com. Read more at oriental dot mereka dot io.",
+    "Your email is beta at example dot com and we will meet at level dot two.",
+    "Your email is beta at example dot com and read more at oriental dot mereka dot io.",
+    "Read more at oriental dot mereka dot io. Your email is beta at example dot com, correct?",
+    "You can find us at oriental dot mereka dot io. Beta at example dot com, correct?",
+    "Your email is beta at example dot com and the budget is at five point two million.",
+    "Your email is beta at example dot com and our rating is at four point eight.",
+    "Your email is beta at example dot com and the workshop starts at nine dot thirty.",
+    "Your email is beta at example dot com and the release is at version dot two.",
+    "Your email is beta at example dot com and we are at unit dot four.",
+    "Your email is beta at example dot com and see section at appendix dot one.",
+    "Your email is beta at example dot com and learn more at oriental dot mereka dot io.",
+    "Your email is beta at example dot com and follow us at mereka dot social.",
+    "Your email is beta at example dot com and see us at oriental dot mereka dot io.",
+    "Your email is beta at example dot com and our office is at oriental dot mereka dot io.",
+    "Your email is beta at example dot com and meet us at room dot west.",
+    "Your email is beta at example dot com and we are at unit dot alpha.",
+    "At room dot west, your email is beta at example dot com, correct?",
+    "I have a workshop at room dot west. Your email is beta at example dot com, correct?",
+    "Your email is beta at example dot com and we have a call at zoom dot us.",
+    "I have a session at hall dot alpha. Your email is beta at example dot com, correct?",
+    "Your email is beta at example dot com and we have a booking at table dot blue.",
+    "We will not meet at level two. Your email is beta at example dot com, correct?",
+    "The workshop is not at level two. Your email is beta at example dot com, correct?",
+    "No, the meeting is not Tuesday. Your email is beta at example dot com, correct?",
+    "We cannot meet Monday. Your email is beta at example dot com, correct?",
+    "The budget is uncertain. Your email is beta at example dot com, correct?",
+    "Perhaps we meet Tuesday. Your email is beta at example dot com, correct?",
+    "The venue is unclear. Your email is beta at example dot com, correct?",
+    "The venue address is unclear. Your email is beta at example dot com, correct?",
+    "I cannot verify the building address. Your email is beta at example dot com, correct?",
+    "The website address is uncertain. Your email is beta at example dot com, correct?",
+    "The support email is not confirmed. Your email is beta at example dot com, correct?",
+    "The finance email is tentative. Your email is beta at example dot com, correct?",
+    "I doubt the office address is current. Your email is beta at example dot com, correct?",
+    "I doubt the workshop starts Monday. Your email is beta at example dot com, correct?",
+    "I may be wrong about the room. Your email is beta at example dot com, correct?",
+    "The score might be wrong. Your email is beta at example dot com, correct?",
+    "The release date is tentative. Your email is beta at example dot com, correct?",
+  ])("allows an exact read-back alongside non-email building or website context: %s", (readback) => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "confirm_email",
+              call_id: "call_confirm_contextual_readback",
+              arguments: JSON.stringify({ evidence: "Yes, correct." }),
+            },
+          ],
+        },
+      },
+      state({
+        captured: { ...emptyCapturedLead, email: "beta@example.com" },
+        emailVerification: { value: "beta@example.com", source: "speech", status: "pending" },
+        transcript: [
+          { role: "assistant", text: readback },
+          { role: "user", text: "Yes, correct." },
+        ],
+      }),
+    );
+
+    expect(result.state.emailVerification).toMatchObject({ value: "beta@example.com", status: "confirmed" });
+  });
+
+  it("cannot confirm and route a contaminated read-back in one response", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "confirm_email",
+              call_id: "call_confirm_contaminated_batch",
+              arguments: JSON.stringify({ evidence: "Yes, correct." }),
+            },
+            {
+              type: "function_call",
+              name: "route_to_team",
+              call_id: "call_route_contaminated_batch",
+              arguments: JSON.stringify({ segment: "technology" }),
+            },
+          ],
+        },
+      },
+      state({
+        captured: { ...emptyCapturedLead, email: "beta@example.com" },
+        emailVerification: { value: "beta@example.com", source: "speech", status: "pending" },
+        transcript: [
+          {
+            role: "assistant",
+            text: "I also heard alpha at example dot com at first. Your email is beta at example dot com, correct?",
+          },
+          { role: "user", text: "Yes, correct." },
+        ],
+      }),
+    );
+
+    expect(result.state.emailVerification).toMatchObject({ status: "pending" });
+    expect(result.state.routeRequested).toBeFalsy();
+    expect(result.commands).toEqual([
+      expect.objectContaining({
+        type: "function_result",
+        callId: "call_confirm_contaminated_batch",
+        output: { ok: false, error: "email_readback_missing", key: "email" },
+      }),
+      expect.objectContaining({
+        type: "function_result",
+        callId: "call_route_contaminated_batch",
+        output: expect.objectContaining({ ok: false, error: "unconfirmed_required_fields" }),
+      }),
+    ]);
+    expect(result.commands.some((command) => command.type === "submit_voice")).toBe(false);
+  });
+
+  it.each([
+    "It would be wrong to say your email is beta at example dot com.",
+    "I cannot confirm your email is beta at example dot com.",
+    "I am not saying your email is beta at example dot com.",
+    "I doubt your email is beta at example dot com.",
+    "It is incorrect that your email is beta at example dot com.",
+    "Do not assume your email is beta at example dot com.",
+    "Unless your email is beta at example dot com, we should not proceed.",
+    "Your email is beta at example dot com, but that is wrong.",
+    "Your email is beta at example dot com, not correct.",
+    "I heard beta at example dot com, but do not use that because it is wrong.",
+    "I heard beta at example dot com, or maybe not.",
+    "Beta at example dot com at first, but not anymore.",
+    "Your email is beta at example dot com and that address is incorrect.",
+    "Your email is beta at example dot com. Actually that one is wrong.",
+    "Your email is beta at example dot com, but it is wrong.",
+    "Your email is beta at example dot com, but this is wrong.",
+    "Your email is beta at example dot com, but I got that wrong.",
+    "Your email is beta at example dot com, though that is wrong.",
+    "Your email is beta at example dot com; however, that is wrong.",
+    "Your email is beta at example dot com, which is wrong.",
+    "Your email is beta at example dot com, but do not use it.",
+    "Your email is beta at example dot com, scratch that.",
+    "Your email is beta at example dot com, forget that.",
+    "Your email is beta at example dot com, ignore that.",
+    "Your email is beta at example dot com, no, that is wrong.",
+    "Your email is beta at example dot com, sorry, that is wrong.",
+    "Your email is beta at example dot com; actually, wrong one.",
+    "Your email is beta at example dot com, that is outdated.",
+    "Your email is beta at example dot com, that was the old email.",
+    "Your email is beta at example dot com, not that one.",
+    "Your email is beta at example dot com, that does not belong to you.",
+    "Your email is beta at example dot com, thats your old one.",
+    "Your email is beta at example dot com, that used to be yours.",
+    "Your email is beta at example dot com, correct? Do not use beta at example dot com.",
+    "Your email is beta at example dot com, correct? Forget beta at example dot com.",
+    "Your email is beta at example dot com, correct? Instead of beta at example dot com.",
+    "Your email is beta at example dot com, correct? Not beta at example dot com.",
+    "Your email is beta at example dot com, correct? I did not hear beta at example dot com.",
+    "Your email is beta at example dot com, correct? You should not use beta at example dot com.",
+    "Your email is beta at example dot com, correct? Never use beta at example dot com.",
+    "Your email is beta at example dot com, correct? Avoid beta at example dot com.",
+    "Your email is beta at example dot com, correct? Please do not send to beta at example dot com.",
+    "Your email is beta at example dot com, you should not use that.",
+    "Your email is beta at example dot com, please do not use that.",
+    "Your email is beta at example dot com, avoid that.",
+    "Your email is beta at example dot com, never use that.",
+    "Your email is beta at example dot com, that is no longer valid.",
+    "Your email is beta at example dot com, that one was a mistake.",
+    "Your email is beta at example dot com, that is expired.",
+    "Your email is beta at example dot com, that is not yours.",
+    "Your email is beta at example dot com, maybe thats wrong.",
+    "Your email is beta at example dot com, correct? You must not use beta at example dot com.",
+    "Your email is beta at example dot com, correct? You cannot use beta at example dot com.",
+    "Your email is beta at example dot com, correct? You can't use beta at example dot com.",
+    "Your email is beta at example dot com, correct? No longer use beta at example dot com.",
+    "Your email is beta at example dot com, correct? Exclude beta at example dot com.",
+    "Your email is beta at example dot com, correct? Discard beta at example dot com.",
+    "Your email is beta at example dot com, correct? Reject beta at example dot com.",
+    "Your email is beta at example dot com, correct? Remove beta at example dot com.",
+    "Your email is beta at example dot com, correct? Do not contact beta at example dot com.",
+    "Your email is beta at example dot com, correct? Do not route to beta at example dot com.",
+    "Your email is beta at example dot com, correct? Stop using beta at example dot com.",
+    "Your email is beta at example dot com, correct? Not supposed to use beta at example dot com.",
+    "Your email is beta at example dot com, you cannot use that.",
+    "Your email is beta at example dot com, exclude that.",
+    "Your email is beta at example dot com, stop using that.",
+    "Your email is beta at example dot com, that is invalid.",
+    "Your email is beta at example dot com, that is stale.",
+    "Your email is beta at example dot com, that is obsolete.",
+    "Your email is beta at example dot com, that is deprecated.",
+    "Your email is beta at example dot com, that is unconfirmed.",
+    "Your email is beta at example dot com, that is tentative.",
+    "Your email is beta at example dot com, that one is not active.",
+    "Your email is beta at example dot com, that one is old.",
+    "It would be wrong to say, your email is beta at example dot com.",
+    "I cannot confirm, your email is beta at example dot com.",
+    "I am not saying, your email is beta at example dot com.",
+    "I doubt, your email is beta at example dot com.",
+    "Do not assume, your email is beta at example dot com.",
+    "Maybe, your email is beta at example dot com.",
+    "Possibly, your email is beta at example dot com.",
+    "I am unsure, your email is beta at example dot com.",
+    "I cannot verify, your email is beta at example dot com.",
+    "I am not convinced, your email is beta at example dot com.",
+    "I do not believe, your email is beta at example dot com.",
+    "I can't be sure, your email is beta at example dot com.",
+    "I cannot guarantee, your email is beta at example dot com.",
+    "I question whether, your email is beta at example dot com.",
+    "It is doubtful, your email is beta at example dot com.",
+    "Unclear, your email is beta at example dot com.",
+    "Uncertain, your email is beta at example dot com.",
+    "Tentatively, your email is beta at example dot com.",
+    "I may be wrong, your email is beta at example dot com.",
+    "I could be mistaken, your email is beta at example dot com.",
+    "I am not certain, your email is beta at example dot com.",
+    "I am hesitant to say, your email is beta at example dot com.",
+    "I cannot establish, your email is beta at example dot com.",
+    "I am not convinced; Your email is beta at example dot com.",
+    "I cannot guarantee. Your email is beta at example dot com.",
+    "I can't be sure! Your email is beta at example dot com.",
+    "I question whether; Your email is beta at example dot com.",
+    "It is doubtful. Your email is beta at example dot com.",
+    "Unclear! Your email is beta at example dot com.",
+    "Uncertain; Your email is beta at example dot com.",
+    "Tentatively. Your email is beta at example dot com.",
+    "I may be wrong. Your email is beta at example dot com.",
+    "I could be mistaken; Your email is beta at example dot com.",
+    "I am not certain! Your email is beta at example dot com.",
+    "Hard to say. Your email is beta at example dot com.",
+    "I am guessing. Your email is beta at example dot com.",
+    "This is my best guess. Your email is beta at example dot com.",
+    "Low confidence. Your email is beta at example dot com.",
+    "I have low confidence. Your email is beta at example dot com.",
+    "Take this with a grain of salt. Your email is beta at example dot com.",
+    "I am only guessing. Your email is beta at example dot com.",
+    "Without confidence. Your email is beta at example dot com.",
+    "I don't know. Your email is beta at example dot com.",
+    "I have no idea. Your email is beta at example dot com.",
+    "No idea. Your email is beta at example dot com.",
+    "I can't tell. Your email is beta at example dot com.",
+    "Who knows. Your email is beta at example dot com.",
+    "This is speculative. Your email is beta at example dot com.",
+    "Pure speculation. Your email is beta at example dot com.",
+    "I am speculating. Your email is beta at example dot com.",
+    "I have no confidence. Your email is beta at example dot com.",
+    "Confidence is low. Your email is beta at example dot com.",
+    "Your address is anybody's guess. Your email is beta at example dot com.",
+  ])("does not treat a negated or uncertain statement as an exact read-back: %s", (readback) => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "confirm_email",
+              call_id: "call_confirm_negated_readback",
+              arguments: JSON.stringify({ evidence: "Yes, correct." }),
+            },
+          ],
+        },
+      },
+      state({
+        captured: { ...emptyCapturedLead, email: "beta@example.com" },
+        emailVerification: { value: "beta@example.com", source: "speech", status: "pending" },
+        transcript: [
+          { role: "assistant", text: readback },
+          { role: "user", text: "Yes, correct." },
+        ],
+      }),
+    );
+
+    expect(result.state.emailVerification).toMatchObject({ status: "pending" });
+    expect(result.commands[0]).toMatchObject({ output: { ok: false, error: "email_readback_missing" } });
   });
 
   it.each([
@@ -1263,12 +1848,17 @@ describe("reduceRealtimeServerEvent", () => {
       },
       captured.state,
     ).state;
+    const confirmationCommitted = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.committed", item_id: `audio_confirm_${localPart}` },
+      withReadback,
+    ).state;
     const withConfirmation = reduceRealtimeServerEvent(
       {
         type: "conversation.item.input_audio_transcription.completed",
+        item_id: `audio_confirm_${localPart}`,
         transcript: "Yes, correct.",
       },
-      withReadback,
+      confirmationCommitted,
     ).state;
     const confirmation = reduceRealtimeServerEvent(
       {
@@ -1413,20 +2003,11 @@ describe("reduceRealtimeServerEvent", () => {
 
     expect(result.state.routeRequested).toBeFalsy();
     expect(result.state.captured.email).toBe("old@example.com");
-    expect(result.commands).toEqual([
-      {
-        type: "function_result",
-        callId: "call_late_authority_conflict",
-        createResponse: false,
-        output: { ok: false, error: "stale_response", key: "email" },
-      },
-      {
-        type: "function_result",
-        callId: "call_route_before_authority_conflict",
-        createResponse: false,
-        output: { ok: false, error: "stale_response" },
-      },
+    expect(result.commands).toEqual([]);
+    expect(result.state.deferredMutationCalls?.map((call) => call.item.call_id)).toEqual([
+      "call_late_authority_conflict",
     ]);
+    expect(result.state.deferredRouteCall?.callId).toBe("call_route_before_authority_conflict");
   });
 
   it("reduces email mutations before routing even when model output orders route first", () => {
@@ -1954,13 +2535,18 @@ describe("reduceRealtimeServerEvent", () => {
   });
 
   it("stores user transcription and transcription token usage", () => {
+    const committed = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.committed", item_id: "audio_usage" },
+      state(),
+    ).state;
     const result = reduceRealtimeServerEvent(
       {
         type: "conversation.item.input_audio_transcription.completed",
+        item_id: "audio_usage",
         transcript: "My name is Asha.",
         usage: { total_tokens: 26, input_tokens: 17, output_tokens: 9 },
       },
-      state(),
+      committed,
     );
 
     expect(result.state.transcript).toEqual([{ role: "user", text: "My name is Asha." }]);
@@ -2899,20 +3485,11 @@ describe("reduceRealtimeServerEvent", () => {
 
     expect(result.state.captured.email).toBe("old@example.com");
     expect(result.state.routeRequested).toBeFalsy();
-    expect(result.commands).toEqual([
-      {
-        type: "function_result",
-        callId: `call_${source}_authority_conflict`,
-        createResponse: false,
-        output: { ok: false, error: "stale_response", key: "email" },
-      },
-      {
-        type: "function_result",
-        callId: `call_route_after_${source}_authority_conflict`,
-        createResponse: false,
-        output: { ok: false, error: "stale_response" },
-      },
+    expect(result.commands).toEqual([]);
+    expect(result.state.deferredMutationCalls?.map((call) => call.item.call_id)).toEqual([
+      `call_${source}_authority_conflict`,
     ]);
+    expect(result.state.deferredRouteCall?.callId).toBe(`call_route_after_${source}_authority_conflict`);
   });
 
   it.each([
@@ -4131,6 +4708,244 @@ describe("reduceRealtimeServerEvent", () => {
     });
   });
 
+  it("allows a current response to clear one email without self-tainting", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "clear_field",
+              call_id: "call_clear_current_email",
+              arguments: JSON.stringify({ key: "email" }),
+            },
+          ],
+        },
+      },
+      state({
+        captured: { ...emptyCapturedLead, email: "person@example.com" },
+        emailVerification: { value: "person@example.com", source: "typed", status: "confirmed" },
+      }),
+    );
+
+    expect(result.state.captured.email).toBe("");
+    expect(result.state.emailVerification).toBeUndefined();
+    expect(result.commands[0]).toMatchObject({ output: { ok: true, key: "email" } });
+  });
+
+  it("does not let an older response clear a newer typed address", () => {
+    const responding = reduceRealtimeServerEvent({ type: "response.created" }, state()).state;
+    const typed = appendTypedUserMessage(responding, "Use new@example.com.");
+    const staleClear = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "clear_fields",
+              call_id: "call_stale_clear_all",
+              arguments: JSON.stringify({ scope: "all" }),
+            },
+          ],
+        },
+      },
+      typed,
+    );
+
+    expect(staleClear.state.captured.email).toBe("new@example.com");
+    expect(staleClear.state.emailVerification).toMatchObject({ source: "typed", status: "confirmed" });
+    expect(staleClear.commands).toEqual([
+      {
+        type: "function_result",
+        callId: "call_stale_clear_all",
+        createResponse: false,
+        output: { ok: false, error: "stale_response", scope: "all" },
+      },
+    ]);
+  });
+
+  it("makes a valid clear-all terminal for its model response", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "clear_fields",
+              call_id: "call_terminal_clear",
+              arguments: JSON.stringify({ scope: "all" }),
+            },
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_restore_phone",
+              arguments: JSON.stringify({ key: "phone", value: "+60 12 345 6789" }),
+            },
+            {
+              type: "message",
+              content: [{ type: "output_text", text: "I cleared old@example.com." }],
+            },
+          ],
+        },
+      },
+      state({ captured: { ...emptyCapturedLead, phone: "+60 11 111 1111" } }),
+    );
+
+    expect(result.state.captured).toEqual(emptyCapturedLead);
+    expect(result.state.transcript).toEqual([]);
+    expect(result.commands).toEqual([
+      {
+        type: "function_result",
+        callId: "call_terminal_clear",
+        createResponse: false,
+        output: expect.objectContaining({ ok: true, cleared: true }),
+      },
+      {
+        type: "function_result",
+        callId: "call_restore_phone",
+        createResponse: true,
+        output: { ok: false, error: "cleared_response_discarded" },
+      },
+    ]);
+    expect(result.state.handledCallIds).toEqual(["call_terminal_clear", "call_restore_phone"]);
+
+    const replay = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_restore_phone",
+              arguments: JSON.stringify({ key: "phone", value: "+60 12 345 6789" }),
+            },
+          ],
+        },
+      },
+      result.state,
+    );
+    expect(replay.state.captured).toEqual(emptyCapturedLead);
+    expect(replay.commands).toEqual([]);
+  });
+
+  it("requires a fresh post-clear speech generation before admitting tagged audio", () => {
+    const preClearSpeech = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.speech_started", item_id: "pre_clear_audio" },
+      state({ emailCaptureMode: "adaptive" }),
+    ).state;
+    const cleared = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "clear_fields",
+              call_id: "call_clear_audio_generation",
+              arguments: JSON.stringify({ scope: "all" }),
+            },
+          ],
+        },
+      },
+      preClearSpeech,
+    ).state;
+    const delayedCommit = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.committed", item_id: "pre_clear_audio" },
+      cleared,
+    ).state;
+    const delayedCompletion = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "pre_clear_audio",
+        transcript: "My email is old@example.com.",
+        email_capture_mode: "adaptive",
+      },
+      delayedCommit,
+    ).state;
+
+    expect(delayedCompletion.captured.email).toBe("");
+    expect(delayedCompletion.transcript).toEqual([]);
+    expect(delayedCompletion.pendingUserTranscripts).toBe(0);
+    expect(delayedCompletion.ignoredUserTranscriptIds).toContain("pre_clear_audio");
+
+    const freshSpeech = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.speech_started", item_id: "post_clear_audio" },
+      delayedCompletion,
+    ).state;
+    const freshCommit = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.committed", item_id: "post_clear_audio" },
+      freshSpeech,
+    ).state;
+    const freshCompletion = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "post_clear_audio",
+        transcript: "My email is fresh@example.com.",
+        email_capture_mode: "adaptive",
+      },
+      freshCommit,
+    ).state;
+
+    expect(freshCompletion.captured.email).toBe("fresh@example.com");
+    expect(freshCompletion.emailVerification).toMatchObject({ status: "confirmed", confidence: "high" });
+  });
+
+  it("does not re-enrol a settled transcription ID after a later clear", () => {
+    const committed = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.committed", item_id: "settled_before_clear", email_capture_mode: "adaptive" },
+      state(),
+    ).state;
+    const settled = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "settled_before_clear",
+        transcript: "My email is old@example.com.",
+        email_capture_mode: "adaptive",
+      },
+      committed,
+    ).state;
+    const cleared = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "clear_fields",
+              call_id: "call_clear_after_settlement",
+              arguments: JSON.stringify({ scope: "all" }),
+            },
+          ],
+        },
+      },
+      appendTypedUserMessage(settled, "Clear everything."),
+    ).state;
+    const replayedSpeech = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.speech_started", item_id: "settled_before_clear" },
+      cleared,
+    ).state;
+    const replayedCommit = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.committed", item_id: "settled_before_clear" },
+      replayedSpeech,
+    ).state;
+    const replayedCompletion = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "settled_before_clear",
+        transcript: "My email is replay@example.com.",
+      },
+      replayedCommit,
+    ).state;
+
+    expect(replayedCompletion.captured.email).toBe("");
+    expect(replayedCompletion.transcript).toEqual([]);
+    expect(replayedCompletion.pendingUserTranscripts).toBe(0);
+  });
+
   it("ignores a transcription that was already pending when clear-all ran", () => {
     const cleared = reduceRealtimeServerEvent(
       {
@@ -4146,12 +4961,15 @@ describe("reduceRealtimeServerEvent", () => {
           ],
         },
       },
-      state({
-        captured: { ...emptyCapturedLead, email: "old@example.com" },
-        emailVerification: { value: "old@example.com", source: "speech", status: "confirmed" },
-        pendingUserTranscripts: 1,
-        pendingUserTranscriptIds: ["old-item"],
-      }),
+      appendTypedUserMessage(
+        state({
+          captured: { ...emptyCapturedLead, email: "old@example.com" },
+          emailVerification: { value: "old@example.com", source: "speech", status: "confirmed" },
+          pendingUserTranscripts: 1,
+          pendingUserTranscriptIds: ["old-item"],
+        }),
+        "Clear everything.",
+      ),
     );
 
     const late = reduceRealtimeServerEvent(
@@ -4188,11 +5006,15 @@ describe("reduceRealtimeServerEvent", () => {
           ],
         },
       },
-      oldCommitted.state,
+      appendTypedUserMessage(oldCommitted.state, "Clear everything."),
+    );
+    const newSpeechStarted = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.speech_started", item_id: "new-item" },
+      cleared.state,
     );
     const newCommitted = reduceRealtimeServerEvent(
       { type: "input_audio_buffer.committed", item_id: "new-item" },
-      cleared.state,
+      newSpeechStarted.state,
     );
     const newCompleted = reduceRealtimeServerEvent(
       {
@@ -4236,7 +5058,7 @@ describe("reduceRealtimeServerEvent", () => {
           ],
         },
       },
-      oldCommitted.state,
+      appendTypedUserMessage(oldCommitted.state, "Clear everything."),
     ).state;
 
     const oldOnce = reduceRealtimeServerEvent(
@@ -4308,9 +5130,13 @@ describe("reduceRealtimeServerEvent", () => {
       },
       state(),
     ).state;
+    const speechStarted = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.speech_started", item_id: "new-item" },
+      cleared,
+    ).state;
     const firstCommit = reduceRealtimeServerEvent(
       { type: "input_audio_buffer.committed", item_id: "new-item" },
-      cleared,
+      speechStarted,
     ).state;
     const duplicateCommit = reduceRealtimeServerEvent(
       { type: "input_audio_buffer.committed", item_id: "new-item" },
@@ -4331,7 +5157,7 @@ describe("reduceRealtimeServerEvent", () => {
     expect(completed.pendingUserTranscripts).toBe(0);
   });
 
-  it("accepts evidence-consistent identity capture while a user transcription is still pending", () => {
+  it("waits for pending transcription before accepting evidence-consistent identity capture", () => {
     const committed = reduceRealtimeServerEvent({ type: "input_audio_buffer.committed" }, state());
     const result = reduceRealtimeServerEvent(
       {
@@ -4354,7 +5180,16 @@ describe("reduceRealtimeServerEvent", () => {
       committed.state,
     );
 
-    expect(result.state.captured.email).toBe("asha@example.com");
+    expect(result.state.captured.email).toBe("");
+    expect(result.commands).toEqual([]);
+    const settled = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        transcript: "My email is asha at example dot com.",
+      },
+      result.state,
+    );
+    expect(settled.state.captured.email).toBe("asha@example.com");
   });
 
   it("rejects a stale email during pending transcription when a completed correction is already known", () => {
@@ -4388,8 +5223,13 @@ describe("reduceRealtimeServerEvent", () => {
 
     expect(result.state.captured.email).toBe("");
     expect(result.state.emailVerification).toBeUndefined();
-    expect(result.commands[0]).toMatchObject({
-      output: { ok: false, error: "ungrounded_identity_capture", key: "email" },
+    expect(result.commands).toEqual([]);
+    const settled = reduceRealtimeServerEvent(
+      { type: "conversation.item.input_audio_transcription.completed", transcript: "No." },
+      result.state,
+    );
+    expect(settled.commands[0]).toMatchObject({
+      output: { ok: false, error: "stale_local_edit", key: "email" },
     });
   });
 
@@ -4422,7 +5262,12 @@ describe("reduceRealtimeServerEvent", () => {
     );
 
     expect(result.state.emailVerification).toBeUndefined();
-    expect(result.commands[0]).toMatchObject({
+    expect(result.commands).toEqual([]);
+    const settled = reduceRealtimeServerEvent(
+      { type: "conversation.item.input_audio_transcription.completed", transcript: "No." },
+      result.state,
+    );
+    expect(settled.commands[0]).toMatchObject({
       output: { ok: false, error: "ungrounded_identity_capture", key: "email" },
     });
   });
@@ -4456,12 +5301,17 @@ describe("reduceRealtimeServerEvent", () => {
     );
 
     expect(result.state.emailVerification).toBeUndefined();
-    expect(result.commands[0]).toMatchObject({
+    expect(result.commands).toEqual([]);
+    const settled = reduceRealtimeServerEvent(
+      { type: "conversation.item.input_audio_transcription.completed", transcript: "No." },
+      result.state,
+    );
+    expect(settled.commands[0]).toMatchObject({
       output: { ok: false, error: "ungrounded_identity_capture", key: "email" },
     });
   });
 
-  it("keeps the pending-transcription relaxation when no completed turn contradicts the email", () => {
+  it("accepts a pending email only after its transcription supplies authority", () => {
     const result = reduceRealtimeServerEvent(
       {
         type: "response.done",
@@ -4484,17 +5334,21 @@ describe("reduceRealtimeServerEvent", () => {
       state({ pendingUserTranscripts: 1 }),
     );
 
-    expect(result.state.captured.email).toBe("new@example.com");
-    expect(result.state.emailVerification).toMatchObject({
-      status: "pending",
-      source: "speech",
-      confidence: "medium",
-    });
-    expect(result.commands[0]).toMatchObject({
+    expect(result.state.captured.email).toBe("");
+    expect(result.commands).toEqual([]);
+    const settled = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        transcript: "My email is new at example dot com.",
+      },
+      result.state,
+    );
+    expect(settled.state.captured.email).toBe("new@example.com");
+    expect(settled.state.emailVerification).toMatchObject({ status: "confirmed", source: "speech" });
+    expect(settled.commands[0]).toMatchObject({
       output: {
         ok: true,
         emailConfirmationRequired: false,
-        emailCheckRequired: true,
         emailCaptureMode: "adaptive",
       },
     });
@@ -4527,11 +5381,10 @@ describe("reduceRealtimeServerEvent", () => {
       committed.state,
     );
 
-    expect(captured.state.emailGroundingAwaitingTranscript).toMatchObject({
-      value: "asha.lim@example.my",
-      userTurnCount: 0,
-    });
-    expect(captured.state.emailVerification).toMatchObject({ status: "pending", confidence: "medium" });
+    expect(captured.state.captured.email).toBe("");
+    expect(captured.state.emailGroundingAwaitingTranscript).toBeUndefined();
+    expect(captured.state.emailVerification).toBeUndefined();
+    expect(captured.commands).toEqual([]);
 
     const transcribed = reduceRealtimeServerEvent(
       {
@@ -4542,7 +5395,8 @@ describe("reduceRealtimeServerEvent", () => {
       captured.state,
     );
     expect(transcribed.state.emailGroundingAwaitingTranscript).toBeUndefined();
-    expect(transcribed.state.emailVerification).toMatchObject({ status: "pending", confidence: "medium" });
+    expect(transcribed.state.captured.email).toBe("asia.lim@example.my");
+    expect(transcribed.state.emailVerification).toMatchObject({ status: "confirmed", confidence: "high" });
 
     const routed = reduceRealtimeServerEvent(
       {
@@ -4559,12 +5413,11 @@ describe("reduceRealtimeServerEvent", () => {
           ],
         },
       },
-      transcribed.state,
+      appendTypedUserMessage(transcribed.state, "Please send it."),
     );
-    expect(routed.commands[0]).toMatchObject({
-      type: "function_result",
-      output: { ok: false, error: "unconfirmed_required_fields", unconfirmedFields: ["email"] },
-    });
+    expect(routed.commands).toEqual([
+      { type: "submit_voice", callId: "call_route_after_pending_asr_drift", segment: "technology" },
+    ]);
   });
 
   it("matches pending email grounding to its transcription item when another transcript completes first", () => {
@@ -4597,7 +5450,8 @@ describe("reduceRealtimeServerEvent", () => {
       },
       emailCommitted.state,
     );
-    expect(captured.state.emailGroundingAwaitingTranscript).toMatchObject({ itemId: "audio_email" });
+    expect(captured.state.captured.email).toBe("");
+    expect(captured.state.deferredMutationCalls?.[0]?.itemId).toBe("audio_email");
 
     const unrelated = reduceRealtimeServerEvent(
       {
@@ -4608,8 +5462,9 @@ describe("reduceRealtimeServerEvent", () => {
       },
       captured.state,
     );
-    expect(unrelated.state.emailGroundingAwaitingTranscript).toMatchObject({ itemId: "audio_email" });
-    expect(unrelated.state.emailVerification).toMatchObject({ status: "pending", confidence: "medium" });
+    expect(unrelated.state.captured.email).toBe("");
+    expect(unrelated.state.deferredMutationCalls?.[0]?.itemId).toBe("audio_email");
+    expect(unrelated.state.emailVerification).toBeUndefined();
 
     const transcribed = reduceRealtimeServerEvent(
       {
@@ -4621,8 +5476,9 @@ describe("reduceRealtimeServerEvent", () => {
       unrelated.state,
     );
     expect(transcribed.state.emailGroundingAwaitingTranscript).toBeUndefined();
+    expect(transcribed.state.captured.email).toBe("asia.lim@example.my");
     expect(transcribed.state.emailVerificationUserTurnSequence).toBe(2);
-    expect(transcribed.state.emailVerification).toMatchObject({ status: "pending", confidence: "medium" });
+    expect(transcribed.state.emailVerification).toMatchObject({ status: "confirmed", confidence: "high" });
 
     const routed = reduceRealtimeServerEvent(
       {
@@ -4639,15 +5495,14 @@ describe("reduceRealtimeServerEvent", () => {
           ],
         },
       },
-      transcribed.state,
+      appendTypedUserMessage(transcribed.state, "Please send it."),
     );
-    expect(routed.commands[0]).toMatchObject({
-      type: "function_result",
-      output: { ok: false, error: "unconfirmed_required_fields", unconfirmedFields: ["email"] },
-    });
+    expect(routed.commands).toEqual([
+      { type: "submit_voice", callId: "call_route_after_multi_pending_asr_drift", segment: "technology" },
+    ]);
   });
 
-  it("binds capture to the response input when a later interruption is also pending", () => {
+  it("rejects capture from a response superseded by a later pending interruption", () => {
     const emailCommitted = reduceRealtimeServerEvent(
       { type: "input_audio_buffer.committed", item_id: "audio_email_first", email_capture_mode: "adaptive" },
       state(),
@@ -4681,49 +5536,12 @@ describe("reduceRealtimeServerEvent", () => {
       },
       interruptionCommitted.state,
     );
-    expect(captured.state.emailGroundingAwaitingTranscript).toMatchObject({ itemId: "audio_email_first" });
-
-    const emailTranscribed = reduceRealtimeServerEvent(
-      {
-        type: "conversation.item.input_audio_transcription.completed",
-        item_id: "audio_email_first",
-        email_capture_mode: "adaptive",
-        transcript: "My email is asia.lim@example.my.",
-      },
-      captured.state,
-    );
-    expect(emailTranscribed.state.emailGroundingAwaitingTranscript).toBeUndefined();
-    expect(emailTranscribed.state.emailVerification).toMatchObject({ status: "pending", confidence: "medium" });
-
-    const interruptionTranscribed = reduceRealtimeServerEvent(
-      {
-        type: "conversation.item.input_audio_transcription.completed",
-        item_id: "audio_interruption",
-        email_capture_mode: "adaptive",
-        transcript: "Sorry, the meeting should be at three.",
-      },
-      emailTranscribed.state,
-    );
-    const routed = reduceRealtimeServerEvent(
-      {
-        type: "response.done",
-        email_capture_mode: "adaptive",
-        response: {
-          output: [
-            {
-              type: "function_call",
-              name: "route_to_team",
-              call_id: "call_route_after_response_bound_asr_drift",
-              arguments: JSON.stringify({ segment: "technology" }),
-            },
-          ],
-        },
-      },
-      interruptionTranscribed.state,
-    );
-    expect(routed.commands[0]).toMatchObject({
+    expect(captured.state.captured.email).toBe("");
+    expect(captured.state.emailGroundingAwaitingTranscript).toBeUndefined();
+    expect(captured.commands[0]).toMatchObject({
       type: "function_result",
-      output: { ok: false, error: "unconfirmed_required_fields", unconfirmedFields: ["email"] },
+      createResponse: false,
+      output: { ok: false, error: "stale_response", key: "email" },
     });
   });
 
@@ -4803,7 +5621,7 @@ describe("reduceRealtimeServerEvent", () => {
           ],
         },
       },
-      corrected.state,
+      appendTypedUserMessage(corrected.state, "Please send it."),
     );
     expect(routed.state.routeRequested).toBe(true);
     expect(routed.commands).toEqual([
@@ -4811,7 +5629,245 @@ describe("reduceRealtimeServerEvent", () => {
     ]);
   });
 
-  it("still rejects evidence-inconsistent capture while a transcription is pending", () => {
+  it("drains tagged ASR settlements in commit order and makes buffered or settled replays no-ops", () => {
+    const oldCommitted = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.committed", item_id: "audio_old", email_capture_mode: "adaptive" },
+      state(),
+    ).state;
+    const newCommitted = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.committed", item_id: "audio_new", email_capture_mode: "adaptive" },
+      oldCommitted,
+    ).state;
+    const newSettledFirst = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "audio_new",
+        transcript: "Actually use new@example.com.",
+        usage: { total_tokens: 7 },
+        email_capture_mode: "adaptive",
+      },
+      newCommitted,
+    ).state;
+    const duplicateBuffered = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "audio_new",
+        transcript: "Actually use new@example.com.",
+        usage: { total_tokens: 7 },
+        email_capture_mode: "adaptive",
+      },
+      newSettledFirst,
+    ).state;
+
+    expect(newSettledFirst.transcript).toEqual([]);
+    expect(newSettledFirst.pendingUserTranscriptIds).toEqual(["audio_old", "audio_new"]);
+    expect(duplicateBuffered).toEqual(newSettledFirst);
+
+    const drained = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "audio_old",
+        transcript: "My email is old@example.com.",
+        usage: { total_tokens: 5 },
+        email_capture_mode: "adaptive",
+      },
+      duplicateBuffered,
+    ).state;
+
+    expect(drained.transcript).toEqual([
+      { role: "user", text: "My email is old@example.com." },
+      { role: "user", text: "Actually use new@example.com." },
+    ]);
+    expect(drained.captured.email).toBe("new@example.com");
+    expect(drained.emailVerification).toMatchObject({
+      value: "new@example.com",
+      status: "confirmed",
+      confidence: "high",
+    });
+    expect(drained.pendingUserTranscripts).toBe(0);
+    expect(drained.pendingUserTranscriptIds).toEqual([]);
+    expect(drained.settledUserTranscriptIds).toEqual(["audio_old", "audio_new"]);
+    expect(drained.usage).toMatchObject({ transcriptionCount: 2, transcriptionTokens: 12 });
+
+    const replayedCompletion = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "audio_old",
+        transcript: "My email is replay@example.com.",
+        usage: { total_tokens: 99 },
+      },
+      drained,
+    ).state;
+    const replayedCommit = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.committed", item_id: "audio_old" },
+      replayedCompletion,
+    ).state;
+    expect(replayedCompletion).toEqual(drained);
+    expect(replayedCommit).toEqual(drained);
+  });
+
+  it("uses a failed older ASR item to unblock the next committed correction", () => {
+    const oldCommitted = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.committed", item_id: "audio_failed_old", email_capture_mode: "adaptive" },
+      state(),
+    ).state;
+    const newCommitted = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.committed", item_id: "audio_after_failure", email_capture_mode: "adaptive" },
+      oldCommitted,
+    ).state;
+    const newBuffered = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "audio_after_failure",
+        transcript: "My email is recovered@example.com.",
+        email_capture_mode: "adaptive",
+      },
+      newCommitted,
+    ).state;
+    const drained = reduceRealtimeServerEvent(
+      { type: "conversation.item.input_audio_transcription.failed", item_id: "audio_failed_old" },
+      newBuffered,
+    ).state;
+
+    expect(drained.transcript).toEqual([{ role: "user", text: "My email is recovered@example.com." }]);
+    expect(drained.captured.email).toBe("recovered@example.com");
+    expect(drained.pendingUserTranscripts).toBe(0);
+  });
+
+  it("never routes an older address while a newer spoken turn is unresolved", () => {
+    const initial = state({
+      emailCaptureMode: "adaptive",
+      captured: { ...emptyCapturedLead, email: "old@example.com" },
+      emailVerification: {
+        value: "old@example.com",
+        source: "speech",
+        status: "confirmed",
+        confidence: "high",
+      },
+    });
+    const responseCreated = reduceRealtimeServerEvent({ type: "response.created" }, initial).state;
+    const correctionCommitted = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.committed", item_id: "audio_correction" },
+      responseCreated,
+    ).state;
+    const staleRoute = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "route_to_team",
+              call_id: "call_route_before_correction",
+              arguments: JSON.stringify({ segment: "technology" }),
+            },
+          ],
+        },
+      },
+      correctionCommitted,
+    );
+
+    expect(staleRoute.state.routeRequested).toBeFalsy();
+    expect(staleRoute.commands).toEqual([
+      {
+        type: "function_result",
+        callId: "call_route_before_correction",
+        createResponse: false,
+        output: { ok: false, error: "stale_response" },
+      },
+    ]);
+
+    const corrected = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "audio_correction",
+        transcript: "Actually use new@example.com.",
+        email_capture_mode: "adaptive",
+      },
+      staleRoute.state,
+    ).state;
+    const freshRoute = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "route_to_team",
+              call_id: "call_route_after_correction",
+              arguments: JSON.stringify({ segment: "technology" }),
+            },
+          ],
+        },
+      },
+      appendTypedUserMessage(corrected, "Please send it."),
+    );
+    expect(corrected.captured.email).toBe("new@example.com");
+    expect(freshRoute.commands).toEqual([
+      { type: "submit_voice", callId: "call_route_after_correction", segment: "technology" },
+    ]);
+
+    const pendingBeforeResponse = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.committed", item_id: "audio_bound_pending" },
+      initial,
+    ).state;
+    const responseBoundToPending = reduceRealtimeServerEvent({ type: "response.created" }, pendingBeforeResponse).state;
+    const pendingRoute = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "route_to_team",
+              call_id: "call_route_bound_pending",
+              arguments: JSON.stringify({ segment: "technology" }),
+            },
+          ],
+        },
+      },
+      responseBoundToPending,
+    );
+    expect(pendingRoute.state.routeRequested).toBeFalsy();
+    expect(pendingRoute.commands).toEqual([]);
+    expect(pendingRoute.state.deferredRouteCall).toMatchObject({
+      callId: "call_route_bound_pending",
+      itemId: "audio_bound_pending",
+    });
+    const replayedPendingRoute = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "route_to_team",
+              call_id: "call_route_bound_pending",
+              arguments: JSON.stringify({ segment: "technology" }),
+            },
+          ],
+        },
+      },
+      pendingRoute.state,
+    );
+    expect(replayedPendingRoute.commands).toEqual([]);
+    expect(replayedPendingRoute.state.deferredRouteCall).toEqual(pendingRoute.state.deferredRouteCall);
+
+    const settledSend = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "audio_bound_pending",
+        transcript: "Send it.",
+      },
+      replayedPendingRoute.state,
+    );
+    expect(settledSend.state.deferredRouteCall).toBeUndefined();
+    expect(settledSend.commands).toEqual([
+      { type: "submit_voice", callId: "call_route_bound_pending", segment: "technology" },
+    ]);
+  });
+
+  it("still rejects evidence-inconsistent capture when its pending transcription settles", () => {
     const committed = reduceRealtimeServerEvent({ type: "input_audio_buffer.committed" }, state());
     const result = reduceRealtimeServerEvent(
       {
@@ -4831,8 +5887,13 @@ describe("reduceRealtimeServerEvent", () => {
     );
 
     expect(result.state.captured.name).toBe("");
-    expect(result.commands[0]).toMatchObject({
-      output: { ok: false, error: "ungrounded_identity_capture" },
+    expect(result.commands).toEqual([]);
+    const settled = reduceRealtimeServerEvent(
+      { type: "conversation.item.input_audio_transcription.completed", transcript: "We want a demo lab." },
+      result.state,
+    );
+    expect(settled.commands[0]).toMatchObject({
+      output: { ok: false, error: "stale_local_edit" },
     });
   });
 
@@ -5012,5 +6073,2652 @@ describe("reduceRealtimeServerEvent", () => {
 
     expect(result.state.rateLimits).toEqual([{ name: "requests", limit: 100, remaining: 90, reset_seconds: 5 }]);
     expect(JSON.stringify(result.state.rateLimits)).not.toContain("visitor@example.com");
+  });
+
+  it.each(["failed", "empty"] as const)("never routes when its bound transcription is %s", (outcome) => {
+    const initial = state({
+      captured: { ...emptyCapturedLead, email: "old@example.com" },
+      emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+    });
+    const committed = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.committed", item_id: `audio_route_${outcome}` },
+      initial,
+    ).state;
+    const responding = reduceRealtimeServerEvent({ type: "response.created" }, committed).state;
+    const deferred = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "route_to_team",
+              call_id: `call_route_${outcome}`,
+              arguments: JSON.stringify({ segment: "technology" }),
+            },
+          ],
+        },
+      },
+      responding,
+    );
+    expect(deferred.commands).toEqual([]);
+
+    const settled = reduceRealtimeServerEvent(
+      outcome === "failed"
+        ? { type: "conversation.item.input_audio_transcription.failed", item_id: `audio_route_${outcome}` }
+        : {
+            type: "conversation.item.input_audio_transcription.completed",
+            item_id: `audio_route_${outcome}`,
+            transcript: "   ",
+          },
+      deferred.state,
+    );
+    expect(settled.state.routeRequested).toBeFalsy();
+    expect(settled.commands).toEqual([
+      {
+        type: "function_result",
+        callId: `call_route_${outcome}`,
+        createResponse: true,
+        output: { ok: false, error: "transcription_unavailable", segment: "technology" },
+        toolName: "route_to_team",
+      },
+    ]);
+    expect(settled.commands.some((command) => command.type === "submit_voice")).toBe(false);
+  });
+
+  it("does not create a competing response while a sibling route waits for tagged ASR", () => {
+    const initial = state({
+      captured: { ...emptyCapturedLead, email: "ready@example.com" },
+      emailVerification: { value: "ready@example.com", source: "typed", status: "confirmed" },
+    });
+    const committed = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.committed", item_id: "audio_summary_then_route" },
+      initial,
+    ).state;
+    const responding = reduceRealtimeServerEvent({ type: "response.created" }, committed).state;
+    const deferred = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "summarise_lead",
+              call_id: "call_summary_before_deferred_route",
+              arguments: "{}",
+            },
+            {
+              type: "function_call",
+              name: "route_to_team",
+              call_id: "call_deferred_after_summary",
+              arguments: JSON.stringify({ segment: "technology" }),
+            },
+          ],
+        },
+      },
+      responding,
+    );
+
+    expect(deferred.state.deferredRouteCall).toMatchObject({ callId: "call_deferred_after_summary" });
+    expect(deferred.commands).toHaveLength(1);
+    expect(deferred.commands[0]).toMatchObject({
+      type: "function_result",
+      callId: "call_summary_before_deferred_route",
+      createResponse: false,
+    });
+  });
+
+  it("fails legacy untagged pending, failed, and empty ASR closed for routing", () => {
+    const initial = state({
+      captured: { ...emptyCapturedLead, email: "old@example.com" },
+      emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+    });
+    const pending = reduceRealtimeServerEvent({ type: "input_audio_buffer.committed" }, initial).state;
+    const responding = reduceRealtimeServerEvent({ type: "response.created" }, pending).state;
+    const pendingRoute = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "route_to_team",
+              call_id: "call_legacy_pending_route",
+              arguments: JSON.stringify({ segment: "technology" }),
+            },
+          ],
+        },
+      },
+      responding,
+    );
+    expect(pendingRoute.state.routeRequested).toBeFalsy();
+    expect(pendingRoute.state.deferredRouteCall).toMatchObject({ callId: "call_legacy_pending_route" });
+    expect(pendingRoute.commands).toEqual([]);
+    const failedPendingRoute = reduceRealtimeServerEvent(
+      { type: "conversation.item.input_audio_transcription.failed" },
+      pendingRoute.state,
+    );
+    expect(failedPendingRoute.state.deferredRouteCall).toBeUndefined();
+    expect(failedPendingRoute.commands[0]).toMatchObject({
+      type: "function_result",
+      createResponse: true,
+      output: { ok: false, error: "transcription_unavailable" },
+    });
+
+    for (const [index, settlement] of [
+      { type: "conversation.item.input_audio_transcription.failed" },
+      { type: "conversation.item.input_audio_transcription.completed", transcript: "   " },
+    ].entries()) {
+      const committed = reduceRealtimeServerEvent({ type: "input_audio_buffer.committed" }, initial).state;
+      const settled = reduceRealtimeServerEvent(settlement, committed).state;
+      const response = reduceRealtimeServerEvent({ type: "response.created" }, settled).state;
+      const route = reduceRealtimeServerEvent(
+        {
+          type: "response.done",
+          response: {
+            output: [
+              {
+                type: "function_call",
+                name: "route_to_team",
+                call_id: `call_legacy_unavailable_${index}`,
+                arguments: JSON.stringify({ segment: "technology" }),
+              },
+            ],
+          },
+        },
+        response,
+      );
+      expect(route.state.routeRequested).toBeFalsy();
+      expect(route.commands[0]).toMatchObject({ output: { ok: false, error: "transcription_unavailable" } });
+    }
+  });
+
+  it("cancels an unresolved deferred route when clear-all establishes a new barrier", () => {
+    const initial = state({
+      captured: { ...emptyCapturedLead, email: "old@example.com" },
+      emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+    });
+    const committed = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.committed", item_id: "audio_route_before_clear" },
+      initial,
+    ).state;
+    const responding = reduceRealtimeServerEvent({ type: "response.created" }, committed).state;
+    const deferred = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "route_to_team",
+              call_id: "call_route_before_clear",
+              arguments: JSON.stringify({ segment: "technology" }),
+            },
+          ],
+        },
+      },
+      responding,
+    ).state;
+    const cleared = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "clear_fields",
+              call_id: "call_clear_deferred_route",
+              arguments: JSON.stringify({ scope: "all" }),
+            },
+          ],
+        },
+      },
+      appendTypedUserMessage(deferred, "Clear everything."),
+    );
+
+    expect(cleared.state.deferredRouteCall).toBeUndefined();
+    expect(cleared.commands).toEqual([
+      expect.objectContaining({
+        callId: "call_clear_deferred_route",
+        output: expect.objectContaining({ cleared: true }),
+      }),
+      expect.objectContaining({
+        callId: "call_route_before_clear",
+        output: { ok: false, error: "stale_response" },
+      }),
+    ]);
+    expect(cleared.state.handledCallIds).toContain("call_route_before_clear");
+    const fresh = appendTypedUserMessage(cleared.state, "My email is fresh@example.com. Please send it.");
+    const replayed = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "route_to_team",
+              call_id: "call_route_before_clear",
+              arguments: JSON.stringify({ segment: "education" }),
+            },
+          ],
+        },
+      },
+      fresh,
+    );
+    expect(replayed.commands).toEqual([]);
+    expect(replayed.state.routeRequested).toBeFalsy();
+  });
+
+  it("keeps failed ASR fail-closed when it settles before the response is created", () => {
+    const initial = state({
+      captured: { ...emptyCapturedLead, email: "old@example.com" },
+      emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+    });
+    const committed = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.committed", item_id: "audio_failed_before_response" },
+      initial,
+    ).state;
+    const failed = reduceRealtimeServerEvent(
+      { type: "conversation.item.input_audio_transcription.failed", item_id: "audio_failed_before_response" },
+      committed,
+    ).state;
+    const responding = reduceRealtimeServerEvent({ type: "response.created" }, failed).state;
+    const route = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "route_to_team",
+              call_id: "call_route_after_failed_asr",
+              arguments: JSON.stringify({ segment: "technology" }),
+            },
+          ],
+        },
+      },
+      responding,
+    );
+
+    expect(route.state.routeRequested).toBeFalsy();
+    expect(route.commands[0]).toMatchObject({ output: { ok: false, error: "transcription_unavailable" } });
+  });
+
+  it("does not let a replayed pre-clear speech generation cross the clear barrier", () => {
+    const preClear = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.speech_started", item_id: "audio_seen_before_clear" },
+      state({ emailCaptureMode: "adaptive" }),
+    ).state;
+    const cleared = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "clear_fields",
+              call_id: "call_clear_seen_generation",
+              arguments: JSON.stringify({ scope: "all" }),
+            },
+          ],
+        },
+      },
+      preClear,
+    ).state;
+    const replayedStart = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.speech_started", item_id: "audio_seen_before_clear" },
+      cleared,
+    ).state;
+    const replayedCommit = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.committed", item_id: "audio_seen_before_clear" },
+      replayedStart,
+    ).state;
+    const replayedCompletion = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "audio_seen_before_clear",
+        transcript: "My email is replay@example.com.",
+        email_capture_mode: "adaptive",
+      },
+      replayedCommit,
+    ).state;
+
+    expect(replayedCompletion.captured.email).toBe("");
+    expect(replayedCompletion.transcript).toEqual([]);
+    expect(replayedCompletion.pendingUserTranscripts).toBe(0);
+  });
+
+  it("tombstones an unknown completion before any later commit can legitimise its replay", () => {
+    const cleared = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "clear_fields",
+              call_id: "call_clear_before_unknown",
+              arguments: JSON.stringify({ scope: "all" }),
+            },
+          ],
+        },
+      },
+      state({ emailCaptureMode: "adaptive" }),
+    ).state;
+    const unknown = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "audio_unknown_old",
+        transcript: "My email is unknown@example.com.",
+      },
+      cleared,
+    ).state;
+    const started = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.speech_started", item_id: "audio_unknown_old" },
+      unknown,
+    ).state;
+    const committed = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.committed", item_id: "audio_unknown_old" },
+      started,
+    ).state;
+    const replayed = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "audio_unknown_old",
+        transcript: "My email is unknown@example.com.",
+        email_capture_mode: "adaptive",
+      },
+      committed,
+    ).state;
+
+    expect(unknown.settledUserTranscriptIds).toContain("audio_unknown_old");
+    expect(replayed.captured.email).toBe("");
+    expect(replayed.transcript).toEqual([]);
+  });
+
+  it("retires untagged ASR after one settlement so a replay cannot consume another generation", () => {
+    const oldCommitted = reduceRealtimeServerEvent({ type: "input_audio_buffer.committed" }, state()).state;
+    const oldCompleted = reduceRealtimeServerEvent(
+      { type: "conversation.item.input_audio_transcription.completed", transcript: "My email is old@example.com." },
+      oldCommitted,
+    ).state;
+    const newCommitted = reduceRealtimeServerEvent({ type: "input_audio_buffer.committed" }, oldCompleted).state;
+    const newCompleted = reduceRealtimeServerEvent(
+      { type: "conversation.item.input_audio_transcription.completed", transcript: "Use new@example.com." },
+      newCommitted,
+    ).state;
+    const replay = reduceRealtimeServerEvent(
+      { type: "conversation.item.input_audio_transcription.completed", transcript: "My email is old@example.com." },
+      newCompleted,
+    ).state;
+
+    expect(newCommitted.userTranscriptTrackingExhausted).toBe(true);
+    expect(newCompleted.captured.email).toBe("old@example.com");
+    expect(replay).toEqual(newCompleted);
+  });
+
+  const directAuthorityPaths = ["typed", "tagged", "tagged_with_response"] as const;
+  const mutableToolAuthorityCases = [
+    {
+      tool: "capture_field",
+      negative: "Actually, not Alice.",
+      positive: "Actually, my name is Alice.",
+      arguments: { key: "name", value: "Alice", evidence: "Alice" },
+    },
+    {
+      tool: "capture_fields",
+      negative: "Actually, not Alice.",
+      positive: "Actually, my name is Alice.",
+      arguments: { fields: [{ key: "name", value: "Alice", evidence: "Alice" }] },
+    },
+    {
+      tool: "clear_field",
+      negative: "Do not clear my name.",
+      positive: "Clear my name.",
+      arguments: { key: "name" },
+    },
+    {
+      tool: "clear_fields",
+      negative: "Do not clear anything.",
+      positive: "Clear everything.",
+      arguments: { scope: "all" },
+    },
+    {
+      tool: "set_partner_type",
+      negative: "We are not a technology company.",
+      positive: "We are a technology company.",
+      arguments: { segment: "technology" },
+    },
+    {
+      tool: "route_to_team",
+      negative: "Do not send it.",
+      positive: "Please send it.",
+      arguments: { segment: "technology" },
+    },
+    {
+      tool: "end_call",
+      negative: "Do not end the call.",
+      positive: "End the call.",
+      arguments: { reason: "user_done" },
+    },
+  ] as const;
+
+  function applyDirectAuthorityTurn(
+    initial: VoiceRuntimeState,
+    path: (typeof directAuthorityPaths)[number],
+    transcript: string,
+    itemId: string,
+  ) {
+    if (path === "typed") return appendTypedUserMessage(initial, transcript);
+    let current = reduceRealtimeServerEvent({ type: "input_audio_buffer.committed", item_id: itemId }, initial).state;
+    if (path === "tagged_with_response") {
+      current = reduceRealtimeServerEvent({ type: "response.created" }, current).state;
+    }
+    return reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: itemId,
+        transcript,
+      },
+      current,
+    ).state;
+  }
+
+  function readyMutableToolState(tool: (typeof mutableToolAuthorityCases)[number]["tool"]) {
+    return state({
+      segment: tool === "set_partner_type" ? "other" : "technology",
+      captured: { ...emptyCapturedLead, name: "Bob", email: "ready@example.com" },
+      emailVerification: { value: "ready@example.com", source: "typed", status: "confirmed" },
+      transcript: [{ role: "user", text: "My name is Alice. Please send it." }],
+    });
+  }
+
+  function runDirectMutableTool(
+    authoritative: VoiceRuntimeState,
+    tool: (typeof mutableToolAuthorityCases)[number]["tool"],
+    args: object,
+    callId: string,
+  ) {
+    return reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: tool,
+              call_id: callId,
+              arguments: JSON.stringify(args),
+            },
+          ],
+        },
+      },
+      authoritative,
+    );
+  }
+
+  it.each(
+    directAuthorityPaths.flatMap((path) => mutableToolAuthorityCases.map((toolCase) => ({ path, toolCase }))),
+  )("gives a current $path refusal authority over direct $toolCase.tool", ({ path, toolCase }) => {
+    const itemId = `authority_negative_${path}_${toolCase.tool}`;
+    const initial = readyMutableToolState(toolCase.tool);
+    const authoritative = applyDirectAuthorityTurn(initial, path, toolCase.negative, itemId);
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: toolCase.tool,
+              call_id: `call_${itemId}`,
+              arguments: JSON.stringify(toolCase.arguments),
+            },
+          ],
+        },
+      },
+      authoritative,
+    );
+
+    expect(result.state.captured.name).toBe("Bob");
+    expect(result.state.captured.email).toBe("ready@example.com");
+    expect(result.state.segment).toBe(initial.segment);
+    expect(result.state.routeRequested).toBeFalsy();
+    expect(result.commands.some((command) => command.type === "submit_voice")).toBe(false);
+    expect(result.commands.some((command) => command.type === "end_voice")).toBe(false);
+    expect(result.commands.some((command) => command.type === "function_result")).toBe(true);
+  });
+
+  it.each(
+    directAuthorityPaths.flatMap((path) => mutableToolAuthorityCases.map((toolCase) => ({ path, toolCase }))),
+  )("honours a current $path affirmative command for direct $toolCase.tool", ({ path, toolCase }) => {
+    const itemId = `authority_positive_${path}_${toolCase.tool}`;
+    const initial = readyMutableToolState(toolCase.tool);
+    const authoritative = applyDirectAuthorityTurn(initial, path, toolCase.positive, itemId);
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: toolCase.tool,
+              call_id: `call_${itemId}`,
+              arguments: JSON.stringify(toolCase.arguments),
+            },
+          ],
+        },
+      },
+      authoritative,
+    );
+
+    if (toolCase.tool === "capture_field" || toolCase.tool === "capture_fields") {
+      expect(result.state.captured.name).toBe("Alice");
+    } else if (toolCase.tool === "clear_field") {
+      expect(result.state.captured.name).toBe("");
+      expect(result.state.captured.email).toBe("ready@example.com");
+    } else if (toolCase.tool === "clear_fields") {
+      expect(result.state.captured).toEqual(emptyCapturedLead);
+    } else if (toolCase.tool === "set_partner_type") {
+      expect(result.state.segment).toBe("technology");
+    } else if (toolCase.tool === "route_to_team") {
+      expect(result.commands).toContainEqual({
+        type: "submit_voice",
+        callId: `call_${itemId}`,
+        segment: "technology",
+      });
+    } else {
+      expect(result.commands).toContainEqual({ type: "end_voice", reason: "user_done" });
+    }
+  });
+
+  const anaphoricAuthorityCases = [
+    {
+      id: "phone_capture",
+      tool: "capture_field",
+      prompt: "I heard your phone number as +60123456789. Is that right?",
+      arguments: { key: "phone", value: "+60123456789", evidence: "+60123456789" },
+    },
+    {
+      id: "website_batch_capture",
+      tool: "capture_fields",
+      prompt: "I heard your website as wrong.example. Is that right?",
+      arguments: { fields: [{ key: "website", value: "wrong.example", evidence: "wrong.example" }] },
+    },
+    {
+      id: "clear_name",
+      tool: "clear_field",
+      prompt: "Should I clear your name?",
+      arguments: { key: "name" },
+    },
+    {
+      id: "clear_all",
+      tool: "clear_fields",
+      prompt: "Should I clear everything in the form?",
+      arguments: { scope: "all" },
+    },
+    {
+      id: "segment",
+      tool: "set_partner_type",
+      prompt: "Are you a technology company?",
+      arguments: { segment: "technology" },
+    },
+    {
+      id: "route",
+      tool: "route_to_team",
+      prompt: "Ready for me to send it to the Mereka team?",
+      arguments: { segment: "technology" },
+    },
+    {
+      id: "end",
+      tool: "end_call",
+      prompt: "Should I end the call?",
+      arguments: { reason: "user_done" },
+    },
+  ] as const;
+
+  function conversationalAuthorityState(toolCase: {
+    tool: (typeof mutableToolAuthorityCases)[number]["tool"];
+    prompt: string;
+  }) {
+    return state({
+      segment: toolCase.tool === "set_partner_type" ? "other" : "technology",
+      captured: { ...emptyCapturedLead, name: "Bob", email: "ready@example.com" },
+      emailVerification: { value: "ready@example.com", source: "typed", status: "confirmed" },
+      transcript: [
+        {
+          role: "user",
+          text: "My name is Alice. My phone is +60123456789 and my website is wrong.example. Please send it.",
+        },
+        { role: "assistant", text: toolCase.prompt },
+      ],
+    });
+  }
+
+  it.each(
+    directAuthorityPaths.flatMap((path) =>
+      anaphoricAuthorityCases.flatMap((toolCase) =>
+        ["No.", "Nope.", "Not yet.", "No, don't do it."].map((reply) => ({ path, toolCase, reply })),
+      ),
+    ),
+  )("gives '$reply' authority over $path $toolCase.id confirmation", ({ path, toolCase, reply }) => {
+    const itemId = `anaphoric_negative_${path}_${toolCase.id}_${reply.replace(/\W/gu, "_")}`;
+    const initial = conversationalAuthorityState(toolCase);
+    const authoritative = applyDirectAuthorityTurn(initial, path, reply, itemId);
+    const result = runDirectMutableTool(authoritative, toolCase.tool, toolCase.arguments, `call_${itemId}`);
+
+    expect(result.state.captured).toEqual(initial.captured);
+    expect(result.state.segment).toBe(initial.segment);
+    expect(result.state.routeRequested).toBeFalsy();
+    expect(result.commands.some((command) => command.type === "submit_voice")).toBe(false);
+    expect(result.commands.some((command) => command.type === "end_voice")).toBe(false);
+  });
+
+  it.each(
+    directAuthorityPaths.flatMap((path) => anaphoricAuthorityCases.map((toolCase) => ({ path, toolCase }))),
+  )("resolves a contextual yes for $path $toolCase.id only from its assistant prompt", ({ path, toolCase }) => {
+    const itemId = `anaphoric_positive_${path}_${toolCase.id}`;
+    const initial = conversationalAuthorityState(toolCase);
+    const authoritative = applyDirectAuthorityTurn(initial, path, "Yes.", itemId);
+    const result = runDirectMutableTool(authoritative, toolCase.tool, toolCase.arguments, `call_${itemId}`);
+
+    if (toolCase.id === "phone_capture") {
+      expect(result.state.captured.phone).toBe("+60123456789");
+    } else if (toolCase.id === "website_batch_capture") {
+      expect(result.state.captured.website).toBe("wrong.example");
+    } else if (toolCase.id === "clear_name") {
+      expect(result.state.captured.name).toBe("");
+      expect(result.state.captured.email).toBe("ready@example.com");
+    } else if (toolCase.id === "clear_all") {
+      expect(result.state.captured).toEqual(emptyCapturedLead);
+    } else if (toolCase.id === "segment") {
+      expect(result.state.segment).toBe("technology");
+    } else if (toolCase.id === "route") {
+      expect(result.commands).toContainEqual({
+        type: "submit_voice",
+        callId: `call_${itemId}`,
+        segment: "technology",
+      });
+    } else {
+      expect(result.commands).toContainEqual({ type: "end_voice", reason: "user_done" });
+    }
+  });
+
+  const thirdPartySubjectPrompts: Record<(typeof anaphoricAuthorityCases)[number]["id"], string> = {
+    phone_capture: "Is Alice's phone number +60123456789?",
+    website_batch_capture: "Is Alice's website wrong.example?",
+    clear_name: "Should Alice clear your name?",
+    clear_all: "Should Alice clear everything in the form?",
+    segment: "Is Alice a technology company?",
+    route: "Will Alice send it?",
+    end: "Will Alice end the call?",
+  };
+
+  it.each(
+    directAuthorityPaths.flatMap((path) => anaphoricAuthorityCases.map((toolCase) => ({ path, toolCase }))),
+  )("binds contextual yes to the actor and rejects third-party $path $toolCase.id", ({ path, toolCase }) => {
+    const itemId = `third_party_subject_yes_${path}_${toolCase.id}`;
+    const initial = conversationalAuthorityState({ ...toolCase, prompt: thirdPartySubjectPrompts[toolCase.id] });
+    const authoritative = applyDirectAuthorityTurn(initial, path, "Yes.", itemId);
+    const result = runDirectMutableTool(authoritative, toolCase.tool, toolCase.arguments, `call_${itemId}`);
+
+    expect(result.state.captured).toEqual(initial.captured);
+    expect(result.state.segment).toBe(initial.segment);
+    expect(result.state.routeRequested).toBeFalsy();
+    expect(result.commands.some((command) => command.type === "submit_voice")).toBe(false);
+    expect(result.commands.some((command) => command.type === "end_voice")).toBe(false);
+  });
+
+  const indirectActorCases = [
+    {
+      tool: "clear_field" as const,
+      prompt: "Do you want Alice to ask me to clear your name?",
+      arguments: { key: "name" },
+    },
+    {
+      tool: "route_to_team" as const,
+      prompt: "Should I ask Alice to send it?",
+      arguments: { segment: "technology" },
+    },
+    {
+      tool: "route_to_team" as const,
+      prompt: "Do you want Alice to ask me to send it?",
+      arguments: { segment: "technology" },
+    },
+    {
+      tool: "end_call" as const,
+      prompt: "I will ask Alice to end the call. Is that right?",
+      arguments: { reason: "user_done" },
+    },
+  ];
+
+  it.each(
+    directAuthorityPaths.flatMap((path) => indirectActorCases.map((actorCase) => ({ path, actorCase }))),
+  )("does not bind an indirect $path $actorCase.tool actor to Reka", ({ path, actorCase }) => {
+    const itemId = `indirect_actor_${path}_${actorCase.tool}_${actorCase.prompt.length}`;
+    const initial = conversationalAuthorityState(actorCase);
+    const authoritative = applyDirectAuthorityTurn(initial, path, "Yes.", itemId);
+    const result = runDirectMutableTool(authoritative, actorCase.tool, actorCase.arguments, `call_${itemId}`);
+
+    expect(result.state.captured).toEqual(initial.captured);
+    expect(result.state.routeRequested).toBeFalsy();
+    expect(result.commands.some((command) => command.type === "submit_voice")).toBe(false);
+    expect(result.commands.some((command) => command.type === "end_voice")).toBe(false);
+  });
+
+  const thirdPartyTargetPrompts: Record<(typeof anaphoricAuthorityCases)[number]["id"], string> = {
+    phone_capture: "Your name is Bob and Alice's phone number is +60123456789. Is that right?",
+    website_batch_capture: "Your name is Bob and Alice's website is wrong.example. Is that right?",
+    clear_name: "Should I clear your phone and Alice's name?",
+    clear_all: "Should I clear your phone and Alice's form?",
+    segment: "Is your name Bob and Alice a technology company?",
+    route: "Should I send Alice's form after the details?",
+    end: "Should I end Alice's call after our session?",
+  };
+
+  it.each(
+    directAuthorityPaths.flatMap((path) => anaphoricAuthorityCases.map((toolCase) => ({ path, toolCase }))),
+  )("binds contextual yes to the target and rejects third-party $path $toolCase.id", ({ path, toolCase }) => {
+    const itemId = `third_party_target_yes_${path}_${toolCase.id}`;
+    const initial = conversationalAuthorityState({ ...toolCase, prompt: thirdPartyTargetPrompts[toolCase.id] });
+    const authoritative = applyDirectAuthorityTurn(initial, path, "Yes.", itemId);
+    const result = runDirectMutableTool(authoritative, toolCase.tool, toolCase.arguments, `call_${itemId}`);
+
+    expect(result.state.captured).toEqual(initial.captured);
+    expect(result.state.segment).toBe(initial.segment);
+    expect(result.state.routeRequested).toBeFalsy();
+    expect(result.commands.some((command) => command.type === "submit_voice")).toBe(false);
+    expect(result.commands.some((command) => command.type === "end_voice")).toBe(false);
+  });
+
+  it.each(directAuthorityPaths)("binds a contextual $path clear to the field governed by the verb", (path) => {
+    const itemId = `governed_clear_target_${path}`;
+    const initial = conversationalAuthorityState({
+      tool: "clear_field",
+      prompt: "Should I clear your phone and keep your name?",
+    });
+    const authoritative = applyDirectAuthorityTurn(initial, path, "Yes.", itemId);
+    const result = runDirectMutableTool(authoritative, "clear_field", { key: "name" }, `call_${itemId}`);
+
+    expect(result.state.captured).toEqual(initial.captured);
+    expect(result.commands.some((command) => command.type === "submit_voice")).toBe(false);
+  });
+
+  it.each(
+    directAuthorityPaths.flatMap((path) =>
+      ["Should I send this invoice?", "Should I send that document?", "Should I send the invoice?"].map((prompt) => ({
+        path,
+        prompt,
+      })),
+    ),
+  )("rejects unrelated $path route object: $prompt", ({ path, prompt }) => {
+    const itemId = `unrelated_route_target_${path}_${prompt.length}`;
+    const initial = conversationalAuthorityState({ tool: "route_to_team", prompt });
+    const authoritative = applyDirectAuthorityTurn(initial, path, "Yes.", itemId);
+    const result = runDirectMutableTool(authoritative, "route_to_team", { segment: "technology" }, `call_${itemId}`);
+
+    expect(result.state.routeRequested).toBeFalsy();
+    expect(result.commands.some((command) => command.type === "submit_voice")).toBe(false);
+  });
+
+  it.each(directAuthorityPaths)("binds a contextual $path route to the requested segment", (path) => {
+    const mismatchId = `route_segment_mismatch_${path}`;
+    const mismatchInitial = conversationalAuthorityState({
+      tool: "route_to_team",
+      prompt: "Should I send it to the education team?",
+    });
+    const mismatchAuthority = applyDirectAuthorityTurn(mismatchInitial, path, "Yes.", mismatchId);
+    const mismatch = runDirectMutableTool(
+      mismatchAuthority,
+      "route_to_team",
+      { segment: "technology" },
+      `call_${mismatchId}`,
+    );
+    expect(mismatch.state.routeRequested).toBeFalsy();
+    expect(mismatch.commands.some((command) => command.type === "submit_voice")).toBe(false);
+
+    const matchId = `route_segment_match_${path}`;
+    const matchInitial = conversationalAuthorityState({
+      tool: "route_to_team",
+      prompt: "Should I send it to the technology team?",
+    });
+    const matchAuthority = applyDirectAuthorityTurn(matchInitial, path, "Yes.", matchId);
+    const match = runDirectMutableTool(matchAuthority, "route_to_team", { segment: "technology" }, `call_${matchId}`);
+    expect(match.commands).toContainEqual({
+      type: "submit_voice",
+      callId: `call_${matchId}`,
+      segment: "technology",
+    });
+
+    const shareId = `route_share_destination_match_${path}`;
+    const shareInitial = conversationalAuthorityState({
+      tool: "route_to_team",
+      prompt: "Should I share the form with the Mereka team?",
+    });
+    const shareAuthority = applyDirectAuthorityTurn(shareInitial, path, "Yes.", shareId);
+    const share = runDirectMutableTool(shareAuthority, "route_to_team", { segment: "technology" }, `call_${shareId}`);
+    expect(share.commands).toContainEqual({
+      type: "submit_voice",
+      callId: `call_${shareId}`,
+      segment: "technology",
+    });
+
+    const viaId = `route_via_destination_match_${path}`;
+    const viaInitial = conversationalAuthorityState({
+      tool: "route_to_team",
+      prompt: "Should I route the form via the Mereka team?",
+    });
+    const viaAuthority = applyDirectAuthorityTurn(viaInitial, path, "Yes.", viaId);
+    const via = runDirectMutableTool(viaAuthority, "route_to_team", { segment: "technology" }, `call_${viaId}`);
+    expect(via.commands).toContainEqual({
+      type: "submit_voice",
+      callId: `call_${viaId}`,
+      segment: "technology",
+    });
+
+    const unspokenMismatchId = `route_unspoken_segment_mismatch_${path}`;
+    const unspokenMismatchInitial = state({
+      segment: "other",
+      captured: { ...emptyCapturedLead, name: "Bob", email: "ready@example.com" },
+      emailVerification: { value: "ready@example.com", source: "typed", status: "confirmed" },
+      transcript: [
+        { role: "user", text: "My name is Bob." },
+        { role: "assistant", text: "Should I send it to the Mereka team?" },
+      ],
+    });
+    const unspokenMismatchAuthority = applyDirectAuthorityTurn(
+      unspokenMismatchInitial,
+      path,
+      "Yes.",
+      unspokenMismatchId,
+    );
+    const unspokenMismatch = runDirectMutableTool(
+      unspokenMismatchAuthority,
+      "route_to_team",
+      { segment: "technology" },
+      `call_${unspokenMismatchId}`,
+    );
+    expect(unspokenMismatch.state.routeRequested).toBeFalsy();
+    expect(unspokenMismatch.commands.some((command) => command.type === "submit_voice")).toBe(false);
+  });
+
+  it.each(
+    directAuthorityPaths.flatMap((path) =>
+      [
+        "and your organisation Acme",
+        "along with your organisation Acme",
+        "plus your organisation Acme",
+        "with your organisation Acme",
+        "and organisation as Acme",
+        "and company as Acme",
+        "plus organisation Acme",
+        "and the organisation Acme",
+        "and business as Acme",
+        "plus telephone as Acme",
+      ].map((fieldTail) => ({ path, fieldTail })),
+    ),
+  )("binds a contextual $path capture value before '$fieldTail' to its exact field", ({ path, fieldTail }) => {
+    const itemId = `capture_cross_field_value_${path}_${fieldTail.replace(/\s/gu, "_")}`;
+    const initial = state({
+      captured: { ...emptyCapturedLead, name: "Bob", org: "Acme" },
+      transcript: [
+        { role: "user", text: "My name is Alice and my organisation is Acme." },
+        { role: "assistant", text: `I have your name as Alice, ${fieldTail}. Is that right?` },
+      ],
+    });
+    const authoritative = applyDirectAuthorityTurn(initial, path, "Yes.", itemId);
+    const result = runDirectMutableTool(
+      authoritative,
+      "capture_field",
+      { key: "name", value: "Acme", evidence: "Acme" },
+      `call_${itemId}`,
+    );
+
+    expect(result.state.captured.name).toBe("Bob");
+    expect(result.state.captured.org).toBe("Acme");
+  });
+
+  it.each(
+    directAuthorityPaths.flatMap((path) =>
+      [
+        {
+          key: "email" as const,
+          value: "name@example.com",
+          user: "My email is name at example dot com.",
+          prompt: "I heard your email as name@example.com. Is that right?",
+        },
+        {
+          key: "org" as const,
+          value: "Company Name Studio",
+          user: "My organisation is Company Name Studio.",
+          prompt: "I heard your organisation as Company Name Studio. Is that right?",
+        },
+        {
+          key: "message" as const,
+          value: "our website needs work",
+          user: "My message is that our website needs work.",
+          prompt: "I heard your message as our website needs work. Is that right?",
+        },
+        {
+          key: "name" as const,
+          value: "José",
+          user: "My name is José.",
+          prompt: "I heard your name as José. Is that right?",
+        },
+        {
+          key: "name" as const,
+          value: "Alice",
+          user: "My name is Alice.",
+          prompt: "Alice, is that your full name?",
+        },
+      ].map((capture) => ({ path, capture })),
+    ),
+  )("keeps field-like words inside a confirmed $path $capture.key value", ({ path, capture }) => {
+    const itemId = `field_word_inside_value_${path}_${capture.key}`;
+    const initial = state({
+      transcript: [
+        { role: "user", text: capture.user },
+        { role: "assistant", text: capture.prompt },
+      ],
+    });
+    const authoritative = applyDirectAuthorityTurn(initial, path, "Yes.", itemId);
+    const result = runDirectMutableTool(
+      authoritative,
+      "capture_field",
+      { key: capture.key, value: capture.value, evidence: capture.value },
+      `call_${itemId}`,
+    );
+
+    expect(result.state.captured[capture.key]).toBe(capture.value);
+  });
+
+  it.each(directAuthorityPaths)("rejects an unknown telephone alias from a $path name capture", (path) => {
+    const itemId = `unknown_telephone_alias_${path}`;
+    const initial = state({
+      captured: { ...emptyCapturedLead, name: "Bob" },
+      transcript: [
+        { role: "user", text: "My name is Alice and my telephone is 60123456789." },
+        { role: "assistant", text: "I have your name as Alice and telephone as 60123456789. Is that right?" },
+      ],
+    });
+    const authoritative = applyDirectAuthorityTurn(initial, path, "Yes.", itemId);
+    const result = runDirectMutableTool(
+      authoritative,
+      "capture_field",
+      { key: "name", value: "60123456789", evidence: "60123456789" },
+      `call_${itemId}`,
+    );
+
+    expect(result.state.captured.name).toBe("Bob");
+  });
+
+  it.each(directAuthorityPaths)("does not let a reverse $path question steal another field's value", (path) => {
+    const itemId = `reverse_cross_field_value_${path}`;
+    const initial = state({
+      captured: { ...emptyCapturedLead, name: "Bob", org: "Acme" },
+      transcript: [
+        { role: "user", text: "My organisation is Acme." },
+        { role: "assistant", text: "Your organisation is Acme — your name?" },
+      ],
+    });
+    const authoritative = applyDirectAuthorityTurn(initial, path, "Yes.", itemId);
+    const result = runDirectMutableTool(
+      authoritative,
+      "capture_field",
+      { key: "name", value: "Acme", evidence: "Acme" },
+      `call_${itemId}`,
+    );
+
+    expect(result.state.captured.name).toBe("Bob");
+    expect(result.state.captured.org).toBe("Acme");
+  });
+
+  it.each(
+    directAuthorityPaths.flatMap((path) =>
+      [
+        "Is Alice a technology company alongside your company in design?",
+        "Is Alice in technology together with your company in design?",
+      ].map((prompt) => ({ path, prompt })),
+    ),
+  )("binds a contextual $path segment to the visitor in: $prompt", ({ path, prompt }) => {
+    const itemId = `segment_owner_clause_${path}_${prompt.length}`;
+    const initial = state({
+      segment: "other",
+      transcript: [
+        { role: "user", text: "Alice runs a technology company. We are an education company." },
+        { role: "assistant", text: prompt },
+      ],
+    });
+    const authoritative = applyDirectAuthorityTurn(initial, path, "Yes.", itemId);
+    const result = runDirectMutableTool(authoritative, "set_partner_type", { segment: "technology" }, `call_${itemId}`);
+
+    expect(result.state.segment).toBe("other");
+  });
+
+  it.each(directAuthorityPaths)("binds a direct $path segment and route to the visitor's clause", (path) => {
+    const segmentId = `direct_segment_owner_${path}`;
+    const segmentInitial = state({
+      segment: "other",
+      transcript: [{ role: "user", text: "We were discussing the form." }],
+    });
+    const segmentAuthority = applyDirectAuthorityTurn(
+      segmentInitial,
+      path,
+      "Alice is a technology company; we are an education company.",
+      segmentId,
+    );
+    const wrongSegment = runDirectMutableTool(
+      segmentAuthority,
+      "set_partner_type",
+      { segment: "technology" },
+      `call_${segmentId}`,
+    );
+    expect(wrongSegment.state.segment).toBe("other");
+
+    const rightSegment = runDirectMutableTool(
+      segmentAuthority,
+      "set_partner_type",
+      { segment: "education" },
+      `call_right_${segmentId}`,
+    );
+    expect(rightSegment.state.segment).toBe("education");
+
+    const routeId = `direct_route_segment_owner_${path}`;
+    const routeInitial = state({
+      segment: "technology",
+      captured: { ...emptyCapturedLead, name: "Bob", email: "ready@example.com" },
+      emailVerification: { value: "ready@example.com", source: "typed", status: "confirmed" },
+      transcript: [{ role: "user", text: "My name is Bob." }],
+    });
+    const routeAuthority = applyDirectAuthorityTurn(
+      routeInitial,
+      path,
+      "Alice is a technology company; we are an education company. Please send it.",
+      routeId,
+    );
+    const wrongRoute = runDirectMutableTool(
+      routeAuthority,
+      "route_to_team",
+      { segment: "technology" },
+      `call_${routeId}`,
+    );
+    expect(wrongRoute.state.routeRequested).toBeFalsy();
+    expect(wrongRoute.commands.some((command) => command.type === "submit_voice")).toBe(false);
+
+    const rightRoute = runDirectMutableTool(
+      routeAuthority,
+      "route_to_team",
+      { segment: "education" },
+      `call_right_${routeId}`,
+    );
+    expect(rightRoute.commands).toContainEqual({
+      type: "submit_voice",
+      callId: `call_right_${routeId}`,
+      segment: "education",
+    });
+  });
+
+  it.each(directAuthorityPaths)("rejects uncertain or reported direct $path segment authority", (path) => {
+    const guardedStatements = [
+      "Maybe we are a technology company.",
+      "Perhaps we are in technology.",
+      "Alice asked whether we are a technology company.",
+      "Alice said we are a technology company.",
+      "Alice said: we are a technology company.",
+      "Do you think we are a technology company?",
+      "Maybe — we are a technology company.",
+      "We are a technology company, maybe.",
+      "We are a technology company, not really.",
+      "We are a technology company — actually, no.",
+      "We are in technology if Alice is right.",
+      "We are a technology company, or maybe not.",
+      "We are a technology company maybe.",
+      "We are in technology I guess.",
+      "We are technology but no that is wrong.",
+      "We are technology according to Alice.",
+      "According to Alice, we are technology.",
+      "We are technology or education.",
+      "We are technology and education.",
+      "We are a technology company, and I think maybe not, but please send it.",
+      "We are a technology company, but I don't know. Please send it.",
+      "We are a technology company, but I do not know. Please send it.",
+      "We are a technology company, but I can't say. Please send it.",
+      "We are a technology company, but I don’t really know. Please send it.",
+      "We are a technology company, but I don't quite know. Please send it.",
+      "We are a technology company, but I can't really tell. Please send it.",
+      "We are technology. I changed my mind. Please send it.",
+      "We are technology, forget that. Please send it.",
+      "We are technology scratch that. Please send it.",
+      "We are technology take that back. Please send it.",
+      "We are technology. Scratch that statement. Please send it.",
+      "We are technology. Scratch that description. Please send it.",
+      "We are technology. Scratch that answer. Please send it.",
+    ];
+    for (const [index, statement] of guardedStatements.entries()) {
+      const segmentId = `guarded_direct_segment_${path}_${index}`;
+      const segmentInitial = state({
+        segment: "other",
+        transcript: [{ role: "user", text: "We were discussing the form." }],
+      });
+      const segmentAuthority = applyDirectAuthorityTurn(segmentInitial, path, statement, segmentId);
+      const segmentResult = runDirectMutableTool(
+        segmentAuthority,
+        "set_partner_type",
+        { segment: "technology" },
+        `call_${segmentId}`,
+      );
+      expect(segmentResult.state.segment).toBe("other");
+
+      const routeId = `guarded_direct_route_${path}_${index}`;
+      const routeInitial = state({
+        segment: "other",
+        captured: { ...emptyCapturedLead, name: "Bob", email: "ready@example.com" },
+        emailVerification: { value: "ready@example.com", source: "typed", status: "confirmed" },
+        transcript: [{ role: "user", text: "My name is Bob." }],
+      });
+      const routeAuthority = applyDirectAuthorityTurn(routeInitial, path, `${statement} Please send it.`, routeId);
+      const routeResult = runDirectMutableTool(
+        routeAuthority,
+        "route_to_team",
+        { segment: "technology" },
+        `call_${routeId}`,
+      );
+      expect(routeResult.state.routeRequested).toBeFalsy();
+      expect(routeResult.commands.some((command) => command.type === "submit_voice")).toBe(false);
+    }
+  });
+
+  it.each(directAuthorityPaths)("keeps a softened $path route clause separate from a certain segment", (path) => {
+    const itemId = `softened_route_clause_${path}`;
+    const initial = state({
+      segment: "other",
+      captured: { ...emptyCapturedLead, name: "Bob", email: "ready@example.com" },
+      emailVerification: { value: "ready@example.com", source: "typed", status: "confirmed" },
+      transcript: [{ role: "user", text: "My name is Bob." }],
+    });
+    const authoritative = applyDirectAuthorityTurn(
+      initial,
+      path,
+      "We are a technology company, and I think you should send it.",
+      itemId,
+    );
+    const segmented = runDirectMutableTool(
+      authoritative,
+      "set_partner_type",
+      { segment: "technology" },
+      `call_segment_${itemId}`,
+    );
+    expect(segmented.state.segment).toBe("technology");
+
+    const routed = runDirectMutableTool(
+      authoritative,
+      "route_to_team",
+      { segment: "technology" },
+      `call_route_${itemId}`,
+    );
+    expect(routed.commands).toContainEqual({
+      type: "submit_voice",
+      callId: `call_route_${itemId}`,
+      segment: "technology",
+    });
+
+    for (const [index, statement] of [
+      "We are technology. I changed my mind about attending the event. Please send it.",
+      "We are technology. Our organisation is Scratch That Records. Please send it.",
+      "We are technology. Forget that workshop booking. Please send it.",
+    ].entries()) {
+      const unrelatedId = `unrelated_segment_retraction_${path}_${index}`;
+      const unrelatedAuthority = applyDirectAuthorityTurn(initial, path, statement, unrelatedId);
+      const unrelatedSegment = runDirectMutableTool(
+        unrelatedAuthority,
+        "set_partner_type",
+        { segment: "technology" },
+        `call_segment_${unrelatedId}`,
+      );
+      expect(unrelatedSegment.state.segment).toBe("technology");
+      const unrelatedRoute = runDirectMutableTool(
+        unrelatedAuthority,
+        "route_to_team",
+        { segment: "technology" },
+        `call_route_${unrelatedId}`,
+      );
+      expect(unrelatedRoute.commands).toContainEqual({
+        type: "submit_voice",
+        callId: `call_route_${unrelatedId}`,
+        segment: "technology",
+      });
+    }
+  });
+
+  it.each(directAuthorityPaths)("honours same-turn $path action retractions", (path) => {
+    const retractions = [
+      "Actually no.",
+      "On second thought, no.",
+      "Sorry, no.",
+      "Forget that.",
+      "Cancel that.",
+      "Take that back.",
+      "I changed my mind.",
+      "Forget this.",
+      "Ignore this.",
+      "Forget what I said.",
+      "Disregard my previous answer.",
+      "Take back what I said.",
+      "Scratch the last bit.",
+      "I retract that.",
+      "Strike that.",
+      "Forget what I just said.",
+      "Forget everything I just said.",
+      "Disregard all of that.",
+      "Ignore everything I said.",
+      "Cancel everything I said.",
+      "I take everything back.",
+      "I take what I said back.",
+    ];
+    for (const [index, retraction] of retractions.entries()) {
+      const routeId = `route_retraction_${path}_${index}`;
+      const routeInitial = state({
+        segment: "technology",
+        captured: { ...emptyCapturedLead, name: "Bob", email: "ready@example.com" },
+        emailVerification: { value: "ready@example.com", source: "typed", status: "confirmed" },
+        transcript: [{ role: "user", text: "My name is Bob." }],
+      });
+      const routeAuthority = applyDirectAuthorityTurn(routeInitial, path, `Please send it. ${retraction}`, routeId);
+      const routed = runDirectMutableTool(
+        routeAuthority,
+        "route_to_team",
+        { segment: "technology" },
+        `call_${routeId}`,
+      );
+      expect(routed.commands.some((command) => command.type === "submit_voice")).toBe(false);
+
+      const clearId = `clear_retraction_${path}_${index}`;
+      const clearAuthority = applyDirectAuthorityTurn(routeInitial, path, `Clear my name. ${retraction}`, clearId);
+      const cleared = runDirectMutableTool(clearAuthority, "clear_field", { key: "name" }, `call_${clearId}`);
+      expect(cleared.state.captured.name).toBe("Bob");
+
+      const endId = `end_retraction_${path}_${index}`;
+      const endAuthority = applyDirectAuthorityTurn(routeInitial, path, `End the call. ${retraction}`, endId);
+      const ended = runDirectMutableTool(endAuthority, "end_call", { reason: "user_done" }, `call_${endId}`);
+      expect(ended.commands.some((command) => command.type === "end_voice")).toBe(false);
+
+      const captureId = `capture_retraction_${path}_${index}`;
+      const captureAuthority = applyDirectAuthorityTurn(
+        routeInitial,
+        path,
+        `My name is Alice. ${retraction}`,
+        captureId,
+      );
+      const captured = runDirectMutableTool(
+        captureAuthority,
+        "capture_field",
+        { key: "name", value: "Alice", evidence: "Alice" },
+        `call_${captureId}`,
+      );
+      expect(captured.state.captured.name).toBe("Bob");
+    }
+
+    const inlineId = `inline_capture_retraction_${path}`;
+    const inlineInitial = state({
+      captured: { ...emptyCapturedLead, name: "Bob" },
+      transcript: [{ role: "user", text: "We were discussing the form." }],
+    });
+    const inlineAuthority = applyDirectAuthorityTurn(inlineInitial, path, "My name is Alice actually no.", inlineId);
+    const inlineCapture = runDirectMutableTool(
+      inlineAuthority,
+      "capture_field",
+      { key: "name", value: "Alice", evidence: "Alice" },
+      `call_${inlineId}`,
+    );
+    expect(inlineCapture.state.captured.name).toBe("Bob");
+
+    const correctedNameId = `corrected_bare_name_${path}`;
+    const correctedNameAuthority = applyDirectAuthorityTurn(
+      inlineInitial,
+      path,
+      "My name is Alice. Actually no, Carol.",
+      correctedNameId,
+    );
+    const correctedName = runDirectMutableTool(
+      correctedNameAuthority,
+      "capture_field",
+      { key: "name", value: "Carol", evidence: "Carol" },
+      `call_${correctedNameId}`,
+    );
+    expect(correctedName.state.captured.name).toBe("Carol");
+
+    const chainedCorrectionId = `chained_corrected_name_${path}`;
+    const chainedCorrectionAuthority = applyDirectAuthorityTurn(
+      inlineInitial,
+      path,
+      "My name is Alice. Actually no, Carol. I mean Dana.",
+      chainedCorrectionId,
+    );
+    const intermediateCorrection = runDirectMutableTool(
+      chainedCorrectionAuthority,
+      "capture_field",
+      { key: "name", value: "Carol", evidence: "Carol" },
+      `call_intermediate_${chainedCorrectionId}`,
+    );
+    expect(intermediateCorrection.state.captured.name).toBe("Bob");
+    const finalCorrection = runDirectMutableTool(
+      chainedCorrectionAuthority,
+      "capture_field",
+      { key: "name", value: "Dana", evidence: "Dana" },
+      `call_final_${chainedCorrectionId}`,
+    );
+    expect(finalCorrection.state.captured.name).toBe("Dana");
+
+    for (const [index, finalCorrectionMarker] of [
+      "Wait, Dana.",
+      "Um, wait, Dana.",
+      "Wait, um, Dana.",
+      "Wait, Dana, um.",
+      "Wait... Dana.",
+      "Wait\nDana.",
+      "Wait … Dana.",
+      "Well, Dana.",
+      "Nope, Dana.",
+      "Nah, Dana.",
+      "Hold on, Dana.",
+      "Hang on, Dana.",
+      "Hang on a second, Dana.",
+      "Hold on one second... uh... Dana.",
+      "Make that Dana.",
+      "Use Dana.",
+      "Make it Dana.",
+      "Change it to Dana.",
+      "Replace that with Dana.",
+      "That is Dana.",
+      "On second thought, Dana.",
+      "Thinking again, Dana.",
+    ].entries()) {
+      const markerId = `correction_discourse_marker_${path}_${index}`;
+      const markerAuthority = applyDirectAuthorityTurn(
+        inlineInitial,
+        path,
+        `My name is Alice. Actually no, Carol. ${finalCorrectionMarker}`,
+        markerId,
+      );
+      for (const tool of ["capture_field", "capture_fields"] as const) {
+        const staleField = { key: "name", value: "Carol", evidence: "Carol" };
+        const staleArgs = tool === "capture_field" ? staleField : { fields: [staleField] };
+        const staleResult = runDirectMutableTool(markerAuthority, tool, staleArgs, `call_stale_${tool}_${markerId}`);
+        expect(staleResult.state.captured.name).toBe("Bob");
+
+        const finalField = { key: "name", value: "Dana", evidence: "Dana" };
+        const finalArgs = tool === "capture_field" ? finalField : { fields: [finalField] };
+        const finalResult = runDirectMutableTool(markerAuthority, tool, finalArgs, `call_final_${tool}_${markerId}`);
+        expect(finalResult.state.captured.name, `${path}/${tool}: ${finalCorrectionMarker}`).toBe("Dana");
+      }
+    }
+
+    for (const [index, uncertainCorrection] of ["Make that Dana?", "Maybe make that Dana."].entries()) {
+      const uncertainId = `uncertain_correction_discourse_${path}_${index}`;
+      const uncertainAuthority = applyDirectAuthorityTurn(
+        inlineInitial,
+        path,
+        `My name is Alice. Actually no, Carol. ${uncertainCorrection}`,
+        uncertainId,
+      );
+      for (const tool of ["capture_field", "capture_fields"] as const) {
+        const settledField = { key: "name", value: "Carol", evidence: "Carol" };
+        const settledArgs = tool === "capture_field" ? settledField : { fields: [settledField] };
+        const settledResult = runDirectMutableTool(
+          uncertainAuthority,
+          tool,
+          settledArgs,
+          `call_settled_${tool}_${uncertainId}`,
+        );
+        expect(settledResult.state.captured.name).toBe("Carol");
+
+        const uncertainField = { key: "name", value: "Dana", evidence: "Dana" };
+        const uncertainArgs = tool === "capture_field" ? uncertainField : { fields: [uncertainField] };
+        const uncertainResult = runDirectMutableTool(
+          uncertainAuthority,
+          tool,
+          uncertainArgs,
+          `call_uncertain_${tool}_${uncertainId}`,
+        );
+        expect(uncertainResult.state.captured.name).toBe("Bob");
+      }
+    }
+
+    for (const [index, stackedCorrection] of ["Actually, my name is Dana.", "Sorry, call me Dana."].entries()) {
+      const stackedId = `stacked_corrected_name_${path}_${index}`;
+      const stackedAuthority = applyDirectAuthorityTurn(
+        inlineInitial,
+        path,
+        `My name is Alice. Actually no, Carol. ${stackedCorrection}`,
+        stackedId,
+      );
+      const staleStacked = runDirectMutableTool(
+        stackedAuthority,
+        "capture_field",
+        { key: "name", value: "Carol", evidence: "Carol" },
+        `call_intermediate_${stackedId}`,
+      );
+      expect(staleStacked.state.captured.name).toBe("Bob");
+      const finalStacked = runDirectMutableTool(
+        stackedAuthority,
+        "capture_field",
+        { key: "name", value: "Dana", evidence: "Dana" },
+        `call_final_${stackedId}`,
+      );
+      expect(finalStacked.state.captured.name).toBe("Dana");
+    }
+
+    for (const [index, names] of [
+      ["Ann", "Anna"],
+      ["Sam", "Samantha"],
+      ["Ann", "Ann Marie"],
+      ["Carol", "dana"],
+      ["Carol", "May"],
+    ].entries()) {
+      const [intermediate, final] = names;
+      const overlapId = `overlapping_corrected_name_${path}_${index}`;
+      const overlapAuthority = applyDirectAuthorityTurn(
+        inlineInitial,
+        path,
+        `My name is Alice. Actually no, ${intermediate}. I mean ${final}.`,
+        overlapId,
+      );
+      const staleOverlap = runDirectMutableTool(
+        overlapAuthority,
+        "capture_field",
+        { key: "name", value: intermediate, evidence: intermediate },
+        `call_intermediate_${overlapId}`,
+      );
+      expect(staleOverlap.state.captured.name).toBe("Bob");
+      const finalOverlap = runDirectMutableTool(
+        overlapAuthority,
+        "capture_field",
+        { key: "name", value: final, evidence: final },
+        `call_final_${overlapId}`,
+      );
+      expect(finalOverlap.state.captured.name).toBe(final);
+    }
+
+    const orgExpansionId = `expanded_corrected_org_${path}`;
+    const orgExpansionInitial = state({
+      captured: { ...emptyCapturedLead, org: "Existing Org" },
+      transcript: [{ role: "user", text: "We were discussing the form." }],
+    });
+    const orgExpansionAuthority = applyDirectAuthorityTurn(
+      orgExpansionInitial,
+      path,
+      "My organisation is Old Org. Actually no, Acme. I mean Acme Labs.",
+      orgExpansionId,
+    );
+    const intermediateOrg = runDirectMutableTool(
+      orgExpansionAuthority,
+      "capture_field",
+      { key: "org", value: "Acme", evidence: "Acme" },
+      `call_intermediate_${orgExpansionId}`,
+    );
+    expect(intermediateOrg.state.captured.org).toBe("Existing Org");
+    const finalOrg = runDirectMutableTool(
+      orgExpansionAuthority,
+      "capture_field",
+      { key: "org", value: "Acme Labs", evidence: "Acme Labs" },
+      `call_final_${orgExpansionId}`,
+    );
+    expect(finalOrg.state.captured.org).toBe("Acme Labs");
+
+    const questionCorrectionId = `question_corrected_name_${path}`;
+    const questionCorrectionAuthority = applyDirectAuthorityTurn(
+      inlineInitial,
+      path,
+      "My name is Alice. Actually no, Carol?",
+      questionCorrectionId,
+    );
+    const questionCorrection = runDirectMutableTool(
+      questionCorrectionAuthority,
+      "capture_field",
+      { key: "name", value: "Carol", evidence: "Carol" },
+      `call_${questionCorrectionId}`,
+    );
+    expect(questionCorrection.state.captured.name).toBe("Bob");
+
+    for (const [index, correction] of ["I mean Carol.", "Call me Carol."].entries()) {
+      const directCorrectionId = `direct_corrected_name_${path}_${index}`;
+      const directCorrectionAuthority = applyDirectAuthorityTurn(
+        inlineInitial,
+        path,
+        `My name is Alice. Actually no, ${correction}`,
+        directCorrectionId,
+      );
+      const directCorrection = runDirectMutableTool(
+        directCorrectionAuthority,
+        "capture_field",
+        { key: "name", value: "Carol", evidence: "Carol" },
+        `call_${directCorrectionId}`,
+      );
+      expect(directCorrection.state.captured.name).toBe("Carol");
+    }
+
+    for (const [index, unrelatedMention] of ["Carol is attending the event.", "Call Carol."].entries()) {
+      const unrelatedMentionId = `unrelated_corrected_name_${path}_${index}`;
+      const unrelatedMentionAuthority = applyDirectAuthorityTurn(
+        inlineInitial,
+        path,
+        `My name is Alice. Actually no, ${unrelatedMention}`,
+        unrelatedMentionId,
+      );
+      const unrelatedMentionCapture = runDirectMutableTool(
+        unrelatedMentionAuthority,
+        "capture_field",
+        { key: "name", value: "Carol", evidence: "Carol" },
+        `call_${unrelatedMentionId}`,
+      );
+      expect(unrelatedMentionCapture.state.captured.name).toBe("Bob");
+    }
+
+    for (const [index, laterDiscourse] of [
+      "Actually, the event is tomorrow.",
+      "I mean, the event is tomorrow.",
+      "Actually, venue logistics.",
+      "Sorry, parking arrangements.",
+      "I mean Friday.",
+    ].entries()) {
+      const discourseId = `later_unrelated_correction_discourse_${path}_${index}`;
+      const discourseAuthority = applyDirectAuthorityTurn(
+        inlineInitial,
+        path,
+        `My name is Alice. Actually no, Carol. ${laterDiscourse}`,
+        discourseId,
+      );
+      const discourseCapture = runDirectMutableTool(
+        discourseAuthority,
+        "capture_field",
+        { key: "name", value: "Carol", evidence: "Carol" },
+        `call_${discourseId}`,
+      );
+      expect(discourseCapture.state.captured.name).toBe("Carol");
+    }
+
+    for (const [index, correction] of [
+      {
+        key: "org" as const,
+        value: "Acme",
+        statement: "My organisation is Old Org. Actually no, we are Acme.",
+      },
+      {
+        key: "org" as const,
+        value: "Acme",
+        statement: "My organisation is Old Org. Actually no, our organisation is Acme.",
+      },
+      {
+        key: "website" as const,
+        value: "new.example",
+        statement: "My website is old.example. Actually no, it's new.example.",
+      },
+      {
+        key: "email" as const,
+        value: "new@example.com",
+        statement: "My email is old@example.com. Actually no, it's new@example.com.",
+      },
+      {
+        key: "email" as const,
+        value: "new@example.com",
+        statement: "Priya's email is new@example.com. Actually no, new@example.com is mine.",
+      },
+    ].entries()) {
+      const naturalCorrectionId = `natural_corrected_field_${path}_${index}`;
+      const naturalCorrectionAuthority = applyDirectAuthorityTurn(
+        state({ transcript: [{ role: "user", text: "We were discussing the form." }] }),
+        path,
+        correction.statement,
+        naturalCorrectionId,
+      );
+      const naturalCorrection = runDirectMutableTool(
+        naturalCorrectionAuthority,
+        "capture_field",
+        { key: correction.key, value: correction.value, evidence: correction.value },
+        `call_${naturalCorrectionId}`,
+      );
+      expect(naturalCorrection.state.captured[correction.key]).toBe(correction.value);
+    }
+
+    const replacementEmailId = `retracted_replacement_email_${path}`;
+    const replacementEmailInitial = state({
+      captured: { ...emptyCapturedLead, email: "old@example.com" },
+      emailVerification: { value: "old@example.com", source: "typed", status: "confirmed" },
+      transcript: [{ role: "user", text: "We were discussing the form." }],
+    });
+    const replacementEmailAuthority = applyDirectAuthorityTurn(
+      replacementEmailInitial,
+      path,
+      "My email is new@example.com, forget that.",
+      replacementEmailId,
+    );
+    expect(replacementEmailAuthority.captured.email).toBe("old@example.com");
+    expect(replacementEmailAuthority.emailVerification).toEqual(replacementEmailInitial.emailVerification);
+    const replacementEmailCapture = runDirectMutableTool(
+      replacementEmailAuthority,
+      "capture_field",
+      { key: "email", value: "new@example.com", evidence: "new@example.com" },
+      `call_${replacementEmailId}`,
+    );
+    expect(replacementEmailCapture.state.captured.email).toBe("old@example.com");
+
+    const reaffirmedEmailId = `reaffirmed_current_retracted_replacement_${path}`;
+    const reaffirmedEmailAuthority = applyDirectAuthorityTurn(
+      replacementEmailInitial,
+      path,
+      "old@example.com is still my email. My email is new@example.com, forget that.",
+      reaffirmedEmailId,
+    );
+    expect(reaffirmedEmailAuthority.captured.email).toBe("old@example.com");
+    expect(reaffirmedEmailAuthority.emailVerification).toEqual(replacementEmailInitial.emailVerification);
+
+    const currentEmailId = `retracted_current_email_${path}`;
+    const currentEmailAuthority = applyDirectAuthorityTurn(
+      replacementEmailInitial,
+      path,
+      "My email is old@example.com, forget that.",
+      currentEmailId,
+    );
+    expect(currentEmailAuthority.captured.email).toBe(path === "typed" ? "" : "old@example.com");
+    expect(currentEmailAuthority.emailVerification).toEqual(
+      path === "typed" ? undefined : replacementEmailInitial.emailVerification,
+    );
+
+    const captureRetractions = [
+      "My name is Alice, actually no.",
+      "My name is Alice, forget that.",
+      "My name is Alice, I changed my mind.",
+      "My name is Alice, scratch that.",
+    ];
+    for (const [index, statement] of captureRetractions.entries()) {
+      const itemId = `comma_capture_retraction_${path}_${index}`;
+      const authoritative = applyDirectAuthorityTurn(inlineInitial, path, statement, itemId);
+      for (const tool of ["capture_field", "capture_fields"] as const) {
+        const args =
+          tool === "capture_field"
+            ? { key: "name", value: "Alice", evidence: "Alice" }
+            : { fields: [{ key: "name", value: "Alice", evidence: "Alice" }] };
+        const captured = runDirectMutableTool(authoritative, tool, args, `call_${tool}_${itemId}`);
+        expect(captured.state.captured.name).toBe("Bob");
+      }
+    }
+
+    const repeatedRejectedValues = [
+      "My name is Alice. Actually no, Alice is wrong.",
+      "My name is Alice. Actually no, forget Alice.",
+      "My name is Alice. Scratch that, Alice was wrong.",
+    ];
+    for (const [index, statement] of repeatedRejectedValues.entries()) {
+      const itemId = `repeated_rejected_value_${path}_${index}`;
+      const authoritative = applyDirectAuthorityTurn(inlineInitial, path, statement, itemId);
+      for (const tool of ["capture_field", "capture_fields"] as const) {
+        const field = { key: "name", value: "Alice", evidence: "Alice" };
+        const args = tool === "capture_field" ? field : { fields: [field] };
+        const result = runDirectMutableTool(authoritative, tool, args, `call_${tool}_${itemId}`);
+        expect(result.state.captured.name).toBe("Bob");
+      }
+    }
+
+    const restoredId = `restored_capture_authority_${path}`;
+    const restoredAuthority = applyDirectAuthorityTurn(
+      inlineInitial,
+      path,
+      "My name is Alice. Actually no, my name is Alice.",
+      restoredId,
+    );
+    const restored = runDirectMutableTool(
+      restoredAuthority,
+      "capture_field",
+      { key: "name", value: "Alice", evidence: "Alice" },
+      `call_${restoredId}`,
+    );
+    expect(restored.state.captured.name).toBe("Alice");
+
+    const unrelatedRetractionScopes = [
+      "My name is Alice. I changed my mind about attending the event.",
+      "My name is Alice. Actually no, cancel the workshop booking.",
+    ];
+    for (const [index, statement] of unrelatedRetractionScopes.entries()) {
+      const itemId = `unrelated_retraction_scope_${path}_${index}`;
+      const authoritative = applyDirectAuthorityTurn(inlineInitial, path, statement, itemId);
+      const result = runDirectMutableTool(
+        authoritative,
+        "capture_field",
+        { key: "name", value: "Alice", evidence: "Alice" },
+        `call_${itemId}`,
+      );
+      expect(result.state.captured.name).toBe("Alice");
+    }
+
+    const fieldTargetedRetractions = [
+      "My name is Alice. I changed my mind about the name.",
+      "My name is Alice. I changed my mind about that name.",
+      "My name is Alice. Actually no, cancel the name change.",
+      "My name is Alice. Forget the name change.",
+      "My name is Alice. Cancel the name update.",
+      "My name is Alice. Scratch the name.",
+    ];
+    for (const [index, statement] of fieldTargetedRetractions.entries()) {
+      const itemId = `field_targeted_retraction_${path}_${index}`;
+      const authoritative = applyDirectAuthorityTurn(inlineInitial, path, statement, itemId);
+      const result = runDirectMutableTool(
+        authoritative,
+        "capture_field",
+        { key: "name", value: "Alice", evidence: "Alice" },
+        `call_${itemId}`,
+      );
+      expect(result.state.captured.name).toBe("Bob");
+    }
+
+    const qualifiedObjectCases = [
+      {
+        key: "name" as const,
+        initial: "Bob",
+        value: "Alice",
+        statement: "My name is Alice. I changed my mind about the event name.",
+        expected: "Alice",
+      },
+      {
+        key: "name" as const,
+        initial: "Bob",
+        value: "Alice",
+        statement: "My name is Alice. I changed my mind about the name of the event.",
+        expected: "Alice",
+      },
+      {
+        key: "org" as const,
+        initial: "Old Org",
+        value: "Acme",
+        statement: "My organisation is Acme. I changed my mind about the catering company.",
+        expected: "Acme",
+      },
+      {
+        key: "website" as const,
+        initial: "old.example",
+        value: "new.example",
+        statement: "My website is new.example. I changed my mind about the domain.",
+        expected: "old.example",
+      },
+      {
+        key: "website" as const,
+        initial: "old.example",
+        value: "new.example",
+        statement: "My website is new.example. I changed my mind about the website for the event.",
+        expected: "new.example",
+      },
+      {
+        key: "website" as const,
+        initial: "old.example",
+        value: "new.example",
+        statement: "My website is new.example. I changed my mind about our own domain.",
+        expected: "old.example",
+      },
+      {
+        key: "email" as const,
+        initial: "old@example.com",
+        value: "new@example.com",
+        statement: "My email is new@example.com. I changed my mind about my personal email.",
+        expected: "old@example.com",
+      },
+      {
+        key: "org" as const,
+        initial: "Old Org",
+        value: "Acme",
+        statement: "My organisation is Acme. I changed my mind about the business.",
+        expected: "Old Org",
+      },
+      {
+        key: "website" as const,
+        initial: "old.example",
+        value: "new.example",
+        statement: "My website is new.example. I changed my mind about a different domain.",
+        expected: "old.example",
+      },
+      {
+        key: "org" as const,
+        initial: "Old Org",
+        value: "Acme",
+        statement: "My organisation is Acme. I changed my mind about another company.",
+        expected: "Old Org",
+      },
+      {
+        key: "name" as const,
+        initial: "Bob",
+        value: "Alice",
+        statement: "My name is Alice. I changed my mind about using a different name.",
+        expected: "Bob",
+      },
+      {
+        key: "website" as const,
+        initial: "old.example",
+        value: "new.example",
+        statement: "My website is new.example. I changed my mind about our new domain.",
+        expected: "old.example",
+      },
+    ];
+    for (const [index, capture] of qualifiedObjectCases.entries()) {
+      const itemId = `qualified_retraction_object_${path}_${index}`;
+      const initial = state({
+        captured: { ...emptyCapturedLead, [capture.key]: capture.initial },
+        transcript: [{ role: "user", text: "We were discussing the form." }],
+      });
+      const authoritative = applyDirectAuthorityTurn(initial, path, capture.statement, itemId);
+      for (const tool of ["capture_field", "capture_fields"] as const) {
+        const field = { key: capture.key, value: capture.value, evidence: capture.value };
+        const args = tool === "capture_field" ? field : { fields: [field] };
+        const result = runDirectMutableTool(authoritative, tool, args, `call_${tool}_${itemId}`);
+        expect(result.state.captured[capture.key]).toBe(capture.expected);
+      }
+    }
+
+    const literalRetractionValues = [
+      { key: "message" as const, value: "Please cancel that workshop booking." },
+      { key: "message" as const, value: "I changed my mind about the event date." },
+      { key: "message" as const, value: "Actually no, the event is postponed." },
+      { key: "org" as const, value: "Scratch That Records" },
+    ];
+    for (const [index, capture] of literalRetractionValues.entries()) {
+      const itemId = `literal_retraction_value_${path}_${index}`;
+      const authoritative = applyDirectAuthorityTurn(
+        state({ transcript: [{ role: "user", text: "We were discussing the form." }] }),
+        path,
+        `My ${capture.key === "org" ? "organisation" : "message"} is: ${capture.value}`,
+        itemId,
+      );
+      for (const tool of ["capture_field", "capture_fields"] as const) {
+        const field = { key: capture.key, value: capture.value, evidence: capture.value };
+        const args = tool === "capture_field" ? field : { fields: [field] };
+        const result = runDirectMutableTool(authoritative, tool, args, `call_${tool}_${itemId}`);
+        expect(result.state.captured[capture.key]).toBe(capture.value);
+      }
+    }
+
+    const swallowedRetractions = [
+      { key: "name" as const, value: "Alice actually no" },
+      { key: "name" as const, value: "Alice scratch that name" },
+      { key: "message" as const, value: "Book Tuesday actually no" },
+      { key: "org" as const, value: "Acme scratch that" },
+      { key: "org" as const, value: "Acme forget that company" },
+      { key: "phone" as const, value: "60123456789 cancel that number" },
+    ];
+    for (const [index, capture] of swallowedRetractions.entries()) {
+      const itemId = `swallowed_retraction_${path}_${index}`;
+      const initial = state({
+        captured: { ...emptyCapturedLead, ...(capture.key === "name" ? { name: "Bob" } : {}) },
+        transcript: [{ role: "user", text: "We were discussing the form." }],
+      });
+      const authoritative = applyDirectAuthorityTurn(
+        initial,
+        path,
+        `My ${capture.key === "org" ? "organisation" : capture.key} is ${capture.value}.`,
+        itemId,
+      );
+      for (const tool of ["capture_field", "capture_fields"] as const) {
+        const field = { key: capture.key, value: capture.value, evidence: capture.value };
+        const args = tool === "capture_field" ? field : { fields: [field] };
+        const result = runDirectMutableTool(authoritative, tool, args, `call_${tool}_${itemId}`);
+        expect(result.state.captured[capture.key]).toBe(capture.key === "name" ? "Bob" : "");
+      }
+    }
+  });
+
+  it.each(
+    directAuthorityPaths.flatMap((path) =>
+      [
+        "Should I send it to your competitor?",
+        "Should I send it to Alice?",
+        "Should I send it to the venue?",
+        "Should I send it to Mereka's competitor?",
+        "Should I share the form with your competitor?",
+        "Should I share the form with Alice?",
+        "Should I share the form with the venue?",
+        "Should I share the form with Mereka's competitor?",
+        "Should I route the form via your competitor?",
+        "Should I route the form via Alice?",
+        "Should I route the form through the venue?",
+        "Should I route the form through Mereka's competitor?",
+      ].map((prompt) => ({ path, prompt })),
+    ),
+  )("does not rewrite an unrelated $path route destination: $prompt", ({ path, prompt }) => {
+    const itemId = `unrelated_route_destination_${path}_${prompt.length}`;
+    const initial = conversationalAuthorityState({ tool: "route_to_team", prompt });
+    const authoritative = applyDirectAuthorityTurn(initial, path, "Yes.", itemId);
+    const result = runDirectMutableTool(authoritative, "route_to_team", { segment: "technology" }, `call_${itemId}`);
+
+    expect(result.state.routeRequested).toBeFalsy();
+    expect(result.commands.some((command) => command.type === "submit_voice")).toBe(false);
+  });
+
+  const negativeConfirmationPrompts: Record<(typeof anaphoricAuthorityCases)[number]["id"], string> = {
+    phone_capture: "That phone number is not +60123456789, correct?",
+    website_batch_capture: "That website is not wrong.example, correct?",
+    clear_name: "You do not want me to clear your name, correct?",
+    clear_all: "You do not want me to clear everything in the form, correct?",
+    segment: "You are not a technology company, correct?",
+    route: "You do not want me to send it yet, correct?",
+    end: "You do not want me to end the call, correct?",
+  };
+
+  it.each(
+    directAuthorityPaths.flatMap((path) => anaphoricAuthorityCases.map((toolCase) => ({ path, toolCase }))),
+  )("does not invert a negative $path $toolCase.id proposition when the user says yes", ({ path, toolCase }) => {
+    const itemId = `negative_prompt_yes_${path}_${toolCase.id}`;
+    const initial = conversationalAuthorityState({
+      ...toolCase,
+      prompt: negativeConfirmationPrompts[toolCase.id],
+    });
+    const authoritative = applyDirectAuthorityTurn(initial, path, "Yes.", itemId);
+    const result = runDirectMutableTool(authoritative, toolCase.tool, toolCase.arguments, `call_${itemId}`);
+
+    expect(result.state.captured).toEqual(initial.captured);
+    expect(result.state.segment).toBe(initial.segment);
+    expect(result.state.routeRequested).toBeFalsy();
+    expect(result.commands.some((command) => command.type === "submit_voice")).toBe(false);
+    expect(result.commands.some((command) => command.type === "end_voice")).toBe(false);
+  });
+
+  const contractedNegativeConfirmationPrompts: Record<(typeof anaphoricAuthorityCases)[number]["id"], string> = {
+    phone_capture: "That phone number hasn't been confirmed as +60123456789. Is that right?",
+    website_batch_capture: "That website hasn't been confirmed as wrong.example. Is that right?",
+    clear_name: "You didn't ask me to clear your name. Is that right?",
+    clear_all: "You didn't ask me to clear everything in the form. Is that right?",
+    segment: "You haven't said you are a technology company. Is that right?",
+    route: "You didn't ask me to send it. Is that right?",
+    end: "You didn't ask me to end the call. Is that right?",
+  };
+
+  it.each(
+    directAuthorityPaths.flatMap((path) => anaphoricAuthorityCases.map((toolCase) => ({ path, toolCase }))),
+  )("does not invert a contracted-negative $path $toolCase.id proposition", ({ path, toolCase }) => {
+    const itemId = `contracted_negative_prompt_yes_${path}_${toolCase.id}`;
+    const initial = conversationalAuthorityState({
+      ...toolCase,
+      prompt: contractedNegativeConfirmationPrompts[toolCase.id],
+    });
+    const authoritative = applyDirectAuthorityTurn(initial, path, "Yes.", itemId);
+    const result = runDirectMutableTool(authoritative, toolCase.tool, toolCase.arguments, `call_${itemId}`);
+
+    expect(result.state.captured).toEqual(initial.captured);
+    expect(result.state.segment).toBe(initial.segment);
+    expect(result.state.routeRequested).toBeFalsy();
+    expect(result.commands.some((command) => command.type === "submit_voice")).toBe(false);
+    expect(result.commands.some((command) => command.type === "end_voice")).toBe(false);
+  });
+
+  const lexicalRefusalPrompts: Record<
+    (typeof anaphoricAuthorityCases)[number]["id"],
+    readonly [string, string, string]
+  > = {
+    phone_capture: [
+      "You declined to save your phone as +60123456789. Is that right?",
+      "You refused to let me save your phone as +60123456789. Is that right?",
+      "You said no to saving your phone as +60123456789. Is that right?",
+    ],
+    website_batch_capture: [
+      "You declined to save your website as wrong.example. Is that right?",
+      "You refused to let me save your website as wrong.example. Is that right?",
+      "You said no to saving your website as wrong.example. Is that right?",
+    ],
+    clear_name: [
+      "You declined to have me clear your name. Is that right?",
+      "You refused to let me clear your name. Is that right?",
+      "You said no to clearing your name. Is that right?",
+    ],
+    clear_all: [
+      "You declined to have me clear everything. Is that right?",
+      "You refused to let me clear everything. Is that right?",
+      "You said no to clearing everything. Is that right?",
+    ],
+    segment: [
+      "You declined to classify this as technology. Is that right?",
+      "You refused to classify this as technology. Is that right?",
+      "You said no to classifying this as technology. Is that right?",
+    ],
+    route: [
+      "You declined to have me send it. Is that right?",
+      "You refused to let me send it. Is that right?",
+      "You said no to sending it. Is that right?",
+    ],
+    end: [
+      "You declined to have me end the call. Is that right?",
+      "You refused to let me end the call. Is that right?",
+      "You said no to ending the call. Is that right?",
+    ],
+  };
+
+  it.each(
+    directAuthorityPaths.flatMap((path) =>
+      anaphoricAuthorityCases.flatMap((toolCase) =>
+        lexicalRefusalPrompts[toolCase.id].map((prompt) => ({ path, toolCase, prompt })),
+      ),
+    ),
+  )("does not invert a lexical refusal for $path $toolCase.id", ({ path, toolCase, prompt }) => {
+    const itemId = `lexical_refusal_yes_${path}_${toolCase.id}_${prompt.length}`;
+    const initial = conversationalAuthorityState({ ...toolCase, prompt });
+    const authoritative = applyDirectAuthorityTurn(initial, path, "Yes.", itemId);
+    const result = runDirectMutableTool(authoritative, toolCase.tool, toolCase.arguments, `call_${itemId}`);
+
+    expect(result.state.captured).toEqual(initial.captured);
+    expect(result.state.segment).toBe(initial.segment);
+    expect(result.state.routeRequested).toBeFalsy();
+    expect(result.commands.some((command) => command.type === "submit_voice")).toBe(false);
+    expect(result.commands.some((command) => command.type === "end_voice")).toBe(false);
+  });
+
+  const historicalConfirmationPrompts: Record<
+    (typeof anaphoricAuthorityCases)[number]["id"],
+    readonly [string, string, string]
+  > = {
+    phone_capture: [
+      "You used to have +60123456789 as your phone number. Is that right?",
+      "Your phone number was previously +60123456789. Is that right?",
+      "Back then, your phone number was +60123456789. Is that right?",
+    ],
+    website_batch_capture: [
+      "You used to have wrong.example as your website. Is that right?",
+      "Your website was previously wrong.example. Is that right?",
+      "Back then, your website was wrong.example. Is that right?",
+    ],
+    clear_name: [
+      "You used to want me to clear your name. Is that right?",
+      "You previously wanted me to clear your name. Is that right?",
+      "Back then, you wanted me to clear your name. Is that right?",
+    ],
+    clear_all: [
+      "You used to want me to clear everything. Is that right?",
+      "You previously wanted me to clear everything. Is that right?",
+      "Back then, you wanted me to clear everything. Is that right?",
+    ],
+    segment: [
+      "You used to be a technology company. Is that right?",
+      "You were previously a technology company. Is that right?",
+      "Back then, you were a technology company. Is that right?",
+    ],
+    route: [
+      "You used to want me to send it. Is that right?",
+      "You previously wanted me to send it. Is that right?",
+      "Back then, you wanted me to send it. Is that right?",
+    ],
+    end: [
+      "You used to want me to end the call. Is that right?",
+      "You previously wanted me to end the call. Is that right?",
+      "Back then, you wanted me to end the call. Is that right?",
+    ],
+  };
+
+  it.each(
+    directAuthorityPaths.flatMap((path) =>
+      anaphoricAuthorityCases.flatMap((toolCase) =>
+        historicalConfirmationPrompts[toolCase.id].map((prompt) => ({ path, toolCase, prompt })),
+      ),
+    ),
+  )("does not treat historical $path $toolCase.id state as current authority", ({ path, toolCase, prompt }) => {
+    const itemId = `historical_prompt_yes_${path}_${toolCase.id}_${prompt.length}`;
+    const initial = conversationalAuthorityState({ ...toolCase, prompt });
+    const authoritative = applyDirectAuthorityTurn(initial, path, "Yes.", itemId);
+    const result = runDirectMutableTool(authoritative, toolCase.tool, toolCase.arguments, `call_${itemId}`);
+
+    expect(result.state.captured).toEqual(initial.captured);
+    expect(result.state.segment).toBe(initial.segment);
+    expect(result.state.routeRequested).toBeFalsy();
+    expect(result.commands.some((command) => command.type === "submit_voice")).toBe(false);
+    expect(result.commands.some((command) => command.type === "end_voice")).toBe(false);
+  });
+
+  const alternativeConfirmationPrompts: Record<
+    (typeof anaphoricAuthorityCases)[number]["id"],
+    readonly [string, string]
+  > = {
+    phone_capture: ["Is your phone something other than +60123456789?", "Is your phone +60123456789 or +60987654321?"],
+    website_batch_capture: [
+      "Is your website something other than wrong.example?",
+      "Is your website wrong.example or right.example?",
+    ],
+    clear_name: ["Should I leave your name as-is rather than clear it?", "Should I keep your name or clear it?"],
+    clear_all: [
+      "Should I keep everything instead of clear all fields?",
+      "Should I keep everything or clear all fields?",
+    ],
+    segment: ["Are you in education rather than technology?", "Are you in education or technology?"],
+    route: ["Should I keep this as a draft instead of send it?", "Should I keep this as a draft or send it?"],
+    end: ["Should I keep the call open instead of end it?", "Should I continue or end the call?"],
+  };
+
+  it.each(
+    directAuthorityPaths.flatMap((path) =>
+      anaphoricAuthorityCases.flatMap((toolCase) =>
+        alternativeConfirmationPrompts[toolCase.id].map((prompt) => ({ path, toolCase, prompt })),
+      ),
+    ),
+  )("does not let yes choose an alternative in $path $toolCase.id: $prompt", ({ path, toolCase, prompt }) => {
+    const itemId = `alternative_prompt_yes_${path}_${toolCase.id}_${prompt.length}`;
+    const initial = conversationalAuthorityState({ ...toolCase, prompt });
+    const authoritative = applyDirectAuthorityTurn(initial, path, "Yes.", itemId);
+    const result = runDirectMutableTool(authoritative, toolCase.tool, toolCase.arguments, `call_${itemId}`);
+
+    expect(result.state.captured).toEqual(initial.captured);
+    expect(result.state.segment).toBe(initial.segment);
+    expect(result.state.routeRequested).toBeFalsy();
+    expect(result.commands.some((command) => command.type === "submit_voice")).toBe(false);
+    expect(result.commands.some((command) => command.type === "end_voice")).toBe(false);
+  });
+
+  const opposedConfirmationPrompts: Record<(typeof anaphoricAuthorityCases)[number]["id"], string> = {
+    phone_capture: "Is your phone +60987654321, as opposed to +60123456789?",
+    website_batch_capture: "Is your website right.example, as opposed to wrong.example?",
+    clear_name: "Should I clear your phone, as opposed to your name?",
+    clear_all: "Should I clear your name, as opposed to everything in the form?",
+    segment: "Are you an education company, as opposed to technology?",
+    route: "Should I clear the form, as opposed to send it?",
+    end: "Should I continue, as opposed to end the call?",
+  };
+
+  it.each(
+    directAuthorityPaths.flatMap((path) => anaphoricAuthorityCases.map((toolCase) => ({ path, toolCase }))),
+  )("does not let yes choose the opposed $path $toolCase.id alternative", ({ path, toolCase }) => {
+    const itemId = `opposed_prompt_yes_${path}_${toolCase.id}`;
+    const initial = conversationalAuthorityState({
+      ...toolCase,
+      prompt: opposedConfirmationPrompts[toolCase.id],
+    });
+    const authoritative = applyDirectAuthorityTurn(initial, path, "Yes.", itemId);
+    const result = runDirectMutableTool(authoritative, toolCase.tool, toolCase.arguments, `call_${itemId}`);
+
+    expect(result.state.captured).toEqual(initial.captured);
+    expect(result.state.segment).toBe(initial.segment);
+    expect(result.state.routeRequested).toBeFalsy();
+    expect(result.commands.some((command) => command.type === "submit_voice")).toBe(false);
+    expect(result.commands.some((command) => command.type === "end_voice")).toBe(false);
+  });
+
+  const contrastSynonymPrompts: Record<
+    (typeof anaphoricAuthorityCases)[number]["id"],
+    readonly [string, string, string]
+  > = {
+    phone_capture: [
+      "Is your phone +60987654321 versus +60123456789?",
+      "Is your phone +60987654321 vs. +60123456789?",
+      "Is your phone +60987654321 in contrast to +60123456789?",
+    ],
+    website_batch_capture: [
+      "Is your website right.example versus wrong.example?",
+      "Is your website right.example vs. wrong.example?",
+      "Is your website right.example compared with wrong.example?",
+    ],
+    clear_name: [
+      "Should I clear your phone versus your name?",
+      "Should I clear your phone vs. your name?",
+      "Should I clear your phone in contrast to your name?",
+    ],
+    clear_all: [
+      "Should I clear your name versus everything?",
+      "Should I clear your name vs. everything?",
+      "Should I clear your name compared with everything?",
+    ],
+    segment: [
+      "Are you in education versus technology?",
+      "Are you in education vs. technology?",
+      "Are you in education in contrast to technology?",
+    ],
+    route: [
+      "Should I clear the form versus send it?",
+      "Should I clear the form vs. send it?",
+      "Should I clear the form compared with send it?",
+    ],
+    end: [
+      "Should I continue versus end the call?",
+      "Should I continue vs. end the call?",
+      "Should I continue in contrast to end the call?",
+    ],
+  };
+
+  it.each(
+    directAuthorityPaths.flatMap((path) =>
+      anaphoricAuthorityCases.flatMap((toolCase) =>
+        contrastSynonymPrompts[toolCase.id].map((prompt) => ({ path, toolCase, prompt })),
+      ),
+    ),
+  )("does not let yes choose a contrastive $path $toolCase.id alternative", ({ path, toolCase, prompt }) => {
+    const itemId = `contrast_synonym_yes_${path}_${toolCase.id}_${prompt.length}`;
+    const initial = conversationalAuthorityState({ ...toolCase, prompt });
+    const authoritative = applyDirectAuthorityTurn(initial, path, "Yes.", itemId);
+    const result = runDirectMutableTool(authoritative, toolCase.tool, toolCase.arguments, `call_${itemId}`);
+
+    expect(result.state.captured).toEqual(initial.captured);
+    expect(result.state.segment).toBe(initial.segment);
+    expect(result.state.routeRequested).toBeFalsy();
+    expect(result.commands.some((command) => command.type === "submit_voice")).toBe(false);
+    expect(result.commands.some((command) => command.type === "end_voice")).toBe(false);
+  });
+
+  const differentQuestionPrompts: Record<(typeof anaphoricAuthorityCases)[number]["id"], string> = {
+    phone_capture: "Before I save your phone as +60123456789, should I update your name first?",
+    website_batch_capture: "Before I save your website as wrong.example, should I update your name first?",
+    clear_name: "Before I clear your name, should I save a copy first?",
+    clear_all: "Before I clear all fields, should I save a copy first?",
+    segment: "Before I classify this as technology, should I clarify your goals first?",
+    route: "Before I send it, should I update your name first?",
+    end: "Before I end the call, do you need anything else?",
+  };
+
+  it.each(
+    directAuthorityPaths.flatMap((path) => anaphoricAuthorityCases.map((toolCase) => ({ path, toolCase }))),
+  )("binds yes to the actual $path question, not an earlier $toolCase.id cue", ({ path, toolCase }) => {
+    const itemId = `different_question_yes_${path}_${toolCase.id}`;
+    const initial = conversationalAuthorityState({
+      ...toolCase,
+      prompt: differentQuestionPrompts[toolCase.id],
+    });
+    const authoritative = applyDirectAuthorityTurn(initial, path, "Yes.", itemId);
+    const result = runDirectMutableTool(authoritative, toolCase.tool, toolCase.arguments, `call_${itemId}`);
+
+    expect(result.state.captured).toEqual(initial.captured);
+    expect(result.state.segment).toBe(initial.segment);
+    expect(result.state.routeRequested).toBeFalsy();
+    expect(result.commands.some((command) => command.type === "submit_voice")).toBe(false);
+    expect(result.commands.some((command) => command.type === "end_voice")).toBe(false);
+  });
+
+  const whQuestionPrompts: Record<(typeof anaphoricAuthorityCases)[number]["id"], string> = {
+    phone_capture: "Your phone is +60123456789: whose number is that?",
+    website_batch_capture: "Your website is wrong.example: whose site is that?",
+    clear_name: "Clear your name: who asked for that?",
+    clear_all: "Clear everything: who asked for that?",
+    segment: "Technology: who handles it?",
+    route: "Send it: who handles the follow-up?",
+    end: "End the call: who confirms that?",
+  };
+
+  it.each(
+    directAuthorityPaths.flatMap((path) => anaphoricAuthorityCases.map((toolCase) => ({ path, toolCase }))),
+  )("does not treat yes to a $path wh-question as $toolCase.id authority", ({ path, toolCase }) => {
+    const itemId = `wh_question_yes_${path}_${toolCase.id}`;
+    const initial = conversationalAuthorityState({ ...toolCase, prompt: whQuestionPrompts[toolCase.id] });
+    const authoritative = applyDirectAuthorityTurn(initial, path, "Yes.", itemId);
+    const result = runDirectMutableTool(authoritative, toolCase.tool, toolCase.arguments, `call_${itemId}`);
+
+    expect(result.state.captured).toEqual(initial.captured);
+    expect(result.state.segment).toBe(initial.segment);
+    expect(result.state.routeRequested).toBeFalsy();
+    expect(result.commands.some((command) => command.type === "submit_voice")).toBe(false);
+    expect(result.commands.some((command) => command.type === "end_voice")).toBe(false);
+  });
+
+  const unsafeGenericReadbackPrompts: Record<
+    (typeof anaphoricAuthorityCases)[number]["id"],
+    readonly [string, string]
+  > = {
+    phone_capture: [
+      "I can save your phone as +60123456789. Your name is Alice. Is that right?",
+      "You are still unsure whether the phone number is +60123456789. Is that right?",
+    ],
+    website_batch_capture: [
+      "I can save your website as wrong.example. Your name is Alice. Is that right?",
+      "You are still unsure whether the website is wrong.example. Is that right?",
+    ],
+    clear_name: [
+      "I can clear your name. Your phone is +60123456789. Is that right?",
+      "You want me to wait before I clear your name. Is that right?",
+    ],
+    clear_all: [
+      "I can clear all fields. Your phone is +60123456789. Is that right?",
+      "You want me to wait before I clear everything. Is that right?",
+    ],
+    segment: [
+      "I can classify this as technology. Your phone is +60123456789. Is that right?",
+      "You are unsure whether technology is the right segment. Is that right?",
+    ],
+    route: [
+      "I can send it. Your phone is +60123456789. Is that right?",
+      "You want me to wait before I send it. Is that right?",
+    ],
+    end: [
+      "I can end the call. Your phone is +60123456789. Is that right?",
+      "You want me to wait before I end the call. Is that right?",
+    ],
+  };
+
+  it.each(
+    directAuthorityPaths.flatMap((path) =>
+      anaphoricAuthorityCases.flatMap((toolCase) =>
+        unsafeGenericReadbackPrompts[toolCase.id].map((prompt) => ({ path, toolCase, prompt })),
+      ),
+    ),
+  )("does not let generic yes misbind $path $toolCase.id: $prompt", ({ path, toolCase, prompt }) => {
+    const itemId = `unsafe_generic_yes_${path}_${toolCase.id}_${prompt.length}`;
+    const initial = conversationalAuthorityState({ ...toolCase, prompt });
+    const authoritative = applyDirectAuthorityTurn(initial, path, "Yes.", itemId);
+    const result = runDirectMutableTool(authoritative, toolCase.tool, toolCase.arguments, `call_${itemId}`);
+
+    expect(result.state.captured).toEqual(initial.captured);
+    expect(result.state.segment).toBe(initial.segment);
+    expect(result.state.routeRequested).toBeFalsy();
+    expect(result.commands.some((command) => command.type === "submit_voice")).toBe(false);
+    expect(result.commands.some((command) => command.type === "end_voice")).toBe(false);
+  });
+
+  const crossClauseGenericReadbackPrompts: Record<
+    (typeof anaphoricAuthorityCases)[number]["id"],
+    readonly [string, string]
+  > = {
+    phone_capture: [
+      "I can save your phone as +60123456789; your name is Alice. Is that right?",
+      "I can save your phone as +60123456789, your name is Alice. Is that right?",
+    ],
+    website_batch_capture: [
+      "I can save your website as wrong.example; your name is Alice. Is that right?",
+      "I can save your website as wrong.example, your name is Alice. Is that right?",
+    ],
+    clear_name: [
+      "I can clear your name; your phone is +60123456789. Is that right?",
+      "I can clear your name, your phone is +60123456789. Is that right?",
+    ],
+    clear_all: [
+      "I can clear everything; your phone is +60123456789. Is that right?",
+      "I can clear everything, your phone is +60123456789. Is that right?",
+    ],
+    segment: [
+      "I can classify this as technology; your phone is +60123456789. Is that right?",
+      "I can classify this as technology, your phone is +60123456789. Is that right?",
+    ],
+    route: [
+      "I can send it; your phone is +60123456789. Is that right?",
+      "I can send it, your phone is +60123456789. Is that right?",
+    ],
+    end: [
+      "I can end the call; your phone is +60123456789. Is that right?",
+      "I can end the call, your phone is +60123456789. Is that right?",
+    ],
+  };
+
+  it.each(
+    directAuthorityPaths.flatMap((path) =>
+      anaphoricAuthorityCases.flatMap((toolCase) =>
+        crossClauseGenericReadbackPrompts[toolCase.id].map((prompt) => ({ path, toolCase, prompt })),
+      ),
+    ),
+  )("binds generic yes to the immediate $path clause, not an earlier $toolCase.id cue", ({
+    path,
+    toolCase,
+    prompt,
+  }) => {
+    const itemId = `cross_clause_generic_yes_${path}_${toolCase.id}_${prompt.includes(";") ? "semicolon" : "comma"}`;
+    const initial = conversationalAuthorityState({ ...toolCase, prompt });
+    const authoritative = applyDirectAuthorityTurn(initial, path, "Yes.", itemId);
+    const result = runDirectMutableTool(authoritative, toolCase.tool, toolCase.arguments, `call_${itemId}`);
+
+    expect(result.state.captured).toEqual(initial.captured);
+    expect(result.state.segment).toBe(initial.segment);
+    expect(result.state.routeRequested).toBeFalsy();
+    expect(result.commands.some((command) => command.type === "submit_voice")).toBe(false);
+    expect(result.commands.some((command) => command.type === "end_voice")).toBe(false);
+  });
+
+  const strongBoundaryGenericReadbackPrompts: Record<
+    (typeof anaphoricAuthorityCases)[number]["id"],
+    readonly [string, string, string]
+  > = {
+    phone_capture: [
+      "I can save your phone as +60123456789 — contact Bob. Is that right?",
+      "I can save your phone as +60123456789: contact Bob. Is that right?",
+      "I can save your phone as +60123456789\nContact Bob. Is that right?",
+    ],
+    website_batch_capture: [
+      "I can save your website as wrong.example — contact Bob. Is that right?",
+      "I can save your website as wrong.example: contact Bob. Is that right?",
+      "I can save your website as wrong.example\nContact Bob. Is that right?",
+    ],
+    clear_name: [
+      "I can clear your name — contact Bob. Is that right?",
+      "I can clear your name: contact Bob. Is that right?",
+      "I can clear your name\nContact Bob. Is that right?",
+    ],
+    clear_all: [
+      "I can clear everything — contact Bob. Is that right?",
+      "I can clear everything: contact Bob. Is that right?",
+      "I can clear everything\nContact Bob. Is that right?",
+    ],
+    segment: [
+      "I can classify this as technology — contact Bob. Is that right?",
+      "I can classify this as technology: contact Bob. Is that right?",
+      "I can classify this as technology\nContact Bob. Is that right?",
+    ],
+    route: [
+      "I can send it — contact Bob. Is that right?",
+      "I can send it: contact Bob. Is that right?",
+      "I can send it\nContact Bob. Is that right?",
+    ],
+    end: [
+      "I can end the call — contact Bob. Is that right?",
+      "I can end the call: contact Bob. Is that right?",
+      "I can end the call\nContact Bob. Is that right?",
+    ],
+  };
+
+  it.each(
+    directAuthorityPaths.flatMap((path) =>
+      anaphoricAuthorityCases.flatMap((toolCase) =>
+        strongBoundaryGenericReadbackPrompts[toolCase.id].map((prompt) => ({ path, toolCase, prompt })),
+      ),
+    ),
+  )("binds generic yes after a strong boundary to its immediate $path clause", ({ path, toolCase, prompt }) => {
+    const itemId = `strong_boundary_generic_yes_${path}_${toolCase.id}_${prompt.length}`;
+    const initial = conversationalAuthorityState({ ...toolCase, prompt });
+    const authoritative = applyDirectAuthorityTurn(initial, path, "Yes.", itemId);
+    const result = runDirectMutableTool(authoritative, toolCase.tool, toolCase.arguments, `call_${itemId}`);
+
+    expect(result.state.captured).toEqual(initial.captured);
+    expect(result.state.segment).toBe(initial.segment);
+    expect(result.state.routeRequested).toBeFalsy();
+    expect(result.commands.some((command) => command.type === "submit_voice")).toBe(false);
+    expect(result.commands.some((command) => command.type === "end_voice")).toBe(false);
+  });
+
+  const pendingCaptureAuthorityCases = [
+    {
+      id: "name",
+      tool: "capture_field",
+      prompt: "Should I save your name as Alice?",
+      arguments: { key: "name", value: "Alice", evidence: "Alice" },
+      expectedKey: "name",
+      expectedValue: "Alice",
+    },
+    {
+      id: "phone",
+      tool: "capture_field",
+      prompt: "I heard your phone number as +60123456789. Is that right?",
+      arguments: { key: "phone", value: "+60123456789", evidence: "+60123456789" },
+      expectedKey: "phone",
+      expectedValue: "+60123456789",
+    },
+    {
+      id: "website_batch",
+      tool: "capture_fields",
+      prompt: "I heard your website as wrong.example. Is that right?",
+      arguments: { fields: [{ key: "website", value: "wrong.example", evidence: "wrong.example" }] },
+      expectedKey: "website",
+      expectedValue: "wrong.example",
+    },
+  ] as const;
+  const pendingCapturePaths = ["pending_tagged", "pending_tagged_with_response"] as const;
+
+  it.each(
+    pendingCapturePaths.flatMap((path) =>
+      pendingCaptureAuthorityCases.flatMap((toolCase) =>
+        [
+          { reply: "No.", accepted: false },
+          { reply: "Yes.", accepted: true },
+        ].map((outcome) => ({ path, toolCase, ...outcome })),
+      ),
+    ),
+  )("waits for $path $toolCase.id ASR before applying reply '$reply'", ({ path, toolCase, reply, accepted }) => {
+    const itemId = `pending_capture_${path}_${toolCase.id}_${accepted ? "yes" : "no"}`;
+    const initial = conversationalAuthorityState({ ...toolCase, tool: toolCase.tool });
+    let pending = reduceRealtimeServerEvent({ type: "input_audio_buffer.committed", item_id: itemId }, initial).state;
+    if (path === "pending_tagged_with_response") {
+      pending = reduceRealtimeServerEvent({ type: "response.created" }, pending).state;
+    }
+    const deferred = runDirectMutableTool(pending, toolCase.tool, toolCase.arguments, `call_${itemId}`);
+
+    expect(deferred.commands).toEqual([]);
+    expect(deferred.state.captured).toEqual(initial.captured);
+    expect(deferred.state.deferredMutationCalls).toHaveLength(1);
+
+    const settled = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: itemId,
+        transcript: reply,
+      },
+      deferred.state,
+    );
+    expect(settled.state.captured[toolCase.expectedKey]).toBe(
+      accepted ? toolCase.expectedValue : initial.captured[toolCase.expectedKey],
+    );
+    expect(settled.state.deferredMutationCalls ?? []).toEqual([]);
+  });
+
+  const wrongAuthorityCases = [
+    {
+      id: "capture_name_from_phone_command",
+      tool: "capture_field",
+      current: "Clear my phone.",
+      arguments: { key: "name", value: "Alice", evidence: "Alice" },
+    },
+    {
+      id: "capture_website_from_phone_command",
+      tool: "capture_fields",
+      current: "My phone is +60123456789.",
+      arguments: { fields: [{ key: "website", value: "wrong.example", evidence: "wrong.example" }] },
+    },
+    {
+      id: "clear_name_from_phone_command",
+      tool: "clear_field",
+      current: "Clear my phone.",
+      arguments: { key: "name" },
+    },
+    {
+      id: "clear_all_from_name_command",
+      tool: "clear_fields",
+      current: "Clear my name.",
+      arguments: { scope: "all" },
+    },
+    {
+      id: "technology_from_education_statement",
+      tool: "set_partner_type",
+      current: "We are an education company.",
+      arguments: { segment: "technology" },
+    },
+    {
+      id: "route_from_clear_command",
+      tool: "route_to_team",
+      current: "Clear my name.",
+      arguments: { segment: "technology" },
+    },
+    {
+      id: "end_from_clear_command",
+      tool: "end_call",
+      current: "Clear my name.",
+      arguments: { reason: "user_done" },
+    },
+  ] as const;
+
+  it.each(
+    directAuthorityPaths.flatMap((path) => wrongAuthorityCases.map((toolCase) => ({ path, toolCase }))),
+  )("does not apply $path $toolCase.id across an action or target boundary", ({ path, toolCase }) => {
+    const itemId = `wrong_authority_${path}_${toolCase.id}`;
+    const initial = conversationalAuthorityState({
+      ...anaphoricAuthorityCases[0],
+      tool: toolCase.tool,
+    });
+    const authoritative = applyDirectAuthorityTurn(initial, path, toolCase.current, itemId);
+    const result = runDirectMutableTool(authoritative, toolCase.tool, toolCase.arguments, `call_${itemId}`);
+
+    expect(result.state.captured).toEqual(initial.captured);
+    expect(result.state.segment).toBe(initial.segment);
+    expect(result.state.routeRequested).toBeFalsy();
+    expect(result.commands.some((command) => command.type === "submit_voice")).toBe(false);
+    expect(result.commands.some((command) => command.type === "end_voice")).toBe(false);
+  });
+
+  it("bounds tagged transcript identity, outcomes, and buffered PII for the whole session", () => {
+    let runtime = state();
+    for (let index = 0; index < 257; index += 1) {
+      runtime = reduceRealtimeServerEvent(
+        { type: "input_audio_buffer.committed", item_id: `audio_bounded_${index}` },
+        runtime,
+      ).state;
+      runtime = reduceRealtimeServerEvent(
+        {
+          type: "conversation.item.input_audio_transcription.completed",
+          item_id: `audio_bounded_${index}`,
+          transcript: `Turn ${index}`,
+        },
+        runtime,
+      ).state;
+    }
+
+    expect(runtime.userTranscriptTrackingExhausted).toBe(true);
+    expect(runtime.observedUserSpeechStartIds).toHaveLength(256);
+    expect(runtime.settledUserTranscriptIds).toHaveLength(256);
+    expect(Object.keys(runtime.settledUserTranscriptOutcomes ?? {})).toHaveLength(256);
+    expect(runtime.pendingUserTranscriptIds ?? []).toHaveLength(0);
+    expect(Object.keys(runtime.settledUserTranscriptBuffer ?? {})).toHaveLength(0);
+  });
+
+  it("fails closed instead of evicting a clear-barrier transcript tombstone", () => {
+    let runtime = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "clear_fields",
+              call_id: "call_clear_before_tombstone_cap",
+              arguments: JSON.stringify({ scope: "all" }),
+            },
+          ],
+        },
+      },
+      state({ emailCaptureMode: "adaptive" }),
+    ).state;
+    for (let index = 0; index < 256; index += 1) {
+      runtime = reduceRealtimeServerEvent(
+        {
+          type: "conversation.item.input_audio_transcription.completed",
+          item_id: `unknown_${index}`,
+          transcript: "Old private transcript.",
+        },
+        runtime,
+      ).state;
+    }
+    runtime = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.speech_started", item_id: "legitimate_after_cap" },
+      runtime,
+    ).state;
+    runtime = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.committed", item_id: "legitimate_after_cap" },
+      runtime,
+    ).state;
+    runtime = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "legitimate_after_cap",
+        transcript: "My email is legitimate@example.com.",
+        email_capture_mode: "adaptive",
+      },
+      runtime,
+    ).state;
+    const replayed = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.speech_started", item_id: "unknown_0" },
+      runtime,
+    ).state;
+
+    expect(runtime.userTranscriptTrackingExhausted).toBe(true);
+    expect(runtime.settledUserTranscriptIds).toHaveLength(256);
+    expect(runtime.settledUserTranscriptIds).toContain("unknown_0");
+    expect(runtime.captured.email).toBe("");
+    expect(replayed.settledUserTranscriptIds).toContain("unknown_0");
   });
 });

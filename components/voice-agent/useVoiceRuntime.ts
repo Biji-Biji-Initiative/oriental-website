@@ -76,6 +76,9 @@ export function useVoiceRuntime({
   // the live text composer. Bind each response to the modality that caused it;
   // a later turn must not relabel a delayed tool result from an earlier turn.
   const inputAttributionRef = useRef<RuntimeInputAttribution>({ latest: "voice" });
+  // Deferred tools retain the start of their originating response so their
+  // ASR wait remains visible in telemetry instead of looking instantaneous.
+  const toolCallStartedAtRef = useRef(new Map<string, number>());
   // False means focused but unchanged; true means this focus session already
   // recorded its one bounded form edit.
   const capturedEditSessionsRef = useRef<Partial<Record<keyof CapturedLead, boolean>>>({});
@@ -95,6 +98,7 @@ export function useVoiceRuntime({
     setAssistantDraft("");
     ungroundedRejectionsRef.current = 0;
     inputAttributionRef.current = { latest: "voice" };
+    toolCallStartedAtRef.current.clear();
     capturedEditSessionsRef.current = {};
     stateRef.current = {
       segment: initial.segment,
@@ -116,6 +120,19 @@ export function useVoiceRuntime({
     stateRef.current = {
       ...stateRef.current,
       captured: nextCaptured,
+      userAuthoritySequence: (stateRef.current.userAuthoritySequence ?? 0) + 1,
+      latestUserTranscriptItemId: undefined,
+      legacyUserTranscriptOutcome: undefined,
+      localAuthorityPendingResponse: true,
+      localFieldEditUserTurnSequences: {
+        ...stateRef.current.localFieldEditUserTurnSequences,
+        [key]: stateRef.current.transcript.filter((entry) => entry.role === "user").length,
+      },
+      localMutationBoundaryUserTurnSequence: stateRef.current.transcript.filter((entry) => entry.role === "user")
+        .length,
+      activeResponseSupersededByUserInput: stateRef.current.activeResponse
+        ? true
+        : stateRef.current.activeResponseSupersededByUserInput,
       fieldProvenance: recordCapturedChanges(
         stateRef.current.captured,
         nextCaptured,
@@ -149,7 +166,20 @@ export function useVoiceRuntime({
   }, []);
 
   const updateSegment = useCallback((nextSegment: SegmentId) => {
-    stateRef.current = { ...stateRef.current, segment: nextSegment };
+    stateRef.current = {
+      ...stateRef.current,
+      segment: nextSegment,
+      userAuthoritySequence: (stateRef.current.userAuthoritySequence ?? 0) + 1,
+      latestUserTranscriptItemId: undefined,
+      legacyUserTranscriptOutcome: undefined,
+      localAuthorityPendingResponse: true,
+      localSegmentEditUserTurnSequence: stateRef.current.transcript.filter((entry) => entry.role === "user").length,
+      localMutationBoundaryUserTurnSequence: stateRef.current.transcript.filter((entry) => entry.role === "user")
+        .length,
+      activeResponseSupersededByUserInput: stateRef.current.activeResponse
+        ? true
+        : stateRef.current.activeResponseSupersededByUserInput,
+    };
     setSegment(nextSegment);
   }, []);
 
@@ -208,7 +238,14 @@ export function useVoiceRuntime({
 
   const handleRealtimeEvent = useCallback(
     (serverEvent: RealtimeServerEvent, channel: RTCDataChannel) => {
-      const toolStartedAt = performance.now();
+      const eventStartedAt = performance.now();
+      if (serverEvent.type === "response.done") {
+        for (const item of serverEvent.response?.output ?? []) {
+          if (item.type === "function_call" && item.call_id && !toolCallStartedAtRef.current.has(item.call_id)) {
+            toolCallStartedAtRef.current.set(item.call_id, eventStartedAt);
+          }
+        }
+      }
       const inputAttribution = advanceRuntimeInputAttribution(inputAttributionRef.current, serverEvent.type);
       inputAttributionRef.current = inputAttribution.state;
       const previousErrorCount = stateRef.current.errors?.length ?? 0;
@@ -233,8 +270,10 @@ export function useVoiceRuntime({
         });
       }
       for (const command of reduced.commands) {
+        const toolStartedAt =
+          "callId" in command ? (toolCallStartedAtRef.current.get(command.callId) ?? eventStartedAt) : eventStartedAt;
         if (command.type === "function_result") {
-          const toolName = toolNameForCall(serverEvent, command.callId);
+          const toolName = command.toolName ?? toolNameForCall(serverEvent, command.callId);
           const detail =
             command.output.detail && typeof command.output.detail === "object"
               ? (command.output.detail as Record<string, unknown>)
@@ -280,10 +319,15 @@ export function useVoiceRuntime({
           }
           const sent = sendRealtimeCommand(channel, command);
           reportTool(callbacksRef.current.onToolDuration, toolName, toolStartedAt, command.output, sent);
+          toolCallStartedAtRef.current.delete(command.callId);
         }
-        if (command.type === "submit_voice") submitVoiceCommand(channel, command, reduced.state, toolStartedAt);
+        if (command.type === "submit_voice") {
+          submitVoiceCommand(channel, command, reduced.state, toolStartedAt);
+          toolCallStartedAtRef.current.delete(command.callId);
+        }
         if (command.type === "end_voice") callbacksRef.current.onEndVoice();
       }
+      for (const callId of reduced.state.handledCallIds ?? []) toolCallStartedAtRef.current.delete(callId);
     },
     [submitVoiceCommand],
   );

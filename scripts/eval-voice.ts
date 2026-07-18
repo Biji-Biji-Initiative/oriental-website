@@ -99,6 +99,7 @@ function parseArgs(argv: string[]): Args {
     persist: false,
     out: "eval-reports",
     maxQuota: 0,
+    maxCaptureFailures: 0,
   };
   let outWasExplicit = false;
   let cohortStart: { at: number; iso: string } | undefined;
@@ -415,7 +416,7 @@ async function enrichSubmittedEmailAttribution(
     const lead = matches[0];
     if (matches.length === 0 && !markedSubmitted) return session;
     if (matches.length !== 1 || !lead || (session.leadId && lead.leadId !== session.leadId)) {
-      throw new Error("Submitted email attribution is incomplete; capture-integrity evidence is unavailable.");
+      return { ...session, submissionEvidenceConflict: true };
     }
     const hasEnvelope = hasVoiceSubmissionEvidenceEnvelope(lead);
     const verified = verifyVoiceSubmissionEvidence(lead);
@@ -429,7 +430,15 @@ async function enrichSubmittedEmailAttribution(
       (session.deploymentEnvironment === "production" || session.deploymentEnvironment === "local");
     const evidence = verified ?? (legacyAllowed ? deriveLegacyVoiceSubmissionEvidence(lead) : null);
     if (!evidence) {
-      throw new Error("Submitted email attribution is incomplete; capture-integrity evidence is unavailable.");
+      // A matched immutable lead proves that a submission happened, but an
+      // absent/invalid envelope cannot prove which email authority won. Keep
+      // the conversation judgeable and surface one unattributed capture
+      // failure in the aggregate gate instead of aborting the entire corpus.
+      return {
+        ...session,
+        ...(typeof lead.leadId === "string" ? { leadId: session.leadId ?? lead.leadId } : {}),
+        submissionEvidenceConflict: true,
+      };
     }
     return {
       ...session,
