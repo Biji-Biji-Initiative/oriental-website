@@ -1,14 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { POST } from "@/app/api/admin/sla-check/route";
-import { getAdminLeadSlaSnapshot } from "@/lib/server/convex";
+import { getAdminLeadSlaSnapshot, getAdminOrphanedVoiceSessions } from "@/lib/server/convex";
 import { sendOpsAlert } from "@/lib/server/ops-alerts";
 
-vi.mock("@/lib/server/convex", () => ({ getAdminLeadSlaSnapshot: vi.fn() }));
+vi.mock("@/lib/server/convex", () => ({ getAdminLeadSlaSnapshot: vi.fn(), getAdminOrphanedVoiceSessions: vi.fn() }));
 vi.mock("@/lib/server/ops-alerts", () => ({ sendOpsAlert: vi.fn() }));
 
 const originalEnv = process.env;
 const snapshotMock = vi.mocked(getAdminLeadSlaSnapshot);
+const orphanMock = vi.mocked(getAdminOrphanedVoiceSessions);
 const alertMock = vi.mocked(sendOpsAlert);
+
+function orphanSweep(count = 0, truncated = false) {
+  return {
+    ok: true as const,
+    data: { generatedAt: now, orphaned: { count, truncated, rows: [] } },
+  } as Awaited<ReturnType<typeof getAdminOrphanedVoiceSessions>>;
+}
 
 const HOUR = 60 * 60 * 1000;
 const now = 1_800_000_000_000;
@@ -47,6 +55,7 @@ describe("admin SLA check route", () => {
       OPS_AUTOMATION_TOKEN: "ops-automation-token-123456789",
     };
     alertMock.mockResolvedValue({ ok: true, transport: "slack_bot" });
+    orphanMock.mockResolvedValue(orphanSweep(0));
   });
 
   afterEach(() => {
@@ -100,6 +109,43 @@ describe("admin SLA check route", () => {
         meta: expect.objectContaining({ unowned: 250, unownedCountIsLowerBound: true, oldestUnownedHours: 26 }),
       }),
     );
+  });
+
+  it("alerts on orphaned voice sessions even when leads are all healthy", async () => {
+    snapshotMock.mockResolvedValue(snapshot({ active: 3 }));
+    orphanMock.mockResolvedValue(orphanSweep(2));
+
+    const response = await POST(slaRequest({}));
+
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      unownedBreaches: 0,
+      orphanedVoiceSessions: 2,
+      alerted: true,
+    });
+    expect(orphanMock).toHaveBeenCalledWith(30 * 60 * 1000);
+    expect(alertMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        summary: expect.stringContaining("2 voice session(s) dropped without a close snapshot"),
+        meta: expect.objectContaining({ orphanedVoiceSessions: 2 }),
+      }),
+    );
+  });
+
+  it("still reports lead SLA when the orphan sweep is unavailable", async () => {
+    snapshotMock.mockResolvedValue(snapshot({ active: 1 }));
+    orphanMock.mockRejectedValue(new Error("convex down"));
+
+    const response = await POST(slaRequest({}));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      activeLeads: 1,
+      orphanedVoiceSessions: 0,
+      alerted: false,
+    });
+    expect(alertMock).not.toHaveBeenCalled();
   });
 
   it("rejects interactive review credentials because the sweep can post to Slack", async () => {
