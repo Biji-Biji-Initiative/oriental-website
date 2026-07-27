@@ -444,11 +444,13 @@ Production errors:
 
 ### `POST /api/admin/login`
 
-Accepts only a same-origin JSON request, validates `ADMIN_REVIEW_TOKEN`, and
-sets the principal-bound signed `oriental_admin` HTTP-only, SameSite=Lax
-cookie with `Path=/`, so the same actor and configured role authenticate both
-the `/admin` UI and ordinary `/api/admin/*` routes. Production cookies also set
-`Secure`.
+Accepts only a same-origin JSON request and rate-limits attempts by trusted
+proxy identity. It validates either `ADMIN_REVIEW_TOKEN` or the human password
+represented by the domain-separated `ADMIN_REVIEW_PASSWORD_HMAC`, then sets the
+principal-bound signed `oriental_admin` HTTP-only, SameSite=Lax cookie with
+`Path=/`, so the same actor and configured role authenticate both the `/admin`
+UI and ordinary `/api/admin/*` routes. The human password is never accepted as
+bearer auth and never signs sessions. Production cookies also set `Secure`.
 
 ### `GET /api/admin/review`
 

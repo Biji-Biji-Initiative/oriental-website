@@ -145,13 +145,30 @@ and requires it on; production control always requires it off.
 
 Secret contract is enforced by `scripts/check-secrets.ts`.
 
-Admin authority is split across three distinct managed credentials. The
-configured `ADMIN_REVIEW_TOKEN` / role / actor is for interactive review and
-ordinary admin APIs; `OPS_AUTOMATION_TOKEN` is bearer-only and can run only
-eval, SLA, and retention jobs; `PRIVACY_ADMIN_TOKEN` is bearer-only and can run
-only verified privacy deletion. Production preflight rejects missing, short, or
-duplicate credentials. The scheduled GitHub Actions workflow references only
-the ops credential.
+Admin authority is split across a human login and three distinct managed
+bearer credentials. `ADMIN_REVIEW_PASSWORD_HMAC` is the domain-separated
+HMAC-SHA256 of the human password keyed by `ADMIN_REVIEW_TOKEN`; the plaintext
+password is never committed or materialized in Coolify. The same-origin,
+rate-limited login accepts that password or `ADMIN_REVIEW_TOKEN`, but only the
+high-entropy token is valid bearer auth and signs sessions. `ADMIN_REVIEW_ROLE`
+and `ADMIN_REVIEW_ACTOR` define the interactive principal.
+`OPS_AUTOMATION_TOKEN` is bearer-only and can run only eval, SLA, and retention
+jobs; `PRIVACY_ADMIN_TOKEN` is bearer-only and can run only verified privacy
+deletion. Production preflight rejects a missing or malformed password HMAC and
+missing, short, or duplicate bearer credentials. The scheduled GitHub Actions
+workflow references only the ops credential. Whenever `ADMIN_REVIEW_TOKEN`
+rotates, derive and replace the password HMAC in both managed environments
+before release:
+
+```bash
+read -rs ADMIN_REVIEW_PASSWORD && export ADMIN_REVIEW_PASSWORD
+ADMIN_REVIEW_PASSWORD_HMAC="$(node -e 'const {createHmac}=require("node:crypto"); process.stdout.write(createHmac("sha256", process.env.ADMIN_REVIEW_TOKEN).update("oriental-admin-password:v1\0").update(process.env.ADMIN_REVIEW_PASSWORD).digest("hex"))')"
+unset ADMIN_REVIEW_PASSWORD
+```
+
+Keep both values in the shell only long enough to write
+`ADMIN_REVIEW_PASSWORD_HMAC` to the Infisical application scope, then unset the
+HMAC as well.
 
 ## Coolify
 

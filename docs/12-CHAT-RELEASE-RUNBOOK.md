@@ -45,7 +45,11 @@ cannot affect the runtime image.
 - Cloudflare MUST remain authoritative DNS only; Coolify Traefik terminates TLS.
 - Infisical is canonical configuration. Coolify's environment-variable store
   and staging's host-local `.env` are separate materialized copies and MUST be
-  compared with Infisical before release.
+  compared with Infisical before release. The human admin password MUST exist
+  only as the domain-separated `ADMIN_REVIEW_PASSWORD_HMAC` keyed by the strong
+  `ADMIN_REVIEW_TOKEN`; it is interactive-login-only, never a bearer or session
+  signing credential. Rotate the HMAC with the token and deploy both managed
+  environments together.
 - The staging deployer MUST stream the complete native staging Infisical export
   over the encrypted fleet connection and atomically converge the host `.env`.
   The production deployer MUST reconcile and read back every approved runtime

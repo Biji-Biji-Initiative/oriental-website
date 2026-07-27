@@ -25,6 +25,7 @@ const baseEnv: NodeJS.ProcessEnv = {
   ADMIN_REVIEW_ACTOR: "Test operator",
   ADMIN_REVIEW_ROLE: "operator",
   ADMIN_REVIEW_TOKEN: "admin-review-token-123456789-abcdef",
+  ADMIN_REVIEW_PASSWORD_HMAC: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   OPS_AUTOMATION_TOKEN: "ops-automation-token-123456789-abcdef",
   PRIVACY_ADMIN_TOKEN: "privacy-admin-token-123456789-abcdef",
   SMTP_HOST: "smtp.example.test",
@@ -64,6 +65,24 @@ describe("managed secret contract", () => {
   it("accepts distinct, explicit production admin principals", () => {
     const result = checkSecrets(productionEnv());
     expect(result.status, result.stderr).toBe(0);
+  });
+
+  it("rejects a missing password HMAC", () => {
+    const result = checkSecrets(productionEnv({ ADMIN_REVIEW_PASSWORD_HMAC: "" }));
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("Missing admin review variables: ADMIN_REVIEW_PASSWORD_HMAC");
+  });
+
+  it.each([
+    "a".repeat(63),
+    "a".repeat(65),
+    "A".repeat(64),
+    ` ${"a".repeat(64)}`,
+    "g".repeat(64),
+  ])("rejects malformed password HMAC %j", (passwordHmac) => {
+    const result = checkSecrets(productionEnv({ ADMIN_REVIEW_PASSWORD_HMAC: passwordHmac }));
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("ADMIN_REVIEW_PASSWORD_HMAC must be a lowercase SHA-256 HMAC");
   });
 
   it("rejects shared machine/admin credentials and implicit roles", () => {

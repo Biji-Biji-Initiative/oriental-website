@@ -1,16 +1,24 @@
+import { createHmac } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   adminCookieHeader,
   adminCookieName,
   clearAdminCookieHeader,
   createAdminSessionCookie,
+  verifyAdminLoginCredential,
   verifyAdminPermission,
   verifyAdminRequest,
   verifyAdminSessionCookie,
-  verifyAdminToken,
 } from "@/lib/server/admin-auth";
 
 const originalEnv = process.env;
+const adminReviewToken = "admin-review-token-123456789";
+const interactivePassword = "shared-test-password-123";
+const passwordHmacDomain = "oriental-admin-password:v1\0";
+
+function interactivePasswordHmac(password: string, signingKey = adminReviewToken) {
+  return createHmac("sha256", signingKey).update(passwordHmacDomain).update(password).digest("hex");
+}
 
 describe("admin auth helpers", () => {
   beforeEach(() => {
@@ -19,7 +27,8 @@ describe("admin auth helpers", () => {
       NODE_ENV: "test",
       ADMIN_REVIEW_ACTOR: "Interactive operator",
       ADMIN_REVIEW_ROLE: "operator",
-      ADMIN_REVIEW_TOKEN: "admin-review-token-123456789",
+      ADMIN_REVIEW_TOKEN: adminReviewToken,
+      ADMIN_REVIEW_PASSWORD_HMAC: interactivePasswordHmac(interactivePassword),
       OPS_AUTOMATION_TOKEN: "ops-automation-token-123456789",
       PRIVACY_ADMIN_TOKEN: "privacy-admin-token-123456789",
     };
@@ -29,12 +38,19 @@ describe("admin auth helpers", () => {
     process.env = originalEnv;
   });
 
-  it("validates bearer tokens and signed session cookies", () => {
-    expect(verifyAdminToken("bad-token")).toMatchObject({ ok: false, reason: "invalid" });
-    expect(verifyAdminToken("admin-review-token-123456789")).toMatchObject({
+  it("validates login credentials with distinct provenance and signed session cookies", () => {
+    expect(verifyAdminLoginCredential("bad-token")).toMatchObject({ ok: false, reason: "invalid" });
+    expect(verifyAdminLoginCredential(adminReviewToken)).toMatchObject({
       ok: true,
       actor: "Interactive operator",
       credential: "review_bearer",
+      principal: "interactive",
+      role: "operator",
+    });
+    expect(verifyAdminLoginCredential(interactivePassword)).toMatchObject({
+      ok: true,
+      actor: "Interactive operator",
+      credential: "interactive_password",
       principal: "interactive",
       role: "operator",
     });
@@ -48,10 +64,62 @@ describe("admin auth helpers", () => {
     expect(verifyAdminRequest(request)).toMatchObject({ ok: true });
   });
 
+  it("keeps the interactive password out of bearer authentication and fails closed on invalid HMAC configuration", () => {
+    const passwordBearer = new Request("http://localhost/api/admin/review", {
+      headers: { authorization: `Bearer ${interactivePassword}` },
+    });
+    expect(verifyAdminRequest(passwordBearer)).toEqual({ ok: false, reason: "invalid" });
+
+    for (const malformed of [
+      "",
+      "a".repeat(63),
+      "a".repeat(65),
+      "A".repeat(64),
+      ` ${"a".repeat(64)}`,
+      "g".repeat(64),
+    ]) {
+      process.env = { ...process.env, ADMIN_REVIEW_PASSWORD_HMAC: malformed };
+      expect(verifyAdminLoginCredential(interactivePassword)).toEqual({ ok: false, reason: "invalid" });
+      expect(verifyAdminLoginCredential(adminReviewToken)).toMatchObject({
+        ok: true,
+        credential: "review_bearer",
+      });
+    }
+
+    process.env = {
+      ...process.env,
+      ADMIN_REVIEW_PASSWORD_HMAC: interactivePasswordHmac(interactivePassword, "superseded-signing-key"),
+    };
+    expect(verifyAdminLoginCredential(interactivePassword)).toEqual({ ok: false, reason: "invalid" });
+  });
+
+  it("invalidates the old password HMAC and signed session after review-token rotation", () => {
+    const oldCookie = createAdminSessionCookie();
+    process.env = {
+      ...process.env,
+      ADMIN_REVIEW_TOKEN: "rotated-admin-review-token-123456789",
+    };
+
+    expect(verifyAdminLoginCredential(interactivePassword)).toEqual({ ok: false, reason: "invalid" });
+    expect(verifyAdminSessionCookie(oldCookie)).toEqual({ ok: false, reason: "invalid" });
+
+    process.env = {
+      ...process.env,
+      ADMIN_REVIEW_PASSWORD_HMAC: interactivePasswordHmac(interactivePassword, "rotated-admin-review-token-123456789"),
+    };
+    expect(verifyAdminLoginCredential(interactivePassword)).toMatchObject({
+      ok: true,
+      credential: "interactive_password",
+    });
+  });
+
   it("rejects historical shared-password aliases", () => {
-    expect(verifyAdminToken("legacy-alias")).toEqual({ ok: false, reason: "invalid" });
-    expect(verifyAdminToken("ops-automation-token-123456789")).toEqual({ ok: false, reason: "invalid" });
-    expect(verifyAdminToken("privacy-admin-token-123456789")).toEqual({ ok: false, reason: "invalid" });
+    expect(verifyAdminLoginCredential("legacy-alias")).toEqual({ ok: false, reason: "invalid" });
+    expect(verifyAdminLoginCredential("ops-automation-token-123456789")).toEqual({ ok: false, reason: "invalid" });
+    expect(verifyAdminLoginCredential("privacy-admin-token-123456789")).toEqual({
+      ok: false,
+      reason: "invalid",
+    });
   });
 
   it("binds the actor and role into the signed cookie instead of re-reading mutable role configuration", () => {

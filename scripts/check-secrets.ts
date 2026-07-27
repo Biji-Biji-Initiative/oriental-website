@@ -31,6 +31,7 @@ const adminRequired = [
   "ADMIN_REVIEW_ACTOR",
   "ADMIN_REVIEW_ROLE",
   "ADMIN_REVIEW_TOKEN",
+  "ADMIN_REVIEW_PASSWORD_HMAC",
   "OPS_AUTOMATION_TOKEN",
   "PRIVACY_ADMIN_TOKEN",
 ];
@@ -102,6 +103,12 @@ if (process.env.NODE_ENV === "production") {
   const adminActor = envValue("ADMIN_REVIEW_ACTOR");
   if (!adminActor || !isValidAdminActor(adminActor)) {
     console.error("ADMIN_REVIEW_ACTOR must be 1-80 printable characters.");
+    process.exit(1);
+  }
+
+  const adminPasswordHmac = process.env.ADMIN_REVIEW_PASSWORD_HMAC;
+  if (!adminPasswordHmac || !/^[a-f0-9]{64}$/.test(adminPasswordHmac)) {
+    console.error("ADMIN_REVIEW_PASSWORD_HMAC must be a lowercase SHA-256 HMAC.");
     process.exit(1);
   }
 

@@ -126,14 +126,14 @@ export function AdminLoginForm({ reason }: { reason?: string }) {
                   name="token"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Review token</FormLabel>
+                      <FormLabel>Password or review token</FormLabel>
                       <FormControl>
                         <div className="relative">
                           <Input
                             {...field}
                             autoComplete="current-password"
                             className="h-11 pr-11"
-                            placeholder="Paste admin review token"
+                            placeholder="Enter admin password or review token"
                             type={showToken ? "text" : "password"}
                           />
                           <button
@@ -170,7 +170,8 @@ export function AdminLoginForm({ reason }: { reason?: string }) {
 }
 
 function loginErrorCopy(error: string) {
-  if (error === "unconfigured") return "ADMIN_REVIEW_TOKEN is missing from this environment.";
-  if (error === "invalid" || error === "missing") return "The token did not match the configured review token.";
+  if (error === "unconfigured") return "Admin login credentials are missing from this environment.";
+  if (error === "invalid" || error === "missing")
+    return "The password or token did not match the configured admin login.";
   return "Please retry, then check the server logs if this keeps failing.";
 }

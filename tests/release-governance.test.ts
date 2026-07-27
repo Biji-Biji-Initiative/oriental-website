@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { globSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   MANAGED_APPLICATION_ENVIRONMENT_KEYS,
@@ -37,14 +37,26 @@ const globalStyles = readFileSync("app/globals.css", "utf8");
 const releaseRunbook = readFileSync("docs/12-CHAT-RELEASE-RUNBOOK.md", "utf8");
 const analyticsOpsWorkflow = readFileSync(".github/workflows/analytics-ops.yml", "utf8");
 const packageScripts = JSON.parse(readFileSync("package.json", "utf8")) as { scripts: Record<string, string> };
+const adminApiRoutePaths = globSync("app/api/admin/**/route.ts");
+const adminLoginRoutePath = "app/api/admin/login/route.ts";
 
 describe("release governance", () => {
+  it("confines password verification to login while every other admin API uses permission authorization", () => {
+    expect(adminApiRoutePaths).toContain(adminLoginRoutePath);
+    expect(readFileSync(adminLoginRoutePath, "utf8")).toContain("verifyAdminLoginCredential");
+    for (const routePath of adminApiRoutePaths.filter((path) => path !== adminLoginRoutePath)) {
+      const source = readFileSync(routePath, "utf8");
+      expect(source, routePath).toContain("verifyAdminPermission");
+      expect(source, routePath).not.toContain("verifyAdminLoginCredential");
+    }
+  });
   it("owns distinct least-privilege admin credentials and uses only the ops token in scheduled jobs", () => {
     expect(MANAGED_APPLICATION_ENVIRONMENT_KEYS).toEqual(
       expect.arrayContaining([
         "ADMIN_REVIEW_ACTOR",
         "ADMIN_REVIEW_ROLE",
         "ADMIN_REVIEW_TOKEN",
+        "ADMIN_REVIEW_PASSWORD_HMAC",
         "OPS_AUTOMATION_TOKEN",
         "PRIVACY_ADMIN_TOKEN",
       ]),
@@ -290,6 +302,29 @@ describe("release governance", () => {
     );
     expect(finalCurrentAssertion).toBeLessThan(
       productionDeployer.indexOf("body: JSON.stringify({ git_commit_sha: args.sha })"),
+    );
+  });
+
+  it("reconciles and reads back the password HMAC as a governed runtime secret", () => {
+    const value = "a".repeat(64);
+    const env = { ADMIN_REVIEW_PASSWORD_HMAC: value };
+    const row = {
+      key: "ADMIN_REVIEW_PASSWORD_HMAC",
+      value,
+      real_value: value,
+      is_preview: false,
+      is_runtime: true,
+      is_buildtime: false,
+      is_literal: true,
+      is_multiline: false,
+    };
+
+    expect(managedEnvironmentReconciliationPlan(env, []).mutations).toEqual([
+      { key: "ADMIN_REVIEW_PASSWORD_HMAC", value },
+    ]);
+    expect(managedEnvironmentParityFailures(env, [row])).toEqual([]);
+    expect(managedEnvironmentParityFailures(env, [{ ...row, real_value: "b".repeat(64) }])).toContain(
+      "ADMIN_REVIEW_PASSWORD_HMAC Coolify value or runtime/build scope does not match Infisical",
     );
   });
 

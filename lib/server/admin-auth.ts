@@ -13,8 +13,10 @@ import { readEnv } from "@/lib/env";
 export const adminCookieName = "oriental_admin";
 
 const sessionTtlMs = 12 * 60 * 60 * 1000;
+const adminPasswordHmacDomain = "oriental-admin-password:v1\0";
+const adminSessionHmacDomain = "oriental-admin-session:v2\0";
 const unsafeMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
-type AdminCredential = "review_bearer" | "session" | "ops_bearer" | "privacy_bearer";
+type AdminCredential = "interactive_password" | "review_bearer" | "session" | "ops_bearer" | "privacy_bearer";
 export type AdminAuthState =
   | {
       ok: true;
@@ -26,15 +28,20 @@ export type AdminAuthState =
     }
   | { ok: false; reason: "unconfigured" | "missing" | "invalid" | "forbidden" | "csrf" };
 
-export function verifyAdminToken(token: string | null | undefined): AdminAuthState {
+export function verifyAdminLoginCredential(credential: string | null | undefined): AdminAuthState {
   const expected = readEnv("ADMIN_REVIEW_TOKEN");
   if (!expected) return { ok: false, reason: "unconfigured" };
-  if (!token) return { ok: false, reason: "missing" };
-  if (!constantTimeEqual(token, expected)) return { ok: false, reason: "invalid" };
+  if (!credential) return { ok: false, reason: "missing" };
+  const method = constantTimeEqual(credential, expected)
+    ? "review_bearer"
+    : verifyInteractivePassword(credential, expected)
+      ? "interactive_password"
+      : null;
+  if (!method) return { ok: false, reason: "invalid" };
   return {
     ok: true,
     ...configuredAdminIdentity(),
-    credential: "review_bearer",
+    credential: method,
     expiresAt: Date.now() + sessionTtlMs,
     principal: "interactive",
   };
@@ -132,11 +139,18 @@ export function clearAdminCookieHeader() {
 function sign(payload: string) {
   const secret = signingSecret();
   if (!secret) return "";
-  return createHmac("sha256", secret).update(payload).digest("base64url");
+  return createHmac("sha256", secret).update(adminSessionHmacDomain).update(payload).digest("base64url");
 }
 
 function signingSecret() {
   return readEnv("ADMIN_REVIEW_TOKEN");
+}
+
+function verifyInteractivePassword(password: string, signingKey: string) {
+  const expectedHmac = process.env.ADMIN_REVIEW_PASSWORD_HMAC;
+  if (!expectedHmac || !/^[a-f0-9]{64}$/.test(expectedHmac)) return false;
+  const actualHmac = createHmac("sha256", signingKey).update(adminPasswordHmacDomain).update(password).digest("hex");
+  return constantTimeEqual(actualHmac, expectedHmac);
 }
 
 function verifyAdminBearerToken(token: string): AdminAuthState {

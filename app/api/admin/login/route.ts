@@ -4,7 +4,7 @@ import {
   adminCookieHeader,
   createAdminSessionCookie,
   isSameOriginJsonRequest,
-  verifyAdminToken,
+  verifyAdminLoginCredential,
 } from "@/lib/server/admin-auth";
 import { checkRateLimit, hashIp, noStoreJson, rateLimitResponseHeaders, requestIp } from "@/lib/server/security";
 
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
   const parsed = adminLoginSchema.safeParse(raw);
   if (!parsed.success) return noStoreJson({ ok: false, error: "invalid_payload" }, { status: 400 });
 
-  const auth = verifyAdminToken(parsed.data.token);
+  const auth = verifyAdminLoginCredential(parsed.data.token);
   if (!auth.ok) {
     const status = auth.reason === "unconfigured" ? 503 : 401;
     return noStoreJson({ ok: false, error: auth.reason }, { status });

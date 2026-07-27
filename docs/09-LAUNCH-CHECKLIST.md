@@ -42,8 +42,10 @@ MUST NOT be reported as complete.
 - [x] `REDIS_URL` is present in production and API logs show `rateLimitStore: "redis"`
 - [x] `COOLIFY_ORIENTAL_APPLICATION_UUID` is set to `mtrl2z6a7zvoyevxvufpntij` for deploy scripts
 - [x] Distinct `ADMIN_REVIEW_TOKEN`, `OPS_AUTOMATION_TOKEN`, and
-      `PRIVACY_ADMIN_TOKEN` credentials plus explicit `ADMIN_REVIEW_ROLE` /
-      `ADMIN_REVIEW_ACTOR` are present in `/deploy/oriental-website`
+      `PRIVACY_ADMIN_TOKEN` bearer credentials plus the domain-separated
+      `ADMIN_REVIEW_PASSWORD_HMAC`, explicit `ADMIN_REVIEW_ROLE`, and
+      `ADMIN_REVIEW_ACTOR` are present in `/deploy/oriental-website`; the human
+      password is accepted only by the rate-limited login, never as bearer auth.
 - [x] Sentry `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_ORG`, and
       `SENTRY_PROJECT=oriental-website` are present
 - [x] `OPS_ALERT_SLACK_CHANNEL_ID=C01AVSGACFN` targets `#tech-team-test`

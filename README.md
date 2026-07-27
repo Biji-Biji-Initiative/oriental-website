@@ -78,6 +78,7 @@ TURNSTILE_SITE_KEY=
 TURNSTILE_SECRET_KEY=
 IP_HASH_SECRET=
 ADMIN_REVIEW_TOKEN=
+ADMIN_REVIEW_PASSWORD_HMAC=
 ADMIN_REVIEW_ROLE=operator
 ADMIN_REVIEW_ACTOR=Oriental intake operator
 OPS_AUTOMATION_TOKEN=
@@ -208,16 +209,22 @@ During local testing, run `pnpm voice:debug` after a call to inspect the latest 
 
 ## Admin Review & Observability
 
-The internal review surface lives at `/admin/session-review`. It is protected by
-the configured `ADMIN_REVIEW_TOKEN` / `ADMIN_REVIEW_ROLE` principal, sets a
-principal-bound signed HTTP-only admin cookie, and reads recent
-Convex `leads` plus `voiceSessions` snapshots. Its default Overview is the
-executive command layer: full-dataset enquiry, assignment, SLA, delivery, and
-qualification KPIs; a ranked next-action queue; stage and data-readiness health;
-account, repeat-contact, source, routing, and Reka quality intelligence. Open
-Enquiries for the complete Tailwind CRM table, organization portfolio, owner
-workload, exact ClickUp task, and workflow updates. Reka and Voice QA retain the
-evaluation register, recovery queue, transcripts, timing, and runtime evidence.
+The internal review surface lives at `/admin/session-review`. Its same-origin,
+rate-limited login accepts either the configured `ADMIN_REVIEW_TOKEN` or the
+human password whose domain-separated HMAC is stored in
+`ADMIN_REVIEW_PASSWORD_HMAC`. The plaintext password is never committed or
+stored in runtime configuration, and it is never accepted as bearer auth.
+`ADMIN_REVIEW_TOKEN` remains the high-entropy bearer credential and session
+signing key; rotate the password HMAC whenever that token rotates. The signed
+HTTP-only admin cookie is bound to the configured `ADMIN_REVIEW_ROLE` principal
+and reads recent Convex `leads` plus `voiceSessions` snapshots. Its default
+Overview is the executive command layer: full-dataset enquiry, assignment, SLA,
+delivery, and qualification KPIs; a ranked next-action queue; stage and
+data-readiness health; account, repeat-contact, source, routing, and Reka quality
+intelligence. Open Enquiries for the complete Tailwind CRM table, organization
+portfolio, owner workload, exact ClickUp task, and workflow updates. Reka and
+Voice QA retain the evaluation register, recovery queue, transcripts, timing,
+and runtime evidence.
 
 Scheduled eval, SLA, and retention jobs use the separate bearer-only
 `OPS_AUTOMATION_TOKEN`; privacy deletion uses the bearer-only
