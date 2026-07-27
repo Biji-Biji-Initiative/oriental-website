@@ -40,6 +40,21 @@ describe("GA4 consent boundary", () => {
     );
   });
 
+  it("enqueues config before the first page_view so gtag.js never drops it", async () => {
+    window.dataLayer = [];
+    const { GoogleAnalytics } = await import("@/components/site/GoogleAnalytics");
+    render(<GoogleAnalytics />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Allow analytics" }));
+    await waitFor(() => expect(screen.getByTestId("ga-external")).toBeInTheDocument());
+
+    const commands = (window.dataLayer ?? []).map((entry) => (entry as Record<number, unknown>)[0]);
+    const configIndex = commands.indexOf("config");
+    const firstEventIndex = commands.indexOf("event");
+    expect(configIndex).toBeGreaterThanOrEqual(0);
+    expect(firstEventIndex).toBeGreaterThan(configIndex);
+  });
+
   it("keeps GA absent after the visitor chooses only necessary storage", async () => {
     const { GoogleAnalytics, analyticsConsentStorageKey } = await import("@/components/site/GoogleAnalytics");
     render(<GoogleAnalytics />);
