@@ -3831,6 +3831,44 @@ function validateEmailCaptureGrounding(
   ) {
     return { ok: true, emailConfidence: transcriptionPending ? "medium" : "high" };
   }
+  // A capture_field call can trail the turn that actually contained the
+  // address by a beat (the assistant kept talking, or the tool call fired
+  // late). The exact-match check above already looks back across the window
+  // for that reason; the approximate/ASR-drift check used to look only at
+  // the single latest turn, so a correctly-spoken email with minor ASR drift
+  // fell out of grounding purely because the model captured it a turn late.
+  // Deliberately NOT checked against the turn's own text: hasContextualEmailCorrection/
+  // hasOrderedEmailSelectionCue/emailTurnRejectsTarget key off discourse cues
+  // like "it's"/"that's" that are just as common in a plain first-time
+  // statement as in a correction, and supersedesRecentEmailGrounding reads an
+  // ASR-drifted rendering of THIS address ("carper" for "carter") as itself
+  // "a different address" — both would always flag the very turn we're using
+  // as evidence. hasEmbeddedEmailCollision and a literal-mention mismatch are
+  // the two checks that still apply here: they catch a turn whose actual
+  // content is a different address (a suffix collision, or a since-completed
+  // transcript a deferred call gets replayed against), as opposed to ordinary
+  // ASR drift on this one.
+  const approxMatchingTurnIndex = recentUserTurns.findLastIndex((entry) => {
+    const entryHasEmailCue = /@|\b(?:e-?mail|email address)\b|\b(?:at|dot|point|underscore|dash|hyphen|plus)\b/i.test(
+      entry.text,
+    );
+    const entryLiteralEmails = getLiteralEmailMentions(entry.text);
+    const literalMismatch = entryLiteralEmails.length > 0 && !entryLiteralEmails.some((m) => m.email === email);
+    return (
+      entryHasEmailCue &&
+      spokenEmailSubstitutionDistance(entry.text, email) <= maxAsrEdits &&
+      !hasEmbeddedEmailCollision(entry.text, email) &&
+      !literalMismatch
+    );
+  });
+  if (
+    approxMatchingTurnIndex >= 0 &&
+    recentUserTurns
+      .slice(approxMatchingTurnIndex + 1)
+      .every((entry) => !supersedesRecentEmailGrounding(entry.text, email))
+  ) {
+    return { ok: true, emailConfidence: "medium" };
+  }
   const latestTurnSupersedes = supersedesRecentEmailGrounding(recentUserText, email);
   const explicitlyReplaces =
     hasContextualEmailCorrection(recentUserText, email) ||

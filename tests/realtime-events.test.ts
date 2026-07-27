@@ -2721,6 +2721,46 @@ describe("reduceRealtimeServerEvent", () => {
     expect(result.state.emailVerification).toMatchObject({ status: "confirmed" });
   });
 
+  it("accepts an ASR-drifted address spoken a turn before a delayed capture call", () => {
+    // ASR misheard "carter" as "carper" in the turn that actually contained
+    // the address; the assistant kept talking, and the tool call landed on a
+    // later, unrelated turn. The exact-match path already looks back across
+    // recent turns for this same capture-timing race; the approximate/ASR-drift
+    // path used to check only the single latest turn, so a correctly-spoken
+    // address with ordinary ASR drift fell out of grounding purely because it
+    // wasn't the very last thing said.
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_delayed_capture",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "sam.carter@gmail.com",
+                evidence: "sam dot carter at gmail dot com",
+              }),
+            },
+          ],
+        },
+      },
+      state({
+        transcript: [
+          { role: "user", text: "It's sam dot carper at gmail dot com." },
+          { role: "assistant", text: "Got it, let me pull up the right team for you." },
+          { role: "user", text: "We're looking at a six month residency." },
+        ],
+      }),
+    );
+
+    expect(result.state.captured.email).toBe("sam.carter@gmail.com");
+    expect(result.state.emailVerification).toMatchObject({ status: "pending", confidence: "medium" });
+  });
+
   it("preserves an explicitly spoken dash in an email", () => {
     const result = reduceRealtimeServerEvent(
       {
