@@ -1225,6 +1225,12 @@
   inset: -16%;
   color: inherit;
   touch-action: pan-y;
+  /* The blur/particle bleed is sized for open layouts; narrow dialogs clip it
+     with a hard rectangular edge before it finishes fading. Masking here
+     guarantees a soft radial falloff inside this box regardless of any
+     ancestor's overflow: hidden. */
+  -webkit-mask-image: radial-gradient(circle at 50% 50%, #000 0%, #000 58%, transparent 88%);
+  mask-image: radial-gradient(circle at 50% 50%, #000 0%, #000 58%, transparent 88%);
 }
 
 .mereka-nebula::before {

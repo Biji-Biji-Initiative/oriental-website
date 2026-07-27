@@ -29,7 +29,7 @@ export type CoolifyEnvironmentVariablePayload = {
 };
 
 const GA_MEASUREMENT_ID_PATTERN = /^G-[A-Z0-9]+$/;
-const GOOGLE_SITE_VERIFICATION_PATTERN = /^[A-Za-z0-9_-]{20,256}$/;
+const GOOGLE_SITE_VERIFICATION_PATTERN = /^[A-Za-z0-9_-]{20,255}$/;
 
 export function googlePublicBuildConfigurationFromEnv(
   env: Readonly<Record<string, string | undefined>>,
