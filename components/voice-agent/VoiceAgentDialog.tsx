@@ -1,6 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import * as Sentry from "@sentry/nextjs";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { preconnect } from "react-dom";
 import { type UseFormReturn, useForm } from "react-hook-form";
@@ -719,7 +720,16 @@ export function VoiceAgentDialog({
           ...(leadId ? { leadId } : {}),
         }),
         { keepalive: Boolean(overrides.closedAt) },
-      ).catch(() => null);
+      ).catch((error) => {
+        // A missed heartbeat self-heals on the next beat, but a close snapshot
+        // that fails to persist is the session's final state gone for good —
+        // nothing else will ever record why or how it ended. beforeSend already
+        // scrubs the event to type + stacktrace; no PII is at risk here.
+        if (overrides.closedAt) {
+          Sentry.captureException(error instanceof Error ? error : new Error("voice_review_close_snapshot_failed"));
+        }
+        return null;
+      });
     },
     [captured, currentReviewCredentials, nextSnapshotSequence, segment, stateRef, transcript],
   );

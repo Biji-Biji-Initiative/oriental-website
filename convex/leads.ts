@@ -1486,6 +1486,54 @@ export const adminLeadSlaSnapshot = query({
   },
 });
 
+/**
+ * A session that connected but never recorded a closedAt is either still
+ * live or lost its final snapshot (network death, a failed sendBeacon, or a
+ * crashed tab) — the exact gap that made a dropped call invisible in review.
+ * maxStaleMs must clear the longest a genuinely active call can run
+ * (VOICE_DURATION_DEFAULTS.maxDurationMs + goodbye grace) with margin, so
+ * this only ever flags calls that are actually gone quiet, not slow ones.
+ */
+export const adminOrphanedVoiceSessionsSweep = query({
+  args: { ingestSecret: v.string(), maxStaleMs: v.number() },
+  handler: async (ctx, { ingestSecret, maxStaleMs }) => {
+    requireIngestSecret(ingestSecret);
+    const generatedAt = Date.now();
+    const boundedStaleMs = Math.min(Math.max(Math.floor(maxStaleMs), 15 * 60_000), 24 * HOUR_MS);
+    const staleCutoff = generatedAt - boundedStaleMs;
+    const lookbackCutoff = generatedAt - 24 * HOUR_MS;
+
+    const candidates = await ctx.db
+      .query("voiceSessions")
+      .withIndex("by_payload_safe_updated_at", (q) =>
+        q.eq("payloadSafe", true).gte("updatedAt", lookbackCutoff).lt("updatedAt", staleCutoff),
+      )
+      .order("desc")
+      .take(SLA_QUERY_BUCKET_LIMIT + 1);
+
+    const orphaned = candidates
+      .filter((row) => row.connectedAt !== undefined && row.closedAt === undefined)
+      .slice(0, SLA_QUERY_BUCKET_LIMIT)
+      .map((row) => ({
+        reviewId: row.reviewId,
+        conversationId: row.conversationId,
+        segment: row.segment,
+        connectedAt: row.connectedAt,
+        updatedAt: row.updatedAt,
+        deploymentEnvironment: row.deploymentEnvironment,
+      }));
+
+    return {
+      generatedAt,
+      orphaned: {
+        count: orphaned.length,
+        truncated: candidates.length > SLA_QUERY_BUCKET_LIMIT,
+        rows: orphaned,
+      },
+    };
+  },
+});
+
 function summarizeSlaBuckets(
   buckets: Array<Array<{ createdAt: number }>>,
   includeOldest = false,
