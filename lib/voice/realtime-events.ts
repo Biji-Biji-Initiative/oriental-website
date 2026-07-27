@@ -4533,18 +4533,39 @@ function fullEditDistance(left: string, right: string) {
   return previous[right.length] ?? Math.max(left.length, right.length);
 }
 
+const SPOKEN_DIGIT_WORDS: Record<string, string> = {
+  zero: "0",
+  one: "1",
+  two: "2",
+  three: "3",
+  four: "4",
+  five: "5",
+  six: "6",
+  seven: "7",
+  eight: "8",
+  nine: "9",
+};
+
 function canonicalizeEmailSpeech(value: string): string {
-  return collapseHyphenSeparatedLetterRun(value)
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/\p{Mark}/gu, "")
-    .replace(/\bat\s+sign\b/gu, " @ ")
-    .replace(/\b(at)\b/gu, " @ ")
-    .replace(/\b(dot|point)\b/gu, " . ")
-    .replace(/\b(underscore)\b/gu, " _ ")
-    .replace(/\b(dash|hyphen)\b/gu, " - ")
-    .replace(/\b(plus)\b/gu, " + ")
-    .replace(/[^\p{Letter}\p{Number}@._+-]+/gu, "");
+  return (
+    collapseHyphenSeparatedLetterRun(value)
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/\p{Mark}/gu, "")
+      // Fold spoken number words into numerals so a digit-bearing address
+      // ("one nine nine at gmail dot com" → 199@gmail.com) grounds against the
+      // model's numeric candidate instead of collapsing to "oneninenine".
+      // Only the exact number words map; homophones like "for"/"to" are left
+      // alone. This shapes evidence for matching, never the stored email.
+      .replace(/\b(zero|one|two|three|four|five|six|seven|eight|nine)\b/gu, (word) => SPOKEN_DIGIT_WORDS[word] ?? word)
+      .replace(/\bat\s+sign\b/gu, " @ ")
+      .replace(/\b(at)\b/gu, " @ ")
+      .replace(/\b(dot|point)\b/gu, " . ")
+      .replace(/\b(underscore)\b/gu, " _ ")
+      .replace(/\b(dash|hyphen)\b/gu, " - ")
+      .replace(/\b(plus)\b/gu, " + ")
+      .replace(/[^\p{Letter}\p{Number}@._+-]+/gu, "")
+  );
 }
 
 function collapseHyphenSeparatedLetterRun(value: string) {

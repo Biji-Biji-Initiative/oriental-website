@@ -941,6 +941,35 @@ describe("reduceRealtimeServerEvent", () => {
     expect(routed.commands).toEqual([{ type: "submit_voice", callId: "call_adaptive_route", segment: "technology" }]);
   });
 
+  it("grounds an address whose digits were spoken as number words", () => {
+    // "one nine nine at gmail dot com" must ground against 199@gmail.com, not
+    // collapse to oneninenine@gmail.com and get rejected as ungrounded.
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_spoken_digits",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "sam199@gmail.com",
+                evidence: "sam one nine nine at gmail dot com",
+              }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: "It's sam one nine nine at gmail dot com." }] }),
+    );
+
+    expect(result.state.captured.email).toBe("sam199@gmail.com");
+    expect(result.state.emailVerification).toMatchObject({ status: "confirmed", confidence: "high" });
+  });
+
   it("keeps bounded ASR drift pending in the visible editor without a spoken read-back", () => {
     const result = reduceRealtimeServerEvent(
       {
