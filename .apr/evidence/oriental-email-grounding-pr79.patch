@@ -1,39 +1,54 @@
 diff --git a/lib/voice/realtime-events.ts b/lib/voice/realtime-events.ts
-index 4717110e498fc451af3ad524dda265518fba104b..9b64f091847b5f55d77d278dedb8332e3181c1f1 100644
+index 4717110..e49a2ce 100644
 --- a/lib/voice/realtime-events.ts
 +++ b/lib/voice/realtime-events.ts
-@@ -3831,6 +3831,44 @@ function validateEmailCaptureGrounding(
-   ) {
-     return { ok: true, emailConfidence: transcriptionPending ? "medium" : "high" };
-   }
+@@ -3232,0 +3233 @@ function reconcileCompletedEmailTranscription(
++  const ambiguousSpokenDigits = exactPendingCapture && hasAmbiguousSpokenDigitEmail(text, email);
+@@ -3248 +3249 @@ function reconcileCompletedEmailTranscription(
+-    const confidence: VoiceEmailCaptureConfidence = exactPendingCapture ? "high" : "medium";
++    const confidence: VoiceEmailCaptureConfidence = exactPendingCapture && !ambiguousSpokenDigits ? "high" : "medium";
+@@ -3823 +3824,4 @@ function validateEmailCaptureGrounding(
+-    return { ok: true, emailConfidence: transcriptionPending ? "medium" : "high" };
++    return {
++      ok: true,
++      emailConfidence: transcriptionPending || hasAmbiguousSpokenDigitEmail(recentUserText, email) ? "medium" : "high",
++    };
+@@ -3832 +3836,43 @@ function validateEmailCaptureGrounding(
+-    return { ok: true, emailConfidence: transcriptionPending ? "medium" : "high" };
++    const matchingTurn = recentUserTurns[matchingTurnIndex];
++    return {
++      ok: true,
++      emailConfidence:
++        transcriptionPending || (matchingTurn && hasAmbiguousSpokenDigitEmail(matchingTurn.text, email))
++          ? "medium"
++          : "high",
++    };
++  }
 +  // A capture_field call can trail the turn that actually contained the
 +  // address by a beat (the assistant kept talking, or the tool call fired
 +  // late). The exact-match check above already looks back across the window
 +  // for that reason; the approximate/ASR-drift check used to look only at
 +  // the single latest turn, so a correctly-spoken email with minor ASR drift
 +  // fell out of grounding purely because the model captured it a turn late.
-+  // Deliberately NOT checked against the turn's own text: hasContextualEmailCorrection/
-+  // hasOrderedEmailSelectionCue/emailTurnRejectsTarget key off discourse cues
-+  // like "it's"/"that's" that are just as common in a plain first-time
-+  // statement as in a correction, and supersedesRecentEmailGrounding reads an
-+  // ASR-drifted rendering of THIS address ("carper" for "carter") as itself
-+  // "a different address" — both would always flag the very turn we're using
-+  // as evidence. hasEmbeddedEmailCollision and a literal-mention mismatch are
-+  // the two checks that still apply here: they catch a turn whose actual
-+  // content is a different address (a suffix collision, or a since-completed
-+  // transcript a deferred call gets replayed against), as opposed to ordinary
-+  // ASR drift on this one.
++  // The candidate turn is guarded with unambiguous rejection and replacement
++  // language. Broader discourse cues such as "it's" remain legal in a plain
++  // first-time statement, but "no", "not", "instead", explicit rejection, a
++  // different literal choice, and zero-distance exact matches cannot reopen a
++  // value the exact path already rejected.
 +  const approxMatchingTurnIndex = recentUserTurns.findLastIndex((entry) => {
 +    const entryHasEmailCue = /@|\b(?:e-?mail|email address)\b|\b(?:at|dot|point|underscore|dash|hyphen|plus)\b/i.test(
 +      entry.text,
 +    );
 +    const entryLiteralEmails = getLiteralEmailMentions(entry.text);
 +    const literalMismatch = entryLiteralEmails.length > 0 && !entryLiteralEmails.some((m) => m.email === email);
++    const substitutionDistance = spokenEmailSubstitutionDistance(entry.text, email);
 +    return (
 +      entryHasEmailCue &&
-+      spokenEmailSubstitutionDistance(entry.text, email) <= maxAsrEdits &&
++      substitutionDistance > 0 &&
++      substitutionDistance <= maxAsrEdits &&
 +      !hasEmbeddedEmailCollision(entry.text, email) &&
-+      !literalMismatch
++      !literalMismatch &&
++      !approximateEmailTurnRejectsGrounding(entry.text, email)
 +    );
 +  });
 +  if (
@@ -43,14 +58,78 @@ index 4717110e498fc451af3ad524dda265518fba104b..9b64f091847b5f55d77d278dedb8332e
 +      .every((entry) => !supersedesRecentEmailGrounding(entry.text, email))
 +  ) {
 +    return { ok: true, emailConfidence: "medium" };
+@@ -3861,0 +3908,3 @@ function validateEmailCaptureGrounding(
++  if (approximateEmailTurnRejectsGrounding(recentUserText, email)) {
++    return { ok: false, error: "ungrounded_identity_capture" };
 +  }
-   const latestTurnSupersedes = supersedesRecentEmailGrounding(recentUserText, email);
-   const explicitlyReplaces =
-     hasContextualEmailCorrection(recentUserText, email) ||
-@@ -4495,18 +4533,39 @@ function fullEditDistance(left: string, right: string) {
-   return previous[right.length] ?? Math.max(left.length, right.length);
- }
- 
+@@ -3874,0 +3924,9 @@ function supersedesRecentEmailGrounding(text: string, groundedEmail: string) {
++function approximateEmailTurnRejectsGrounding(text: string, groundedEmail: string) {
++  const literalSelection = resolveLiteralEmailSelection(text, groundedEmail);
++  if (literalSelection === "different" || literalSelection === "ambiguous") return true;
++  if (emailTurnRejectsTarget(text, groundedEmail)) return true;
++  return /\b(?:no|nope|nah|not|never|instead|rather\s+than|wrong|incorrect|do\s+not\s+use|don['’]?t\s+use|dont\s+use|forget|bukan)\b/iu.test(
++    text,
++  );
++}
++
+@@ -4354,3 +4412,4 @@ function spokenEmailSubstitutionDistance(text: string, groundedEmail: string) {
+-      const candidate = canonicalizeEmailSpeech(tokens.slice(start, end).join(" "));
+-      if (candidate.length !== groundedEmail.length || !isLikelyEmail(candidate)) continue;
+-      best = Math.min(best, fullEditDistance(candidate, groundedEmail));
++      for (const candidate of canonicalizeEmailSpeechInterpretations(tokens.slice(start, end).join(" "))) {
++        if (candidate.length !== groundedEmail.length || !isLikelyEmail(candidate)) continue;
++        best = Math.min(best, fullEditDistance(candidate, groundedEmail));
++      }
+@@ -4375,7 +4434,8 @@ function hasEmbeddedEmailCollision(text: string, groundedEmail: string) {
+-      const candidate = canonicalizeEmailSpeech(tokens.slice(start, end).join(" "));
+-      if (
+-        candidate !== groundedEmail &&
+-        isLikelyEmail(candidate) &&
+-        (candidate.includes(groundedEmail) || groundedEmail.includes(candidate))
+-      ) {
+-        return true;
++      for (const candidate of canonicalizeEmailSpeechInterpretations(tokens.slice(start, end).join(" "))) {
++        if (
++          candidate !== groundedEmail &&
++          isLikelyEmail(candidate) &&
++          (candidate.includes(groundedEmail) || groundedEmail.includes(candidate))
++        ) {
++          return true;
++        }
+@@ -4387,0 +4448,27 @@ function hasEmbeddedEmailCollision(text: string, groundedEmail: string) {
++function hasAmbiguousSpokenDigitEmail(text: string, groundedEmail: string) {
++  if (getLiteralEmailMentions(text).length > 0 || hasExplicitSpokenDigitContext(text)) {
++    return false;
++  }
++  const target = groundedEmail.trim().toLowerCase();
++  const tokens = getEmailSpeechTokens(text);
++  for (let start = 0; start < tokens.length; start += 1) {
++    for (let end = start + 1; end <= Math.min(tokens.length, start + 18); end += 1) {
++      const interpretations = canonicalizeEmailSpeechInterpretations(tokens.slice(start, end).join(" ")).filter(
++        isLikelyEmail,
++      );
++      if (new Set(interpretations).size > 1 && interpretations.includes(target)) return true;
++    }
++  }
++  return false;
++}
++
++function hasExplicitSpokenDigitContext(text: string) {
++  return text
++    .split(/[.!?;]+/u)
++    .some(
++      (clause) =>
++        /\b(?:digit|digits|number|numbers|numeric|numeral|numerals)\b/iu.test(clause) &&
++        /\b(?:zero|one|two|three|four|five|six|seven|eight|nine)\b/iu.test(clause),
++    );
++}
++
+@@ -4395 +4482 @@ function findExactEmailTokenWindow(text: string, groundedEmail: string, minimumS
+-      if (canonicalizeEmailSpeech(tokens.slice(start, end).join(" ")) !== groundedEmail) continue;
++      if (!canonicalizeEmailSpeechInterpretations(tokens.slice(start, end).join(" ")).includes(groundedEmail)) continue;
+@@ -4498,2 +4585,15 @@ function fullEditDistance(left: string, right: string) {
+-function canonicalizeEmailSpeech(value: string): string {
+-  return collapseHyphenSeparatedLetterRun(value)
 +const SPOKEN_DIGIT_WORDS: Record<string, string> = {
 +  zero: "0",
 +  one: "1",
@@ -64,49 +143,31 @@ index 4717110e498fc451af3ad524dda265518fba104b..9b64f091847b5f55d77d278dedb8332e
 +  nine: "9",
 +};
 +
- function canonicalizeEmailSpeech(value: string): string {
--  return collapseHyphenSeparatedLetterRun(value)
--    .toLowerCase()
--    .normalize("NFKD")
++function canonicalizeEmailSpeech(value: string, foldSpokenDigits = true): string {
++  let canonical = collapseHyphenSeparatedLetterRun(value)
+@@ -4502 +4602,8 @@ function canonicalizeEmailSpeech(value: string): string {
 -    .replace(/\p{Mark}/gu, "")
--    .replace(/\bat\s+sign\b/gu, " @ ")
--    .replace(/\b(at)\b/gu, " @ ")
--    .replace(/\b(dot|point)\b/gu, " . ")
--    .replace(/\b(underscore)\b/gu, " _ ")
--    .replace(/\b(dash|hyphen)\b/gu, " - ")
--    .replace(/\b(plus)\b/gu, " + ")
--    .replace(/[^\p{Letter}\p{Number}@._+-]+/gu, "");
-+  return (
-+    collapseHyphenSeparatedLetterRun(value)
-+      .toLowerCase()
-+      .normalize("NFKD")
-+      .replace(/\p{Mark}/gu, "")
-+      // Fold spoken number words into numerals so a digit-bearing address
-+      // ("one nine nine at gmail dot com" → 199@gmail.com) grounds against the
-+      // model's numeric candidate instead of collapsing to "oneninenine".
-+      // Only the exact number words map; homophones like "for"/"to" are left
-+      // alone. This shapes evidence for matching, never the stored email.
-+      .replace(/\b(zero|one|two|three|four|five|six|seven|eight|nine)\b/gu, (word) => SPOKEN_DIGIT_WORDS[word] ?? word)
-+      .replace(/\bat\s+sign\b/gu, " @ ")
-+      .replace(/\b(at)\b/gu, " @ ")
-+      .replace(/\b(dot|point)\b/gu, " . ")
-+      .replace(/\b(underscore)\b/gu, " _ ")
-+      .replace(/\b(dash|hyphen)\b/gu, " - ")
-+      .replace(/\b(plus)\b/gu, " + ")
-+      .replace(/[^\p{Letter}\p{Number}@._+-]+/gu, "")
-+  );
- }
- 
- function collapseHyphenSeparatedLetterRun(value: string) {
++    .replace(/\p{Mark}/gu, "");
++  if (foldSpokenDigits) {
++    canonical = canonical.replace(
++      /\b(zero|one|two|three|four|five|six|seven|eight|nine)\b/gu,
++      (word) => SPOKEN_DIGIT_WORDS[word] ?? word,
++    );
++  }
++  return canonical
+@@ -4511,0 +4619,6 @@ function canonicalizeEmailSpeech(value: string): string {
++function canonicalizeEmailSpeechInterpretations(value: string) {
++  const numeric = canonicalizeEmailSpeech(value, true);
++  const literal = canonicalizeEmailSpeech(value, false);
++  return numeric === literal ? [numeric] : [numeric, literal];
++}
++
 diff --git a/tests/realtime-events.test.ts b/tests/realtime-events.test.ts
-index ec3081fb4cd211324920c99e2680b7fbe9cce35c..c9e0488dbe44a831e5b8b3461f856a373e1aa00d 100644
+index ec3081f..4e674ad 100644
 --- a/tests/realtime-events.test.ts
 +++ b/tests/realtime-events.test.ts
-@@ -941,6 +941,35 @@ describe("reduceRealtimeServerEvent", () => {
-     expect(routed.commands).toEqual([{ type: "submit_voice", callId: "call_adaptive_route", segment: "technology" }]);
-   });
- 
-+  it("grounds an address whose digits were spoken as number words", () => {
+@@ -943,0 +944,150 @@ describe("reduceRealtimeServerEvent", () => {
++  it("keeps an address with spoken number words pending until digit intent is explicit", () => {
 +    // "one nine nine at gmail dot com" must ground against 199@gmail.com, not
 +    // collapse to oneninenine@gmail.com and get rejected as ungrounded.
 +    const result = reduceRealtimeServerEvent(
@@ -132,16 +193,131 @@ index ec3081fb4cd211324920c99e2680b7fbe9cce35c..c9e0488dbe44a831e5b8b3461f856a37
 +    );
 +
 +    expect(result.state.captured.email).toBe("sam199@gmail.com");
++    expect(result.state.emailVerification).toMatchObject({ status: "pending", confidence: "medium" });
++    expect(result.commands[0]).toMatchObject({
++      output: { ok: true, emailCheckRequired: true, emailConfirmationRequired: false },
++    });
++  });
++
++  it("accepts spoken number words as digits only with explicit digit context", () => {
++    const result = reduceRealtimeServerEvent(
++      {
++        type: "response.done",
++        email_capture_mode: "adaptive",
++        response: {
++          output: [
++            {
++              type: "function_call",
++              name: "capture_field",
++              call_id: "call_explicit_spoken_digits",
++              arguments: JSON.stringify({
++                key: "email",
++                value: "sam199@gmail.com",
++                evidence: "sam one nine nine at gmail dot com",
++              }),
++            },
++          ],
++        },
++      },
++      state({
++        transcript: [
++          {
++            role: "user",
++            text: "Those are digits: my email is sam one nine nine at gmail dot com.",
++          },
++        ],
++      }),
++    );
++
++    expect(result.state.captured.email).toBe("sam199@gmail.com");
 +    expect(result.state.emailVerification).toMatchObject({ status: "confirmed", confidence: "high" });
 +  });
 +
-   it("keeps bounded ASR drift pending in the visible editor without a spoken read-back", () => {
-     const result = reduceRealtimeServerEvent(
-       {
-@@ -2721,6 +2750,46 @@ describe("reduceRealtimeServerEvent", () => {
-     expect(result.state.emailVerification).toMatchObject({ status: "confirmed" });
-   });
- 
++  it.each([
++    ["one@example.com", "one at example dot com"],
++    ["1@example.com", "one at example dot com"],
++    ["two@example.com", "two at example dot com"],
++    ["2@example.com", "two at example dot com"],
++    ["samone@example.com", "sam one at example dot com"],
++    ["sam1@example.com", "sam one at example dot com"],
++  ])("keeps ambiguous literal-word and numeric mailbox %s unrouteable", (email, spoken) => {
++    const result = reduceRealtimeServerEvent(
++      {
++        type: "response.done",
++        email_capture_mode: "adaptive",
++        response: {
++          output: [
++            {
++              type: "function_call",
++              name: "capture_field",
++              call_id: `call_ambiguous_digit_${email}`,
++              arguments: JSON.stringify({ key: "email", value: email, evidence: spoken }),
++            },
++          ],
++        },
++      },
++      state({ transcript: [{ role: "user", text: `My email is ${spoken}.` }] }),
++    );
++
++    expect(result.state.captured.email).toBe(email);
++    expect(result.state.emailVerification).toMatchObject({ status: "pending", confidence: "medium" });
++  });
++
++  it.each([
++    ["2@example.com", "to at example dot com"],
++    ["2@example.com", "too at example dot com"],
++    ["4@example.com", "for at example dot com"],
++  ])("never treats a homophone as numeric mailbox %s", (email, spoken) => {
++    const result = reduceRealtimeServerEvent(
++      {
++        type: "response.done",
++        email_capture_mode: "adaptive",
++        response: {
++          output: [
++            {
++              type: "function_call",
++              name: "capture_field",
++              call_id: `call_digit_homophone_${spoken}`,
++              arguments: JSON.stringify({ key: "email", value: email, evidence: spoken }),
++            },
++          ],
++        },
++      },
++      state({ transcript: [{ role: "user", text: `My email is ${spoken}.` }] }),
++    );
++
++    expect(result.state.captured.email).toBe("");
++    expect(result.commands[0]).toMatchObject({ output: { ok: false, error: "ungrounded_identity_capture" } });
++  });
++
++  it("keeps ambiguous digit speech pending in strict mode", () => {
++    const result = reduceRealtimeServerEvent(
++      {
++        type: "response.done",
++        email_capture_mode: "strict",
++        response: {
++          output: [
++            {
++              type: "function_call",
++              name: "capture_field",
++              call_id: "call_strict_ambiguous_digits",
++              arguments: JSON.stringify({
++                key: "email",
++                value: "1@example.com",
++                evidence: "one at example dot com",
++              }),
++            },
++          ],
++        },
++      },
++      state({ transcript: [{ role: "user", text: "My email is one at example dot com." }] }),
++    );
++
++    expect(result.state.emailVerification).toMatchObject({ status: "pending" });
++    expect(result.commands[0]).toMatchObject({ output: { emailConfirmationRequired: true } });
++  });
++
+@@ -2723,0 +2874,229 @@ describe("reduceRealtimeServerEvent", () => {
 +  it("accepts an ASR-drifted address spoken a turn before a delayed capture call", () => {
 +    // ASR misheard "carter" as "carper" in the turn that actually contained
 +    // the address; the assistant kept talking, and the tool call landed on a
@@ -182,6 +358,192 @@ index ec3081fb4cd211324920c99e2680b7fbe9cce35c..c9e0488dbe44a831e5b8b3461f856a37
 +    expect(result.state.emailVerification).toMatchObject({ status: "pending", confidence: "medium" });
 +  });
 +
-   it("preserves an explicitly spoken dash in an email", () => {
-     const result = reduceRealtimeServerEvent(
-       {
++  it.each([
++    "No, use sam dot carper at gmail dot com instead.",
++    "Not sam dot carper at gmail dot com; use the other address.",
++    "Sam dot carper at gmail dot com was wrong.",
++  ])("does not ground an approximate candidate from its own correction turn: %s", (turn) => {
++    const result = reduceRealtimeServerEvent(
++      {
++        type: "response.done",
++        email_capture_mode: "adaptive",
++        response: {
++          output: [
++            {
++              type: "function_call",
++              name: "capture_field",
++              call_id: `call_rejected_approx_${turn}`,
++              arguments: JSON.stringify({
++                key: "email",
++                value: "sam.carter@gmail.com",
++                evidence: "sam dot carter at gmail dot com",
++              }),
++            },
++          ],
++        },
++      },
++      state({ transcript: [{ role: "user", text: turn }] }),
++    );
++
++    expect(result.state.captured.email).toBe("");
++    expect(result.commands[0]).toMatchObject({ output: { ok: false, error: "ungrounded_identity_capture" } });
++  });
++
++  it("does not reopen an exact address that the same turn replaces", () => {
++    const result = reduceRealtimeServerEvent(
++      {
++        type: "response.done",
++        email_capture_mode: "adaptive",
++        response: {
++          output: [
++            {
++              type: "function_call",
++              name: "capture_field",
++              call_id: "call_mixed_literal_replacement",
++              arguments: JSON.stringify({
++                key: "email",
++                value: "sam.carter@gmail.com",
++                evidence: "sam.carter@gmail.com",
++              }),
++            },
++          ],
++        },
++      },
++      state({
++        transcript: [
++          {
++            role: "user",
++            text: "Don't use sam.carter@gmail.com; use sam.carper@gmail.com.",
++          },
++        ],
++      }),
++    );
++
++    expect(result.state.captured.email).toBe("");
++    expect(result.commands[0]).toMatchObject({ output: { ok: false, error: "ungrounded_identity_capture" } });
++  });
++
++  it.each([
++    ["a@example.com", "My email is q a at example dot com."],
++    ["sam.carter@gmail.com", "My email is sam.carper@gmail.com."],
++  ])("does not use an older embedded or different-address turn for %s", (email, olderTurn) => {
++    const result = reduceRealtimeServerEvent(
++      {
++        type: "response.done",
++        email_capture_mode: "adaptive",
++        response: {
++          output: [
++            {
++              type: "function_call",
++              name: "capture_field",
++              call_id: `call_hostile_older_turn_${email}`,
++              arguments: JSON.stringify({ key: "email", value: email, evidence: email }),
++            },
++          ],
++        },
++      },
++      state({
++        transcript: [
++          { role: "user", text: olderTurn },
++          { role: "user", text: "We are planning a residency." },
++        ],
++      }),
++    );
++
++    expect(result.state.captured.email).toBe("");
++  });
++
++  it("lets a later literal edit defeat older approximate voice evidence", () => {
++    const result = reduceRealtimeServerEvent(
++      {
++        type: "response.done",
++        email_capture_mode: "adaptive",
++        response: {
++          output: [
++            {
++              type: "function_call",
++              name: "capture_field",
++              call_id: "call_after_typed_email_edit",
++              arguments: JSON.stringify({
++                key: "email",
++                value: "sam.carter@gmail.com",
++                evidence: "sam dot carter at gmail dot com",
++              }),
++            },
++          ],
++        },
++      },
++      state({
++        transcript: [
++          { role: "user", text: "My email is sam dot carper at gmail dot com." },
++          { role: "user", text: "Use final.address@example.com instead." },
++        ],
++      }),
++    );
++
++    expect(result.state.captured.email).toBe("");
++  });
++
++  it("keeps delayed approximate evidence pending in strict mode", () => {
++    const result = reduceRealtimeServerEvent(
++      {
++        type: "response.done",
++        email_capture_mode: "strict",
++        response: {
++          output: [
++            {
++              type: "function_call",
++              name: "capture_field",
++              call_id: "call_strict_delayed_approx",
++              arguments: JSON.stringify({
++                key: "email",
++                value: "sam.carter@gmail.com",
++                evidence: "sam dot carter at gmail dot com",
++              }),
++            },
++          ],
++        },
++      },
++      state({
++        transcript: [
++          { role: "user", text: "My email is sam dot carper at gmail dot com." },
++          { role: "user", text: "We are planning a residency." },
++        ],
++      }),
++    );
++
++    expect(result.state.emailVerification).toMatchObject({ status: "pending" });
++    expect(result.commands[0]).toMatchObject({ output: { emailConfirmationRequired: true } });
++  });
++
++  it("does not use approximate evidence outside the six-user-turn window", () => {
++    const result = reduceRealtimeServerEvent(
++      {
++        type: "response.done",
++        email_capture_mode: "adaptive",
++        response: {
++          output: [
++            {
++              type: "function_call",
++              name: "capture_field",
++              call_id: "call_approx_outside_window",
++              arguments: JSON.stringify({
++                key: "email",
++                value: "sam.carter@gmail.com",
++                evidence: "sam dot carter at gmail dot com",
++              }),
++            },
++          ],
++        },
++      },
++      state({
++        transcript: [
++          { role: "user", text: "My email is sam dot carper at gmail dot com." },
++          ...Array.from({ length: 6 }, (_, index) => ({ role: "user" as const, text: `Project detail ${index}.` })),
++        ],
++      }),
++    );
++
++    expect(result.state.captured.email).toBe("");
++  });
++
