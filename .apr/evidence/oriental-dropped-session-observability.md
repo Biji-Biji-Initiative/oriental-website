@@ -2,18 +2,19 @@
 
 ## Immutable implementation identity
 
-PR #82 is stacked on PR #79 commit
-`75f42e3205ac65f50e0a76bd7a58a2b651726ad2`; PR #79 must merge first.
+PR #82's source range begins after PR #79 source commit
+`75f42e3205ac65f50e0a76bd7a58a2b651726ad2`, which is an ancestor of current
+PR #79 head `52e1597ab7f5dd29d6c869d404ab5366758a3154`; PR #79 must merge first.
 The exact source implementation under review is:
 
 - implementation commit:
-  `7efaad2e01683c1a44e5ee6c65c417a06178a3c0`
+  `2825f10fff390916ab276331e1e42bdcc8cbd08e`
 - implementation tree:
-  `e87b21d0bbfb91afaf2965496e031a349eab0391`
+  `57ff76f80e0e1199b32e44f70a0afaf92dbf920f`
 - complete source-only range patch:
   `.apr/evidence/oriental-dropped-session-observability.patch`
 - patch SHA-256:
-  `a27807bed7766bd15a7bd95aea0503e3314dfb2067a6fcff4068a853975be855`
+  `91c308b34f1137fffce3271503ff978e257d754efd51d4356cb5b48d49e930b4`
 
 The patch contains all twenty source, schema, release automation,
 documentation, and test files in the exact range after the stacked base. Any child of the
@@ -74,7 +75,10 @@ deployment rather than rewriting or expiring them.
 
 The lifecycle script drains to `hasMore=false`, detects non-progress, and has a
 finite row/round cap. Each RPC has a thirty-second deadline and a parent process
-supervisor kills the entire process group after ten minutes.
+supervisor kills the entire process group after ten minutes. The same
+idempotent cleanup runs on `SIGINT`, `SIGTERM`, `SIGHUP`, and abnormal
+supervisor exit; cancellation is held until the detached group dies and then
+returns the conventional nonzero signal exit code.
 
 ## SLA isolation and honest availability
 
@@ -101,35 +105,45 @@ supervisor; the production deployer adds an outer twenty-second `SIGKILL`
 deadline. `scripts/deploy-coolify-host.sh` independently verifies its local exact
 SHA and runs the bounded verifier before constructing or invoking SSH.
 `scripts/deploy-coolify-production.ts` runs it before reading Coolify credentials
-or mutating the production control plane. A deliberately non-resolving child
-test proves exit 124 within the bound, kills its process group, and prevents a
-delayed external mutation. Staging repeats the verifier after both browser
+or mutating the production control plane. A real-grandchild timeout test proves
+exit 124 within the bound and no delayed mutation; a separate supervisor-group
+cancellation test proves exit 143 and that the detached descendant cannot
+mutate after cancellation. Staging repeats the verifier after both browser
 smokes. Missing functions, either incomplete migration population, timeout, or
 query failure therefore block both web deployment entrypoints.
 
 ## Verification completed
 
 Against implementation commit
-`7efaad2e01683c1a44e5ee6c65c417a06178a3c0`:
+`2825f10fff390916ab276331e1e42bdcc8cbd08e`:
 
 - `pnpm lint`: passed, 284 files;
 - `pnpm typecheck`: passed;
 - focused lifecycle, SLA, deadline, and release-governance suites: 4 files and
-  49 tests passed;
-- hermetic full Vitest through `scripts/run-release-tests.ts`: 84 files and
-  2,205 tests passed;
+  50 tests passed;
+- the deadline suite starts a real grandchild and passes both hard-timeout and
+  supervisor-group `SIGTERM` cancellation cases;
 - Next.js 16.2.10 production build: passed;
-- `git diff --check`: passed.
+- `git diff --check`: passed;
+- GitHub `verify`: success on exact source head
+  `2825f10fff390916ab276331e1e42bdcc8cbd08e`;
+- synthetic eight-PR integration commit
+  `c68a076448192f9227286e270bba27d88c253c38`, containing the updated PR #82
+  and #83 source heads plus every other exact PR head and both reviewed conflict
+  resolutions, passed lint on 292 files, strict TypeScript, production audit
+  with zero findings, all 89 test files and 2,283 tests, and the Next.js
+  16.2.12 production build.
 
 APR round 2 correctly rejected the omitted unsafe-legacy completion population,
 the data-changing email/transcript/retention rewrite, and the absence of a hard
-release-process deadline. The exact source commit above closes all three; round
-3 must review the regenerated patch.
+release-process deadline. Round 3 correctly rejected a detached child that
+could survive release cancellation. The exact source commit above closes every
+source and pre-merge admission blocker; round 4 must review this regenerated
+patch without waiving managed runtime gates.
 
 ## Remaining admission gates
 
-APR merge verdict, final exact-head GitHub CI, combined-tree integration, and
-post-merge managed runtime proof remain mandatory. Runtime proof must deploy
-Convex first, drain the lifecycle migration, observe the read-only verifier,
-then deploy and smoke the identical web SHA on canonical staging before
-guarded production promotion.
+APR merge verdict, final exact-head GitHub CI, and post-merge managed runtime
+proof remain mandatory. Runtime proof must deploy Convex first, drain the
+lifecycle migration, observe the read-only verifier, then deploy and smoke the
+identical web SHA on canonical staging before guarded production promotion.
