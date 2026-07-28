@@ -3,15 +3,15 @@
 ## Immutable implementation identity
 
 - source implementation commit:
-  `918805adf3bada7c64847475b00567ec63c7b324`
+  `590807c5e9cbd4d179423d77a376df26787e1d86`
 - base:
   `e3bb6c333cbf4bf8e52456a1b5144f556f50636a`
 - implementation tree:
-  `8ddd91f578f910f00b7d038b779f28a8a52def83`
+  `ad5377ac28d22b29f0599269e01f90f8061855f5`
 - complete source-only patch:
   `.apr/evidence/oriental-email-grounding-pr79.patch`
 - patch SHA-256:
-  `990ff1ddc6d67a4eeeab51e1ea70fd2c37b353af626a8a35e51edb28219f64c8`
+  `3bd65776c4fe29f3e0060ccc8e2bd663e35a12b075a03338965d6bf83024faba`
 
 The source range changes only `lib/voice/realtime-events.ts` and
 `tests/realtime-events.test.ts`. An earlier APR evidence commit is in the
@@ -65,39 +65,53 @@ cases through the complete bounded matcher. Stored email values are never
 rewritten by the evidence canonicalizer.
 
 The candidate's literal selection, digit context, and following disposition are
-scoped to the exact candidate window and decision clause. An unrelated literal
-address, an earlier numeric sentence, or negated digit language cannot authorize
-a numeric mailbox. Equal-length `to`/`too`/`for` homophones cannot introduce
-unspoken `2`/`4` digits. Scratch, ignore, retract, take-back, cancel, replace,
-change, and switch language following an approximate candidate rejects that
-candidate without letting unrelated later text control another window.
+scoped to the exact candidate window and decision clause. Explicit digit intent
+selects only the numeric interpretation; it cannot authorize a literal-word
+mailbox. Digit context must attach directly to the email candidate, and any
+preceding negation in the decision text denies it. An unrelated literal address,
+an earlier numeric sentence, room-number language, or long-range negated digit
+language cannot authorize a numeric mailbox. `to`/`too`/`for` homophones cannot
+introduce unspoken `2`/`4` digits even when another word supplies explicit digit
+context.
+
+The approximate matcher retains every equal-minimum-distance candidate in
+chronological order. Scratch, ignore, retract, take-back, cancel, replace,
+change, and switch dispositions apply to their candidate; a later explicit
+restatement can supersede an earlier rejection, while a later rejection defeats
+an earlier candidate. Both orderings are tested for every disposition.
 
 ## Verification evidence
 
 Against source implementation commit
-`918805adf3bada7c64847475b00567ec63c7b324`:
+`590807c5e9cbd4d179423d77a376df26787e1d86`:
 
-- `pnpm lint`: passed, 280 files;
+- `pnpm lint`: passed, 280 files, no warnings;
 - strict TypeScript: passed;
-- reducer suite: 1 file and 1,562 tests passed;
+- reducer suite: 1 file and 1,585 tests passed;
 - production Next.js 16.2.10 build: passed;
+- all other branch-local tests passed with the two previously known cross-PR
+  macOS platform cells excluded; both cells are repaired by PR 78/82 and pass
+  without exclusions in the integrated proof below;
 - `git diff --check`: passed;
 - GitHub `verify`: success on exact source head
-  `918805adf3bada7c64847475b00567ec63c7b324`.
+  `590807c5e9cbd4d179423d77a376df26787e1d86`.
 
 The synthetic eight-PR integration commit
-`76746d98e6a7b220c3abaf4a93dd426236fc2b2b`, tree
-`058805ee5d6860b760b14657d3ede08735111a91`, passed frozen pnpm 10.34.5
-installation, lint on 293 files, strict TypeScript, a zero-finding production
-audit, all 89 test files and 2,303 tests, and the Next.js 16.2.12 production
-build.
+`470dd990f0078ecca55c4475b4be80cf602c784f`, tree
+`22c331f96cb46187870d572386b1cab5f7d27504`, passed frozen pnpm 10.34.5
+installation, warning-free lint on 293 files, strict TypeScript, a zero-finding
+production audit across 378 dependencies, all 89 test files and 2,333 tests,
+and the Next.js 16.2.12 production build.
 
 APR round 1 correctly rejected candidate-turn correction bypass, exact-path
 reopening, word/numeric mailbox collision, and missing hostile chronology
 coverage. Round 2 correctly rejected unrelated-context suppression,
 equal-length homophone-to-digit approximation, and same-turn retraction or
-replacement acceptance. The implementation above closes every source blocker.
-Round 3 must review this regenerated exact patch.
+replacement acceptance. Round 3 correctly rejected literal alternatives under
+explicit digit intent, non-local and negated digit context, mixed explicit
+homophones, and single-window approximate disposition handling. The repaired
+implementation and hostile matrix above close every source blocker. Round 4
+must review this regenerated exact patch and evidence.
 
 ## Release boundary
 
