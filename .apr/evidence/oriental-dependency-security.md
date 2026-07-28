@@ -3,23 +3,19 @@
 ## Immutable implementation identity
 
 - implementation commit:
-  `bcd50efba4e330c58b9df496eb65f9ee9c9df825`
+  `eb1e12969ee3f130939772b6e76ae8cda618dd25`
 - base:
   `e3bb6c333cbf4bf8e52456a1b5144f556f50636a`
 - implementation tree:
-  `10d520f0ceedfe0a42825005373ffea357196f92`
+  `a91151e60a570de3d6498cb884df2236d6c5145d`
 - authoritative source-only patch:
   `.apr/evidence/oriental-dependency-security.patch`
 - patch SHA-256:
-  `912d0d1258351358404395ba4e52a97b6d9c5e5d0b8f850e4a37cab3abc79ad0`
+  `edb34a7260f7416a1d7c27acc741d6a2ab04ac05dbea8006a692e6e1182ed874`
 
-The patch changes exactly:
-
-1. `.github/workflows/ci.yml`
-2. `next.config.ts`
-3. `package.json`
-4. `pnpm-lock.yaml`
-5. `tests/dependency-security.test.ts`
+The patch changes exactly six files: the CI workflow, `next.config.ts`,
+`package.json`, `pnpm-lock.yaml`, the dependency-security suite, and its parsed
+lockfile audit helper.
 
 The obsolete mail patch was removed. The authoritative patch excludes `.apr/`,
 so saved review rounds cannot alter its bytes. Any child after the
@@ -28,7 +24,7 @@ head with its clean worktree, and GitHub CI must pass on the final exact head.
 
 ## Reproducible audit toolchain
 
-The repository and CI explicitly pin `pnpm@10.33.0`. CI now records:
+The repository and CI explicitly pin patched `pnpm@10.34.5`. CI records:
 
 ```text
 pnpm --version
@@ -44,19 +40,8 @@ pnpm audit --prod --audit-level=high --json
 so every run records machine-readable advisory and dependency counts in the
 job log.
 
-The assertion that pnpm 10.33.0 cannot currently complete the audit is
-contradicted by live exact-head GitHub execution:
-
-- run: `30338953872`
-- exact PR merge ref source contained evidence head
-  `0430de2253d6185f620028e705b2a5bd99c3926e`
-- `pnpm/action-setup@v5` installed exactly `10.33.0`
-- `pnpm audit --prod --audit-level=high` completed successfully
-- output: `No known vulnerabilities found`
-- full Linux job, including performance checks, completed `SUCCESS`
-
-The current implementation additionally ran the JSON form locally with the
-same pnpm version and `https://registry.npmjs.org/`, returning exit `0` and:
+The current exact implementation ran the JSON audit with pnpm 10.34.5 and
+`https://registry.npmjs.org/`, returning exit `0` and:
 
 ```json
 {
@@ -77,8 +62,8 @@ same pnpm version and `https://registry.npmjs.org/`, returning exit `0` and:
 }
 ```
 
-Final exact-head CI remains mandatory and will repeat the pinned version,
-registry, JSON audit, full tests, build, and Linux performance job.
+Final exact-head CI repeated the pinned version, registry, JSON audit, full tests,
+build, and Linux performance job successfully.
 
 ## Precise patched dependency set
 
@@ -108,11 +93,17 @@ It contains no governed package/snapshot resolution for `brace-expansion
 Next.js, `eslint-config-next`, and `@next/eslint-plugin-next` remain aligned at
 `16.2.12`.
 
-`tests/dependency-security.test.ts` reads the actual lockfile package/snapshot
-sections. It proves the patched resolutions are present, the vulnerable
-resolutions are absent, the override map is exactly the four scoped entries,
-the package-manager pin and CI setup agree, version/registry evidence is
-mandatory, the audit is JSON, and Sharp tracing remains configured.
+`tests/dependency-security.test.ts` parses the effective YAML with the pinned
+`yaml` library and evaluates governed versions with `semver`. It independently
+audits `packages`, `snapshots`, every governed snapshot dependency edge, and the
+complete production-only closure starting at the root importer's dependencies
+and optional dependencies. It fails on unresolved or external production edges.
+Hostile fixtures prove that quoted vulnerable keys and vulnerable package or
+snapshot sections fail, a safe version embedded in data or a vulnerable version
+in a comment does not false-positive, and a snapshot edge rewired to a
+vulnerable version fails. The production closure contains
+`brace-expansion@5.0.8` and excludes dev-only `brace-expansion@1.1.15`; explicit
+Next, AJV, and minimatch edges resolve to the intended patched versions.
 
 ## Standalone native-runtime proof
 
@@ -124,23 +115,29 @@ outputFileTracingIncludes: {
 },
 ```
 
-Completed against the current implementation:
+Completed against implementation
+`eb1e12969ee3f130939772b6e76ae8cda618dd25`:
 
-- frozen install: pass
-- lint: pass, 281 files
+- frozen install with pnpm 10.34.5: pass
+- lint: pass, 282 files
 - typecheck: pass
-- dependency security tests: 1 file and 4 tests passed
-- machine-readable production audit: pass, zero vulnerabilities
+- dependency security tests: 1 file and 7 tests passed
+- machine-readable production audit: pass, zero vulnerabilities across 378
+  production dependencies
 - Next.js 16.2.12 production build: pass
-- standalone Sharp load: `sharp=0.35.3`, `vips=8.18.3`
-- standalone output contains native binding and libvips package assets
 - `git diff --check`: pass
+- GitHub `verify`: success on exact source head
+  `eb1e12969ee3f130939772b6e76ae8cda618dd25`
+- synthetic eight-PR integration commit
+  `76746d98e6a7b220c3abaf4a93dd426236fc2b2b`, tree
+  `058805ee5d6860b760b14657d3ede08735111a91`: frozen pnpm 10.34.5 install,
+  lint on 293 files, strict TypeScript, zero production-audit findings, all 89
+  files and 2,303 tests, and the Next.js 16.2.12 production build passed
 
-The prior exact implementation also started the standalone server and requested
-a real repository JPEG through `/_next/image`, receiving HTTP 200,
-`image/jpeg`, and 28,550 bytes. The tracing and dependency versions are
-unchanged; final staging must repeat the external image endpoint proof on the
-exact deployed SHA.
+APR round 2 correctly rejected pnpm 10.33, raw-text lockfile assertions,
+unproven production ancestry, and incomplete hostile mutations. The corrected
+implementation closes those source blockers. Round 3 must review this exact
+regenerated patch.
 
 ## Release boundary
 
