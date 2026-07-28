@@ -3,15 +3,15 @@
 ## Immutable implementation identity
 
 - implementation commit:
-  `eb1e12969ee3f130939772b6e76ae8cda618dd25`
+  `5455169e5c3560101f2178617568c1795926a26f`
 - base:
   `e3bb6c333cbf4bf8e52456a1b5144f556f50636a`
 - implementation tree:
-  `a91151e60a570de3d6498cb884df2236d6c5145d`
+  `fa97ff36be2e411b5fab504fcde40688cb8ffd81`
 - authoritative source-only patch:
   `.apr/evidence/oriental-dependency-security.patch`
 - patch SHA-256:
-  `edb34a7260f7416a1d7c27acc741d6a2ab04ac05dbea8006a692e6e1182ed874`
+  `3f83799a2f724abd6230c180ecb1e7474e967b578bfdb502fe38f62d3c76b691`
 
 The patch changes exactly six files: the CI workflow, `next.config.ts`,
 `package.json`, `pnpm-lock.yaml`, the dependency-security suite, and its parsed
@@ -97,13 +97,27 @@ Next.js, `eslint-config-next`, and `@next/eslint-plugin-next` remain aligned at
 `yaml` library and evaluates governed versions with `semver`. It independently
 audits `packages`, `snapshots`, every governed snapshot dependency edge, and the
 complete production-only closure starting at the root importer's dependencies
-and optional dependencies. It fails on unresolved or external production edges.
-Hostile fixtures prove that quoted vulnerable keys and vulnerable package or
-snapshot sections fail, a safe version embedded in data or a vulnerable version
-in a comment does not false-positive, and a snapshot edge rewired to a
-vulnerable version fails. The production closure contains
-`brace-expansion@5.0.8` and excludes dev-only `brace-expansion@1.1.15`; explicit
-Next, AJV, and minimatch edges resolve to the intended patched versions.
+and optional dependencies.
+
+Only concrete registry references with valid semantic versions and balanced,
+substantive pnpm peer/patch suffixes are accepted. A well-formed `npm:` alias
+retains both target package identity and version; governed dependency keys may
+not alias another package, and governance is independently applied when an
+otherwise ungoverned key aliases a governed target. URL, git, file, link,
+workspace, portal, shorthand, malformed alias, and malformed suffix references
+fail before snapshot lookup even when a matching hostile snapshot exists.
+
+Every present root or snapshot dependency/optional-dependency section must be
+object-valued. Every visited snapshot must be an object and must resolve to an
+object-valued base package metadata record. Missing, null, array, scalar,
+malformed-map, external, or unresolved nodes throw rather than truncating the
+closure. Hostile fixtures cover all of those shapes, exact matching external
+snapshot edges, alias substitution in both governance directions, quoted
+vulnerable keys, independently vulnerable package/snapshot sections, safe data
+strings and comments, and vulnerable governed edges. The production closure
+contains `brace-expansion@5.0.8` and excludes dev-only
+`brace-expansion@1.1.15`; explicit Next, AJV, and minimatch edges resolve to the
+intended patched versions.
 
 ## Standalone native-runtime proof
 
@@ -116,28 +130,34 @@ outputFileTracingIncludes: {
 ```
 
 Completed against implementation
-`eb1e12969ee3f130939772b6e76ae8cda618dd25`:
+`5455169e5c3560101f2178617568c1795926a26f`:
 
 - frozen install with pnpm 10.34.5: pass
-- lint: pass, 282 files
+- lint: pass, 282 files, no warnings
 - typecheck: pass
-- dependency security tests: 1 file and 7 tests passed
+- dependency security tests: 1 file and 9 tests passed
+- all remaining branch-local tests passed with only the two known cross-PR macOS
+  platform cells excluded; both pass without exclusions in the integrated proof
 - machine-readable production audit: pass, zero vulnerabilities across 378
   production dependencies
 - Next.js 16.2.12 production build: pass
 - `git diff --check`: pass
 - GitHub `verify`: success on exact source head
-  `eb1e12969ee3f130939772b6e76ae8cda618dd25`
+  `5455169e5c3560101f2178617568c1795926a26f`
 - synthetic eight-PR integration commit
-  `76746d98e6a7b220c3abaf4a93dd426236fc2b2b`, tree
-  `058805ee5d6860b760b14657d3ede08735111a91`: frozen pnpm 10.34.5 install,
-  lint on 293 files, strict TypeScript, zero production-audit findings, all 89
-  files and 2,303 tests, and the Next.js 16.2.12 production build passed
+  `470dd990f0078ecca55c4475b4be80cf602c784f`, tree
+  `22c331f96cb46187870d572386b1cab5f7d27504`: frozen pnpm 10.34.5 install,
+  warning-free lint on 293 files, strict TypeScript, zero production-audit
+  findings across 378 dependencies, all 89 files and 2,333 tests, and the
+  Next.js 16.2.12 production build passed
 
 APR round 2 correctly rejected pnpm 10.33, raw-text lockfile assertions,
-unproven production ancestry, and incomplete hostile mutations. The corrected
-implementation closes those source blockers. Round 3 must review this exact
-regenerated patch.
+unproven production ancestry, and incomplete hostile mutations. Round 3
+correctly rejected the protocol blacklist, discarded `npm:` alias identity,
+and structurally incomplete production closure. The strict registry allowlist,
+target-aware governance, object-valued graph validation, package metadata
+requirement, and hostile matching-snapshot matrix close every source blocker.
+Round 4 must review this exact regenerated patch.
 
 ## Release boundary
 
