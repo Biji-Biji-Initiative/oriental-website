@@ -1,6 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import * as Sentry from "@sentry/nextjs";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { preconnect } from "react-dom";
 import { type UseFormReturn, useForm } from "react-hook-form";
@@ -50,6 +51,7 @@ import {
   postVoiceReviewSnapshot,
   type VoiceReviewCredentials,
 } from "@/lib/voice/review-snapshot";
+import { VOICE_HEARTBEAT_INTERVAL_MS } from "@/lib/voice/session-policy";
 import { DEFAULT_VOICE_VARIANT_ID, VOICE_VARIANTS, type VoiceVariantId } from "@/lib/voice/variants";
 import { HandoffPanel } from "./HandoffPanel";
 import { playArmCue, playLiveCue } from "./live-chime";
@@ -71,10 +73,6 @@ import {
 } from "./voice-dialog-copy";
 import { useVoice } from "./voice-state";
 import { readTunerFlag } from "./voice-tuner";
-
-// How often a live call persists a full review snapshot, so state survives even
-// when the final close snapshot is lost to a tab close or network drop.
-const VOICE_HEARTBEAT_INTERVAL_MS = 12_000;
 
 type VoiceAgentDialogProps = {
   open: boolean;
@@ -719,7 +717,16 @@ export function VoiceAgentDialog({
           ...(leadId ? { leadId } : {}),
         }),
         { keepalive: Boolean(overrides.closedAt) },
-      ).catch(() => null);
+      ).catch((error) => {
+        // A missed heartbeat self-heals on the next beat, but a close snapshot
+        // that fails to persist is the session's final state gone for good —
+        // nothing else will ever record why or how it ended. beforeSend already
+        // scrubs the event to type + stacktrace; no PII is at risk here.
+        if (overrides.closedAt) {
+          Sentry.captureException(error instanceof Error ? error : new Error("voice_review_close_snapshot_failed"));
+        }
+        return null;
+      });
     },
     [captured, currentReviewCredentials, nextSnapshotSequence, segment, stateRef, transcript],
   );

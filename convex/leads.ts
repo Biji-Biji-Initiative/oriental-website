@@ -11,6 +11,7 @@ import {
 } from "../lib/data-retention";
 import { summarizeIntakeAttribution } from "../lib/intake-attribution-analytics";
 import { isVoiceAvailabilityFailure } from "../lib/voice/realtime-call-failure";
+import { MIN_ORPHAN_STALE_MS } from "../lib/voice/session-policy";
 import { isEngagedVoiceCaptureSession, summarizeVoiceCaptureFunnel } from "../lib/voice-capture-analytics";
 import type { Doc } from "./_generated/dataModel";
 import { mutation, query } from "./_generated/server";
@@ -824,7 +825,9 @@ export const recordVoiceSession = mutationGeneric({
           : (existing?.leadId ?? snapshot.leadId);
     const submitted = existing?.status === "submitted" || snapshot.status === "submitted" || Boolean(linkedLeadId);
     const submittedAt = existing?.submittedAt ?? snapshot.submittedAt;
+    const connectedAt = existing?.connectedAt ?? snapshot.connectedAt;
     const closedAt = Math.max(existing?.closedAt ?? 0, snapshot.closedAt ?? 0) || undefined;
+    const sessionState = closedAt ? "closed" : connectedAt ? "connected_open" : "preconnected";
     const shouldQueueAutoEval = Boolean(!existing?.autoEvalQueuedAt && snapshot.closeReason && transcript.length > 0);
     const createdAt = existing?.createdAt ?? now;
     const patch = {
@@ -837,6 +840,7 @@ export const recordVoiceSession = mutationGeneric({
       segment: snapshot.segment,
       status: submitted ? "submitted" : snapshot.status,
       connectionStatus: snapshot.connectionStatus,
+      sessionState,
       ...(snapshot.closeReason ? { closeReason: snapshot.closeReason } : {}),
       ...(snapshot.deviceProfile ? { deviceProfile: snapshot.deviceProfile } : {}),
       ...(snapshot.deploymentEnvironment ? { deploymentEnvironment: snapshot.deploymentEnvironment } : {}),
@@ -849,7 +853,7 @@ export const recordVoiceSession = mutationGeneric({
       ...(snapshot.fieldProvenance ? { fieldProvenance: snapshot.fieldProvenance } : {}),
       ...(typeof snapshot.prewarmedAt === "number" ? { prewarmedAt: snapshot.prewarmedAt } : {}),
       ...(typeof snapshot.connectStartedAt === "number" ? { connectStartedAt: snapshot.connectStartedAt } : {}),
-      ...(typeof snapshot.connectedAt === "number" ? { connectedAt: snapshot.connectedAt } : {}),
+      ...(typeof connectedAt === "number" ? { connectedAt } : {}),
       ...(typeof snapshot.firstEventAt === "number" ? { firstEventAt: snapshot.firstEventAt } : {}),
       ...(typeof closedAt === "number" ? { closedAt } : {}),
       captured,
@@ -926,6 +930,27 @@ export const applyDataRetention = mutation({
         capturedEmailNormalized,
         transcript: boundTranscript(session.transcript),
         payloadSafe: true,
+        sessionState: session.closedAt ? "closed" : session.connectedAt ? "connected_open" : "preconnected",
+        retentionExpiresAt: voiceRetentionExpiresAt({
+          createdAt: session.createdAt,
+          ...(typeof session.submittedAt === "number" ? { submittedAt: session.submittedAt } : {}),
+          ...(typeof session.closedAt === "number" ? { closedAt: session.closedAt } : {}),
+          linked: session.status === "submitted" || Boolean(session.leadId),
+        }),
+      });
+    }
+
+    const legacyVoiceState = await ctx.db
+      .query("voiceSessions")
+      .withIndex("by_safe_session_state_updated_at", (query) =>
+        query.eq("payloadSafe", true).eq("sessionState", undefined),
+      )
+      .order("asc")
+      .take(RETENTION_BATCH_LIMITS.legacyVoiceSessions + 1);
+    if (legacyVoiceState.length > RETENTION_BATCH_LIMITS.legacyVoiceSessions) hasMore = true;
+    for (const session of legacyVoiceState.slice(0, RETENTION_BATCH_LIMITS.legacyVoiceSessions)) {
+      await ctx.db.patch(session._id, {
+        sessionState: session.closedAt ? "closed" : session.connectedAt ? "connected_open" : "preconnected",
         retentionExpiresAt: voiceRetentionExpiresAt({
           createdAt: session.createdAt,
           ...(typeof session.submittedAt === "number" ? { submittedAt: session.submittedAt } : {}),
@@ -1032,6 +1057,41 @@ export const applyDataRetention = mutation({
       deleted: { archivedLeads, leadEvents, voiceSessions },
       redacted: { leadTranscripts },
       hasMore,
+    };
+  },
+});
+
+/**
+ * Release migration for the materialized voice-session lifecycle index.
+ * It changes only sessionState on already payload-safe rows. Unsafe legacy
+ * payload normalization and retention scheduling remain separately governed by
+ * applyDataRetention; the release verifier blocks while any such row exists.
+ */
+export const backfillVoiceSessionLifecycle = mutation({
+  args: { ingestSecret: v.string(), limit: v.number() },
+  returns: v.object({ updated: v.number(), hasMore: v.boolean() }),
+  handler: async (ctx, { ingestSecret, limit }) => {
+    requireIngestSecret(ingestSecret);
+    const take = Math.min(Math.max(Math.floor(limit), 1), RETENTION_BATCH_LIMITS.legacyVoiceSessions);
+    const legacyStates = await ctx.db
+      .query("voiceSessions")
+      .withIndex("by_safe_session_state_updated_at", (query) =>
+        query.eq("payloadSafe", true).eq("sessionState", undefined),
+      )
+      .order("asc")
+      .take(take + 1);
+
+    let updated = 0;
+    for (const session of legacyStates.slice(0, take)) {
+      await ctx.db.patch(session._id, {
+        sessionState: session.closedAt ? "closed" : session.connectedAt ? "connected_open" : "preconnected",
+      });
+      updated += 1;
+    }
+
+    return {
+      updated,
+      hasMore: legacyStates.length > take,
     };
   },
 });
@@ -1526,6 +1586,58 @@ export const adminLeadSlaSnapshot = query({
     const unownedBreaches = summarizeSlaBuckets(unownedBuckets, true);
     const failedNotifications = summarizeSlaBuckets([failedNotificationRows]);
     return { generatedAt, activeLeads, unownedBreaches, failedNotifications };
+  },
+});
+
+/**
+ * An indexed connected-open session becomes orphan-eligible only after the
+ * canonical maximum live duration, goodbye grace, and two heartbeat intervals.
+ * It remains visible until a close snapshot changes sessionState or retention
+ * removes the row; there is no narrow lower lookback window to miss.
+ */
+export const adminOrphanedVoiceSessionsSweep = query({
+  args: { ingestSecret: v.string(), maxStaleMs: v.number() },
+  handler: async (ctx, { ingestSecret, maxStaleMs }) => {
+    requireIngestSecret(ingestSecret);
+    const generatedAt = Date.now();
+    const boundedStaleMs = Math.min(Math.max(Math.floor(maxStaleMs), MIN_ORPHAN_STALE_MS), 24 * HOUR_MS);
+    const staleCutoff = generatedAt - boundedStaleMs;
+
+    const candidates = await ctx.db
+      .query("voiceSessions")
+      .withIndex("by_safe_session_state_updated_at", (q) =>
+        q.eq("payloadSafe", true).eq("sessionState", "connected_open").lt("updatedAt", staleCutoff),
+      )
+      .order("asc")
+      .take(SLA_QUERY_BUCKET_LIMIT + 1);
+    const legacyStates = await ctx.db
+      .query("voiceSessions")
+      .withIndex("by_safe_session_state_updated_at", (q) => q.eq("payloadSafe", true).eq("sessionState", undefined))
+      .take(1);
+
+    const legacyPayloads = await ctx.db
+      .query("voiceSessions")
+      .withIndex("by_payload_safe_updated_at", (q) => q.eq("payloadSafe", undefined))
+      .take(1);
+
+    const orphaned = candidates.slice(0, SLA_QUERY_BUCKET_LIMIT).map((row) => ({
+      reviewId: row.reviewId,
+      conversationId: row.conversationId,
+      segment: row.segment,
+      connectedAt: row.connectedAt,
+      updatedAt: row.updatedAt,
+      deploymentEnvironment: row.deploymentEnvironment,
+    }));
+
+    return {
+      generatedAt,
+      migrationPending: legacyPayloads.length > 0 || legacyStates.length > 0,
+      orphaned: {
+        count: orphaned.length,
+        truncated: candidates.length > SLA_QUERY_BUCKET_LIMIT,
+        rows: orphaned,
+      },
+    };
   },
 });
 
