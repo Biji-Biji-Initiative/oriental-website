@@ -9,6 +9,13 @@ function session(overrides: Partial<StitchableSession> & { reviewId: string; upd
   return { conversationId: null, capturedEmailNormalized: null, captured: null, ...overrides };
 }
 
+function permutations<T>(values: T[]): T[][] {
+  if (values.length <= 1) return [values];
+  return values.flatMap((value, index) =>
+    permutations([...values.slice(0, index), ...values.slice(index + 1)]).map((rest) => [value, ...rest]),
+  );
+}
+
 describe("collapseConversations", () => {
   it("keeps every reconnect sharing a nonempty conversation id together", () => {
     const heads = collapseConversations([
@@ -45,7 +52,7 @@ describe("collapseConversations", () => {
         reviewId: "a",
         conversationId: "conv-1",
         updatedAt: 1000,
-        capturedEmailNormalized: " Sam@Carter.com ",
+        capturedEmailNormalized: "sam@carter.com",
       }),
       session({
         reviewId: "b",
@@ -189,32 +196,155 @@ describe("collapseConversations", () => {
   });
 
   it("selects the nearest compatible conversation when several same-email clusters exist", () => {
+    const window = CONVERSATION_STITCH_WINDOW_MS;
     const heads = collapseConversations([
       session({
-        reviewId: "old",
-        conversationId: "conv-old",
+        reviewId: "a-start",
+        conversationId: "conv-a",
         updatedAt: 0,
         capturedEmailNormalized: "same@example.com",
       }),
       session({
-        reviewId: "near",
-        conversationId: "conv-near",
-        updatedAt: 3 * CONVERSATION_STITCH_WINDOW_MS,
+        reviewId: "a-end",
+        conversationId: "conv-a",
+        updatedAt: 6 * window,
+        capturedEmailNormalized: "same@example.com",
+      }),
+      session({
+        reviewId: "b",
+        conversationId: "conv-b",
+        updatedAt: 4.5 * window,
         capturedEmailNormalized: "same@example.com",
       }),
       session({
         reviewId: "resume",
         conversationId: "conv-resume",
-        updatedAt: 3 * CONVERSATION_STITCH_WINDOW_MS + 1000,
+        updatedAt: 5.4 * window,
         capturedEmailNormalized: "same@example.com",
       }),
     ]);
 
     expect(heads).toHaveLength(2);
-    expect(heads.find((head) => head.reviewId === "resume")?.calls.map((call) => call.reviewId)).toEqual([
-      "near",
+    expect(heads.find((head) => head.reviewId === "a-end")?.calls.map((call) => call.reviewId)).toEqual([
+      "a-start",
       "resume",
+      "a-end",
     ]);
+    expect(heads.find((head) => head.reviewId === "b")?.calls.map((call) => call.reviewId)).toEqual(["b"]);
+  });
+
+  it("uses the exact canonical cluster key for an equal-gap tie under every input permutation", () => {
+    const window = CONVERSATION_STITCH_WINDOW_MS;
+    const calls = [
+      session({
+        reviewId: "a-start",
+        conversationId: "conv-a",
+        updatedAt: 0,
+        capturedEmailNormalized: "same@example.com",
+      }),
+      session({
+        reviewId: "a-end",
+        conversationId: "conv-a",
+        updatedAt: 6 * window,
+        capturedEmailNormalized: "same@example.com",
+      }),
+      session({
+        reviewId: "b",
+        conversationId: "conv-b",
+        updatedAt: 4 * window,
+        capturedEmailNormalized: "same@example.com",
+      }),
+      session({
+        reviewId: "bridge",
+        conversationId: "conv-bridge",
+        updatedAt: 5 * window,
+        capturedEmailNormalized: "same@example.com",
+      }),
+    ];
+    const project = (input: StitchableSession[]) =>
+      collapseConversations(input).map((head) => ({
+        head: head.reviewId,
+        calls: head.calls.map((call) => call.reviewId),
+      }));
+    const expected = [
+      { head: "a-end", calls: ["a-start", "bridge", "a-end"] },
+      { head: "b", calls: ["b"] },
+    ];
+
+    for (const permutation of permutations(calls)) expect(project(permutation)).toEqual(expected);
+  });
+
+  it("orders canonically distinct Unicode opaque ids exactly under every permutation", () => {
+    const calls = [
+      session({ reviewId: "é", conversationId: "conv", updatedAt: 1000 }),
+      session({ reviewId: "e\u0301", conversationId: "conv", updatedAt: 1000 }),
+    ];
+
+    for (const permutation of permutations(calls)) {
+      const [head] = collapseConversations(permutation);
+      expect(head?.reviewId).toBe("é");
+      expect(head?.calls.map((call) => call.reviewId)).toEqual(["e\u0301", "é"]);
+    }
+  });
+
+  it("never gives matching raw-only email values identity authority", () => {
+    const heads = collapseConversations([
+      session({
+        reviewId: "raw-a",
+        conversationId: "raw-a",
+        updatedAt: 1000,
+        captured: { email: "same@example.com" },
+      }),
+      session({
+        reviewId: "raw-b",
+        conversationId: "raw-b",
+        updatedAt: 1100,
+        captured: { email: "same@example.com" },
+      }),
+    ]);
+
+    expect(heads).toHaveLength(2);
+  });
+
+  it.each([
+    "a..b@example.com",
+    "a@example..com",
+    "a@example.com\0",
+    " spaced@example.com",
+  ])("never gives matching malformed normalized values identity authority: %j", (capturedEmailNormalized) => {
+    const heads = collapseConversations([
+      session({ reviewId: "bad-a", conversationId: "bad-a", updatedAt: 1000, capturedEmailNormalized }),
+      session({ reviewId: "bad-b", conversationId: "bad-b", updatedAt: 1100, capturedEmailNormalized }),
+    ]);
+
+    expect(heads).toHaveLength(2);
+  });
+
+  it("preserves every original row reference exactly once across all grouping branches", () => {
+    const calls = [
+      session({ reviewId: "explicit-a", conversationId: "explicit", updatedAt: 0 }),
+      session({ reviewId: "explicit-b", conversationId: "explicit", updatedAt: 1 }),
+      session({
+        reviewId: "inferred-a",
+        conversationId: "inferred-a",
+        updatedAt: 10,
+        capturedEmailNormalized: "same@example.com",
+      }),
+      session({
+        reviewId: "inferred-b",
+        conversationId: "inferred-b",
+        updatedAt: 11,
+        capturedEmailNormalized: "same@example.com",
+      }),
+      session({ reviewId: "raw-a", conversationId: "raw-a", updatedAt: 20, captured: { email: "raw@example.com" } }),
+      session({ reviewId: "raw-b", conversationId: "raw-b", updatedAt: 21, captured: { email: "raw@example.com" } }),
+      session({ reviewId: "standalone", updatedAt: 30 }),
+    ];
+
+    const flattened = collapseConversations(calls).flatMap((head) => head.calls);
+    expect(flattened).toHaveLength(calls.length);
+    expect(new Set(flattened).size).toBe(calls.length);
+    for (const call of calls) expect(flattened.filter((candidate) => candidate === call)).toHaveLength(1);
   });
 
   it("is deterministic under input permutations and equal timestamps", () => {

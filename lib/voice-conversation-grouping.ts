@@ -4,6 +4,8 @@
  * heuristic is unit-testable in isolation.
  */
 
+import { canonicalEmailIdentityKey } from "@/lib/email-identity";
+
 // A resume within an hour of the same person's last call reads as the same
 // intake; a fresh call a day later does not. Bounds the email stitch so
 // distinct enquiries by one person are never collapsed together.
@@ -18,8 +20,7 @@ export type StitchableSession = {
 };
 
 export function sessionEmailKey(session: StitchableSession): string {
-  const email = session.capturedEmailNormalized?.trim().toLowerCase() ?? "";
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email) ? email : "";
+  return canonicalEmailIdentityKey(session.capturedEmailNormalized);
 }
 
 /**
@@ -70,12 +71,12 @@ export function collapseConversations<T extends StitchableSession>(sessions: T[]
       const compatible = clusters
         .map((cluster) => ({ cluster, gap: nearestActualCallGap(cluster.calls, unit.calls) }))
         .filter(({ gap }) => gap <= CONVERSATION_STITCH_WINDOW_MS)
-        .sort((left, right) => left.gap - right.gap || left.cluster.key.localeCompare(right.cluster.key));
+        .sort((left, right) => left.gap - right.gap || compareOpaqueIds(left.cluster.key, right.cluster.key));
       const selected = compatible[0]?.cluster;
       if (selected) {
         selected.calls.push(...unit.calls);
         selected.calls.sort(compareSessions);
-        if (unit.key.localeCompare(selected.key) < 0) selected.key = unit.key;
+        if (compareOpaqueIds(unit.key, selected.key) < 0) selected.key = unit.key;
       } else {
         clusters.push({ calls: [...unit.calls], key: unit.key });
       }
@@ -98,7 +99,8 @@ function consistentUnitEmail<T extends StitchableSession>(calls: T[]) {
 }
 
 function compareSessions(left: StitchableSession, right: StitchableSession) {
-  return left.updatedAt - right.updatedAt || left.reviewId.localeCompare(right.reviewId);
+  const byTimestamp = left.updatedAt < right.updatedAt ? -1 : left.updatedAt > right.updatedAt ? 1 : 0;
+  return byTimestamp || compareOpaqueIds(left.reviewId, right.reviewId);
 }
 
 function compareUnits<T extends StitchableSession>(
@@ -106,7 +108,11 @@ function compareUnits<T extends StitchableSession>(
   right: { key: string; calls: T[] },
 ) {
   const byFirstCall = compareSessions(left.calls[0] as T, right.calls[0] as T);
-  return byFirstCall || left.key.localeCompare(right.key);
+  return byFirstCall || compareOpaqueIds(left.key, right.key);
+}
+
+function compareOpaqueIds(left: string, right: string) {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 function nearestActualCallGap<T extends StitchableSession>(left: T[], right: T[]) {
