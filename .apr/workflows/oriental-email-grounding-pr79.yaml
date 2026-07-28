@@ -1,0 +1,34 @@
+name: oriental-email-grounding-pr79
+description: Exact-tree voice email-grounding review for PR 79
+
+documents:
+  readme: .apr/evidence/oriental-email-grounding-pr79.md
+  spec: .apr/specs/oriental-email-grounding-closure.md
+  implementation: .apr/evidence/oriental-email-grounding-pr79.patch
+
+oracle:
+  model: "gpt-5.6-sol"
+
+rounds:
+  output_dir: .apr/rounds/oriental-email-grounding-pr79
+  impl_every_n: 1
+
+template: |
+  Perform an adversarial exact-tree voice data-integrity review of implementation
+  head 87202cc4ec4cd9e017434eab68865fc8d79b9325 using the complete patch.
+  Confirm that widening approximate email evidence to recent turns cannot accept
+  a superseded, literal-mismatched, embedded, or invented address; spoken-digit
+  normalization cannot confuse homophones or alter stored values; and strict
+  mode, typed authority, correction freshness, and bounded history remain
+  intact. Do not waive exact-head CI or staging voice proof. End with
+  `VERDICT: MERGE` or `VERDICT: DO NOT MERGE` on its own final line.
+
+template_with_impl: |
+  Perform an adversarial exact-tree voice data-integrity review of implementation
+  head 87202cc4ec4cd9e017434eab68865fc8d79b9325 using the complete patch.
+  Confirm that widening approximate email evidence to recent turns cannot accept
+  a superseded, literal-mismatched, embedded, or invented address; spoken-digit
+  normalization cannot confuse homophones or alter stored values; and strict
+  mode, typed authority, correction freshness, and bounded history remain
+  intact. Do not waive exact-head CI or staging voice proof. End with
+  `VERDICT: MERGE` or `VERDICT: DO NOT MERGE` on its own final line.
