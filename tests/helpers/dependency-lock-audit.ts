@@ -74,35 +74,106 @@ export function governedSectionProblems(source: string, section: "packages" | "s
   return problems;
 }
 
-function dependencyMaps(snapshot: unknown) {
-  if (!isRecord(snapshot)) return [];
-  return ["dependencies", "optionalDependencies"]
-    .map((key) => snapshot[key])
-    .filter((value): value is UnknownRecord => isRecord(value));
+function dependencyMaps(snapshot: unknown, location: string) {
+  if (!isRecord(snapshot)) throw new Error(`${location} must be an object-valued graph node`);
+  return ["dependencies", "optionalDependencies"].flatMap((key) => {
+    const value = snapshot[key];
+    if (value === undefined) return [];
+    if (!isRecord(value)) throw new Error(`${location}.${key} must be an object-valued dependency map`);
+    return [value];
+  });
 }
 
-function dependencyVersion(reference: unknown) {
-  if (typeof reference !== "string") return undefined;
-  if (!reference.startsWith("npm:")) return reference.split("(", 1)[0] ?? "";
-  const identity = packageIdentity(reference.slice(4));
-  return identity?.version ?? "";
+type RegistryDependencyReference = {
+  declaredName: string;
+  snapshotKey: string;
+  targetName: string;
+  targetVersion: string;
+};
+
+function isRegistryPackageName(name: string) {
+  return /^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*)$/iu.test(name);
+}
+
+function splitRegistryIdentity(value: string) {
+  const delimiter = value.startsWith("@") ? value.indexOf("@", value.indexOf("/") + 1) : value.indexOf("@");
+  if (delimiter <= 0) return undefined;
+  return { name: value.slice(0, delimiter), reference: value.slice(delimiter + 1) };
+}
+
+function validRegistrySuffix(suffix: string) {
+  if (!suffix) return true;
+  const groupHasContent: boolean[] = [];
+  for (const character of suffix) {
+    if (character === "(") groupHasContent.push(false);
+    else if (character === ")") {
+      if (groupHasContent.length === 0 || groupHasContent.pop() !== true) return false;
+    } else {
+      if (!/[a-z0-9@/._=+-]/iu.test(character) || groupHasContent.length === 0) return false;
+      groupHasContent[groupHasContent.length - 1] = true;
+    }
+  }
+  return groupHasContent.length === 0;
+}
+
+function parseRegistryVersion(reference: string) {
+  const suffixIndex = reference.indexOf("(");
+  const version = suffixIndex < 0 ? reference : reference.slice(0, suffixIndex);
+  const suffix = suffixIndex < 0 ? "" : reference.slice(suffixIndex);
+  if (!valid(version) || !validRegistrySuffix(suffix)) return undefined;
+  return { version, versionWithSuffix: `${version}${suffix}` };
+}
+
+function registryDependencyReference(name: string, reference: unknown): RegistryDependencyReference | undefined {
+  if (typeof reference !== "string" || !isRegistryPackageName(name)) return undefined;
+  if (reference.startsWith("npm:")) {
+    const identity = splitRegistryIdentity(reference.slice(4));
+    if (!identity || !isRegistryPackageName(identity.name)) return undefined;
+    const parsedVersion = parseRegistryVersion(identity.reference);
+    return parsedVersion
+      ? {
+          declaredName: name,
+          snapshotKey: `${identity.name}@${parsedVersion.versionWithSuffix}`,
+          targetName: identity.name,
+          targetVersion: parsedVersion.version,
+        }
+      : undefined;
+  }
+  const parsedVersion = parseRegistryVersion(reference);
+  return parsedVersion
+    ? {
+        declaredName: name,
+        snapshotKey: `${name}@${parsedVersion.versionWithSuffix}`,
+        targetName: name,
+        targetVersion: parsedVersion.version,
+      }
+    : undefined;
 }
 
 export function governedSnapshotEdgeProblems(source: string) {
   const { snapshots } = parseLockfile(source);
   const problems: string[] = [];
   for (const [snapshotKey, snapshot] of Object.entries(snapshots)) {
-    for (const dependencies of dependencyMaps(snapshot)) {
+    for (const dependencies of dependencyMaps(snapshot, `snapshots.${snapshotKey}`)) {
       for (const [name, reference] of Object.entries(dependencies)) {
-        const version = dependencyVersion(reference);
-        if (!version) {
-          if (governedResolution(name)) {
-            problems.push(`snapshots.${snapshotKey} has a non-string governed dependency edge for ${name}`);
-          }
+        const parsed = registryDependencyReference(name, reference);
+        if (!parsed) {
+          problems.push(`snapshots.${snapshotKey} has a non-registry dependency edge for ${name}`);
           continue;
         }
-        const problem = governedVersionProblem(name, version, `snapshots.${snapshotKey}`);
-        if (problem) problems.push(problem);
+        if (governedResolution(name) && parsed.targetName !== name) {
+          problems.push(`snapshots.${snapshotKey} aliases governed ${name} to different package ${parsed.targetName}`);
+        }
+        const declaredProblem = governedVersionProblem(name, parsed.targetVersion, `snapshots.${snapshotKey}`);
+        if (declaredProblem) problems.push(declaredProblem);
+        if (parsed.targetName !== name) {
+          const targetProblem = governedVersionProblem(
+            parsed.targetName,
+            parsed.targetVersion,
+            `snapshots.${snapshotKey} alias target`,
+          );
+          if (targetProblem) problems.push(targetProblem);
+        }
       }
     }
   }
@@ -123,23 +194,28 @@ function importerReference(value: unknown) {
   return typeof value.version === "string" ? value.version : undefined;
 }
 
-function resolveSnapshotKey(name: string, reference: string, snapshots: UnknownRecord) {
-  if (/^(?:file|link|workspace):/u.test(reference)) {
-    throw new Error(`cannot audit external production dependency ${name}@${reference}`);
-  }
-  const candidate = reference.startsWith("npm:") ? reference.slice(4) : `${name}@${reference}`;
-  if (!Object.hasOwn(snapshots, candidate)) {
+function resolveSnapshotKey(name: string, reference: string, packages: UnknownRecord, snapshots: UnknownRecord) {
+  const parsed = registryDependencyReference(name, reference);
+  if (!parsed) throw new Error(`cannot audit non-registry production dependency ${name}@${reference}`);
+  const snapshot = snapshots[parsed.snapshotKey];
+  if (!Object.hasOwn(snapshots, parsed.snapshotKey)) {
     throw new Error(`production dependency edge ${name}@${reference} has no snapshot`);
   }
-  return candidate;
+  if (!isRecord(snapshot)) throw new Error(`snapshot ${parsed.snapshotKey} must be an object-valued graph node`);
+  const packageKey = `${parsed.targetName}@${parsed.targetVersion}`;
+  if (!Object.hasOwn(packages, packageKey)) {
+    throw new Error(`production snapshot ${parsed.snapshotKey} has no package metadata ${packageKey}`);
+  }
+  if (!isRecord(packages[packageKey])) {
+    throw new Error(`packages.${packageKey} must be an object-valued graph node`);
+  }
+  return parsed.snapshotKey;
 }
 
 export function collectProductionSnapshotKeys(source: string) {
-  const { importers, snapshots } = parseLockfile(source);
+  const { importers, packages, snapshots } = parseLockfile(source);
   const root = requiredRecord(importers, ".");
-  const roots = ["dependencies", "optionalDependencies"]
-    .map((key) => root[key])
-    .filter((value): value is UnknownRecord => isRecord(value));
+  const roots = dependencyMaps(root, "importers..");
   const queue: Array<[string, string]> = [];
   for (const dependencies of roots) {
     for (const [name, value] of Object.entries(dependencies)) {
@@ -152,10 +228,10 @@ export function collectProductionSnapshotKeys(source: string) {
   const visited = new Set<string>();
   while (queue.length > 0) {
     const [name, reference] = queue.pop() as [string, string];
-    const key = resolveSnapshotKey(name, reference, snapshots);
+    const key = resolveSnapshotKey(name, reference, packages, snapshots);
     if (visited.has(key)) continue;
     visited.add(key);
-    for (const dependencies of dependencyMaps(snapshots[key])) {
+    for (const dependencies of dependencyMaps(snapshots[key], `snapshots.${key}`)) {
       for (const [childName, childReference] of Object.entries(dependencies)) {
         if (typeof childReference !== "string") {
           throw new Error(`snapshot ${key} has a non-string production dependency edge for ${childName}`);
@@ -181,7 +257,7 @@ export function governedProductionProblems(source: string) {
 export function snapshotDependencyReference(source: string, snapshotKey: string, dependencyName: string) {
   const { snapshots } = parseLockfile(source);
   const snapshot = snapshots[snapshotKey];
-  for (const dependencies of dependencyMaps(snapshot)) {
+  for (const dependencies of dependencyMaps(snapshot, `snapshots.${snapshotKey}`)) {
     const reference = dependencies[dependencyName];
     if (typeof reference === "string") return reference;
   }
