@@ -97,10 +97,10 @@ Against source implementation commit
   `590807c5e9cbd4d179423d77a376df26787e1d86`.
 
 The synthetic eight-PR integration commit
-`ed34b5e8c1639af5b97bb834de417b5d03c1acc6`, tree
-`861800a67e9af8b49a76480ba2cebb812680346a`, passed frozen pnpm 10.34.5
-installation, warning-free lint on 293 files, strict TypeScript, a zero-finding
-production audit across 378 dependencies, all 89 test files and 2,336 tests,
+`94c4457a37820d5cfbac220ac4881c19cc296005`, tree
+`2236e4bf2c93545431c38484ab2326b48cb9dec3`, passed frozen pnpm 10.34.5
+installation, warning-free lint on 295 files, strict TypeScript, a zero-finding
+production audit across 378 dependencies, all 89 test files and 2,337 tests,
 and the Next.js 16.2.12 production build.
 
 APR round 1 correctly rejected candidate-turn correction bypass, exact-path

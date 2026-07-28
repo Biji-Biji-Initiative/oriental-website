@@ -29,8 +29,8 @@ template: |
   switch language rejects the approximation. Exercise one/1, two/2, samone/sam1,
   and to/too/for through the full matcher. Confirm stored values are never
   rewritten. Confirm exact-source-head GitHub CI and combined-tree admission at
-  integration commit ed34b5e8c1639af5b97bb834de417b5d03c1acc6, tree
-  861800a67e9af8b49a76480ba2cebb812680346a, with all 89 files and 2,336 tests.
+  integration commit 94c4457a37820d5cfbac220ac4881c19cc296005, tree
+  2236e4bf2c93545431c38484ab2326b48cb9dec3, with all 89 files and 2,337 tests.
   Do not waive exact-head CI, combined-tree admission, or staging voice proof.
   End with
   `VERDICT: MERGE` or `VERDICT: DO NOT MERGE` on its own final line.
@@ -51,8 +51,8 @@ template_with_impl: |
   switch language rejects the approximation. Exercise one/1, two/2, samone/sam1,
   and to/too/for through the full matcher. Confirm stored values are never
   rewritten. Confirm exact-source-head GitHub CI and combined-tree admission at
-  integration commit ed34b5e8c1639af5b97bb834de417b5d03c1acc6, tree
-  861800a67e9af8b49a76480ba2cebb812680346a, with all 89 files and 2,336 tests.
+  integration commit 94c4457a37820d5cfbac220ac4881c19cc296005, tree
+  2236e4bf2c93545431c38484ab2326b48cb9dec3, with all 89 files and 2,337 tests.
   Do not waive exact-head CI, combined-tree admission, or staging voice proof.
   End with
   `VERDICT: MERGE` or `VERDICT: DO NOT MERGE` on its own final line.
