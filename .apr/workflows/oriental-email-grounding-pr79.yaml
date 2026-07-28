@@ -15,7 +15,7 @@ rounds:
 
 template: |
   Perform an adversarial exact-source voice data-integrity review of
-  implementation commit 918805adf3bada7c64847475b00567ec63c7b324 using
+  implementation commit 590807c5e9cbd4d179423d77a376df26787e1d86 using
   the complete source-only patch. Recheck every round-one blocker: the delayed
   approximate candidate turn itself must reject explicit negation,
   replacement, mixed literal selection, and exact-path reopening; newer typed
@@ -28,13 +28,16 @@ template: |
   candidate-relative scratch/ignore/retract/take-back/cancel/replace/change/
   switch language rejects the approximation. Exercise one/1, two/2, samone/sam1,
   and to/too/for through the full matcher. Confirm stored values are never
-  rewritten. Do not waive exact-head CI, combined-tree admission, or staging
-  voice proof. End with
+  rewritten. Confirm exact-source-head GitHub CI and combined-tree admission at
+  integration commit 470dd990f0078ecca55c4475b4be80cf602c784f, tree
+  22c331f96cb46187870d572386b1cab5f7d27504, with all 89 files and 2,333 tests.
+  Do not waive exact-head CI, combined-tree admission, or staging voice proof.
+  End with
   `VERDICT: MERGE` or `VERDICT: DO NOT MERGE` on its own final line.
 
 template_with_impl: |
   Perform an adversarial exact-source voice data-integrity review of
-  implementation commit 918805adf3bada7c64847475b00567ec63c7b324 against
+  implementation commit 590807c5e9cbd4d179423d77a376df26787e1d86 against
   the attached complete source-only patch. Recheck every round-one blocker:
   the delayed approximate candidate turn itself must reject explicit negation,
   replacement, mixed literal selection, and exact-path reopening; newer typed
@@ -47,6 +50,9 @@ template_with_impl: |
   candidate-relative scratch/ignore/retract/take-back/cancel/replace/change/
   switch language rejects the approximation. Exercise one/1, two/2, samone/sam1,
   and to/too/for through the full matcher. Confirm stored values are never
-  rewritten. Do not waive exact-head CI, combined-tree admission, or staging
-  voice proof. End with
+  rewritten. Confirm exact-source-head GitHub CI and combined-tree admission at
+  integration commit 470dd990f0078ecca55c4475b4be80cf602c784f, tree
+  22c331f96cb46187870d572386b1cab5f7d27504, with all 89 files and 2,333 tests.
+  Do not waive exact-head CI, combined-tree admission, or staging voice proof.
+  End with
   `VERDICT: MERGE` or `VERDICT: DO NOT MERGE` on its own final line.
