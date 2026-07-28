@@ -22,12 +22,15 @@ runtime copy.
    request and must never become the admin session-signing key.
 5. Password login must sign method `password`, force role `viewer`, expire after
    thirty minutes, and authorize only a dedicated PII-free aggregate service and
-   same-origin logout. The aggregate Convex query and Next adapter must return a
-   fixed metrics DTO and must never return or materialize raw leads, emails,
-   transcripts, voice details, events, analytics/queues, or mutations in a
-   password-authorized web path. Strong review-token login must sign method
-   `review`, retain the configured interactive role, and expire after twelve
-   hours.
+   same-origin logout. The aggregate Convex query and Next adapter must expose a
+   fixed metrics DTO and must never return raw leads, emails, transcripts, voice
+   details, events, analytics/queues, or mutation capability to Next or the
+   password principal. Trusted Convex execution may process a bounded set of
+   payload-safe rows in memory solely to calculate those aggregates; that
+   residual compute and inference exposure is explicitly accepted and must not
+   be represented as a pre-aggregated counter architecture. Strong review-token
+   login must sign method `review`, retain the configured interactive role, and
+   expire after twelve hours.
 6. `ADMIN_REVIEW_TOKEN` must remain at least 32 characters in production and
    distinct from the ops and privacy bearer credentials. Production validation
    and runtime authentication must also reject any configuration where the
@@ -60,11 +63,11 @@ runtime copy.
 ## Acceptance evidence
 
 - Unit tests prove distinct password/review sessions, dedicated aggregate-only
-  materialization with runtime DTO projection, raw customer-data and mutation
-  rejection, bearer rejection, pre-existing-cookie all-bearer collision
-  failure, forged-mint rejection, malformed-HMAC rejection, both-session
-  stale-key rejection, invalid-Authorization no-fallback, and distinct trusted
-  rate-limit identities.
+  trusted-Convex computation with strict Convex and Next DTO validation, raw
+  customer-data and mutation rejection, bearer rejection, pre-existing-cookie
+  all-bearer collision failure, forged-mint rejection, malformed-HMAC rejection,
+  both-session stale-key rejection, invalid-Authorization no-fallback, and
+  distinct trusted rate-limit identities.
 - AST tests prove login-only verifier/mint authority and direct structural
   wrapping for every non-login HTTP export across the exact canonical route
   inventory, including hostile fixtures.

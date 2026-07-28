@@ -3,14 +3,14 @@
 ## Immutable implementation identity
 
 The source implementation under review is the exact commit
-`36d7a40ebfb81d8a1018ba69de10bae410f253ba` on base
+`cf083667a2e2fd54d478edbc8906ef0f4adf0d19` on base
 `e3bb6c333cbf4bf8e52456a1b5144f556f50636a`.
 
-- Implementation tree: `79ed6665eb8e5170f5a6625737fc4855a638984f`
+- Implementation tree: `a593231700e3cbc1f38281ca6c7108b89f14fbc0`
 - Authoritative source-only patch:
   `.apr/evidence/oriental-admin-password-security.patch`
 - Patch SHA-256:
-  `732a17232aa07d37a94c66eb51cf7e88e25090437b13b1f2c8b9f0d29bda963b`
+  `f68b58b75df50b559316fd7ae0d778c098f54297d784cdd4f286fab32b746825`
 - The patch contains all thirty-eight changed non-APR source, test, release, UI,
   environment-example, and documentation files.
 
@@ -37,9 +37,13 @@ The password is retained only with these compensating controls:
   `session.logout`;
 - its page and API call only a dedicated Convex aggregate query whose
   Convex-to-Next return type contains `generatedAt` and a fixed numeric metrics
-  DTO; the Next adapter explicitly projects every field again at runtime;
-- it cannot materialize or read customer records, email addresses, transcripts,
-  raw lead or voice evidence, event data, analytics detail, or queues;
+  DTO; an explicit Convex return validator and an independent strict Next-side
+  runtime schema reject missing, extra, nonnumeric, nonfinite, negative,
+  fractional-count, and out-of-range-percentage values;
+- bounded payload-safe lead and voice rows are processed only inside trusted
+  Convex execution to calculate aggregates; raw customer records, email
+  addresses, transcripts, raw lead or voice evidence, event data, analytics
+  detail, and queues never cross into Next or the password principal;
 - it cannot mutate, bulk-assign, archive, export, follow up, run evals, execute
   SLA/retention jobs, or delete privacy data;
 - raw customer data and interactive actions require signing out and completing a
@@ -47,6 +51,13 @@ The password is retained only with these compensating controls:
   dedicated bearer principals;
 - the supplied password is rejected by every `Authorization: Bearer` path;
 - the password and its HMAC never sign a session.
+
+Because the historical password is potentially known, the owner explicitly
+accepts disclosure of the permitted aggregate values and their changes over
+time, plus repeatable bounded Convex compute after reauthentication. Thirty-
+minute expiry does not restore password secrecy or prevent a holder from logging
+in again. This acceptance does not extend to raw records, PII, transcripts,
+mutations, bearer authority, or signing authority.
 
 The strong `ADMIN_REVIEW_TOKEN` login signs `method=review`, retains the
 configured interactive role, and expires after twelve hours. It remains the
@@ -77,13 +88,15 @@ credential, password HMAC, review token, cookie, or request body.
 ## Login-only and bearer call graph
 
 `verifyAdminLoginCredential` is the only function that reads and verifies the
-password HMAC. A successful result carries a module-private `Symbol` proof that
-cannot be structurally forged outside the auth module; the session mint function
-checks that proof at runtime before considering actor, principal, role, or
-credential provenance. It requires an explicit timestamp, exhaustively handles
-exactly `interactive_password` and `review_bearer`, and owns no default
-identity. Its private signer cannot be imported. Both verifier and mint API have
-one production import and invocation, in the login route.
+password HMAC. A successful result is keyed to canonical claims in a module-
+private `WeakMap`; the session mint retrieves those claims from the exact
+returned object, deletes them before minting, and never trusts caller-visible
+fields. Object spread, mutation, symbol discovery, proxies, structural forgery,
+and replay therefore cannot relabel or reuse the verified authority. It
+requires an explicit timestamp, exhaustively handles exactly
+`interactive_password` and `review_bearer`, and owns no default identity. Its
+private signer cannot be imported. Both verifier and mint API have one
+production import and invocation, in the login route.
 
 `verifyAdminBearerToken` is private and considers only:
 
@@ -105,11 +118,16 @@ TypeScript module resolver rather than searching strings. It proves:
   imports, CommonJS property and object exports, `Object.assign`, extra login
   methods, wrong-but-valid permissions, and manual positional auth all fail
   hostile fixtures;
-- the runtime scan covers app, components, Convex, lib, pages, scripts, src, and
-  root Next entrypoints while excluding tests and generated declarations;
-- exactly one production import and call each of
+- effective TypeScript module exports are compared with the canonical method map;
+- star and namespace re-exports, default login handlers, every CommonJS export
+  mechanism, and the full hostile matrix across all supported extensions fail;
+- all non-test tsconfig sources plus JavaScript sources in any top-level
+  directory are scanned, legacy Pages admin handlers are part of the route
+  inventory, and checker-resolved symbol calls catch alias and bridge modules;
+- exactly one production import and checker-resolved call each of
   `verifyAdminLoginCredential` and `createAdminLoginSession`, both in login;
-- `verifyAdminBearerToken` is not exported and has no outside production call.
+- `verifyAdminBearerToken` and the private signer are absent from the auth
+  module's effective exports and have no outside production call.
 
 Comments, dead string literals, unused imports, aliases, alternate methods, and
 alternate route extensions cannot satisfy this contract.
@@ -151,21 +169,23 @@ runtime state.
 ## Exact implementation verification
 
 Completed against implementation commit
-`36d7a40ebfb81d8a1018ba69de10bae410f253ba`:
+`cf083667a2e2fd54d478edbc8906ef0f4adf0d19`:
 
 - `pnpm lint`: pass, 283 files on the source branch
-- `pnpm typecheck`: pass
-- focused auth, route-governance, aggregate DTO, Convex adapter, login, and
-  secret suite: 6 files and 71 tests passed
+- strict application and Convex TypeScript: pass
+- focused auth, route-governance, aggregate DTO, Convex adapter, and login
+  suites: 5 files and 55 tests passed
 - `pnpm build`: pass, including all admin route handlers
-- `git diff --check`: pass
-- GitHub `verify`: success on exact remote PR head
-  `36d7a40ebfb81d8a1018ba69de10bae410f253ba`
+- source-only `git diff --check`: pass
+- GitHub `verify`: success on exact remote source head
+  `cf083667a2e2fd54d478edbc8906ef0f4adf0d19`
 - synthetic integration commit
-  `22d9d905bab9ac93095c1e24ac6c062ae9cf97da`, containing all eight exact PR
-  heads and both reviewed conflict resolutions, passed lint on 292 files,
-  strict TypeScript, production audit with zero findings, all 89 test files and
-  2,278 tests, and the Next.js 16.2.12 production build
+  `76746d98e6a7b220c3abaf4a93dd426236fc2b2b`, tree
+  `058805ee5d6860b760b14657d3ede08735111a91`, containing all eight exact PR
+  source/evidence heads, passed frozen pnpm 10.34.5 install, lint on 293 files,
+  strict TypeScript, production audit with zero findings across 378 production
+  dependencies, all 89 test files and 2,303 tests, and the Next.js 16.2.12
+  production build
 
 The focused suite proves:
 
@@ -175,7 +195,8 @@ The focused suite proves:
 - password sessions authorize only aggregate metrics and same-origin logout;
 - the password page, aggregate API, and fixed adapter call only
   `getAdminAggregateMetrics`; raw dashboard and lead-table mocks throw if
-  touched, and malicious extra Convex fields are stripped;
+  touched, and missing, extra, malformed, nonfinite, fractional-count, and
+  out-of-range Convex DTO fields are rejected;
 - the server-rendered password page never calls the raw lead-table query and
   renders no raw sentinel data;
 - password rejection as bearer auth;
@@ -190,18 +211,22 @@ The focused suite proves:
   distinct proxy-owned identities retain independent buckets;
 - the ninth attempt is rejected;
 - whole-production, TypeScript-resolved exact permission and login authority;
-- module-private mint-proof forgery rejection;
+- module-private one-time `WeakMap` mint-claim enforcement rejects object spread,
+  field mutation, symbol discovery, proxies, structural forgery, and replay;
 - managed environment mutation and parity readback.
 
 The exact-head GitHub verification and the final synthetic eight-PR integration
 are complete. Final merge-head and deployed-runtime gates remain.
 
-APR round 4 correctly rejected broad dashboard materialization, mutable or
-destructured handler blind spots, globally-valid but route-wrong permissions,
-forgeable login identities, incomplete negative tests, unproven live
-documentation claims, and missing exact-head/integration admission. The
-implementation and evidence above close every source and pre-merge blocker.
-Live secret and deployment checks remain post-merge gates and are not waived.
+APR rounds 4 and 5 correctly rejected broad dashboard materialization, mutable
+or destructured handler blind spots, globally-valid but route-wrong
+permissions, forgeable or copyable login identities, incomplete effective-export
+and complete-runtime route governance, missing strict runtime DTO validation,
+incomplete collision cross-products, unproven live documentation claims, and
+missing exact-head/integration admission. The implementation and evidence above
+close every source and pre-merge blocker. Round 6 must review this exact
+regenerated patch. Live secret and deployment checks remain post-merge gates
+and are not waived.
 
 ## Mandatory post-merge gates
 
