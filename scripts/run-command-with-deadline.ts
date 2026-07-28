@@ -22,39 +22,51 @@ if (
 }
 
 const detached = process.platform !== "win32";
-const child = spawn(command, commandArgs, {
-  detached,
-  env: process.env,
-  stdio: "inherit",
-});
-let childExited = false;
-let terminationIssued = false;
 type CancellationSignal = "SIGHUP" | "SIGINT" | "SIGTERM";
-let terminationReason: "deadline" | CancellationSignal | null = null;
-
-function terminateChildGroup() {
-  if (childExited || terminationIssued) return;
-  terminationIssued = true;
-  if (detached && child.pid) {
-    try {
-      process.kill(-child.pid, "SIGKILL");
-      return;
-    } catch {
-      // Fall through to the direct-child kill when no process group exists.
-    }
-  }
-  child.kill("SIGKILL");
-}
+type TerminationReason = "deadline" | CancellationSignal;
 
 const cancellationExitCodes: Record<CancellationSignal, number> = {
   SIGHUP: 129,
   SIGINT: 130,
   SIGTERM: 143,
 };
+const processGroupSettleMs = 1_000;
+let child: ReturnType<typeof spawn> | null = null;
+let childGroupPid: number | null = null;
+let leaderExited = false;
+let finished = false;
+let terminationIssued = false;
+let terminationReason: TerminationReason | null = null;
+let deadline: ReturnType<typeof setTimeout> | null = null;
+
+function processGroupExists() {
+  if (!detached || childGroupPid === null) return false;
+  try {
+    process.kill(-childGroupPid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== "ESRCH";
+  }
+}
+
+function terminateChildGroup() {
+  if (terminationIssued || (!child && childGroupPid === null)) return;
+  terminationIssued = true;
+  if (childGroupPid !== null) {
+    try {
+      process.kill(-childGroupPid, "SIGKILL");
+      return;
+    } catch {
+      // Fall through to the direct-child kill when no process group exists.
+    }
+  }
+  if (child && !leaderExited) child.kill("SIGKILL");
+}
+
 const cancellationHandlers = new Map<CancellationSignal, () => void>();
 for (const signal of Object.keys(cancellationExitCodes) as CancellationSignal[]) {
   const handler = () => {
-    if (childExited || terminationReason) return;
+    if (finished || terminationReason) return;
     terminationReason = signal;
     process.stderr.write(`Release command cancelled by ${signal}; terminating its process group.\n`);
     terminateChildGroup();
@@ -66,22 +78,48 @@ for (const signal of Object.keys(cancellationExitCodes) as CancellationSignal[])
 const supervisorExitHandler = () => terminateChildGroup();
 process.once("exit", supervisorExitHandler);
 
-const deadline = setTimeout(() => {
-  if (childExited || terminationReason) return;
+function finish(exitCode: number) {
+  if (finished) return;
+  finished = true;
+  if (deadline) clearTimeout(deadline);
+  process.removeListener("exit", supervisorExitHandler);
+  for (const [signal, handler] of cancellationHandlers) process.removeListener(signal, handler);
+  process.exitCode = exitCode;
+}
+
+function delay(milliseconds: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function settleProcessGroupAfterLeaderExit() {
+  if (!processGroupExists()) return false;
+  process.stderr.write("Release command leader exited while descendants remained; terminating its process group.\n");
+  terminateChildGroup();
+  const settleDeadline = Date.now() + processGroupSettleMs;
+  while (processGroupExists() && Date.now() < settleDeadline) await delay(20);
+  if (processGroupExists()) {
+    process.stderr.write(
+      `Release command process group remained after ${processGroupSettleMs} ms kill-settle interval.\n`,
+    );
+  }
+  return true;
+}
+
+child = spawn(command, commandArgs, {
+  detached,
+  env: process.env,
+  stdio: "inherit",
+});
+childGroupPid = detached && child.pid ? child.pid : null;
+if (terminationReason) terminateChildGroup();
+
+deadline = setTimeout(() => {
+  if (finished || terminationReason) return;
   terminationReason = "deadline";
   process.stderr.write(`Command exceeded the ${timeoutMs} ms release deadline.\n`);
   terminateChildGroup();
 }, timeoutMs);
 deadline.unref();
-
-function finish(exitCode: number) {
-  if (childExited) return;
-  childExited = true;
-  clearTimeout(deadline);
-  process.removeListener("exit", supervisorExitHandler);
-  for (const [signal, handler] of cancellationHandlers) process.removeListener(signal, handler);
-  process.exitCode = exitCode;
-}
 
 child.once("error", (error) => {
   process.stderr.write(`Failed to start release command: ${error.message}\n`);
@@ -89,18 +127,26 @@ child.once("error", (error) => {
 });
 
 child.once("exit", (code, signal) => {
-  if (terminationReason === "deadline") {
-    finish(124);
-    return;
-  }
-  if (terminationReason) {
-    finish(cancellationExitCodes[terminationReason]);
-    return;
-  }
-  if (signal) {
-    process.stderr.write(`Release command ended from signal ${signal}.\n`);
-    finish(1);
-    return;
-  }
-  finish(code ?? 1);
+  leaderExited = true;
+  void (async () => {
+    const descendantsSurvivedLeader = await settleProcessGroupAfterLeaderExit();
+    if (terminationReason === "deadline") {
+      finish(124);
+      return;
+    }
+    if (terminationReason) {
+      finish(cancellationExitCodes[terminationReason]);
+      return;
+    }
+    if (descendantsSurvivedLeader) {
+      finish(1);
+      return;
+    }
+    if (signal) {
+      process.stderr.write(`Release command ended from signal ${signal}.\n`);
+      finish(1);
+      return;
+    }
+    finish(code ?? 1);
+  })();
 });

@@ -10,6 +10,10 @@ const grandchildProgram =
   'const fs=require("node:fs");setTimeout(()=>fs.writeFileSync(process.argv[1],"mutated"),1000);setInterval(()=>{},1000)';
 const childProgram =
   'const {spawn}=require("node:child_process");const fs=require("node:fs");const child=spawn(process.execPath,["-e",process.argv[3],process.argv[1]],{stdio:"ignore"});child.unref();fs.writeFileSync(process.argv[2],String(process.pid));setInterval(()=>{},1000)';
+const startupSignalProgram =
+  'const {spawn}=require("node:child_process");const fs=require("node:fs");const child=spawn(process.execPath,["-e",process.argv[3],process.argv[1]],{stdio:"ignore"});child.unref();process.kill(process.ppid,process.argv[4]);fs.writeFileSync(process.argv[2],String(process.pid));setInterval(()=>{},1000)';
+const exitingLeaderProgram =
+  'const {spawn}=require("node:child_process");const fs=require("node:fs");const child=spawn(process.execPath,["-e",process.argv[3],process.argv[1]],{stdio:"ignore"});child.unref();fs.writeFileSync(process.argv[2],String(process.pid))';
 
 function waitForPath(path: string, timeoutMs: number) {
   return new Promise<void>((resolve, reject) => {
@@ -147,6 +151,106 @@ describe("release command process deadline", () => {
               } catch {
                 // The detached child group already exited.
               }
+            }
+          }
+        }
+      }
+    },
+  );
+
+  it.each([
+    ["SIGHUP", 129],
+    ["SIGINT", 130],
+    ["SIGTERM", 143],
+  ] as const)("arms %s cancellation before spawning the detached command", async (signal, expectedCode) => {
+    if (process.platform === "win32") return;
+    const directory = mkdtempSync(join(tmpdir(), `oriental-release-startup-${signal.toLowerCase()}-`));
+    temporaryDirectories.push(directory);
+    const marker = join(directory, "external-mutation");
+    const ready = join(directory, "leader-started");
+    const supervisor = spawn(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        supervisorScript,
+        "--timeout-ms",
+        "5000",
+        "--",
+        process.execPath,
+        "-e",
+        startupSignalProgram,
+        marker,
+        ready,
+        grandchildProgram,
+        signal,
+      ],
+      { stdio: ["ignore", "ignore", "pipe"] },
+    );
+    let stderr = "";
+    supervisor.stderr?.setEncoding("utf8");
+    supervisor.stderr?.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+
+    try {
+      await expect(waitForExit(supervisor, 3_000)).resolves.toEqual({ code: expectedCode, signal: null });
+      expect(stderr).toContain(`Release command cancelled by ${signal}`);
+      await new Promise((resolve) => setTimeout(resolve, 1_100));
+      expect(existsSync(marker)).toBe(false);
+    } finally {
+      if (existsSync(ready)) {
+        const childGroupPid = Number(readFileSync(ready, "utf8"));
+        if (Number.isInteger(childGroupPid) && childGroupPid > 1) {
+          try {
+            process.kill(-childGroupPid, "SIGKILL");
+          } catch {
+            // The detached child group already exited.
+          }
+        }
+      }
+    }
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "rejects a zero-exiting leader and kills its surviving same-group grandchild",
+    async () => {
+      const directory = mkdtempSync(join(tmpdir(), "oriental-release-leader-exit-"));
+      temporaryDirectories.push(directory);
+      const marker = join(directory, "external-mutation");
+      const ready = join(directory, "leader-started");
+      try {
+        const result = spawnSync(
+          process.execPath,
+          [
+            "--import",
+            "tsx",
+            supervisorScript,
+            "--timeout-ms",
+            "5000",
+            "--",
+            process.execPath,
+            "-e",
+            exitingLeaderProgram,
+            marker,
+            ready,
+            grandchildProgram,
+          ],
+          { encoding: "utf8", timeout: 5_000 },
+        );
+
+        expect(result.status, result.stderr).toBe(1);
+        expect(result.stderr).toContain("Release command leader exited while descendants remained");
+        await new Promise((resolve) => setTimeout(resolve, 1_100));
+        expect(existsSync(marker)).toBe(false);
+      } finally {
+        if (existsSync(ready)) {
+          const childGroupPid = Number(readFileSync(ready, "utf8"));
+          if (Number.isInteger(childGroupPid) && childGroupPid > 1) {
+            try {
+              process.kill(-childGroupPid, "SIGKILL");
+            } catch {
+              // The detached child group already exited.
             }
           }
         }
