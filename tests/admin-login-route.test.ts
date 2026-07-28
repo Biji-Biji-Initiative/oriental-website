@@ -5,7 +5,7 @@ import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { POST } from "@/app/api/admin/login/route";
 import { AdminLoginForm } from "@/components/admin/AdminLoginForm";
-import { adminCookieName } from "@/lib/server/admin-auth";
+import { adminCookieName, verifyAdminSessionCookie } from "@/lib/server/admin-auth";
 import { resetRateLimitBucketsForTest } from "@/lib/server/security";
 
 const originalEnv = process.env;
@@ -48,10 +48,24 @@ describe("admin login route", () => {
     expect(acceptedToken.status).toBe(200);
     expect(acceptedToken.headers.get("set-cookie")).toContain(`${adminCookieName}=`);
     expect(acceptedToken.headers.get("set-cookie")).toContain("Path=/;");
+    expect(verifyAdminSessionCookie(sessionValue(acceptedToken))).toMatchObject({
+      ok: true,
+      credential: "review_session",
+      role: "operator",
+    });
 
+    const passwordStartedAt = Date.now();
     const acceptedPassword = await POST(loginRequest(interactivePassword, "203.0.113.8"));
     expect(acceptedPassword.status).toBe(200);
     expect(acceptedPassword.headers.get("set-cookie")).toContain(`${adminCookieName}=`);
+    const passwordSession = verifyAdminSessionCookie(sessionValue(acceptedPassword));
+    expect(passwordSession).toMatchObject({
+      ok: true,
+      credential: "password_session",
+      role: "viewer",
+    });
+    expect(passwordSession.ok && passwordSession.expiresAt).toBeGreaterThanOrEqual(passwordStartedAt + 30 * 60 * 1000);
+    expect(passwordSession.ok && passwordSession.expiresAt).toBeLessThanOrEqual(Date.now() + 30 * 60 * 1000);
   });
 
   it("rate-limits repeated attempts by the proxy-owned identity even when the client spoofs earlier hops", async () => {
@@ -96,6 +110,11 @@ describe("admin login route", () => {
     expect(form).toHaveAttribute("action", "/api/admin/login");
   });
 });
+
+function sessionValue(response: Response) {
+  const cookie = response.headers.get("set-cookie")?.split(";", 1)[0];
+  return cookie?.slice(`${adminCookieName}=`.length);
+}
 
 function loginRequest(token: string, ip: string, origin = "http://localhost") {
   return new NextRequest("http://localhost/api/admin/login", {

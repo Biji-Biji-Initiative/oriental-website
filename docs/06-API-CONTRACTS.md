@@ -446,11 +446,17 @@ Production errors:
 
 Accepts only a same-origin JSON request and rate-limits attempts by trusted
 proxy identity. It validates either `ADMIN_REVIEW_TOKEN` or the human password
-represented by the domain-separated `ADMIN_REVIEW_PASSWORD_HMAC`, then sets the
+represented by the domain-separated `ADMIN_REVIEW_PASSWORD_HMAC`, then sets a
 principal-bound signed `oriental_admin` HTTP-only, SameSite=Lax cookie with
-`Path=/`, so the same actor and configured role authenticate both the `/admin`
-UI and ordinary `/api/admin/*` routes. The human password is never accepted as
-bearer auth and never signs sessions. Production cookies also set `Secure`.
+`Path=/`. A password login signs `method=password`, forces role `viewer`, and
+expires after thirty minutes. It can read the dashboard, leads, and voice
+sessions but cannot mutate leads, follow up, run evals, or invoke maintenance or
+privacy operations. A strong review-token login signs `method=review`, retains
+the configured interactive role, and expires after twelve hours. The human
+password is never accepted as bearer auth and never signs sessions; historical
+repository exposure means it is treated as potentially known. Production
+cookies also set `Secure`. Successful login telemetry records only bounded
+actor, method, role, and expiry metadata, never the supplied credential.
 
 ### `GET /api/admin/review`
 

@@ -252,13 +252,16 @@ Admin review and observability:
 - `/admin/session-review` uses a same-origin, rate-limited login that accepts the
   configured `ADMIN_REVIEW_TOKEN` or the interactive password represented by
   `ADMIN_REVIEW_PASSWORD_HMAC`. The password HMAC is domain-separated and keyed
-  by `ADMIN_REVIEW_TOKEN`; plaintext is never committed or materialized in the
-  runtime environment. The password is never valid bearer auth, while the
-  high-entropy token remains the bearer and signed-session key. The session
-  embeds the configured principal and role, so role changes do not silently
-  elevate an existing cookie. Cookie mutations require same-origin JSON
-  requests. Scheduled maintenance uses the distinct bearer-only
-  `OPS_AUTOMATION_TOKEN`, while privacy deletion uses `PRIVACY_ADMIN_TOKEN`.
+  by `ADMIN_REVIEW_TOKEN`; plaintext is absent from the current tree and runtime
+  configuration, while historical repository exposure means the password is
+  treated as potentially known. The password is never valid bearer auth. It
+  issues a thirty-minute, viewer-only session; the strong token issues the
+  configured interactive role for twelve hours and remains the bearer and only
+  signed-session key. The session signs actor, role, login method, and expiry, so
+  provenance survives issuance and role changes do not silently elevate an
+  existing cookie. Cookie mutations require same-origin JSON requests. Scheduled
+  maintenance uses the distinct bearer-only `OPS_AUTOMATION_TOKEN`, while
+  privacy deletion uses `PRIVACY_ADMIN_TOKEN`.
 - Sentry uses `@sentry/nextjs` config files and `withSentryConfig` in
   `next.config.ts`.
 - Production ops alerts use `OPS_ALERT_SLACK_CHANNEL_ID`; the current smoke

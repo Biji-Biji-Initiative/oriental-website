@@ -48,8 +48,11 @@ cannot affect the runtime image.
   compared with Infisical before release. The human admin password MUST exist
   only as the domain-separated `ADMIN_REVIEW_PASSWORD_HMAC` keyed by the strong
   `ADMIN_REVIEW_TOKEN`; it is interactive-login-only, never a bearer or session
-  signing credential. Rotate the HMAC with the token and deploy both managed
-  environments together.
+  signing credential, and historical repository exposure means it is treated as
+  potentially known. Its signed session MUST prove method `password`, role
+  `viewer`, and a thirty-minute expiry. The review token retains the configured
+  role and twelve-hour expiry. Rotate the HMAC with the token and deploy both
+  managed environments together.
 - The staging deployer MUST stream the complete native staging Infisical export
   over the encrypted fleet connection and atomically converge the host `.env`.
   The production deployer MUST reconcile and read back every approved runtime

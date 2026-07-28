@@ -6,6 +6,7 @@ import {
   isSameOriginJsonRequest,
   verifyAdminLoginCredential,
 } from "@/lib/server/admin-auth";
+import { logInfo } from "@/lib/server/logger";
 import { checkRateLimit, hashIp, noStoreJson, rateLimitResponseHeaders, requestIp } from "@/lib/server/security";
 
 export const runtime = "nodejs";
@@ -38,6 +39,12 @@ export async function POST(request: NextRequest) {
   }
 
   const cookie = createAdminSessionCookie(Date.now(), auth);
+  logInfo("admin_login.succeeded", {
+    actor: auth.actor,
+    credential: auth.credential,
+    expiresAt: auth.expiresAt,
+    role: auth.role,
+  });
   return noStoreJson(
     { ok: true },
     {

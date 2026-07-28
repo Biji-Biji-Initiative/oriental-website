@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { globSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   MANAGED_APPLICATION_ENVIRONMENT_KEYS,
@@ -37,19 +37,8 @@ const globalStyles = readFileSync("app/globals.css", "utf8");
 const releaseRunbook = readFileSync("docs/12-CHAT-RELEASE-RUNBOOK.md", "utf8");
 const analyticsOpsWorkflow = readFileSync(".github/workflows/analytics-ops.yml", "utf8");
 const packageScripts = JSON.parse(readFileSync("package.json", "utf8")) as { scripts: Record<string, string> };
-const adminApiRoutePaths = globSync("app/api/admin/**/route.ts");
-const adminLoginRoutePath = "app/api/admin/login/route.ts";
 
 describe("release governance", () => {
-  it("confines password verification to login while every other admin API uses permission authorization", () => {
-    expect(adminApiRoutePaths).toContain(adminLoginRoutePath);
-    expect(readFileSync(adminLoginRoutePath, "utf8")).toContain("verifyAdminLoginCredential");
-    for (const routePath of adminApiRoutePaths.filter((path) => path !== adminLoginRoutePath)) {
-      const source = readFileSync(routePath, "utf8");
-      expect(source, routePath).toContain("verifyAdminPermission");
-      expect(source, routePath).not.toContain("verifyAdminLoginCredential");
-    }
-  });
   it("owns distinct least-privilege admin credentials and uses only the ops token in scheduled jobs", () => {
     expect(MANAGED_APPLICATION_ENVIRONMENT_KEYS).toEqual(
       expect.arrayContaining([

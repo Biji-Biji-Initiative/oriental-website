@@ -13,10 +13,17 @@ import { readEnv } from "@/lib/env";
 export const adminCookieName = "oriental_admin";
 
 const sessionTtlMs = 12 * 60 * 60 * 1000;
+const passwordSessionTtlMs = 30 * 60 * 1000;
 const adminPasswordHmacDomain = "oriental-admin-password:v1\0";
-const adminSessionHmacDomain = "oriental-admin-session:v2\0";
+const adminSessionHmacDomain = "oriental-admin-session:v3\0";
 const unsafeMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
-type AdminCredential = "interactive_password" | "review_bearer" | "session" | "ops_bearer" | "privacy_bearer";
+type AdminCredential =
+  | "interactive_password"
+  | "review_bearer"
+  | "password_session"
+  | "review_session"
+  | "ops_bearer"
+  | "privacy_bearer";
 export type AdminAuthState =
   | {
       ok: true;
@@ -38,19 +45,28 @@ export function verifyAdminLoginCredential(credential: string | null | undefined
       ? "interactive_password"
       : null;
   if (!method) return { ok: false, reason: "invalid" };
+  const identity = configuredAdminIdentity();
+  const passwordLogin = method === "interactive_password";
   return {
     ok: true,
-    ...configuredAdminIdentity(),
+    actor: identity.actor,
     credential: method,
-    expiresAt: Date.now() + sessionTtlMs,
+    expiresAt: Date.now() + (passwordLogin ? passwordSessionTtlMs : sessionTtlMs),
     principal: "interactive",
+    role: passwordLogin ? "viewer" : identity.role,
   };
 }
 
-export function createAdminSessionCookie(now = Date.now(), identity = configuredAdminIdentity()) {
-  const expiresAt = now + sessionTtlMs;
+export function createAdminSessionCookie(
+  now = Date.now(),
+  identity: { actor: string; credential?: AdminCredential; role: AdminRole } = configuredAdminIdentity(),
+) {
+  const passwordSession = identity.credential === "interactive_password";
+  const expiresAt = now + (passwordSession ? passwordSessionTtlMs : sessionTtlMs);
   const actor = Buffer.from(identity.actor, "utf8").toString("base64url");
-  const payload = `v2.${expiresAt}.${identity.role}.${actor}`;
+  const role = passwordSession ? "viewer" : identity.role;
+  const method = passwordSession ? "password" : "review";
+  const payload = `v3.${expiresAt}.${role}.${actor}.${method}`;
   return `${payload}.${sign(payload)}`;
 }
 
@@ -59,21 +75,35 @@ export function verifyAdminSessionCookie(value: string | null | undefined): Admi
   if (!secret) return { ok: false, reason: "unconfigured" };
   if (!value) return { ok: false, reason: "missing" };
   const parts = value.split(".");
-  if (parts.length !== 5 || parts[0] !== "v2") return { ok: false, reason: "invalid" };
-  const payload = parts.slice(0, 4).join(".");
-  if (!constantTimeEqual(parts[4] ?? "", sign(payload))) return { ok: false, reason: "invalid" };
+  if (parts.length !== 6 || parts[0] !== "v3") return { ok: false, reason: "invalid" };
+  const payload = parts.slice(0, 5).join(".");
+  if (!constantTimeEqual(parts[5] ?? "", sign(payload))) return { ok: false, reason: "invalid" };
   const expiresAt = Number(parts[1]);
   if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return { ok: false, reason: "invalid" };
   const role = parts[2] ?? "";
   const actorEncoded = parts[3] ?? "";
-  if (!isAdminRole(role) || actorEncoded.length === 0 || actorEncoded.length > 108) {
+  const method = parts[4];
+  if (
+    !isAdminRole(role) ||
+    actorEncoded.length === 0 ||
+    actorEncoded.length > 108 ||
+    (method !== "password" && method !== "review") ||
+    (method === "password" && role !== "viewer")
+  ) {
     return { ok: false, reason: "invalid" };
   }
   const actor = Buffer.from(actorEncoded, "base64url").toString("utf8");
   if (!isValidAdminActor(actor) || Buffer.from(actor, "utf8").toString("base64url") !== actorEncoded) {
     return { ok: false, reason: "invalid" };
   }
-  return { ok: true, actor, credential: "session", expiresAt, principal: "interactive", role };
+  return {
+    ok: true,
+    actor,
+    credential: method === "password" ? "password_session" : "review_session",
+    expiresAt,
+    principal: "interactive",
+    role,
+  };
 }
 
 export function verifyAdminRequest(request: Request): AdminAuthState {
@@ -90,13 +120,17 @@ export function verifyAdminPermission(request: Request, permission: AdminPermiss
   if (!auth.ok) return auth;
   if (!hasAdminPermission(auth.role, permission, auth.principal)) return { ok: false, reason: "forbidden" };
   if (
-    auth.credential === "session" &&
+    isSessionCredential(auth.credential) &&
     unsafeMethods.has(request.method.toUpperCase()) &&
     !isSameOriginJsonRequest(request)
   ) {
     return { ok: false, reason: "csrf" };
   }
   return auth;
+}
+
+function isSessionCredential(credential: AdminCredential) {
+  return credential === "password_session" || credential === "review_session";
 }
 
 export function adminAuthFailureStatus(auth: Extract<AdminAuthState, { ok: false }>) {

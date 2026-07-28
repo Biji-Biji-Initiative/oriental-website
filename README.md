@@ -212,12 +212,16 @@ During local testing, run `pnpm voice:debug` after a call to inspect the latest 
 The internal review surface lives at `/admin/session-review`. Its same-origin,
 rate-limited login accepts either the configured `ADMIN_REVIEW_TOKEN` or the
 human password whose domain-separated HMAC is stored in
-`ADMIN_REVIEW_PASSWORD_HMAC`. The plaintext password is never committed or
-stored in runtime configuration, and it is never accepted as bearer auth.
-`ADMIN_REVIEW_TOKEN` remains the high-entropy bearer credential and session
-signing key; rotate the password HMAC whenever that token rotates. The signed
-HTTP-only admin cookie is bound to the configured `ADMIN_REVIEW_ROLE` principal
-and reads recent Convex `leads` plus `voiceSessions` snapshots. Its default
+`ADMIN_REVIEW_PASSWORD_HMAC`. The plaintext is absent from the current tree and
+runtime configuration, but historical repository exposure means the password is
+treated as potentially known. It is never accepted as bearer auth. A password
+login receives a signed, provenance-bound, viewer-only session for thirty
+minutes; it can read the dashboard, leads, and voice evidence but cannot mutate
+leads, follow up, run evals, or invoke maintenance/privacy operations. A strong
+review-token login receives the configured interactive role for twelve hours.
+`ADMIN_REVIEW_TOKEN` remains the high-entropy bearer credential and the only
+session-signing key; rotate the password HMAC whenever that token rotates. The
+HTTP-only cookie signs the actor, role, login method, and expiry. Its default
 Overview is the executive command layer: full-dataset enquiry, assignment, SLA,
 delivery, and qualification KPIs; a ranked next-action queue; stage and
 data-readiness health; account, repeat-contact, source, routing, and Reka quality

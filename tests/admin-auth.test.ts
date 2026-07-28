@@ -40,28 +40,60 @@ describe("admin auth helpers", () => {
 
   it("validates login credentials with distinct provenance and signed session cookies", () => {
     expect(verifyAdminLoginCredential("bad-token")).toMatchObject({ ok: false, reason: "invalid" });
-    expect(verifyAdminLoginCredential(adminReviewToken)).toMatchObject({
+    const reviewLogin = verifyAdminLoginCredential(adminReviewToken);
+    expect(reviewLogin).toMatchObject({
       ok: true,
       actor: "Interactive operator",
       credential: "review_bearer",
       principal: "interactive",
       role: "operator",
     });
-    expect(verifyAdminLoginCredential(interactivePassword)).toMatchObject({
+    const passwordLogin = verifyAdminLoginCredential(interactivePassword);
+    expect(passwordLogin).toMatchObject({
       ok: true,
       actor: "Interactive operator",
       credential: "interactive_password",
       principal: "interactive",
+      role: "viewer",
+    });
+
+    const now = Date.now();
+    const reviewCookie = createAdminSessionCookie(now, reviewLogin.ok ? reviewLogin : undefined);
+    expect(verifyAdminSessionCookie(reviewCookie)).toMatchObject({
+      ok: true,
+      credential: "review_session",
+      expiresAt: now + 12 * 60 * 60 * 1000,
       role: "operator",
     });
-
-    const cookie = createAdminSessionCookie();
-    expect(verifyAdminSessionCookie(cookie)).toMatchObject({ ok: true });
+    const passwordCookie = createAdminSessionCookie(now, passwordLogin.ok ? passwordLogin : undefined);
+    expect(verifyAdminSessionCookie(passwordCookie)).toMatchObject({
+      ok: true,
+      credential: "password_session",
+      expiresAt: now + 30 * 60 * 1000,
+      role: "viewer",
+    });
 
     const request = new Request("http://localhost/api/admin/review", {
-      headers: { cookie: `${adminCookieName}=${cookie}` },
+      headers: { cookie: `${adminCookieName}=${passwordCookie}` },
     });
-    expect(verifyAdminRequest(request)).toMatchObject({ ok: true });
+    expect(verifyAdminRequest(request)).toMatchObject({
+      ok: true,
+      credential: "password_session",
+      role: "viewer",
+    });
+    expect(
+      verifyAdminPermission(
+        new Request("http://localhost/api/admin/leads/lead-1", {
+          method: "PATCH",
+          headers: {
+            cookie: `${adminCookieName}=${passwordCookie}`,
+            "content-type": "application/json",
+            origin: "http://localhost",
+          },
+        }),
+        "leads.update",
+      ),
+    ).toEqual({ ok: false, reason: "forbidden" });
   });
 
   it("keeps the interactive password out of bearer authentication and fails closed on invalid HMAC configuration", () => {
@@ -130,7 +162,7 @@ describe("admin auth helpers", () => {
     expect(verifyAdminSessionCookie(cookie)).toMatchObject({
       ok: true,
       actor: "Read only reviewer",
-      credential: "session",
+      credential: "review_session",
       principal: "interactive",
       role: "viewer",
     });
@@ -209,7 +241,7 @@ describe("admin auth helpers", () => {
         new Request("http://localhost/api/admin/leads/lead-1", { method: "PATCH", headers }),
         "leads.update",
       ),
-    ).toMatchObject({ ok: true, credential: "session" });
+    ).toMatchObject({ ok: true, credential: "review_session" });
     expect(
       verifyAdminPermission(
         new Request("http://localhost/api/admin/leads/lead-1", {
@@ -242,6 +274,6 @@ describe("admin auth helpers", () => {
         }),
         "leads.update",
       ),
-    ).toMatchObject({ ok: true, credential: "session" });
+    ).toMatchObject({ ok: true, credential: "review_session" });
   });
 });

@@ -147,12 +147,17 @@ Secret contract is enforced by `scripts/check-secrets.ts`.
 
 Admin authority is split across a human login and three distinct managed
 bearer credentials. `ADMIN_REVIEW_PASSWORD_HMAC` is the domain-separated
-HMAC-SHA256 of the human password keyed by `ADMIN_REVIEW_TOKEN`; the plaintext
-password is never committed or materialized in Coolify. The same-origin,
-rate-limited login accepts that password or `ADMIN_REVIEW_TOKEN`, but only the
-high-entropy token is valid bearer auth and signs sessions. `ADMIN_REVIEW_ROLE`
-and `ADMIN_REVIEW_ACTOR` define the interactive principal.
-`OPS_AUTOMATION_TOKEN` is bearer-only and can run only eval, SLA, and retention
+HMAC-SHA256 of the human password keyed by `ADMIN_REVIEW_TOKEN`; plaintext is
+absent from the current tree and Coolify configuration, while historical
+repository exposure means the password is treated as potentially known. The
+same-origin, rate-limited login accepts that password or `ADMIN_REVIEW_TOKEN`,
+but only the high-entropy token is valid bearer auth or signs sessions. Password
+login produces a signed viewer-only session for thirty minutes; review-token
+login produces the configured interactive role for twelve hours. The cookie
+signs login method, actor, role, and expiry, and successful login telemetry
+records that bounded provenance. `ADMIN_REVIEW_ROLE` and `ADMIN_REVIEW_ACTOR`
+define the strong-token interactive principal. `OPS_AUTOMATION_TOKEN` is
+bearer-only and can run only eval, SLA, and retention
 jobs; `PRIVACY_ADMIN_TOKEN` is bearer-only and can run only verified privacy
 deletion. Production preflight rejects a missing or malformed password HMAC and
 missing, short, or duplicate bearer credentials. The scheduled GitHub Actions
