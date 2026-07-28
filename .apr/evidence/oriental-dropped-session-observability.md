@@ -4,7 +4,7 @@
 
 PR #82's source range begins after PR #79 source commit
 `75f42e3205ac65f50e0a76bd7a58a2b651726ad2`, which is an ancestor of current
-PR #79 head `2025f4a186b486457e5b79d699b6a98169603dd9`; PR #79 must merge first.
+PR #79 head `4c08b7c1223b7873d759f68e4836d71d68b9ee77`; PR #79 must merge first.
 The exact source implementation under review is:
 
 - implementation commit:
@@ -134,12 +134,12 @@ Against implementation commit
 - exact-source-head GitHub `verify`: success on
   `f6c102ade261512888ec88638900d86184e3b250`;
 - synthetic eight-PR integration commit
-  `c7847c452eee6b1ee870470fd4ef3a338ea4d851`, tree
-  `5c870160636d620e18b25958daa86d1770ab05fa`, containing every current PR
-  source/evidence head, passed frozen pnpm 10.34.5 install, lint on 293 files,
-  strict TypeScript, production audit with zero findings across 378 production
-  dependencies, all 89 test files and 2,307 tests, and the Next.js 16.2.12
-  production build.
+  `470dd990f0078ecca55c4475b4be80cf602c784f`, tree
+  `22c331f96cb46187870d572386b1cab5f7d27504`, containing every current PR
+  source/evidence head, passed frozen pnpm 10.34.5 install, warning-free lint on
+  293 files, strict TypeScript, production audit with zero findings across 378
+  production dependencies, all 89 test files and 2,333 tests, and the Next.js
+  16.2.12 production build.
 
 APR rounds 2 and 3 correctly rejected the omitted unsafe-legacy completion
 population, data-changing email/transcript/retention rewrite, missing hard

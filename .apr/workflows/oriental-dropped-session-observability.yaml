@@ -35,8 +35,8 @@ template: |
   immediate startup-signal, and zero-exiting-leader hostile tests. Both web
   deploy entrypoints must fail before external mutation unless Convex is
   deployed, migrated, and queryable. Confirm exact-source-head CI and combined
-  commit c7847c452eee6b1ee870470fd4ef3a338ea4d851, tree
-  5c870160636d620e18b25958daa86d1770ab05fa, with 89 files and 2,307 tests.
+  commit 470dd990f0078ecca55c4475b4be80cf602c784f, tree
+  22c331f96cb46187870d572386b1cab5f7d27504, with 89 files and 2,333 tests.
   Also confirm client failure reporting stays PII-free and only ops automation
   can invoke the SLA route. End with `VERDICT: MERGE` or
   `VERDICT: DO NOT MERGE` on its own final line.
@@ -64,8 +64,8 @@ template_with_impl: |
   zero-exiting-leader hostile tests. Both web deploy entrypoints must fail before
   external mutation unless Convex is deployed, migrated, and queryable. Confirm
   exact-source-head CI and combined commit
-  c7847c452eee6b1ee870470fd4ef3a338ea4d851, tree
-  5c870160636d620e18b25958daa86d1770ab05fa, with 89 files and 2,307 tests.
+  470dd990f0078ecca55c4475b4be80cf602c784f, tree
+  22c331f96cb46187870d572386b1cab5f7d27504, with 89 files and 2,333 tests.
   Also confirm client failure reporting stays PII-free and only ops automation
   can invoke the SLA route. End with `VERDICT: MERGE` or
   `VERDICT: DO NOT MERGE` on its own final line.
