@@ -136,7 +136,8 @@ Against implementation commit
 - synthetic eight-PR integration commit
   `1ee96d3357a1fab01490a943abc6ed89d71c023a`, tree
   `46db3784f044be67e5292b53f72a38d23105ab7c`, containing every current PR
-  source/evidence head, passed frozen pnpm 10.34.5 install, warning-free lint on
+  implementation source head (later descendants are APR-only), passed frozen
+  pnpm 10.34.5 install, warning-free lint on
   293 files, strict TypeScript, production audit with zero findings across 378
   production dependencies, all 89 test files and 2,336 tests, and the Next.js
   16.2.12 production build.
