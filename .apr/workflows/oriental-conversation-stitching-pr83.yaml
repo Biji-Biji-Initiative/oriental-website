@@ -1,0 +1,36 @@
+name: oriental-conversation-stitching-pr83
+description: Exact-tree privacy and grouping review for resumed voice calls
+
+documents:
+  readme: .apr/evidence/oriental-conversation-stitching-pr83.md
+  spec: .apr/specs/oriental-conversation-stitching.md
+  implementation: .apr/evidence/oriental-conversation-stitching-pr83.patch
+
+oracle:
+  model: "gpt-5.6-sol"
+
+rounds:
+  output_dir: .apr/rounds/oriental-conversation-stitching-pr83
+  impl_every_n: 1
+
+template: |
+  Perform an adversarial exact-tree privacy and data-integrity review of
+  conversation-grouping implementation head
+  840b4de90dd072479ab2a2a513ce996be73fc67a. Confirm that explicit
+  conversation IDs remain authoritative; inferred grouping requires the same
+  normalized email and a strict sixty-minute bound; anonymous or different-email
+  calls never stitch; ordering is deterministic; every call remains inspectable;
+  and no persisted record is mutated. Do not waive exact-head CI or final
+  staging verification. End with `VERDICT: MERGE` or
+  `VERDICT: DO NOT MERGE` on its own final line.
+
+template_with_impl: |
+  Perform an adversarial exact-tree privacy and data-integrity review of
+  conversation-grouping implementation head
+  840b4de90dd072479ab2a2a513ce996be73fc67a. Confirm that explicit
+  conversation IDs remain authoritative; inferred grouping requires the same
+  normalized email and a strict sixty-minute bound; anonymous or different-email
+  calls never stitch; ordering is deterministic; every call remains inspectable;
+  and no persisted record is mutated. Do not waive exact-head CI or final
+  staging verification. End with `VERDICT: MERGE` or
+  `VERDICT: DO NOT MERGE` on its own final line.
