@@ -14,7 +14,7 @@ const topLevelDomainPattern = /^[a-z]{2,63}$/;
 export function canonicalEmailIdentityKey(value: string | null | undefined) {
   if (!value || containsWhitespaceOrControl(value)) return "";
   const email = normalizeStoredEmail(value);
-  if (email.length < 3 || email.length > 180) return "";
+  if (email !== value || email.length < 3 || email.length > 180) return "";
 
   const at = email.indexOf("@");
   if (at <= 0 || at !== email.lastIndexOf("@") || at === email.length - 1) return "";
