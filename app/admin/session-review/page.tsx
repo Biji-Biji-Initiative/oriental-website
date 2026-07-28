@@ -34,6 +34,7 @@ import {
 } from "@/lib/server/convex";
 import { isBenignVoiceError, type VoiceRuntimeError } from "@/lib/voice/realtime-events";
 import { publicLeadUtm } from "@/lib/voice/submission-evidence";
+import { collapseConversations } from "@/lib/voice-conversation-grouping";
 
 export const dynamic = "force-dynamic";
 
@@ -3316,29 +3317,6 @@ function voiceSessionAnchorId(reviewId: string) {
 }
 
 type ConversationHead = VoiceSessionRow & { calls: VoiceSessionRow[] };
-
-/**
- * Collapse call rows into one entry per conversation, so a dropped-and-resumed
- * intake is reviewed as a single conversation instead of several. Legacy rows
- * without a conversationId stand alone (keyed by reviewId). The latest call
- * heads the entry; every call in the group is kept for per-call inspection.
- */
-function collapseConversations(sessions: VoiceSessionRow[]): ConversationHead[] {
-  const groups = new Map<string, VoiceSessionRow[]>();
-  for (const session of sessions) {
-    const key = session.conversationId ?? session.reviewId;
-    const list = groups.get(key);
-    if (list) list.push(session);
-    else groups.set(key, [session]);
-  }
-  const heads: ConversationHead[] = [];
-  for (const group of groups.values()) {
-    const calls = [...group].sort((a, b) => a.updatedAt - b.updatedAt);
-    const head = calls[calls.length - 1] as VoiceSessionRow;
-    heads.push({ ...head, calls });
-  }
-  return heads.sort((a, b) => b.updatedAt - a.updatedAt);
-}
 
 /**
  * Render a conversation's transcript. A single-call conversation shows one
