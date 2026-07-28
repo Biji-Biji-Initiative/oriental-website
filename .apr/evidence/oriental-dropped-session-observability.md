@@ -134,11 +134,11 @@ Against implementation commit
 - exact-source-head GitHub `verify`: success on
   `f6c102ade261512888ec88638900d86184e3b250`;
 - synthetic eight-PR integration commit
-  `470dd990f0078ecca55c4475b4be80cf602c784f`, tree
-  `22c331f96cb46187870d572386b1cab5f7d27504`, containing every current PR
+  `1ee96d3357a1fab01490a943abc6ed89d71c023a`, tree
+  `46db3784f044be67e5292b53f72a38d23105ab7c`, containing every current PR
   source/evidence head, passed frozen pnpm 10.34.5 install, warning-free lint on
   293 files, strict TypeScript, production audit with zero findings across 378
-  production dependencies, all 89 test files and 2,333 tests, and the Next.js
+  production dependencies, all 89 test files and 2,336 tests, and the Next.js
   16.2.12 production build.
 
 APR rounds 2 and 3 correctly rejected the omitted unsafe-legacy completion
