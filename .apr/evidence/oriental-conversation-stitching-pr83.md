@@ -3,15 +3,15 @@
 ## Immutable implementation identity
 
 - source implementation commit:
-  `267756841dcbef362c5d741ed80240c885d88479`
+  `fe713f8282331ac6cd06d4b705535c5293dd4bc5`
 - base:
   `e3bb6c333cbf4bf8e52456a1b5144f556f50636a`
 - implementation tree:
-  `75405539423958eec5e4a8192705bd4b12bee42f`
+  `7c969936f4cd3ae85935fece6cbb0ae7a8fa3245`
 - complete source-only patch:
   `.apr/evidence/oriental-conversation-stitching-pr83.patch`
 - patch SHA-256:
-  `d8ee0f379c0807a3989236723a91c6919fbd705c47a7ef7565fb45beb2f6b022`
+  `d6e7ab143a0cae2c87a8420f928ead4cf9f710fb94c3c5c92565ed9baad9bdd4`
 
 The source range changes only the admin page, a conservative email-identity
 helper, the pure grouping module, and its unit tests. Earlier APR evidence
@@ -34,10 +34,12 @@ disjoint `conversation:` and `review:` namespaces, so:
 
 Cross-ID inference uses only `capturedEmailNormalized`. Raw
 `captured.email`, blank values, and malformed values have no authority. The
-identity helper deliberately accepts only conservative canonical ASCII
-addresses: it rejects whitespace and controls, multiple `@` signs, invalid
-local characters, leading/trailing/consecutive local dots, invalid or empty
-domain labels, consecutive domain dots, and non-letter or out-of-range TLDs.
+identity helper deliberately accepts only conservative, byte-canonical ASCII
+addresses: normalization must return the exact stored value, so case-foldable,
+trim-recoverable, or otherwise normalizable values have no inference authority.
+It also rejects whitespace and controls, multiple `@` signs, invalid local
+characters, leading/trailing/consecutive local dots, invalid or empty domain
+labels, consecutive domain dots, and non-letter or out-of-range TLDs.
 Valid-but-unusual internationalized addresses remain separate by design because
 a false negative is safer than joining two customers. Every call in an explicit
 unit must carry the same identity key; a missing, malformed, non-canonical, or
@@ -72,39 +74,45 @@ helper; authentication, serialization, Convex, and API behavior are unchanged.
 ## Verification evidence
 
 Against source implementation commit
-`267756841dcbef362c5d741ed80240c885d88479`:
+`fe713f8282331ac6cd06d4b705535c5293dd4bc5`:
 
-- `pnpm lint`: passed, 283 files on macOS and canonical Linux;
-- strict TypeScript: passed on macOS and canonical Linux;
-- focused grouping plus data-payload suite: 2 files and 25 tests passed;
-  the grouping file alone passed all 21 hostile tests on both platforms;
-- production Next.js 16.2.10 build: passed on macOS;
+- `pnpm lint`: passed, 283 files;
+- strict TypeScript: passed;
+- the focused grouping suite passed all 25 hostile tests;
+- production Next.js 16.2.10 build: passed;
 - `git diff --check`: passed;
-- the macOS release suite passed 83 files and 2,211 tests; its sole failure is
-  the pre-existing macOS Bash `{20,256}` portability defect fixed by PR 78;
-- an exact-commit Linux run likewise passed 83 files and 2,211 tests, including
-  the previously failing deployment test, while one unrelated CLI subprocess
-  test exceeded its fixed five-second timeout on the heavily loaded APR host.
-  It passes on macOS and remains a combined-tree admission gate after the APR
-  browser workload drains.
+- GitHub `verify`: success on exact source head
+  `fe713f8282331ac6cd06d4b705535c5293dd4bc5`;
+- synthetic eight-PR integration commit
+  `c68a076448192f9227286e270bba27d88c253c38`, containing the updated PR #82
+  and #83 source heads plus every other exact PR head and both reviewed conflict
+  resolutions, passed lint on 292 files, strict TypeScript, production audit
+  with zero findings, all 89 test files and 2,283 tests, and the Next.js
+  16.2.12 production build.
 
 The hostile tests cover trimmed explicit IDs, blank and whitespace IDs, ID
 namespace collision, same/different/anonymous/raw/malformed identities,
-consecutive dots and control bytes, conflicting and missing identity within
-explicit units, the closed sixty-minute endpoint, beyond-window isolation,
+consecutive dots and control bytes, two equivalent noncanonical identities,
+mixed canonical/noncanonical explicit units, wholly noncanonical units against
+a canonical external unit, conflicting and missing identity within explicit
+units, the closed sixty-minute endpoint, beyond-window isolation,
 sparse-history rejection, actual nearest selection among several compatible
-clusters, equal-gap canonical selection under all 24 permutations, exact
-composed/decomposed Unicode ordering, exact-once original-reference
-preservation across every grouping branch, and input non-mutation.
+clusters, equal-gap canonical selection with composed/decomposed Unicode cluster
+keys under all 24 permutations, all six equal-time permutations, exact-once
+original-reference preservation across every grouping branch, and input
+non-mutation.
 
 APR round 1 correctly rejected blank-ID collisions, raw or inconsistent email
 authority, interval bridging, partial ordering, and overstated evidence. Round 2
 correctly rejected the permissive normalized-email regex, locale-sensitive
 opaque-ID ordering, and insufficient nearest/tie/reference hostile fixtures.
-The exact implementation above closes every source blocker. Round 3 must review
-this regenerated patch without waiving remaining admission gates.
+Round 3 correctly rejected normalizable-but-noncanonical stored identities,
+ASCII-only equal-gap fixtures, incomplete equal-time permutations, and missing
+admission proof. The exact implementation and integrated evidence above close
+every source and pre-merge blocker. Round 4 must review the regenerated patch
+without waiving managed runtime verification.
 
 ## Remaining admission gates
 
-APR merge verdict, exact-head GitHub CI, combined-tree test/build/security
-proof, and canonical staging/production verification remain mandatory.
+APR merge verdict, final exact-head GitHub CI, and canonical staging/production
+verification remain mandatory.
