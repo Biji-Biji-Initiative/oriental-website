@@ -16,25 +16,39 @@ rounds:
 template: |
   Perform an adversarial exact-tree security and runtime review of Oriental
   dependency implementation commit
-  bcd50efba4e330c58b9df496eb65f9ee9c9df825. Use the source-only patch and
-  evidence manifest. Reconcile the earlier pnpm-endpoint concern with the cited
-  live GitHub run that installed pnpm 10.33.0 and completed the audit, then verify
-  the new explicit version/registry log and machine-readable JSON command. Confirm
-  that scoped overrides cover every vulnerable production edge, the lockfile test
-  rejects vulnerable resolutions, Next.js and eslint-config-next remain aligned,
-  Sharp native/libvips tracing is complete, and full exact-head Linux CI remains
-  mandatory. Do not waive final staging image-optimizer or production proof. End
-  with `VERDICT: MERGE` or `VERDICT: DO NOT MERGE` on its own final line.
+  eb1e12969ee3f130939772b6e76ae8cda618dd25. Use the source-only patch and
+  evidence manifest. Verify the exact pnpm 10.34.5 pin, explicit registry/version
+  logging, and machine-readable production audit. Confirm the effective lockfile
+  is parsed as YAML, governed constraints are evaluated with semver, packages and
+  snapshots are independently checked, every governed dependency edge is safe,
+  and the complete production closure starts from importer production and
+  optional dependencies while failing closed on unresolved or external edges.
+  Recheck hostile comment, inert-string, quoted-key, independently vulnerable
+  package/snapshot, and vulnerable-edge mutations. Prove production contains
+  patched brace-expansion 5.0.8 while excluding dev-only 1.1.15, Next.js and
+  eslint-config-next remain aligned, and Sharp native/libvips tracing is complete.
+  Confirm exact-source-head Linux CI and integration commit
+  76746d98e6a7b220c3abaf4a93dd426236fc2b2b, tree
+  058805ee5d6860b760b14657d3ede08735111a91, with 89 files and 2,303 tests.
+  Do not waive final staging image-optimizer or production proof. End with
+  `VERDICT: MERGE` or `VERDICT: DO NOT MERGE` on its own final line.
 
 template_with_impl: |
   Perform an adversarial exact-tree security and runtime review of Oriental
   dependency implementation commit
-  bcd50efba4e330c58b9df496eb65f9ee9c9df825. Use the source-only patch and
-  evidence manifest. Reconcile the earlier pnpm-endpoint concern with the cited
-  live GitHub run that installed pnpm 10.33.0 and completed the audit, then verify
-  the new explicit version/registry log and machine-readable JSON command. Confirm
-  that scoped overrides cover every vulnerable production edge, the lockfile test
-  rejects vulnerable resolutions, Next.js and eslint-config-next remain aligned,
-  Sharp native/libvips tracing is complete, and full exact-head Linux CI remains
-  mandatory. Do not waive final staging image-optimizer or production proof. End
-  with `VERDICT: MERGE` or `VERDICT: DO NOT MERGE` on its own final line.
+  eb1e12969ee3f130939772b6e76ae8cda618dd25. Use the source-only patch and
+  evidence manifest. Verify the exact pnpm 10.34.5 pin, explicit registry/version
+  logging, and machine-readable production audit. Confirm the effective lockfile
+  is parsed as YAML, governed constraints are evaluated with semver, packages and
+  snapshots are independently checked, every governed dependency edge is safe,
+  and the complete production closure starts from importer production and
+  optional dependencies while failing closed on unresolved or external edges.
+  Recheck hostile comment, inert-string, quoted-key, independently vulnerable
+  package/snapshot, and vulnerable-edge mutations. Prove production contains
+  patched brace-expansion 5.0.8 while excluding dev-only 1.1.15, Next.js and
+  eslint-config-next remain aligned, and Sharp native/libvips tracing is complete.
+  Confirm exact-source-head Linux CI and integration commit
+  76746d98e6a7b220c3abaf4a93dd426236fc2b2b, tree
+  058805ee5d6860b760b14657d3ede08735111a91, with 89 files and 2,303 tests.
+  Do not waive final staging image-optimizer or production proof. End with
+  `VERDICT: MERGE` or `VERDICT: DO NOT MERGE` on its own final line.
