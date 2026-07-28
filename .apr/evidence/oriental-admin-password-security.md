@@ -3,23 +3,22 @@
 ## Immutable implementation identity
 
 The source implementation under review is the exact commit
-`18efa9768bc46df960fe06edafbaa4e6090901dc` on base
+`5627ed7ffaa1594c1635938f70564176b22b2e02` on base
 `e3bb6c333cbf4bf8e52456a1b5144f556f50636a`.
 
-- Implementation tree: `c6443ebb35e64df2d5460af99a011de25b9e6b3f`
+- Implementation tree: `4a4a91e54f75c26799d3892ba164c618fba9c94f`
 - Authoritative source-only patch:
   `.apr/evidence/oriental-admin-password-security.patch`
 - Patch SHA-256:
-  `3e66319487cd5fe944eaea710fbaff0aea09870fb5c2cca416b79011438c9034`
-- The patch contains all thirty-eight changed non-APR source, test, release, UI,
-  environment-example, and documentation files.
+  `99ea031d282a99013af2e7447ebe17bd0f130c12a12d1b3177cebce44b9eeed2`
+- The 4,209-line patch contains all forty-two changed non-APR source, test,
+  release, UI, environment-example, and documentation files.
 
 The obsolete mail patch that conflicted with the evidence manifest was removed.
 The authoritative patch excludes `.apr/`, so saved review rounds cannot change
-its bytes or implementation tree. Any child after the implementation commit
-must touch only `.apr/`. APR must compare the live PR head with the clean review
-worktree and verify that condition. GitHub CI must pass on the final exact PR
-head.
+its bytes or implementation tree. APR must compare the live PR head with the
+clean review worktree and verify that every implementation byte is represented
+by the patch. GitHub CI passed on the final exact PR head.
 
 ## Explicit threat and authority boundary
 
@@ -106,12 +105,19 @@ production import and invocation, in the login route.
 
 `tests/admin-auth-boundary.test.ts` parses the complete governed production AST
 with the TypeScript module resolver rather than searching strings. Its checker
-program is built from every governed TypeScript and JavaScript production path
-and throws if any such path is absent. It proves:
+program is built from governed production roots, then expands through
+`program.getSourceFiles()` to every reachable repository-local non-declaration
+TypeScript or JavaScript source, including imported hidden, test-named,
+generated, and vendor paths. It throws if any governed checker source is absent.
+It proves:
 
 - effective URL matching over all App and Pages route candidates, including
   `src` roots, route groups, interception segments, flat Pages files, dynamic,
   catch-all, and optional-catch-all patterns, across every supported extension;
+- the actual Next production configuration is loaded with Next's `loadConfig`;
+  every effective `pageExtensions` entry must be in the governed route scanner,
+  and computed/imported hostile configuration proves static regex inspection
+  cannot bypass this gate;
 - one exact canonical path/method/permission map for all admin route modules;
 - complete effective route runtime exports are limited to exact HTTP methods and
   a small explicit Next route-configuration allowlist; every default export,
@@ -119,11 +125,15 @@ and throws if any such path is absent. It proves:
   re-export, and CommonJS mechanism fails;
 - the complete effective runtime export set of `admin-auth.ts` is pinned by name,
   local declaration identity, and declaration kind; variables, objects, arrays,
-  getters, factories, `.bind` results, re-exports, and default facades cannot
-  expose the verifier, minter, signer, or bearer verifier;
+  getters, factories, `.bind` results, re-exports, default facades, namespace
+  merges, aliases, property assignments, every assignment operator,
+  `Object.assign`, `Object.defineProperty`, `Object.defineProperties`, and
+  `Reflect.set` cannot augment an allowed export with the verifier, minter,
+  signer, bearer verifier, or private verified-claims `WeakMap`;
 - checker-resolved protected calls follow declaration identity through imports,
-  variables, properties, arrays, and call expressions, while top-level
-  JavaScript bridges are included and missing checker sources fail closed;
+  variables, properties, arrays, call expressions, and referenced function,
+  arrow, method, getter, and setter bodies; imported hidden/test/generated/vendor
+  bridges are included and missing checker sources fail closed;
 - exactly one production import and checker-resolved call each of
   `verifyAdminLoginCredential` and `createAdminLoginSession`, both in login;
 - `verifyAdminBearerToken` and the private signer are absent from the auth
@@ -168,26 +178,51 @@ runtime state.
 
 ## Exact implementation verification
 
-Completed against implementation commit
-`18efa9768bc46df960fe06edafbaa4e6090901dc`:
+Completed against exact implementation commit
+`5627ed7ffaa1594c1635938f70564176b22b2e02`, tree
+`4a4a91e54f75c26799d3892ba164c618fba9c94f`:
 
-- `pnpm lint`: pass, 283 files, no warnings
+- `pnpm lint`: pass, 284 branch files, no warnings
 - strict application and Convex TypeScript: pass
-- focused auth, route-governance, aggregate DTO, release-preflight, secret, and
-  login suites: 17 files and 109 tests passed
-- all remaining branch-local tests passed with only the two known cross-PR macOS
-  platform cells excluded; both pass without exclusions in the integrated proof
+- all 85 branch test files and 2,221 tests: pass
+- mandatory admin release proof missing-configuration guard: pass; it exits
+  nonzero before browser launch and emits no credential material
 - `pnpm build`: pass, including all admin route handlers
 - source-only `git diff --check`: pass
-- GitHub `verify`: success on exact remote source head
-  `18efa9768bc46df960fe06edafbaa4e6090901dc`
-- synthetic integration commit
-  `470dd990f0078ecca55c4475b4be80cf602c784f`, tree
-  `22c331f96cb46187870d572386b1cab5f7d27504`, containing all eight exact PR
-  source/evidence heads, passed frozen pnpm 10.34.5 install, warning-free lint
-  on 293 files, strict TypeScript, production audit with zero findings across
-  378 production dependencies, all 89 test files and 2,333 tests, and the
-  Next.js 16.2.12 production build
+- exact-head GitHub Actions workflow `CI`, event `pull_request`: success
+  - run ID: `30364376942`
+  - job/check-run ID: `90291739509`
+  - check-suite ID: `82293547785`
+  - checked-out head SHA: `5627ed7ffaa1594c1635938f70564176b22b2e02`
+  - run URL: `https://github.com/Biji-Biji-Initiative/oriental-website/actions/runs/30364376942`
+- synthetic eight-PR integration commit
+  `1ee96d3357a1fab01490a943abc6ed89d71c023a`, tree
+  `46db3784f044be67e5292b53f72a38d23105ab7c`, based on
+  `e3bb6c333cbf4bf8e52456a1b5144f556f50636a`, composed from exact heads:
+  - #78 `7657afae19433f276c89967ca9f6c2a94a509fd9`
+  - #79 `c1d22de13a6db49e5dd00939bdadd269e35b0de1`
+  - #80 `5627ed7ffaa1594c1635938f70564176b22b2e02`
+  - #81 `297e0b1a47d7d8cf3a005c606146b7de8dd7ff96`
+  - #82 `4df9f8a5f83b2a1264622569bfba4daed793767f`
+  - #83 `7538747f16f976f4b29bf4bb91a9042086fe470a`
+  - #84 `413fdf0eaf758394c68d817aaf588558ead80a57`
+  - #85 `b56ccae9020ac5bfedf473331947ddde4184b12d`
+- the integration passed frozen pnpm 10.34.5 install, warning-free lint on
+  293 files, strict TypeScript, production audit with zero findings across 378
+  dependencies, all 89 test files and 2,336 tests with zero failed or pending,
+  and the Next.js 16.2.12 production build
+- machine-readable Vitest JSON SHA-256:
+  `2b60acc24800f039e657f2d7610b3b50beb8d3c28b82d27bc37ccb3baeaf2f69`
+  (864,934 bytes; 89 files; 2,336 passed; 0 failed; 0 pending)
+- machine-readable production audit JSON SHA-256:
+  `e6b1e426bee90fc309ed49cf51fff66f7d2218cca7fcb42e88b1b312521a615c`
+  (310 bytes; 378 dependencies; 0 info/low/moderate/high/critical findings)
+
+Machine summary:
+
+```json
+{"audit":{"critical":0,"high":0,"info":0,"low":0,"moderate":0,"totalDependencies":378},"github":{"checkRunId":90291739509,"checkSuiteId":82293547785,"event":"pull_request","headSha":"5627ed7ffaa1594c1635938f70564176b22b2e02","runId":30364376942},"integration":{"commit":"1ee96d3357a1fab01490a943abc6ed89d71c023a","tree":"46db3784f044be67e5292b53f72a38d23105ab7c"},"tests":{"failed":0,"files":89,"passed":2336,"pending":0}}
+```
 
 The focused suite proves:
 
@@ -196,9 +231,11 @@ The focused suite proves:
 - signed provenance survives cookie issuance and verification;
 - password sessions authorize only aggregate metrics and same-origin logout;
 - the password page, aggregate API, and fixed adapter call only
-  `getAdminAggregateMetrics`; raw dashboard and lead-table mocks throw if
-  touched, and missing, extra, malformed, nonfinite, fractional-count, and
-  out-of-range Convex DTO fields are rejected;
+  `getAdminAggregateMetrics`; every count is bounded by the exact normalized
+  query `take`, lead and session subset counts cannot exceed their parent
+  populations, and raw dashboard and lead-table mocks throw if touched;
+  missing, extra, malformed, nonfinite, fractional-count, out-of-range,
+  `take + 1`, and impossible-subset Convex DTO fields are rejected;
 - the server-rendered password page never calls the raw lead-table query and
   renders no raw sentinel data;
 - password rejection as bearer auth;
@@ -228,10 +265,13 @@ incomplete collision cross-products, unproven live documentation claims, and
 missing exact-head/integration admission. Round 6 correctly rejected literal
 filesystem-only route discovery, value-alias authority escape, incomplete
 default/export-assignment rejection, and one premature live-runtime plaintext
-claim. The repaired implementation, hostile filesystem matrix, exact runtime
-export pin, declaration-aware checker, and pending-language correction close
-all source blockers. Round 7 must review this regenerated exact patch. Live
-secret and deployment checks remain post-merge gates and are not waived.
+claim. Round 7 correctly rejected unbounded aggregate counts, filesystem-root
+rather than whole-program authority admission, allowed-export augmentation,
+static Next-config inspection, a skippable password E2E lane, and mutable or
+incomplete release evidence. The repaired implementation closes each blocker
+with hostile regression coverage and immutable exact-head proof. Round 8 must
+review this regenerated exact patch. Live secret and deployment checks remain
+post-merge gates and are not waived.
 
 ## Mandatory post-merge gates
 
@@ -239,7 +279,9 @@ secret and deployment checks remain post-merge gates and are not waived.
 2. Write it to governed staging and production Infisical scopes.
 3. Reconcile and read back the complete managed Coolify environment.
 4. Deploy the exact merge SHA to canonical staging.
-5. From a clean cookie jar, prove:
+5. From a clean cookie jar, run the mandatory release-proof mode and require a
+   machine report with nonzero expected tests and zero skipped, flaky,
+   unexpected, or failed tests, proving:
    - password login succeeds;
    - signed method is password, role is viewer, and expiry is thirty minutes;
    - the password session reads only PII-free aggregate metrics and receives 403
