@@ -16,9 +16,9 @@ rounds:
 template: |
   Perform an adversarial exact-range data-integrity and operations review of
   Oriental dropped-session implementation commit
-  2825f10fff390916ab276331e1e42bdcc8cbd08e. Review the complete patch after
+  f6c102ade261512888ec88638900d86184e3b250. Review the complete patch after
   stacked base 75f42e3205ac65f50e0a76bd7a58a2b651726ad2. Recheck every
-  round-one blocker: lifecycle membership must be selected by a compound index
+  prior blocker: lifecycle membership must be selected by a compound index
   before the cap; real orphans must not age out through a lower lookback; the
   stale floor must derive from the maximum valid call and heartbeat policy;
   failed, timed-out, or either migration-pending population must remain unknown
@@ -26,21 +26,27 @@ template: |
   state must be checked with bounded queries; the lifecycle release mutation
   must patch only sessionState and preserve every non-lifecycle field exactly;
   unsafe payload normalization/retention must remain separately governed; query,
-  RPC, and total child-process latency must be bounded with idempotent
-  process-group kill on deadline, `SIGINT`, `SIGTERM`, `SIGHUP`, and abnormal
-  supervisor exit before external mutation; real-grandchild timeout and
-  supervisor-group cancellation tests must prevent delayed mutation; and both
-  web deploy entrypoints must fail before external mutation unless Convex is
-  deployed, migrated, and queryable. Also confirm client failure reporting
-  stays PII-free and only ops automation can invoke the SLA route. End with
-  `VERDICT: MERGE` or `VERDICT: DO NOT MERGE` on its own final line.
+  RPC, and total child-process latency must be bounded. Confirm `SIGINT`,
+  `SIGTERM`, `SIGHUP`, and abnormal-exit cleanup is armed before spawn, any
+  pending cancellation is applied once a stable process-group ID exists, direct
+  child exit probes and kills surviving same-group descendants within a bounded
+  settle interval, and nominal zero is rejected if descendants survived.
+  Recheck real-grandchild hard-timeout, established cancellation, all three
+  immediate startup-signal, and zero-exiting-leader hostile tests. Both web
+  deploy entrypoints must fail before external mutation unless Convex is
+  deployed, migrated, and queryable. Confirm exact-source-head CI and combined
+  commit c7847c452eee6b1ee870470fd4ef3a338ea4d851, tree
+  5c870160636d620e18b25958daa86d1770ab05fa, with 89 files and 2,307 tests.
+  Also confirm client failure reporting stays PII-free and only ops automation
+  can invoke the SLA route. End with `VERDICT: MERGE` or
+  `VERDICT: DO NOT MERGE` on its own final line.
 
 template_with_impl: |
   Perform an adversarial exact-range data-integrity and operations review of
   Oriental dropped-session implementation commit
-  2825f10fff390916ab276331e1e42bdcc8cbd08e against the attached source-only
+  f6c102ade261512888ec88638900d86184e3b250 against the attached source-only
   patch after stacked base 75f42e3205ac65f50e0a76bd7a58a2b651726ad2.
-  Recheck every round-one blocker: lifecycle membership must be selected by a
+  Recheck every prior blocker: lifecycle membership must be selected by a
   compound index before the cap; real orphans must not age out through a lower
   lookback; the stale floor must derive from the maximum valid call and
   heartbeat policy; failed, timed-out, or either migration-pending population
@@ -49,11 +55,17 @@ template_with_impl: |
   release mutation must patch only sessionState and preserve every
   non-lifecycle field exactly; unsafe payload normalization/retention must remain
   separately governed; query, RPC, and total child-process latency must be
-  bounded with idempotent process-group kill on deadline, `SIGINT`, `SIGTERM`,
-  `SIGHUP`, and abnormal supervisor exit before external mutation;
-  real-grandchild timeout and supervisor-group cancellation tests must prevent
-  delayed mutation; and both web deploy entrypoints must fail before external
-  mutation unless Convex is deployed, migrated, and queryable. Also confirm
-  client failure reporting stays PII-free and only ops automation can invoke
-  the SLA route. End with `VERDICT: MERGE` or `VERDICT: DO NOT MERGE` on its
-  own final line.
+  bounded. Confirm `SIGINT`, `SIGTERM`, `SIGHUP`, and abnormal-exit cleanup is
+  armed before spawn, any pending cancellation is applied once a stable
+  process-group ID exists, direct child exit probes and kills surviving
+  same-group descendants within a bounded settle interval, and nominal zero is
+  rejected if descendants survived. Recheck real-grandchild hard-timeout,
+  established cancellation, all three immediate startup-signal, and
+  zero-exiting-leader hostile tests. Both web deploy entrypoints must fail before
+  external mutation unless Convex is deployed, migrated, and queryable. Confirm
+  exact-source-head CI and combined commit
+  c7847c452eee6b1ee870470fd4ef3a338ea4d851, tree
+  5c870160636d620e18b25958daa86d1770ab05fa, with 89 files and 2,307 tests.
+  Also confirm client failure reporting stays PII-free and only ops automation
+  can invoke the SLA route. End with `VERDICT: MERGE` or
+  `VERDICT: DO NOT MERGE` on its own final line.

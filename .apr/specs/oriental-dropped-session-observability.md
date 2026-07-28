@@ -32,9 +32,11 @@ letting the secondary orphan sweep break the primary lead SLA job.
    population must be represented as unknown (`null`) rather than a false zero,
    while the primary lead SLA result still succeeds.
 10. The secondary query, migration RPCs, and total release child processes must
-    have finite deadlines. A stuck child or supervisor cancellation by `SIGINT`,
-    `SIGTERM`, or `SIGHUP` must kill the detached process group, wait for its
-    death, and terminate nonzero before external mutation.
+    have finite deadlines. `SIGINT`, `SIGTERM`, `SIGHUP`, and abnormal-exit
+    cleanup must be armed before the child is spawned. A pending cancellation
+    must kill the detached process group as soon as its stable ID exists. Direct
+    child exit must probe, kill, and boundedly await surviving same-group
+    descendants, rejecting nominal zero whenever descendants survived.
 11. Only the ops automation principal may invoke the mutation-capable SLA route.
 12. Convex deploy, lifecycle migration, and a read-only availability verifier
     must execute before either staging or production web mutation.
@@ -45,9 +47,10 @@ letting the secondary orphan sweep break the primary lead SLA job.
 - Lint, strict TypeScript, focused route/data-integrity/reducer tests, and
   exact-head GitHub CI pass.
 - Tests prove alerting, tri-state secondary failure isolation, bounded query and
-  process latency, grandchild process-group termination on both deadline and
-  supervisor-group cancellation before delayed mutation, lifecycle index
-  membership, both legacy-population completion checks, no lower lookback,
-  exact non-lifecycle field preservation, and deploy-entrypoint enforcement.
+  process latency, grandchild process-group termination on hard deadline,
+  established cancellation, every immediate startup signal, and zero-exiting
+  leader completion before delayed mutation, lifecycle index membership, both
+  legacy-population completion checks, no lower lookback, exact non-lifecycle
+  field preservation, and deploy-entrypoint enforcement.
 - Hermetic APR returns an explicit merge verdict.
 - The final integrated tree receives managed staging and production proof.
