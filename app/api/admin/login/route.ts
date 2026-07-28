@@ -15,27 +15,38 @@ export const dynamic = "force-dynamic";
 const ADMIN_LOGIN_ATTEMPTS = 8;
 const ADMIN_LOGIN_WINDOW_MS = 15 * 60 * 1000;
 
+function adminLoginRateLimitHeaders(limit: Awaited<ReturnType<typeof checkRateLimit>>) {
+  return {
+    "X-RateLimit-Remaining": String(limit.remaining),
+    "X-RateLimit-Reset": String(Math.ceil(limit.resetAt / 1000)),
+    "X-RateLimit-Store": limit.store,
+  };
+}
+
 export async function POST(request: NextRequest) {
   if (!isSameOriginJsonRequest(request)) {
     return noStoreJson({ ok: false, error: "csrf" }, { status: 403 });
   }
   const ipHash = hashIp(requestIp(request), "admin-login");
   const limit = await checkRateLimit(`admin-login:${ipHash}`, ADMIN_LOGIN_ATTEMPTS, ADMIN_LOGIN_WINDOW_MS);
+  const limitHeaders = adminLoginRateLimitHeaders(limit);
   if (!limit.ok) {
     return noStoreJson(
       { ok: false, error: "rate_limited" },
-      { status: 429, headers: rateLimitResponseHeaders(limit.resetAt) },
+      { status: 429, headers: { ...rateLimitResponseHeaders(limit.resetAt), ...limitHeaders } },
     );
   }
 
   const raw = await request.json().catch(() => null);
   const parsed = adminLoginSchema.safeParse(raw);
-  if (!parsed.success) return noStoreJson({ ok: false, error: "invalid_payload" }, { status: 400 });
+  if (!parsed.success) {
+    return noStoreJson({ ok: false, error: "invalid_payload" }, { status: 400, headers: limitHeaders });
+  }
 
   const auth = verifyAdminLoginCredential(parsed.data.token);
   if (!auth.ok) {
     const status = auth.reason === "unconfigured" ? 503 : 401;
-    return noStoreJson({ ok: false, error: auth.reason }, { status });
+    return noStoreJson({ ok: false, error: auth.reason }, { status, headers: limitHeaders });
   }
 
   const session = createAdminLoginSession(auth, Date.now());
@@ -48,7 +59,7 @@ export async function POST(request: NextRequest) {
   return noStoreJson(
     { ok: true },
     {
-      headers: { "Set-Cookie": adminCookieHeader(session.cookie, session.expiresAt) },
+      headers: { ...limitHeaders, "Set-Cookie": adminCookieHeader(session.cookie, session.expiresAt) },
     },
   );
 }

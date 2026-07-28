@@ -10,6 +10,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - name: Attest checkout identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          checkout_sha="$(git rev-parse HEAD)"
+          checkout_tree="$(git rev-parse 'HEAD^{tree}')"
+          test "$checkout_sha" = "$GITHUB_SHA"
+          printf 'checkout_sha=%s\ncheckout_tree=%s\n' "$checkout_sha" "$checkout_tree"
       - uses: pnpm/action-setup@v5
         with:
           version: 10.33.0

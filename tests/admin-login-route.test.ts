@@ -43,11 +43,15 @@ describe("admin login route", () => {
     const rejected = await POST(loginRequest("legacy-alias", "203.0.113.7"));
     expect(rejected.status).toBe(401);
     expect(rejected.headers.get("set-cookie")).toBeNull();
+    expect(rejected.headers.get("x-ratelimit-store")).toBe("memory");
+    expect(rejected.headers.get("x-ratelimit-remaining")).toBe("7");
 
     const acceptedToken = await POST(loginRequest(adminReviewToken, "203.0.113.7"));
     expect(acceptedToken.status).toBe(200);
     expect(acceptedToken.headers.get("set-cookie")).toContain(`${adminCookieName}=`);
     expect(acceptedToken.headers.get("set-cookie")).toContain("Path=/;");
+    expect(acceptedToken.headers.get("x-ratelimit-store")).toBe("memory");
+    expect(acceptedToken.headers.get("x-ratelimit-remaining")).toBe("6");
     expect(verifyAdminSessionCookie(sessionValue(acceptedToken))).toMatchObject({
       ok: true,
       credential: "review_session",
@@ -58,6 +62,8 @@ describe("admin login route", () => {
     const acceptedPassword = await POST(loginRequest(interactivePassword, "203.0.113.8"));
     expect(acceptedPassword.status).toBe(200);
     expect(acceptedPassword.headers.get("set-cookie")).toContain(`${adminCookieName}=`);
+    expect(acceptedPassword.headers.get("x-ratelimit-store")).toBe("memory");
+    expect(acceptedPassword.headers.get("x-ratelimit-remaining")).toBe("7");
     const passwordSession = verifyAdminSessionCookie(sessionValue(acceptedPassword));
     expect(passwordSession).toMatchObject({
       ok: true,
@@ -73,10 +79,14 @@ describe("admin login route", () => {
     for (let attempt = 0; attempt < 8; attempt += 1) {
       const response = await POST(loginRequest("wrong-token", `198.51.100.${attempt + 1}, 203.0.113.99`));
       expect(response.status).toBe(401);
+      expect(response.headers.get("x-ratelimit-store")).toBe("memory");
+      expect(response.headers.get("x-ratelimit-remaining")).toBe(String(7 - attempt));
     }
 
     const blocked = await POST(loginRequest(adminReviewToken, "192.0.2.44, 203.0.113.99"));
     expect(blocked.status).toBe(429);
+    expect(blocked.headers.get("x-ratelimit-store")).toBe("memory");
+    expect(blocked.headers.get("x-ratelimit-remaining")).toBe("0");
     await expect(blocked.json()).resolves.toEqual({ ok: false, error: "rate_limited" });
 
     const independent = await POST(loginRequest(adminReviewToken, "192.0.2.44, 203.0.113.100"));

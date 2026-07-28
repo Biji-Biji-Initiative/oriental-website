@@ -351,20 +351,35 @@ function constantStringExpression(
 function constantStringBindings(source: ts.SourceFile) {
   const bindings = new Map<string, ts.Expression>();
   const ambiguous = new Set<string>();
+  const recordBinding = (name: string, initializer: ts.Expression | null) => {
+    if (ambiguous.has(name)) return;
+    if (!initializer || bindings.has(name)) {
+      bindings.delete(name);
+      ambiguous.add(name);
+      return;
+    }
+    bindings.set(name, initializer);
+  };
+  const recordBindingName = (name: ts.BindingName, initializer: ts.Expression | null) => {
+    const names = bindingNames(name);
+    for (const binding of names) recordBinding(binding, names.length === 1 ? initializer : null);
+  };
   const visit = (node: ts.Node) => {
-    if (
-      ts.isVariableDeclaration(node) &&
-      ts.isIdentifier(node.name) &&
-      node.initializer &&
-      ts.isVariableDeclarationList(node.parent) &&
-      (node.parent.flags & ts.NodeFlags.Const) !== 0
-    ) {
-      if (bindings.has(node.name.text)) {
-        bindings.delete(node.name.text);
-        ambiguous.add(node.name.text);
-      } else if (!ambiguous.has(node.name.text)) {
-        bindings.set(node.name.text, node.initializer);
-      }
+    if (ts.isVariableDeclaration(node)) {
+      const isConst = ts.isVariableDeclarationList(node.parent) && (node.parent.flags & ts.NodeFlags.Const) !== 0;
+      recordBindingName(node.name, isConst && node.initializer ? node.initializer : null);
+    } else if (ts.isParameter(node)) {
+      recordBindingName(node.name, null);
+    } else if (ts.isCatchClause(node) && node.variableDeclaration) {
+      recordBindingName(node.variableDeclaration.name, null);
+    } else if (ts.isImportClause(node) && node.name) {
+      recordBinding(node.name.text, null);
+    } else if (ts.isImportSpecifier(node) || ts.isNamespaceImport(node)) {
+      recordBinding(node.name.text, null);
+    } else if (ts.isImportEqualsDeclaration(node)) {
+      recordBinding(node.name.text, null);
+    } else if ((ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node)) && node.name) {
+      recordBinding(node.name.text, null);
     }
     ts.forEachChild(node, visit);
   };
@@ -381,16 +396,6 @@ function expressionRootName(expression: ts.Expression): string | null {
   return null;
 }
 
-function containsProtectedAuthIdentifier(node: ts.Node) {
-  let found = false;
-  const visit = (child: ts.Node) => {
-    if (ts.isIdentifier(child) && protectedAuthEscapeNames.has(child.text)) found = true;
-    if (!found) ts.forEachChild(child, visit);
-  };
-  visit(node);
-  return found;
-}
-
 function containsIdentifierFrom(node: ts.Node, names: ReadonlySet<string>) {
   let found = false;
   const visit = (child: ts.Node) => {
@@ -401,57 +406,99 @@ function containsIdentifierFrom(node: ts.Node, names: ReadonlySet<string>) {
   return found;
 }
 
-type AuthMutationPrimitive = "Object.assign" | "Object.defineProperties" | "Object.defineProperty" | "Reflect.set";
+const authMutationPrimitiveNames = new Set([
+  "Object.assign",
+  "Object.defineProperties",
+  "Object.defineProperty",
+  "Object.freeze",
+  "Object.preventExtensions",
+  "Object.seal",
+  "Object.setPrototypeOf",
+  "Reflect.apply",
+  "Reflect.defineProperty",
+  "Reflect.deleteProperty",
+  "Reflect.preventExtensions",
+  "Reflect.set",
+  "Reflect.setPrototypeOf",
+]);
+type AuthMutationPrimitive = `${"Object" | "Reflect"}.${string}`;
+type AuthBuiltinReceiver = "Object" | "Reflect";
 
-function directAuthMutationPrimitive(expression: ts.Expression): AuthMutationPrimitive | null {
+function directAuthMutationPrimitive(
+  expression: ts.Expression,
+  receiverAliases: ReadonlyMap<string, AuthBuiltinReceiver>,
+  bindings: ReadonlyMap<string, ts.Expression>,
+): AuthMutationPrimitive | null {
   const unwrapped = unwrapExpression(expression);
   if (!ts.isPropertyAccessExpression(unwrapped) && !ts.isElementAccessExpression(unwrapped)) return null;
   const receiver = unwrapExpression(unwrapped.expression);
-  if (!ts.isIdentifier(receiver) || (receiver.text !== "Object" && receiver.text !== "Reflect")) return null;
+  if (!ts.isIdentifier(receiver)) return null;
+  const builtin = receiverAliases.get(receiver.text);
+  if (!builtin) return null;
   const member = ts.isPropertyAccessExpression(unwrapped)
     ? unwrapped.name.text
     : unwrapped.argumentExpression
-      ? constantStringExpression(unwrapped.argumentExpression)
+      ? constantStringExpression(unwrapped.argumentExpression, bindings)
       : null;
-  const primitive = member ? `${receiver.text}.${member}` : "";
-  return ["Object.assign", "Object.defineProperties", "Object.defineProperty", "Reflect.set"].includes(primitive)
-    ? (primitive as AuthMutationPrimitive)
-    : null;
+  if (member === null) return `${builtin}.<unresolved>`;
+  const primitive = `${builtin}.${member}` as AuthMutationPrimitive;
+  return authMutationPrimitiveNames.has(primitive) ? primitive : null;
 }
 
-function mutationPrimitiveAliases(source: ts.SourceFile) {
+function mutationPrimitiveAliases(source: ts.SourceFile, bindings: ReadonlyMap<string, ts.Expression>) {
+  const receiverAliases = new Map<string, AuthBuiltinReceiver>([
+    ["Object", "Object"],
+    ["Reflect", "Reflect"],
+  ]);
   const aliases = new Map<string, AuthMutationPrimitive>();
+  const receiverFor = (expression: ts.Expression): AuthBuiltinReceiver | null => {
+    const unwrapped = unwrapExpression(expression);
+    return ts.isIdentifier(unwrapped) ? (receiverAliases.get(unwrapped.text) ?? null) : null;
+  };
+  const primitiveFor = (expression: ts.Expression): AuthMutationPrimitive | null => {
+    const direct = directAuthMutationPrimitive(expression, receiverAliases, bindings);
+    if (direct) return direct;
+    const unwrapped = unwrapExpression(expression);
+    if (ts.isIdentifier(unwrapped)) return aliases.get(unwrapped.text) ?? null;
+    if (ts.isPropertyAccessExpression(unwrapped) || ts.isElementAccessExpression(unwrapped)) {
+      const member = ts.isPropertyAccessExpression(unwrapped)
+        ? unwrapped.name.text
+        : unwrapped.argumentExpression
+          ? constantStringExpression(unwrapped.argumentExpression, bindings)
+          : null;
+      if (member === "call" || member === "apply") return primitiveFor(unwrapped.expression);
+    }
+    return null;
+  };
   let changed = true;
   while (changed) {
     changed = false;
-    const primitiveFor = (expression: ts.Expression): AuthMutationPrimitive | null => {
-      const direct = directAuthMutationPrimitive(expression);
-      if (direct) return direct;
-      const unwrapped = unwrapExpression(expression);
-      return ts.isIdentifier(unwrapped) ? (aliases.get(unwrapped.text) ?? null) : null;
-    };
     const visit = (node: ts.Node) => {
       if (ts.isVariableDeclaration(node) && node.initializer) {
         if (ts.isIdentifier(node.name)) {
+          const receiver = receiverFor(node.initializer);
+          if (receiver && receiverAliases.get(node.name.text) !== receiver) {
+            receiverAliases.set(node.name.text, receiver);
+            changed = true;
+          }
           const primitive = primitiveFor(node.initializer);
           if (primitive && aliases.get(node.name.text) !== primitive) {
             aliases.set(node.name.text, primitive);
             changed = true;
           }
         } else if (ts.isObjectBindingPattern(node.name)) {
-          const receiver = unwrapExpression(node.initializer);
-          if (ts.isIdentifier(receiver) && (receiver.text === "Object" || receiver.text === "Reflect")) {
+          const receiver = receiverFor(node.initializer);
+          if (receiver) {
             for (const element of node.name.elements) {
               if (!ts.isIdentifier(element.name)) continue;
               const member = propertyNameText(element.propertyName ?? element.name);
-              const primitive = member ? `${receiver.text}.${member}` : "";
+              const primitive = member ? (`${receiver}.${member}` as AuthMutationPrimitive) : null;
               if (
-                ["Object.assign", "Object.defineProperties", "Object.defineProperty", "Reflect.set"].includes(
-                  primitive,
-                ) &&
+                primitive &&
+                authMutationPrimitiveNames.has(primitive) &&
                 aliases.get(element.name.text) !== primitive
               ) {
-                aliases.set(element.name.text, primitive as AuthMutationPrimitive);
+                aliases.set(element.name.text, primitive);
                 changed = true;
               }
             }
@@ -463,6 +510,11 @@ function mutationPrimitiveAliases(source: ts.SourceFile) {
         node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
         ts.isIdentifier(node.left)
       ) {
+        const receiver = receiverFor(node.right);
+        if (receiver && receiverAliases.get(node.left.text) !== receiver) {
+          receiverAliases.set(node.left.text, receiver);
+          changed = true;
+        }
         const primitive = primitiveFor(node.right);
         if (primitive && aliases.get(node.left.text) !== primitive) {
           aliases.set(node.left.text, primitive);
@@ -473,41 +525,130 @@ function mutationPrimitiveAliases(source: ts.SourceFile) {
     };
     visit(source);
   }
-  return aliases;
+  return { aliases, primitiveFor, receiverAliases };
 }
 
-function expressionEscapesProtectedAuthValue(
+type PrivateAuthTaint = "authority" | "claims" | "container" | "factory";
+const safeVerifiedClaimProperties = new Set(["actor", "credential", "principal", "role"]);
+
+function protectedAuthTaint(
   expression: ts.Expression,
+  privateAliases: ReadonlyMap<string, PrivateAuthTaint>,
   taintedFactories: ReadonlySet<string>,
-): boolean {
+): PrivateAuthTaint | null {
   const unwrapped = unwrapExpression(expression);
-  if (ts.isIdentifier(unwrapped)) {
-    return protectedAuthEscapeNames.has(unwrapped.text) || taintedFactories.has(unwrapped.text);
+  if (ts.isIdentifier(unwrapped)) return privateAliases.get(unwrapped.text) ?? null;
+  if (ts.isBinaryExpression(unwrapped) || ts.isTemplateExpression(unwrapped)) return null;
+  if (ts.isPropertyAccessExpression(unwrapped) || ts.isElementAccessExpression(unwrapped)) {
+    const root = expressionRootName(unwrapped);
+    const rootTaint = root ? privateAliases.get(root) : null;
+    if (!rootTaint) return null;
+    const member = ts.isPropertyAccessExpression(unwrapped)
+      ? unwrapped.name.text
+      : unwrapped.argumentExpression
+        ? constantStringExpression(unwrapped.argumentExpression)
+        : null;
+    if (rootTaint === "claims" && member && safeVerifiedClaimProperties.has(member)) return null;
+    return rootTaint === "factory" ? "factory" : "authority";
   }
   if (ts.isArrowFunction(unwrapped) || ts.isFunctionExpression(unwrapped)) {
-    return containsProtectedAuthIdentifier(unwrapped);
+    const expressions = ts.isExpression(unwrapped.body) ? [unwrapped.body] : returnedExpressions(unwrapped.body);
+    return expressions.some((candidate) => protectedAuthTaint(candidate, privateAliases, taintedFactories))
+      ? "factory"
+      : null;
   }
   if (ts.isCallExpression(unwrapped)) {
     const root = expressionRootName(unwrapped.expression);
-    if (root && taintedFactories.has(root)) return true;
-    if (root && protectedAuthEscapeNames.has(root)) {
-      const callee = unwrapExpression(unwrapped.expression);
-      if (root === "verifiedAdminLoginClaims") return true;
-      if (ts.isPropertyAccessExpression(callee) && callee.name.text === "bind") return true;
-      return unwrapped.arguments.some((argument) => expressionEscapesProtectedAuthValue(argument, taintedFactories));
+    if (root === "verifiedAdminLoginClaims") return "claims";
+    if (root && taintedFactories.has(root)) return "authority";
+    const callee = unwrapExpression(unwrapped.expression);
+    if (
+      (ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee)) &&
+      root &&
+      privateAliases.has(root)
+    ) {
+      const member = ts.isPropertyAccessExpression(callee)
+        ? callee.name.text
+        : callee.argumentExpression
+          ? constantStringExpression(callee.argumentExpression)
+          : null;
+      if (member === "bind") return "authority";
     }
+    if (ts.isIdentifier(callee) && callee.text === "Object") {
+      return (
+        unwrapped.arguments
+          .map((argument) => protectedAuthTaint(argument, privateAliases, taintedFactories))
+          .find((taint): taint is PrivateAuthTaint => Boolean(taint)) ?? null
+      );
+    }
+    return (
+      unwrapped.arguments
+        .map((argument) => protectedAuthTaint(argument, privateAliases, taintedFactories))
+        .find((taint): taint is PrivateAuthTaint => Boolean(taint)) ?? null
+    );
   }
-  let escaped = false;
+  if (ts.isNewExpression(unwrapped) && ts.isIdentifier(unwrapped.expression) && unwrapped.expression.text === "Proxy") {
+    const target = unwrapped.arguments?.[0];
+    return target ? protectedAuthTaint(target, privateAliases, taintedFactories) : null;
+  }
+  if (ts.isArrayLiteralExpression(unwrapped)) {
+    return unwrapped.elements.some(
+      (element) => ts.isExpression(element) && protectedAuthTaint(element, privateAliases, taintedFactories),
+    )
+      ? "container"
+      : null;
+  }
+  if (ts.isObjectLiteralExpression(unwrapped)) {
+    for (const property of unwrapped.properties) {
+      if (
+        ts.isPropertyAssignment(property) &&
+        protectedAuthTaint(property.initializer, privateAliases, taintedFactories)
+      ) {
+        return "container";
+      }
+      if (
+        ts.isShorthandPropertyAssignment(property) &&
+        protectedAuthTaint(property.name, privateAliases, taintedFactories)
+      ) {
+        return "container";
+      }
+      if (
+        ts.isSpreadAssignment(property) &&
+        protectedAuthTaint(property.expression, privateAliases, taintedFactories)
+      ) {
+        return "container";
+      }
+      if (
+        (ts.isMethodDeclaration(property) || ts.isGetAccessorDeclaration(property)) &&
+        property.body &&
+        returnedExpressions(property.body).some((candidate) =>
+          protectedAuthTaint(candidate, privateAliases, taintedFactories),
+        )
+      ) {
+        return "container";
+      }
+    }
+    return null;
+  }
+  let taint: PrivateAuthTaint | null = null;
   const visitChild = (child: ts.Node) => {
-    if (escaped) return;
+    if (taint) return;
     if (ts.isExpression(child)) {
-      if (expressionEscapesProtectedAuthValue(child, taintedFactories)) escaped = true;
+      taint = protectedAuthTaint(child, privateAliases, taintedFactories);
       return;
     }
     ts.forEachChild(child, visitChild);
   };
   ts.forEachChild(unwrapped, visitChild);
-  return escaped;
+  return taint;
+}
+
+function expressionEscapesProtectedAuthValue(
+  expression: ts.Expression,
+  privateAliases: ReadonlyMap<string, PrivateAuthTaint>,
+  taintedFactories: ReadonlySet<string>,
+) {
+  return protectedAuthTaint(expression, privateAliases, taintedFactories) !== null;
 }
 
 function returnedExpressions(node: ts.Node) {
@@ -540,38 +681,63 @@ function authRuntimeExportViolations(sourceText = readFileSync("lib/server/admin
     }
   }
 
+  const privateAliases = new Map<string, PrivateAuthTaint>(
+    [...protectedAuthEscapeNames].map((name) => [name, "authority"] as const),
+  );
   const taintedFactories = new Set<string>();
   let changed = true;
   while (changed) {
     changed = false;
-    for (const statement of source.statements) {
-      if (ts.isFunctionDeclaration(statement) && statement.name && !isExported(statement) && statement.body) {
-        if (
-          !taintedFactories.has(statement.name.text) &&
-          returnedExpressions(statement.body).some((expression) =>
-            expressionEscapesProtectedAuthValue(expression, taintedFactories),
-          )
-        ) {
-          taintedFactories.add(statement.name.text);
+    const taintOf = (expression: ts.Expression) => protectedAuthTaint(expression, privateAliases, taintedFactories);
+    const escapes = (expression: ts.Expression) => taintOf(expression) !== null;
+    const recordTaint = (name: string, taint: PrivateAuthTaint) => {
+      if (privateAliases.has(name)) return;
+      privateAliases.set(name, taint);
+      changed = true;
+    };
+    const visitTaint = (node: ts.Node) => {
+      if (ts.isFunctionDeclaration(node) && node.name && node.body) {
+        if (!taintedFactories.has(node.name.text) && returnedExpressions(node.body).some(escapes)) {
+          taintedFactories.add(node.name.text);
+          recordTaint(node.name.text, "factory");
           changed = true;
         }
-      } else if (ts.isVariableStatement(statement) && !isExported(statement)) {
-        for (const declaration of statement.declarationList.declarations) {
-          if (!ts.isIdentifier(declaration.name) || !declaration.initializer) continue;
-          const initializer = declaration.initializer;
-          const escapes =
-            ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer)
-              ? (ts.isExpression(initializer.body) ? [initializer.body] : returnedExpressions(initializer.body)).some(
-                  (expression) => expressionEscapesProtectedAuthValue(expression, taintedFactories),
-                )
-              : expressionEscapesProtectedAuthValue(initializer, taintedFactories);
-          if (escapes && !taintedFactories.has(declaration.name.text)) {
-            taintedFactories.add(declaration.name.text);
-            changed = true;
+      }
+      if (ts.isVariableDeclaration(node) && node.initializer) {
+        const initializer = node.initializer;
+        const taint = taintOf(initializer);
+        if (taint) {
+          const isFactory =
+            (ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer)) &&
+            (ts.isExpression(initializer.body) ? [initializer.body] : returnedExpressions(initializer.body)).some(
+              escapes,
+            );
+          for (const name of bindingNames(node.name)) {
+            recordTaint(name, isFactory ? "factory" : taint);
+            if (isFactory && !taintedFactories.has(name)) {
+              taintedFactories.add(name);
+              changed = true;
+            }
           }
         }
       }
-    }
+      if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+        const taint = taintOf(node.right);
+        const root = taint ? expressionRootName(node.left) : null;
+        if (root && taint) recordTaint(root, taint);
+      }
+      if (ts.isCallExpression(node)) {
+        const argumentTaint = node.arguments
+          .map((argument) => taintOf(argument))
+          .find((taint): taint is PrivateAuthTaint => Boolean(taint));
+        const targetRoot = argumentTaint ? expressionRootName(node.arguments[0] ?? node.expression) : null;
+        if (targetRoot && argumentTaint && !privateAliases.has(targetRoot)) {
+          recordTaint(targetRoot, "container");
+        }
+      }
+      ts.forEachChild(node, visitTaint);
+    };
+    visitTaint(source);
   }
 
   const mutableAuthExportAliases = new Set(allowedAdminAuthExportNames);
@@ -605,7 +771,8 @@ function authRuntimeExportViolations(sourceText = readFileSync("lib/server/admin
     };
     visitAlias(source);
   }
-  const mutationAliases = mutationPrimitiveAliases(source);
+  const constantBindings = constantStringBindings(source);
+  const mutationAnalysis = mutationPrimitiveAliases(source, constantBindings);
 
   for (const statement of source.statements) {
     if (
@@ -618,7 +785,7 @@ function authRuntimeExportViolations(sourceText = readFileSync("lib/server/admin
     if (ts.isFunctionDeclaration(statement) && statement.name && allowedAdminAuthExportNames.has(statement.name.text)) {
       if (
         returnedExpressions(statement.body ?? statement).some((expression) =>
-          expressionEscapesProtectedAuthValue(expression, taintedFactories),
+          expressionEscapesProtectedAuthValue(expression, privateAliases, taintedFactories),
         )
       ) {
         violations.push(`allowed auth export ${statement.name.text} cannot return private authority or claims state`);
@@ -630,7 +797,7 @@ function authRuntimeExportViolations(sourceText = readFileSync("lib/server/admin
           ts.isIdentifier(declaration.name) &&
           allowedAdminAuthExportNames.has(declaration.name.text) &&
           declaration.initializer &&
-          expressionEscapesProtectedAuthValue(declaration.initializer, taintedFactories)
+          expressionEscapesProtectedAuthValue(declaration.initializer, privateAliases, taintedFactories)
         ) {
           violations.push(
             `allowed auth export ${declaration.name.text} cannot expose private authority or claims state`,
@@ -654,12 +821,25 @@ function authRuntimeExportViolations(sourceText = readFileSync("lib/server/admin
       }
     }
     if (ts.isCallExpression(node)) {
+      let mutation = mutationAnalysis.primitiveFor(node.expression);
       const callee = unwrapExpression(node.expression);
-      const mutation =
-        directAuthMutationPrimitive(callee) ??
-        (ts.isIdentifier(callee) ? (mutationAliases.get(callee.text) ?? null) : null);
-      const target = node.arguments[0];
-      if (mutation && target && ts.isExpression(target) && containsIdentifierFrom(target, mutableAuthExportAliases)) {
+      if (!mutation && (ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee))) {
+        const root = expressionRootName(callee);
+        const member = ts.isPropertyAccessExpression(callee)
+          ? callee.name.text
+          : callee.argumentExpression
+            ? constantStringExpression(callee.argumentExpression, constantBindings)
+            : null;
+        if (root === "Reflect" && member === "apply" && node.arguments[0]) {
+          mutation = mutationAnalysis.primitiveFor(node.arguments[0]);
+        }
+      }
+      if (
+        mutation &&
+        node.arguments.some(
+          (argument) => ts.isExpression(argument) && containsIdentifierFrom(argument, mutableAuthExportAliases),
+        )
+      ) {
         violations.push(`allowed auth export cannot be augmented through ${mutation}`);
       }
     }
@@ -938,11 +1118,26 @@ function protectedSymbolAuthority(path: string, sourceText = readFileSync(path, 
   const constantBindings = constantStringBindings(source);
   const importAliases = new Map<string, string>();
   const namespaceAliases = new Set<string>();
+  const commonJsLoaderAliases = new Set(["require"]);
+  const createRequireAliases = new Set<string>();
   const imports: string[] = [];
   const calls: string[] = [];
   const forbiddenAccesses: string[] = [];
 
   for (const statement of source.statements) {
+    if (
+      ts.isImportDeclaration(statement) &&
+      ts.isStringLiteral(statement.moduleSpecifier) &&
+      (statement.moduleSpecifier.text === "node:module" || statement.moduleSpecifier.text === "module") &&
+      statement.importClause?.namedBindings &&
+      ts.isNamedImports(statement.importClause.namedBindings)
+    ) {
+      for (const element of statement.importClause.namedBindings.elements) {
+        if ((element.propertyName?.text ?? element.name.text) === "createRequire") {
+          createRequireAliases.add(element.name.text);
+        }
+      }
+    }
     if (
       ts.isImportDeclaration(statement) &&
       ts.isStringLiteral(statement.moduleSpecifier) &&
@@ -981,20 +1176,112 @@ function protectedSymbolAuthority(path: string, sourceText = readFileSync(path, 
     }
   }
 
+  const isModuleRequire = (expression: ts.Expression) => {
+    const unwrapped = unwrapExpression(expression);
+    if (ts.isPropertyAccessExpression(unwrapped)) {
+      return (
+        ts.isIdentifier(unwrapped.expression) &&
+        unwrapped.expression.text === "module" &&
+        unwrapped.name.text === "require"
+      );
+    }
+    if (ts.isElementAccessExpression(unwrapped) && unwrapped.argumentExpression) {
+      return (
+        ts.isIdentifier(unwrapped.expression) &&
+        unwrapped.expression.text === "module" &&
+        constantStringExpression(unwrapped.argumentExpression, constantBindings) === "require"
+      );
+    }
+    return false;
+  };
+  const isCreateRequireCall = (expression: ts.Expression) => {
+    const unwrapped = unwrapExpression(expression);
+    return (
+      ts.isCallExpression(unwrapped) &&
+      ts.isIdentifier(unwrapExpression(unwrapped.expression)) &&
+      createRequireAliases.has((unwrapExpression(unwrapped.expression) as ts.Identifier).text)
+    );
+  };
+  const isCommonJsLoader = (expression: ts.Expression) => {
+    const unwrapped = unwrapExpression(expression);
+    if (ts.isIdentifier(unwrapped)) return commonJsLoaderAliases.has(unwrapped.text);
+    if (isModuleRequire(unwrapped) || isCreateRequireCall(unwrapped)) return true;
+    if (ts.isPropertyAccessExpression(unwrapped) || ts.isElementAccessExpression(unwrapped)) {
+      const member = ts.isPropertyAccessExpression(unwrapped)
+        ? unwrapped.name.text
+        : unwrapped.argumentExpression
+          ? constantStringExpression(unwrapped.argumentExpression, constantBindings)
+          : null;
+      if (member === "bind" || member === "call" || member === "apply") {
+        return isCommonJsLoader(unwrapped.expression);
+      }
+    }
+    return false;
+  };
+  let loaderChanged = true;
+  while (loaderChanged) {
+    loaderChanged = false;
+    const visitAlias = (node: ts.Node) => {
+      if (ts.isVariableDeclaration(node) && node.initializer && isCommonJsLoader(node.initializer)) {
+        for (const name of bindingNames(node.name)) {
+          if (!commonJsLoaderAliases.has(name)) {
+            commonJsLoaderAliases.add(name);
+            loaderChanged = true;
+          }
+        }
+      }
+      if (
+        ts.isVariableDeclaration(node) &&
+        ts.isObjectBindingPattern(node.name) &&
+        node.initializer &&
+        ts.isIdentifier(unwrapExpression(node.initializer)) &&
+        expressionRootName(node.initializer) === "module"
+      ) {
+        for (const element of node.name.elements) {
+          if (!ts.isIdentifier(element.name)) continue;
+          if (propertyNameText(element.propertyName ?? element.name) !== "require") continue;
+          if (!commonJsLoaderAliases.has(element.name.text)) {
+            commonJsLoaderAliases.add(element.name.text);
+            loaderChanged = true;
+          }
+        }
+      }
+      if (
+        ts.isBinaryExpression(node) &&
+        node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+        ts.isIdentifier(node.left) &&
+        isCommonJsLoader(node.right) &&
+        !commonJsLoaderAliases.has(node.left.text)
+      ) {
+        commonJsLoaderAliases.add(node.left.text);
+        loaderChanged = true;
+      }
+      ts.forEachChild(node, visitAlias);
+    };
+    visitAlias(source);
+  }
+
   const visit = (node: ts.Node) => {
     if (ts.isCallExpression(node)) {
+      if (isCommonJsLoader(node.expression)) {
+        const moduleName = node.arguments[0] ? constantStringExpression(node.arguments[0], constantBindings) : null;
+        forbiddenAccesses.push(
+          moduleName === null ? "unresolved CommonJS loader module" : `CommonJS loader:${moduleName}`,
+        );
+      } else if (isCreateRequireCall(node)) {
+        forbiddenAccesses.push("createRequire");
+      }
       if (ts.isIdentifier(node.expression)) {
         const imported = importAliases.get(node.expression.text);
         if (imported) calls.push(imported);
-        if (node.expression.text === "require" && node.arguments[0]) {
-          const moduleName = constantStringExpression(node.arguments[0], constantBindings);
-          if (moduleName === null || resolvesToModule(moduleName, path, adminAuthPath)) {
-            forbiddenAccesses.push(moduleName === null ? "unresolved require module" : "require");
-          }
-        }
       } else if (node.expression.kind === ts.SyntaxKind.ImportKeyword && node.arguments[0]) {
         const moduleName = constantStringExpression(node.arguments[0], constantBindings);
-        if (moduleName === null || resolvesToModule(moduleName, path, adminAuthPath)) {
+        if (
+          moduleName === null ||
+          moduleName === "node:module" ||
+          moduleName === "module" ||
+          resolvesToModule(moduleName, path, adminAuthPath)
+        ) {
           forbiddenAccesses.push(moduleName === null ? "unresolved dynamic import module" : "dynamic import");
         }
       }
@@ -1006,6 +1293,13 @@ function protectedSymbolAuthority(path: string, sourceText = readFileSync(path, 
       protectedLoginSymbols.has(node.name.text)
     ) {
       forbiddenAccesses.push(node.name.text);
+    }
+    if (
+      ts.isIdentifier(node) &&
+      (commonJsLoaderAliases.has(node.text) || createRequireAliases.has(node.text)) &&
+      !ts.isImportSpecifier(node.parent)
+    ) {
+      forbiddenAccesses.push("CommonJS loader reference");
     }
     ts.forEachChild(node, visit);
   };
@@ -1142,6 +1436,13 @@ describe("admin authentication production boundary", () => {
       'export { createAdminLoginSession } from "../../../../lib/server/admin-auth";',
       'import auth = require("../../../../lib/server/admin-auth");',
       'const authPath = "../../../../lib/server/admin-auth"; { const authPath = "./safe-module"; void authPath; } const auth = require(authPath); auth.createAdminLoginSession({} as never, 0);',
+      'const req = require; const auth = req("../../../../lib/server/admin-auth"); auth.createAdminLoginSession({} as never, 0);',
+      'const authPath = "./safe-module"; function bridge(authPath: string) { const auth = require(authPath); return auth.createAdminLoginSession({} as never, 0); } bridge("../../../../lib/server/admin-auth");',
+      'const auth = module.require("../../../../lib/server/admin-auth"); auth.createAdminLoginSession({} as never, 0);',
+      'import { createRequire } from "node:module"; const req = createRequire(import.meta.url); const auth = req("../../../../lib/server/admin-auth"); auth.createAdminLoginSession({} as never, 0);',
+      'const req = require.bind(null); const holder = { load: req }; const auth = holder.load("../../../../lib/server/admin-auth"); auth.createAdminLoginSession({} as never, 0);',
+      'const { require: req } = module; const auth = req("../../../../lib/server/admin-auth"); auth.createAdminLoginSession({} as never, 0);',
+      'void import("node:module");',
     ]) {
       expect(protectedSymbolAuthority(relativePath, sourceText).forbiddenAccesses, sourceText).not.toEqual([]);
     }
@@ -1439,6 +1740,8 @@ describe("admin authentication production boundary", () => {
       "const cookieAlias = adminCookieHeader; Object.assign(cookieAlias, { signer: sign });",
       "let assignedCookieAlias: unknown; assignedCookieAlias = adminCookieHeader; Reflect.set(assignedCookieAlias as object, 'claims', verifiedAdminLoginClaims);",
       "const cookieHolder = { cookie: adminCookieHeader }; Object.defineProperty(cookieHolder, 'claims', { value: verifiedAdminLoginClaims });",
+      "Reflect.apply(Object.assign, null, [adminCookieHeader, { signer: sign }]);",
+      "const apply = Reflect.apply; apply(Object.assign, null, [adminCookieHeader, { signer: sign }]);",
     ]) {
       expect(authRuntimeExportViolations(`${authSourceText}\n${hostileSuffix}`), hostileSuffix).not.toEqual([]);
     }
@@ -1456,6 +1759,23 @@ describe("admin authentication production boundary", () => {
     expect(authRuntimeExportViolations(escapedWeakMapRead)).toContain(
       "allowed auth export clearAdminCookieHeader cannot return private authority or claims state",
     );
+    for (const hostileBody of [
+      "const [leakedSigner] = [sign]; return leakedSigner as unknown as string;",
+      "const { value: leakedClaims } = { value: verifiedAdminLoginClaims }; return leakedClaims as unknown as string;",
+      "const holder = { signer: sign }; const leaked = holder.signer; return leaked as unknown as string;",
+      "const leakedGetter = { get value() { return verifyAdminBearerToken; } }; return leakedGetter as unknown as string;",
+      "const leakedFactory = () => sign; return leakedFactory as unknown as string;",
+      "const leakedBound = sign.bind(null); return leakedBound as unknown as string;",
+      "const holder: { signer?: unknown } = {}; Object.assign(holder, { signer: sign }); return holder as unknown as string;",
+    ]) {
+      const escapedLocalAlias = authSourceText.replace(
+        "export function clearAdminCookieHeader() {",
+        `export function clearAdminCookieHeader() { ${hostileBody} }\nfunction originalClearAdminCookieHeader() {`,
+      );
+      expect(authRuntimeExportViolations(escapedLocalAlias), hostileBody).toContain(
+        "allowed auth export clearAdminCookieHeader cannot return private authority or claims state",
+      );
+    }
     const authSource = sourceFile("lib/server/admin-auth.ts", authSourceText);
     const bearerVerifier = authSource.statements.find(
       (statement): statement is ts.FunctionDeclaration =>
