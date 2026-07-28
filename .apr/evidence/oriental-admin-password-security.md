@@ -3,15 +3,15 @@
 ## Immutable implementation identity
 
 The source implementation under review is the exact commit
-`62122a9bf51d920232ceb84a57512b8bd572b35a` on base
+`a79184b5d60aeeb5eca1c8071bfc6d5ba9accb5c` on base
 `e3bb6c333cbf4bf8e52456a1b5144f556f50636a`.
 
-- Implementation tree: `61846556ffc9d51384507d55854eca262d8db684`
+- Implementation tree: `3ee9f9a4f5082deb958f43427c6aab7766d7b180`
 - Authoritative source-only patch:
   `.apr/evidence/oriental-admin-password-security.patch`
 - Patch SHA-256:
-  `c67f236c72aef7c635334d79cd1c2553ed08ce4a47e26c8e505243d122e9687c`
-- The patch contains all eighteen changed non-APR source, test, release, UI,
+  `5d133743bec08f6085c1a8e08f0320a644d6a7ed2fe8537d0684202b495eaf39`
+- The patch contains all thirty-five changed non-APR source, test, release, UI,
   environment-example, and documentation files.
 - The replaced unsafe PR commit
   `4703d44822d2c23f367b23a4664b720e7c8a6f16` is not an ancestor of this
@@ -36,12 +36,15 @@ The password is retained only with these compensating controls:
 - login requires same-origin JSON and is rate-limited to eight attempts per
   proxy-owned identity per fifteen minutes;
 - it mints a signed `method=password`, role `viewer` session for thirty minutes;
-- viewer authority is limited to `dashboard.read`, `leads.read`, and
-  `voice.read`;
+- password-session authority is limited to `dashboard.aggregate` and
+  `session.logout`;
+- it cannot read customer records, email addresses, transcripts, raw lead or
+  voice evidence, analytics detail, or queues;
 - it cannot mutate, bulk-assign, archive, export, follow up, run evals, execute
   SLA/retention jobs, or delete privacy data;
-- sensitive actions require a fresh strong review token or the dedicated ops or
-  privacy bearer;
+- raw customer data and interactive actions require signing out and completing a
+  fresh managed review-token login; ops and privacy actions retain their
+  dedicated bearer principals;
 - the supplied password is rejected by every `Authorization: Bearer` path;
 - the password and its HMAC never sign a session.
 
@@ -73,29 +76,38 @@ credential, password HMAC, review token, cookie, or request body.
 
 ## Login-only and bearer call graph
 
-`verifyAdminLoginCredential` is the only function that reads
-`ADMIN_REVIEW_PASSWORD_HMAC`. It returns distinct `interactive_password` or
-`review_bearer` provenance. `verifyAdminBearerToken` is private and considers
-only:
+`verifyAdminLoginCredential` is the only function that reads and verifies the
+password HMAC. The only public session-minting API accepts a narrowed successful
+login result, requires an explicit timestamp, exhaustively handles exactly
+`interactive_password` and `review_bearer`, and owns no default identity. Its
+private signer cannot be imported. Both verifier and mint API have one
+production import and invocation, in the login route.
+
+`verifyAdminBearerToken` is private and considers only:
 
 1. `ADMIN_REVIEW_TOKEN`,
 2. `OPS_AUTOMATION_TOKEN`,
 3. `PRIVACY_ADMIN_TOKEN`.
 
-`tests/admin-auth-boundary.test.ts` parses the production TypeScript/TSX AST
-rather than searching strings. It proves:
+`tests/admin-auth-boundary.test.ts` parses the production AST rather than
+searching strings. It proves:
 
-- exactly one production import and one call of
-  `verifyAdminLoginCredential`, both in the login route;
-- exactly twelve admin route modules;
-- every exported HTTP handler outside login imports and calls
-  `verifyAdminPermission`;
-- authorization occurs before the first awaited effect in each handler;
-- non-login handlers cannot import alternate admin-auth entry points;
+- one exact canonical inventory of twelve admin route modules across every
+  supported TypeScript and JavaScript route extension;
+- every non-login HTTP export, including `HEAD` and `OPTIONS`, is an exported
+  const directly initialized by `withAdminPermission` with a canonical literal
+  permission and inline protected callback;
+- variable handlers, named callbacks, method aliases, re-exports, namespace or
+  dynamic imports, CommonJS exports, and manual positional auth checks fail the
+  analyzer's hostile fixtures;
+- the structural wrapper authenticates and authorizes before the protected
+  callback can parse a body, await I/O, log, or mutate state;
+- exactly one production import and call each of
+  `verifyAdminLoginCredential` and `createAdminLoginSession`, both in login;
 - `verifyAdminBearerToken` is not exported and has no outside production call.
 
-Comments, dead string literals, unused imports, aliases, and alternate route
-extensions cannot satisfy this contract.
+Comments, dead string literals, unused imports, aliases, alternate methods, and
+alternate route extensions cannot satisfy this contract.
 
 ## Cryptographic and rotation boundaries
 
@@ -106,6 +118,13 @@ extensions cannot satisfy this contract.
   characters
 - Raw HMAC parsing rejects missing, short, long, uppercase, padded, quoted, and
   nonhex values without normalization
+- Production secret validation HMACs the review, ops, and privacy bearer
+  candidates under the same domain/key and rejects any value equal to the stored
+  password HMAC without printing credential material
+- Runtime auth returns `unconfigured` on an actual password/bearer collision for
+  login, session-cookie, review bearer, ops bearer, and privacy bearer planes
+- Missing or malformed password metadata disables password verification and
+  password-session acceptance without disabling distinct bearer principals
 - Constant-time comparison rejects unequal lengths before `timingSafeEqual`
 - Rotating `ADMIN_REVIEW_TOKEN` immediately invalidates prior password HMACs and
   both password/review sessions
@@ -126,19 +145,28 @@ the value was never committed.
 ## Exact implementation verification
 
 Completed against implementation commit
-`62122a9bf51d920232ceb84a57512b8bd572b35a`:
+`a79184b5d60aeeb5eca1c8071bfc6d5ba9accb5c`:
 
-- `pnpm lint`: pass, 281 files
+- `pnpm lint`: pass, 283 files
 - `pnpm typecheck`: pass
-- focused Vitest: 5 files and 59 tests passed
+- admin and secret focused Vitest: 18 files and 105 tests passed
+- `pnpm build`: pass, including all admin route handlers
 - `git diff --check`: pass
+- full standalone branch Vitest: 79 files and 2,195 tests passed; the remaining
+  15 failures are the exact-base macOS Node localStorage and Bash ERE
+  portability defects already corrected and independently reviewed in PR #78.
+  Final combined-tree admission must prove all tests after #78 is integrated.
 
 The focused suite proves:
 
 - password login creates a viewer-only thirty-minute signed session;
 - review-token login creates a configured-role twelve-hour signed session;
 - signed provenance survives cookie issuance and verification;
-- password sessions cannot perform `leads.update`;
+- password sessions authorize only aggregate metrics and same-origin logout;
+- raw dashboard, lead, voice, transcript, and mutation permissions return
+  forbidden for the same signed password cookie;
+- the server-rendered password page never calls the raw lead-table query and
+  renders no raw sentinel data;
 - password rejection as bearer auth;
 - missing/malformed HMAC failure without disabling the strong token;
 - stale password HMAC and old sessions fail after token rotation;
@@ -161,8 +189,8 @@ this implementation commit. They are mandatory pre-merge gates.
 5. From a clean cookie jar, prove:
    - password login succeeds;
    - signed method is password, role is viewer, and expiry is thirty minutes;
-   - the password session reads allowed review data but receives 403 for an
-     operator mutation;
+   - the password session reads only PII-free aggregate metrics and receives 403
+     from raw review, lead, transcript/voice, and mutation routes;
    - the password is rejected as bearer;
    - strong review-token login retains the configured role;
    - cookie attributes are HTTP-only, SameSite, Secure in production;

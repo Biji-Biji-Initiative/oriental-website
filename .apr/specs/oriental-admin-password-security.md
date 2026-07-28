@@ -21,12 +21,15 @@ runtime copy.
 4. The human password must never authenticate an `Authorization: Bearer`
    request and must never become the admin session-signing key.
 5. Password login must sign method `password`, force role `viewer`, expire after
-   thirty minutes, and be unable to perform mutations, follow-up, eval,
-   maintenance, or privacy operations. Strong review-token login must sign
-   method `review`, retain the configured interactive role, and expire after
-   twelve hours.
+   thirty minutes, and authorize only PII-free aggregate dashboard metrics and
+   same-origin logout. It must receive `403 forbidden` from customer records,
+   email addresses, transcripts, voice details, analytics/queues, and every
+   mutation. Strong review-token login must sign method `review`, retain the
+   configured interactive role, and expire after twelve hours.
 6. `ADMIN_REVIEW_TOKEN` must remain at least 32 characters in production and
-   distinct from the ops and privacy bearer credentials.
+   distinct from the ops and privacy bearer credentials. Production validation
+   and runtime authentication must also reject any configuration where the
+   password HMAC proves the password equals any review, ops, or privacy bearer.
 7. Interactive login must preserve same-origin JSON enforcement, per-IP rate
    limiting, signed HTTP-only SameSite cookies, and principal-bound roles.
 8. Missing or malformed password-HMAC configuration must fail closed for the
@@ -35,22 +38,30 @@ runtime copy.
    admin sessions until the managed password HMAC is deliberately co-rotated.
 10. The new HMAC must be part of the complete Infisical-to-Coolify managed
     runtime inventory and production secret validation.
-11. A whole-production TypeScript AST test must own the exact login-verifier
-    call site, the twelve admin handlers, authorization-before-effects, and the
-    private bearer verifier.
-12. UI copy, API documentation, technical specifications, infrastructure
+11. A whole-production AST test must pin the exact route inventory across every
+    supported extension and require every non-login HTTP method export to be a
+    const directly initialized by the structural permission wrapper. Hostile
+    variable, alias, re-export, namespace, dynamic-import, CommonJS, named
+    callback, and manual positional-auth fixtures must fail.
+12. Session minting must accept only a narrowed successful login result, handle
+    password and review provenance exhaustively, own no default identity, and
+    have exactly one production call site in the login route. The signer and
+    bearer verifier remain private.
+13. UI copy, API documentation, technical specifications, infrastructure
     guidance, launch checklist, and release governance must describe the same
     credential and historical-exposure boundary.
 
 ## Acceptance evidence
 
-- Unit tests prove distinct password/review sessions, password viewer authority,
-  bearer rejection, malformed-HMAC rejection, stale-key rejection, and continued
-  strong-token success.
-- AST tests prove the login-only verifier and authorization-before-effects call
-  graph across the full production TypeScript tree.
-- Secret-contract tests prove the HMAC is required and exactly 64 lowercase
-  hexadecimal characters in production.
+- Unit tests prove distinct password/review sessions, aggregate-only password
+  authority, raw customer-data and mutation rejection, bearer rejection,
+  all-bearer collision failure, malformed-HMAC rejection, stale-key rejection,
+  and continued strong-token success.
+- AST tests prove login-only verifier/mint authority and direct structural
+  wrapping for every non-login HTTP export across the exact canonical route
+  inventory, including hostile fixtures.
+- Secret-contract tests prove the HMAC is required, exactly 64 lowercase
+  hexadecimal characters in production, and distinct from every bearer value.
 - Release-governance tests own the new managed environment key.
 - Biome, strict TypeScript, focused Vitest, and diff checks pass.
 - GitHub CI passes on the exact PR head.
@@ -62,6 +73,7 @@ After merge, derive the requested password HMAC without logging either the
 password or the strong token, write it to both staging and production
 `/deploy/oriental-website` Infisical scopes, and run the governed release.
 Deploy the exact merge SHA to canonical staging first, prove the human password
-through the real browser login while also proving bearer rejection, then
+through the real browser login while also proving aggregate-only output, raw
+customer-data and mutation `403` responses, and bearer rejection, then
 promote the same SHA to production control and repeat health and login proof.
 Retain the previous production SHA as the automatic rollback target.
