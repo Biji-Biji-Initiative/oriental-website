@@ -18,7 +18,8 @@ export type StitchableSession = {
 };
 
 export function sessionEmailKey(session: StitchableSession): string {
-  return (session.capturedEmailNormalized ?? session.captured?.email ?? "").trim().toLowerCase();
+  const email = session.capturedEmailNormalized?.trim().toLowerCase() ?? "";
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email) ? email : "";
 }
 
 /**
@@ -28,24 +29,26 @@ export function sessionEmailKey(session: StitchableSession): string {
  * a bounded second pass that stitches groups sharing the same captured email —
  * this recovers the cross-tab / cross-device / new-browser-session resume,
  * where sessionStorage is gone and the client mints a fresh conversationId.
- * Anonymous groups (no captured email yet) never stitch: there is nothing to
- * prove they are the same person. Legacy rows without a conversationId stand
- * alone (keyed by reviewId). The latest call heads the entry; every call is
- * kept in chronological order for per-call inspection.
+ * Inference requires every call in an explicit unit to carry the same
+ * authoritative normalized email. Missing, raw-only, or conflicting identity
+ * keeps the unit isolated. Blank IDs fall back to a namespaced review key, and
+ * actual call timestamps—not a sparse unit's enclosing interval—decide the
+ * nearest compatible group. The latest call heads each entry; every call is
+ * kept in deterministic chronological order for per-call inspection.
  */
 export function collapseConversations<T extends StitchableSession>(sessions: T[]): Array<T & { calls: T[] }> {
   const groups = new Map<string, T[]>();
   for (const session of sessions) {
-    const key = session.conversationId ?? session.reviewId;
+    const conversationId = session.conversationId?.trim();
+    const key = conversationId ? `conversation:${conversationId}` : `review:${session.reviewId}`;
     const list = groups.get(key);
     if (list) list.push(session);
     else groups.set(key, [session]);
   }
 
-  const units = [...groups.values()].map((group) => {
-    const calls = [...group].sort((a, b) => a.updatedAt - b.updatedAt);
-    const email = calls.reduce((found, call) => found || sessionEmailKey(call), "");
-    return { calls, email, start: calls[0]?.updatedAt ?? 0, end: calls[calls.length - 1]?.updatedAt ?? 0 };
+  const units = [...groups.entries()].map(([key, group]) => {
+    const calls = [...group].sort(compareSessions);
+    return { key, calls, email: consistentUnitEmail(calls) };
   });
 
   const merged: Array<{ calls: T[] }> = [];
@@ -59,26 +62,63 @@ export function collapseConversations<T extends StitchableSession>(sessions: T[]
     if (list) list.push(unit);
     else byEmail.set(unit.email, [unit]);
   }
+
   for (const emailUnits of byEmail.values()) {
-    const ordered = emailUnits.sort((a, b) => a.start - b.start);
-    let cluster: { calls: T[]; end: number } | null = null;
+    const ordered = emailUnits.sort(compareUnits);
+    const clusters: Array<{ calls: T[]; key: string }> = [];
     for (const unit of ordered) {
-      if (cluster && unit.start - cluster.end <= CONVERSATION_STITCH_WINDOW_MS) {
-        cluster.calls.push(...unit.calls);
-        cluster.end = Math.max(cluster.end, unit.end);
+      const compatible = clusters
+        .map((cluster) => ({ cluster, gap: nearestActualCallGap(cluster.calls, unit.calls) }))
+        .filter(({ gap }) => gap <= CONVERSATION_STITCH_WINDOW_MS)
+        .sort((left, right) => left.gap - right.gap || left.cluster.key.localeCompare(right.cluster.key));
+      const selected = compatible[0]?.cluster;
+      if (selected) {
+        selected.calls.push(...unit.calls);
+        selected.calls.sort(compareSessions);
+        if (unit.key.localeCompare(selected.key) < 0) selected.key = unit.key;
       } else {
-        if (cluster) merged.push({ calls: cluster.calls });
-        cluster = { calls: [...unit.calls], end: unit.end };
+        clusters.push({ calls: [...unit.calls], key: unit.key });
       }
     }
-    if (cluster) merged.push({ calls: cluster.calls });
+    merged.push(...clusters.map(({ calls }) => ({ calls })));
   }
 
   const heads: Array<T & { calls: T[] }> = [];
   for (const group of merged) {
-    const calls = [...group.calls].sort((a, b) => a.updatedAt - b.updatedAt);
+    const calls = [...group.calls].sort(compareSessions);
     const head = calls[calls.length - 1] as T;
     heads.push({ ...head, calls });
   }
-  return heads.sort((a, b) => b.updatedAt - a.updatedAt);
+  return heads.sort((a, b) => compareSessions(b, a));
+}
+
+function consistentUnitEmail<T extends StitchableSession>(calls: T[]) {
+  const email = calls[0] ? sessionEmailKey(calls[0]) : "";
+  return email && calls.every((call) => sessionEmailKey(call) === email) ? email : "";
+}
+
+function compareSessions(left: StitchableSession, right: StitchableSession) {
+  return left.updatedAt - right.updatedAt || left.reviewId.localeCompare(right.reviewId);
+}
+
+function compareUnits<T extends StitchableSession>(
+  left: { key: string; calls: T[] },
+  right: { key: string; calls: T[] },
+) {
+  const byFirstCall = compareSessions(left.calls[0] as T, right.calls[0] as T);
+  return byFirstCall || left.key.localeCompare(right.key);
+}
+
+function nearestActualCallGap<T extends StitchableSession>(left: T[], right: T[]) {
+  let gap = Number.POSITIVE_INFINITY;
+  let leftIndex = 0;
+  let rightIndex = 0;
+  while (leftIndex < left.length && rightIndex < right.length) {
+    const leftCall = left[leftIndex] as T;
+    const rightCall = right[rightIndex] as T;
+    gap = Math.min(gap, Math.abs(leftCall.updatedAt - rightCall.updatedAt));
+    if (leftCall.updatedAt <= rightCall.updatedAt) leftIndex += 1;
+    else rightIndex += 1;
+  }
+  return gap;
 }
