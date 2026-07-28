@@ -207,7 +207,7 @@ describe("collapseConversations", () => {
       session({
         reviewId: "a-end",
         conversationId: "conv-a",
-        updatedAt: 6 * window,
+        updatedAt: 5.8 * window,
         capturedEmailNormalized: "same@example.com",
       }),
       session({
@@ -219,7 +219,7 @@ describe("collapseConversations", () => {
       session({
         reviewId: "resume",
         conversationId: "conv-resume",
-        updatedAt: 5.4 * window,
+        updatedAt: 5.1 * window,
         capturedEmailNormalized: "same@example.com",
       }),
     ]);
@@ -227,10 +227,12 @@ describe("collapseConversations", () => {
     expect(heads).toHaveLength(2);
     expect(heads.find((head) => head.reviewId === "a-end")?.calls.map((call) => call.reviewId)).toEqual([
       "a-start",
-      "resume",
       "a-end",
     ]);
-    expect(heads.find((head) => head.reviewId === "b")?.calls.map((call) => call.reviewId)).toEqual(["b"]);
+    expect(heads.find((head) => head.reviewId === "resume")?.calls.map((call) => call.reviewId)).toEqual([
+      "b",
+      "resume",
+    ]);
   });
 
   it("uses the exact canonical cluster key for an equal-gap tie under every input permutation", () => {
@@ -419,21 +421,21 @@ describe("collapseConversations", () => {
     for (const call of calls) expect(flattened.filter((candidate) => candidate === call)).toHaveLength(1);
   });
 
-  it("is deterministic under every input permutation at equal timestamps", () => {
+  it("is deterministic under all six input permutations with canonically distinct Unicode ids", () => {
     const calls = [
       session({
-        reviewId: "a",
-        conversationId: "conv-a",
+        reviewId: "e\u0301",
+        conversationId: "e\u0301",
         updatedAt: 1000,
         capturedEmailNormalized: "same@example.com",
       }),
       session({
-        reviewId: "b",
-        conversationId: "conv-b",
+        reviewId: "é",
+        conversationId: "é",
         updatedAt: 1000,
         capturedEmailNormalized: "same@example.com",
       }),
-      session({ reviewId: "z", conversationId: "conv-z", updatedAt: 1000 }),
+      session({ reviewId: "Ω", conversationId: "Ω", updatedAt: 1000 }),
     ];
     const project = (input: StitchableSession[]) =>
       collapseConversations(input).map((head) => ({
@@ -442,9 +444,10 @@ describe("collapseConversations", () => {
       }));
 
     const expected = [
-      { head: "z", calls: ["z"] },
-      { head: "b", calls: ["a", "b"] },
+      { head: "Ω", calls: ["Ω"] },
+      { head: "é", calls: ["e\u0301", "é"] },
     ];
+    expect(permutations(calls)).toHaveLength(6);
     for (const permutation of permutations(calls)) expect(project(permutation)).toEqual(expected);
   });
 
