@@ -1,0 +1,38 @@
+name: oriental-dropped-session-observability
+description: Exact-range data-integrity review for lost close snapshots and orphan alerts
+
+documents:
+  readme: .apr/evidence/oriental-dropped-session-observability.md
+  spec: .apr/specs/oriental-dropped-session-observability.md
+  implementation: .apr/evidence/oriental-dropped-session-observability.patch
+
+oracle:
+  model: "gpt-5.6-sol"
+
+rounds:
+  output_dir: .apr/rounds/oriental-dropped-session-observability
+  impl_every_n: 1
+
+template: |
+  Perform an adversarial exact-range data-integrity and operations review of
+  Oriental dropped-session implementation head
+  ed57627546bdfc7340e5650841f74dfee268a413. Review the complete patch after
+  stacked base 75f42e345106810467b2e048e0d3dc7654066b7e. Confirm that client
+  failure reporting stays PII-free; the Convex query cannot miss orphans under
+  healthy-session saturation; live calls and never-connected sessions cannot
+  be falsely flagged; every scan is indexed and bounded; the secondary sweep
+  cannot fail the lead SLA plane; only ops automation can invoke the route; and
+  Convex-before-web release ordering is mandatory. End with `VERDICT: MERGE` or
+  `VERDICT: DO NOT MERGE` on its own final line.
+
+template_with_impl: |
+  Perform an adversarial exact-range data-integrity and operations review of
+  Oriental dropped-session implementation head
+  ed57627546bdfc7340e5650841f74dfee268a413. Review the complete patch after
+  stacked base 75f42e345106810467b2e048e0d3dc7654066b7e. Confirm that client
+  failure reporting stays PII-free; the Convex query cannot miss orphans under
+  healthy-session saturation; live calls and never-connected sessions cannot
+  be falsely flagged; every scan is indexed and bounded; the secondary sweep
+  cannot fail the lead SLA plane; only ops automation can invoke the route; and
+  Convex-before-web release ordering is mandatory. End with `VERDICT: MERGE` or
+  `VERDICT: DO NOT MERGE` on its own final line.

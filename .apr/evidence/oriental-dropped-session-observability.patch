@@ -1,0 +1,329 @@
+diff --git a/app/api/admin/sla-check/route.ts b/app/api/admin/sla-check/route.ts
+index 7d38ae6da7fe9baaefc373a6bbf771df8c3654e5..48aa85a52102d130d79e0b93d33f0920187bd15f 100644
+--- a/app/api/admin/sla-check/route.ts
++++ b/app/api/admin/sla-check/route.ts
+@@ -1,6 +1,6 @@
+ import { z } from "zod";
+ import { adminAuthFailureStatus, verifyAdminPermission } from "@/lib/server/admin-auth";
+-import { getAdminLeadSlaSnapshot } from "@/lib/server/convex";
++import { getAdminLeadSlaSnapshot, getAdminOrphanedVoiceSessions } from "@/lib/server/convex";
+ import { logInfo, logWarn } from "@/lib/server/logger";
+ import { sendOpsAlert } from "@/lib/server/ops-alerts";
+ import { noStoreJson } from "@/lib/server/security";
+@@ -10,6 +10,10 @@ export const dynamic = "force-dynamic";
+ 
+ const requestSchema = z.object({
+   maxUnownedHours: z.number().min(1).max(72).optional(),
++  // A voice session that connected but never recorded a close is either still
++  // live or lost its final snapshot to a network death. This window must clear
++  // the longest a real call can run; 30 min is comfortably beyond it.
++  maxVoiceStaleMinutes: z.number().min(15).max(1440).optional(),
+ });
+ 
+ /**
+@@ -28,6 +32,7 @@ export async function POST(request: Request) {
+   const parsed = requestSchema.safeParse(body ?? {});
+   if (!parsed.success) return noStoreJson({ ok: false, error: "invalid_request" }, { status: 400 });
+   const maxUnownedMs = (parsed.data.maxUnownedHours ?? 4) * 60 * 60 * 1000;
++  const maxVoiceStaleMs = (parsed.data.maxVoiceStaleMinutes ?? 30) * 60 * 1000;
+ 
+   const snapshot = await getAdminLeadSlaSnapshot(maxUnownedMs).catch((error) => {
+     logWarn("admin_sla.convex_failed", { error: error instanceof Error ? error.message : "unknown" });
+@@ -37,27 +42,50 @@ export async function POST(request: Request) {
+ 
+   const { generatedAt: now, activeLeads, unownedBreaches, failedNotifications } = snapshot.data;
+ 
++  // Orphaned voice sessions (connected, never closed) are the signature of a
++  // dropped call whose final snapshot never reached us. Surface them here so
++  // the invisible failures become visible, but never let their lookup fail the
++  // core lead SLA sweep.
++  const orphanSweep = await getAdminOrphanedVoiceSessions(maxVoiceStaleMs).catch((error) => {
++    logWarn("admin_sla.orphan_sweep_failed", { error: error instanceof Error ? error.message : "unknown" });
++    return { ok: false as const, reason: "orphan_sweep_failed" };
++  });
++  const orphanedVoiceSessions = orphanSweep.ok ? orphanSweep.data.orphaned : null;
++
+   let alerted = false;
+-  if (unownedBreaches.count > 0 || failedNotifications.count > 0) {
++  const orphanCount = orphanedVoiceSessions?.count ?? 0;
++  if (unownedBreaches.count > 0 || failedNotifications.count > 0 || orphanCount > 0) {
+     const worstAgeH = unownedBreaches.oldestCreatedAt ? (now - unownedBreaches.oldestCreatedAt) / 3_600_000 : 0;
++    const summaryParts: string[] = [];
++    if (unownedBreaches.count > 0) {
++      summaryParts.push(
++        `${formatSlaCount(unownedBreaches)} lead(s) unowned beyond ${Math.round(maxUnownedMs / 3_600_000)}h`,
++      );
++    }
++    if (failedNotifications.count > 0) {
++      summaryParts.push(`${formatSlaCount(failedNotifications)} failed notification(s)`);
++    }
++    if (orphanedVoiceSessions && orphanedVoiceSessions.count > 0) {
++      summaryParts.push(`${formatSlaCount(orphanedVoiceSessions)} voice session(s) dropped without a close snapshot`);
++    }
+     const result = await sendOpsAlert({
+       event: "lead_sla_breach",
+       severity: failedNotifications.count > 0 ? "error" : "warning",
+-      summary:
+-        `${formatSlaCount(unownedBreaches)} lead(s) unowned beyond ${Math.round(maxUnownedMs / 3_600_000)}h` +
+-        `${
+-          failedNotifications.count > 0 ? ` · ${formatSlaCount(failedNotifications)} failed notification(s)` : ""
+-        } — ` +
+-        "assign owners in the admin console.",
++      summary: `${summaryParts.join(" · ")} — review in the admin console.`,
+       meta: {
+         unowned: unownedBreaches.count,
+         unownedCountIsLowerBound: unownedBreaches.truncated,
+         failedNotifications: failedNotifications.count,
+         failedNotificationCountIsLowerBound: failedNotifications.truncated,
++        orphanedVoiceSessions: orphanCount,
++        orphanedVoiceSessionsIsLowerBound: orphanedVoiceSessions?.truncated ?? false,
+         oldestUnownedHours: Math.round(worstAgeH * 10) / 10,
+         console: "https://oriental.mereka.io/admin/session-review?view=leads&sort=attention",
+       },
+-      fingerprint: `unowned=${formatSlaCount(unownedBreaches)}:` + `failed=${formatSlaCount(failedNotifications)}`,
++      fingerprint:
++        `unowned=${formatSlaCount(unownedBreaches)}:` +
++        `failed=${formatSlaCount(failedNotifications)}:` +
++        `orphaned=${orphanedVoiceSessions ? formatSlaCount(orphanedVoiceSessions) : "na"}`,
+     });
+     alerted = result.ok === true;
+   }
+@@ -68,6 +96,8 @@ export async function POST(request: Request) {
+     unownedCountIsLowerBound: unownedBreaches.truncated,
+     failedNotifications: failedNotifications.count,
+     failedNotificationCountIsLowerBound: failedNotifications.truncated,
++    orphanedVoiceSessions: orphanCount,
++    orphanSweepAvailable: orphanSweep.ok,
+     alerted,
+   });
+   return noStoreJson({
+@@ -75,10 +105,12 @@ export async function POST(request: Request) {
+     unownedBreaches: unownedBreaches.count,
+     failedNotifications: failedNotifications.count,
+     activeLeads: activeLeads.count,
++    orphanedVoiceSessions: orphanCount,
+     truncated: {
+       unownedBreaches: unownedBreaches.truncated,
+       failedNotifications: failedNotifications.truncated,
+       activeLeads: activeLeads.truncated,
++      orphanedVoiceSessions: orphanedVoiceSessions?.truncated ?? false,
+     },
+     alerted,
+   });
+diff --git a/components/voice-agent/VoiceAgentDialog.tsx b/components/voice-agent/VoiceAgentDialog.tsx
+index 8f548d549d983bf2c418bdc7c38d2b23cc2d31db..35bee4a92058b2aa2d19a66123033847b3ba6ffb 100644
+--- a/components/voice-agent/VoiceAgentDialog.tsx
++++ b/components/voice-agent/VoiceAgentDialog.tsx
+@@ -1,6 +1,7 @@
+ "use client";
+ 
+ import { zodResolver } from "@hookform/resolvers/zod";
++import * as Sentry from "@sentry/nextjs";
+ import { useCallback, useEffect, useRef, useState } from "react";
+ import { preconnect } from "react-dom";
+ import { type UseFormReturn, useForm } from "react-hook-form";
+@@ -719,7 +720,16 @@ export function VoiceAgentDialog({
+           ...(leadId ? { leadId } : {}),
+         }),
+         { keepalive: Boolean(overrides.closedAt) },
+-      ).catch(() => null);
++      ).catch((error) => {
++        // A missed heartbeat self-heals on the next beat, but a close snapshot
++        // that fails to persist is the session's final state gone for good —
++        // nothing else will ever record why or how it ended. beforeSend already
++        // scrubs the event to type + stacktrace; no PII is at risk here.
++        if (overrides.closedAt) {
++          Sentry.captureException(error instanceof Error ? error : new Error("voice_review_close_snapshot_failed"));
++        }
++        return null;
++      });
+     },
+     [captured, currentReviewCredentials, nextSnapshotSequence, segment, stateRef, transcript],
+   );
+diff --git a/convex/leads.ts b/convex/leads.ts
+index d0e996d05d4cb1b4e90cd9d27ce70673b8757b03..c9d233ee996f649d180a2e4afdb575abbff995ba 100644
+--- a/convex/leads.ts
++++ b/convex/leads.ts
+@@ -1486,6 +1486,52 @@ export const adminLeadSlaSnapshot = query({
+   },
+ });
+ 
++/**
++ * A session that connected but never recorded a closedAt is either still
++ * live or lost its final snapshot (network death, a failed sendBeacon, or a
++ * crashed tab) — the exact gap that made a dropped call invisible in review.
++ * maxStaleMs must clear the longest a genuinely active call can run
++ * (VOICE_DURATION_DEFAULTS.maxDurationMs + goodbye grace) with margin, so
++ * this only ever flags calls that are actually gone quiet, not slow ones.
++ */
++export const adminOrphanedVoiceSessionsSweep = query({
++  args: { ingestSecret: v.string(), maxStaleMs: v.number() },
++  handler: async (ctx, { ingestSecret, maxStaleMs }) => {
++    requireIngestSecret(ingestSecret);
++    const generatedAt = Date.now();
++    const boundedStaleMs = Math.min(Math.max(Math.floor(maxStaleMs), 15 * 60_000), 24 * HOUR_MS);
++    const staleCutoff = generatedAt - boundedStaleMs;
++    const lookbackCutoff = generatedAt - 24 * HOUR_MS;
++
++    const candidates = await ctx.db
++      .query("voiceSessions")
++      .withIndex("by_payload_safe_updated_at", (q) =>
++        q.eq("payloadSafe", true).gte("updatedAt", lookbackCutoff).lt("updatedAt", staleCutoff),
++      )
++      .filter((q) => q.and(q.neq(q.field("connectedAt"), undefined), q.eq(q.field("closedAt"), undefined)))
++      .order("desc")
++      .take(SLA_QUERY_BUCKET_LIMIT + 1);
++
++    const orphaned = candidates.slice(0, SLA_QUERY_BUCKET_LIMIT).map((row) => ({
++      reviewId: row.reviewId,
++      conversationId: row.conversationId,
++      segment: row.segment,
++      connectedAt: row.connectedAt,
++      updatedAt: row.updatedAt,
++      deploymentEnvironment: row.deploymentEnvironment,
++    }));
++
++    return {
++      generatedAt,
++      orphaned: {
++        count: orphaned.length,
++        truncated: candidates.length > SLA_QUERY_BUCKET_LIMIT,
++        rows: orphaned,
++      },
++    };
++  },
++});
++
+ function summarizeSlaBuckets(
+   buckets: Array<Array<{ createdAt: number }>>,
+   includeOldest = false,
+diff --git a/lib/server/convex.ts b/lib/server/convex.ts
+index e161cf78297ddd093b1f363b4e5ceda8fbed5e88..92fc1ba8538ea12a2f30dd4e1f79aab64607e871 100644
+--- a/lib/server/convex.ts
++++ b/lib/server/convex.ts
+@@ -223,6 +223,16 @@ export async function getAdminLeadSlaSnapshot(maxUnownedMs: number) {
+   return { ok: true as const, data };
+ }
+ 
++export async function getAdminOrphanedVoiceSessions(maxStaleMs: number) {
++  const client = createConvexClient();
++  if (!client) return { ok: false as const, reason: "convex_unconfigured" };
++  const data = await client.client.query(api.leads.adminOrphanedVoiceSessionsSweep, {
++    ingestSecret: client.ingestSecret,
++    maxStaleMs,
++  });
++  return { ok: true as const, data };
++}
++
+ export async function applyDataRetention(now: number) {
+   const client = createConvexClient();
+   if (!client) return { ok: false as const, reason: "convex_unconfigured" as const };
+diff --git a/tests/admin-data-integrity.test.ts b/tests/admin-data-integrity.test.ts
+index 6048c103bda33a94d95fda0a6a5e01560d2cc280..1ffc261402b09fdf42a2e168837241c2f2723572 100644
+--- a/tests/admin-data-integrity.test.ts
++++ b/tests/admin-data-integrity.test.ts
+@@ -69,6 +69,22 @@ describe("admin CRM data integrity contract", () => {
+     expect(slaQuery).not.toContain(".collect()");
+   });
+ 
++  it("filters open connected orphan candidates before applying the bounded alert cap", () => {
++    const orphanQuery = convexSource.slice(
++      convexSource.indexOf("export const adminOrphanedVoiceSessionsSweep"),
++      convexSource.indexOf("function summarizeSlaBuckets"),
++    );
++    const openSessionFilter = orphanQuery.indexOf(
++      '.filter((q) => q.and(q.neq(q.field("connectedAt"), undefined), q.eq(q.field("closedAt"), undefined)))',
++    );
++    const boundedTake = orphanQuery.indexOf(".take(SLA_QUERY_BUCKET_LIMIT + 1)");
++
++    expect(openSessionFilter).toBeGreaterThan(-1);
++    expect(boundedTake).toBeGreaterThan(openSessionFilter);
++    expect(orphanQuery).not.toContain("candidates.filter(");
++    expect(orphanQuery).not.toContain(".collect()");
++  });
++
+   it("excludes unmigrated oversized payloads from dashboard, eval, and count scans", () => {
+     const evalQuery = convexSource.slice(
+       convexSource.indexOf("export const voiceSessionsForEval"),
+diff --git a/tests/admin-sla-route.test.ts b/tests/admin-sla-route.test.ts
+index 5265b1b1ced7e326158d647194b6703a404ae8a9..6c27402a63f553e392848a4e1d6e771c37f56551 100644
+--- a/tests/admin-sla-route.test.ts
++++ b/tests/admin-sla-route.test.ts
+@@ -1,15 +1,23 @@
+ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+ import { POST } from "@/app/api/admin/sla-check/route";
+-import { getAdminLeadSlaSnapshot } from "@/lib/server/convex";
++import { getAdminLeadSlaSnapshot, getAdminOrphanedVoiceSessions } from "@/lib/server/convex";
+ import { sendOpsAlert } from "@/lib/server/ops-alerts";
+ 
+-vi.mock("@/lib/server/convex", () => ({ getAdminLeadSlaSnapshot: vi.fn() }));
++vi.mock("@/lib/server/convex", () => ({ getAdminLeadSlaSnapshot: vi.fn(), getAdminOrphanedVoiceSessions: vi.fn() }));
+ vi.mock("@/lib/server/ops-alerts", () => ({ sendOpsAlert: vi.fn() }));
+ 
+ const originalEnv = process.env;
+ const snapshotMock = vi.mocked(getAdminLeadSlaSnapshot);
++const orphanMock = vi.mocked(getAdminOrphanedVoiceSessions);
+ const alertMock = vi.mocked(sendOpsAlert);
+ 
++function orphanSweep(count = 0, truncated = false) {
++  return {
++    ok: true as const,
++    data: { generatedAt: now, orphaned: { count, truncated, rows: [] } },
++  } as Awaited<ReturnType<typeof getAdminOrphanedVoiceSessions>>;
++}
++
+ const HOUR = 60 * 60 * 1000;
+ const now = 1_800_000_000_000;
+ 
+@@ -47,6 +55,7 @@ describe("admin SLA check route", () => {
+       OPS_AUTOMATION_TOKEN: "ops-automation-token-123456789",
+     };
+     alertMock.mockResolvedValue({ ok: true, transport: "slack_bot" });
++    orphanMock.mockResolvedValue(orphanSweep(0));
+   });
+ 
+   afterEach(() => {
+@@ -102,6 +111,43 @@ describe("admin SLA check route", () => {
+     );
+   });
+ 
++  it("alerts on orphaned voice sessions even when leads are all healthy", async () => {
++    snapshotMock.mockResolvedValue(snapshot({ active: 3 }));
++    orphanMock.mockResolvedValue(orphanSweep(2));
++
++    const response = await POST(slaRequest({}));
++
++    await expect(response.json()).resolves.toMatchObject({
++      ok: true,
++      unownedBreaches: 0,
++      orphanedVoiceSessions: 2,
++      alerted: true,
++    });
++    expect(orphanMock).toHaveBeenCalledWith(30 * 60 * 1000);
++    expect(alertMock).toHaveBeenCalledWith(
++      expect.objectContaining({
++        summary: expect.stringContaining("2 voice session(s) dropped without a close snapshot"),
++        meta: expect.objectContaining({ orphanedVoiceSessions: 2 }),
++      }),
++    );
++  });
++
++  it("still reports lead SLA when the orphan sweep is unavailable", async () => {
++    snapshotMock.mockResolvedValue(snapshot({ active: 1 }));
++    orphanMock.mockRejectedValue(new Error("convex down"));
++
++    const response = await POST(slaRequest({}));
++
++    expect(response.status).toBe(200);
++    await expect(response.json()).resolves.toMatchObject({
++      ok: true,
++      activeLeads: 1,
++      orphanedVoiceSessions: 0,
++      alerted: false,
++    });
++    expect(alertMock).not.toHaveBeenCalled();
++  });
++
+   it("rejects interactive review credentials because the sweep can post to Slack", async () => {
+     const response = await POST(slaRequest({}, "admin-review-token-123456789"));
+ 
