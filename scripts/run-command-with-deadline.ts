@@ -27,39 +27,80 @@ const child = spawn(command, commandArgs, {
   env: process.env,
   stdio: "inherit",
 });
-let timedOut = false;
+let childExited = false;
+let terminationIssued = false;
+type CancellationSignal = "SIGHUP" | "SIGINT" | "SIGTERM";
+let terminationReason: "deadline" | CancellationSignal | null = null;
 
-const deadline = setTimeout(() => {
-  timedOut = true;
-  process.stderr.write(`Command exceeded the ${timeoutMs} ms release deadline.\n`);
+function terminateChildGroup() {
+  if (childExited || terminationIssued) return;
+  terminationIssued = true;
   if (detached && child.pid) {
     try {
       process.kill(-child.pid, "SIGKILL");
+      return;
     } catch {
-      child.kill("SIGKILL");
+      // Fall through to the direct-child kill when no process group exists.
     }
-  } else {
-    child.kill("SIGKILL");
   }
+  child.kill("SIGKILL");
+}
+
+const cancellationExitCodes: Record<CancellationSignal, number> = {
+  SIGHUP: 129,
+  SIGINT: 130,
+  SIGTERM: 143,
+};
+const cancellationHandlers = new Map<CancellationSignal, () => void>();
+for (const signal of Object.keys(cancellationExitCodes) as CancellationSignal[]) {
+  const handler = () => {
+    if (childExited || terminationReason) return;
+    terminationReason = signal;
+    process.stderr.write(`Release command cancelled by ${signal}; terminating its process group.\n`);
+    terminateChildGroup();
+  };
+  cancellationHandlers.set(signal, handler);
+  process.on(signal, handler);
+}
+
+const supervisorExitHandler = () => terminateChildGroup();
+process.once("exit", supervisorExitHandler);
+
+const deadline = setTimeout(() => {
+  if (childExited || terminationReason) return;
+  terminationReason = "deadline";
+  process.stderr.write(`Command exceeded the ${timeoutMs} ms release deadline.\n`);
+  terminateChildGroup();
 }, timeoutMs);
 deadline.unref();
 
-child.once("error", (error) => {
+function finish(exitCode: number) {
+  if (childExited) return;
+  childExited = true;
   clearTimeout(deadline);
+  process.removeListener("exit", supervisorExitHandler);
+  for (const [signal, handler] of cancellationHandlers) process.removeListener(signal, handler);
+  process.exitCode = exitCode;
+}
+
+child.once("error", (error) => {
   process.stderr.write(`Failed to start release command: ${error.message}\n`);
-  process.exitCode = 1;
+  finish(1);
 });
 
 child.once("exit", (code, signal) => {
-  clearTimeout(deadline);
-  if (timedOut) {
-    process.exitCode = 124;
+  if (terminationReason === "deadline") {
+    finish(124);
+    return;
+  }
+  if (terminationReason) {
+    finish(cancellationExitCodes[terminationReason]);
     return;
   }
   if (signal) {
     process.stderr.write(`Release command ended from signal ${signal}.\n`);
-    process.exitCode = 1;
+    finish(1);
     return;
   }
-  process.exitCode = code ?? 1;
+  finish(code ?? 1);
 });
