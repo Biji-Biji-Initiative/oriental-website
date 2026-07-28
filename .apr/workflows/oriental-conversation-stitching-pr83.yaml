@@ -1,0 +1,51 @@
+name: oriental-conversation-stitching-pr83
+description: Exact-tree privacy and grouping review for resumed voice calls
+
+documents:
+  readme: .apr/evidence/oriental-conversation-stitching-pr83.md
+  spec: .apr/specs/oriental-conversation-stitching.md
+  implementation: .apr/evidence/oriental-conversation-stitching-pr83.patch
+
+oracle:
+  model: "gpt-5.6-sol"
+
+rounds:
+  output_dir: .apr/rounds/oriental-conversation-stitching-pr83
+  impl_every_n: 1
+
+template: |
+  Perform an adversarial exact-source privacy and data-integrity review of
+  conversation-grouping implementation commit
+  267756841dcbef362c5d741ed80240c885d88479. Recheck every round-one and
+  round-two blocker: explicit IDs must be trimmed, nonempty, and namespaced
+  away from review IDs; inferred edges must require one consistent
+  conservative canonical normalized email on every call and reject raw,
+  missing, non-canonical, malformed, whitespace/control-bearing, or conflicting
+  identity; the sixty-minute test must compare actual calls rather than sparse
+  intervals; nearest selection must exercise several compatible clusters;
+  equal-gap selection and every equal-time ordering must use exact code-unit
+  opaque-ID comparisons, never locale collation, and remain deterministic
+  under every permutation including canonically distinct Unicode IDs; every
+  original row reference must occur exactly once across all grouping branches;
+  and inputs and persistence must not mutate. Do not waive exact-head CI,
+  combined-tree admission, or final staging verification. End with
+  `VERDICT: MERGE` or `VERDICT: DO NOT MERGE` on its own final line.
+
+template_with_impl: |
+  Perform an adversarial exact-source privacy and data-integrity review of
+  conversation-grouping implementation commit
+  267756841dcbef362c5d741ed80240c885d88479 against the attached complete
+  source-only patch. Recheck every round-one and round-two blocker: explicit
+  IDs must be trimmed, nonempty, and namespaced away from review IDs; inferred
+  edges must require one consistent conservative canonical normalized email on
+  every call and reject raw, missing, non-canonical, malformed,
+  whitespace/control-bearing, or conflicting identity; the sixty-minute test
+  must compare actual calls rather than sparse intervals; nearest selection
+  must exercise several compatible clusters; equal-gap selection and every
+  equal-time ordering must use exact code-unit opaque-ID comparisons, never
+  locale collation, and remain deterministic under every permutation including
+  canonically distinct Unicode IDs; every original row reference must occur
+  exactly once across all grouping branches; and inputs and persistence must
+  not mutate. Do not waive exact-head CI, combined-tree admission, or final
+  staging verification. End with `VERDICT: MERGE` or
+  `VERDICT: DO NOT MERGE` on its own final line.
