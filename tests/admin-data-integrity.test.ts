@@ -69,6 +69,22 @@ describe("admin CRM data integrity contract", () => {
     expect(slaQuery).not.toContain(".collect()");
   });
 
+  it("filters open connected orphan candidates before applying the bounded alert cap", () => {
+    const orphanQuery = convexSource.slice(
+      convexSource.indexOf("export const adminOrphanedVoiceSessionsSweep"),
+      convexSource.indexOf("function summarizeSlaBuckets"),
+    );
+    const openSessionFilter = orphanQuery.indexOf(
+      '.filter((q) => q.and(q.neq(q.field("connectedAt"), undefined), q.eq(q.field("closedAt"), undefined)))',
+    );
+    const boundedTake = orphanQuery.indexOf(".take(SLA_QUERY_BUCKET_LIMIT + 1)");
+
+    expect(openSessionFilter).toBeGreaterThan(-1);
+    expect(boundedTake).toBeGreaterThan(openSessionFilter);
+    expect(orphanQuery).not.toContain("candidates.filter(");
+    expect(orphanQuery).not.toContain(".collect()");
+  });
+
   it("excludes unmigrated oversized payloads from dashboard, eval, and count scans", () => {
     const evalQuery = convexSource.slice(
       convexSource.indexOf("export const voiceSessionsForEval"),

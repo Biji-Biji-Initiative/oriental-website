@@ -1508,20 +1508,18 @@ export const adminOrphanedVoiceSessionsSweep = query({
       .withIndex("by_payload_safe_updated_at", (q) =>
         q.eq("payloadSafe", true).gte("updatedAt", lookbackCutoff).lt("updatedAt", staleCutoff),
       )
+      .filter((q) => q.and(q.neq(q.field("connectedAt"), undefined), q.eq(q.field("closedAt"), undefined)))
       .order("desc")
       .take(SLA_QUERY_BUCKET_LIMIT + 1);
 
-    const orphaned = candidates
-      .filter((row) => row.connectedAt !== undefined && row.closedAt === undefined)
-      .slice(0, SLA_QUERY_BUCKET_LIMIT)
-      .map((row) => ({
-        reviewId: row.reviewId,
-        conversationId: row.conversationId,
-        segment: row.segment,
-        connectedAt: row.connectedAt,
-        updatedAt: row.updatedAt,
-        deploymentEnvironment: row.deploymentEnvironment,
-      }));
+    const orphaned = candidates.slice(0, SLA_QUERY_BUCKET_LIMIT).map((row) => ({
+      reviewId: row.reviewId,
+      conversationId: row.conversationId,
+      segment: row.segment,
+      connectedAt: row.connectedAt,
+      updatedAt: row.updatedAt,
+      deploymentEnvironment: row.deploymentEnvironment,
+    }));
 
     return {
       generatedAt,
