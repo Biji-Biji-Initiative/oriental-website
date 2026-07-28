@@ -40,7 +40,7 @@ describe("Coolify host deploy image cells", () => {
     expect(deployScript).toContain(`--build-arg "NEXT_PUBLIC_GA_MEASUREMENT_ID=\${ga_measurement_id}"`);
     expect(deployScript).toContain(`--build-arg "NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION=\${google_site_verification}"`);
     expect(deployScript.match(/\$\{#google_site_verification\} < 20/gu)).toHaveLength(2);
-    expect(deployScript.match(/\$\{#google_site_verification\} > 256/gu)).toHaveLength(2);
+    expect(deployScript.match(/\$\{#google_site_verification\} > 255/gu)).toHaveLength(2);
     expect(deployScript.match(/\*\[!A-Za-z0-9_-\]\*/gu)).toHaveLength(2);
     expect(deployScript).not.toContain("{20,256}");
   });
