@@ -17,7 +17,6 @@ const passwordSessionTtlMs = 30 * 60 * 1000;
 const adminPasswordHmacDomain = "oriental-admin-password:v1\0";
 const adminSessionHmacDomain = "oriental-admin-session:v3\0";
 const unsafeMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
-const verifiedAdminLoginProof = Symbol("verified-admin-login");
 type AdminCredential =
   | "interactive_password"
   | "review_bearer"
@@ -35,12 +34,25 @@ export type AdminAuthState =
       role: AdminRole;
     }
   | { ok: false; reason: "unconfigured" | "missing" | "invalid" | "forbidden" | "csrf" };
-export type AdminLoginSuccess = Extract<AdminAuthState, { ok: true }> & {
-  credential: "interactive_password" | "review_bearer";
-  principal: "interactive";
-  readonly [verifiedAdminLoginProof]: true;
-};
+export type AdminLoginSuccess = {
+  ok: true;
+  actor: string;
+  expiresAt: number;
+} & (
+  | {
+      credential: "interactive_password";
+      principal: "password";
+      role: "viewer";
+    }
+  | {
+      credential: "review_bearer";
+      principal: "interactive";
+      role: AdminRole;
+    }
+);
 type AdminLoginState = AdminLoginSuccess | Extract<AdminAuthState, { ok: false }>;
+type VerifiedAdminLoginClaims = Pick<AdminLoginSuccess, "actor" | "credential" | "principal" | "role">;
+const verifiedAdminLoginClaims = new WeakMap<AdminLoginSuccess, VerifiedAdminLoginClaims>();
 
 export function verifyAdminLoginCredential(credential: string | null | undefined): AdminLoginState {
   const configuration = adminCredentialConfiguration();
@@ -54,25 +66,42 @@ export function verifyAdminLoginCredential(credential: string | null | undefined
       : null;
   if (!method) return { ok: false, reason: "invalid" };
   const identity = configuredAdminIdentity();
-  const passwordLogin = method === "interactive_password";
-  return {
-    ok: true,
-    actor: identity.actor,
-    credential: method,
-    expiresAt: Date.now() + (passwordLogin ? passwordSessionTtlMs : sessionTtlMs),
-    principal: "interactive",
-    role: passwordLogin ? "viewer" : identity.role,
-    [verifiedAdminLoginProof]: true,
-  };
+  const login: AdminLoginSuccess =
+    method === "interactive_password"
+      ? {
+          ok: true,
+          actor: identity.actor,
+          credential: "interactive_password",
+          expiresAt: Date.now() + passwordSessionTtlMs,
+          principal: "password",
+          role: "viewer",
+        }
+      : {
+          ok: true,
+          actor: identity.actor,
+          credential: "review_bearer",
+          expiresAt: Date.now() + sessionTtlMs,
+          principal: "interactive",
+          role: identity.role,
+        };
+  verifiedAdminLoginClaims.set(login, {
+    actor: login.actor,
+    credential: login.credential,
+    principal: login.principal,
+    role: login.role,
+  });
+  return login;
 }
 
 export function createAdminLoginSession(identity: AdminLoginSuccess, now: number) {
+  const claims = verifiedAdminLoginClaims.get(identity);
+  verifiedAdminLoginClaims.delete(identity);
   if (
-    identity[verifiedAdminLoginProof] !== true ||
-    identity.principal !== "interactive" ||
-    !isValidAdminActor(identity.actor) ||
-    !isAdminRole(identity.role) ||
-    (identity.credential === "interactive_password" && identity.role !== "viewer")
+    !claims ||
+    !isValidAdminActor(claims.actor) ||
+    !isAdminRole(claims.role) ||
+    (claims.credential === "interactive_password" && (claims.principal !== "password" || claims.role !== "viewer")) ||
+    (claims.credential === "review_bearer" && claims.principal !== "interactive")
   ) {
     throw new Error("Invalid admin login identity");
   }
@@ -80,7 +109,7 @@ export function createAdminLoginSession(identity: AdminLoginSuccess, now: number
   let expiresAt: number;
   let method: "password" | "review";
   let role: AdminRole;
-  switch (identity.credential) {
+  switch (claims.credential) {
     case "interactive_password":
       expiresAt = now + passwordSessionTtlMs;
       method = "password";
@@ -89,13 +118,13 @@ export function createAdminLoginSession(identity: AdminLoginSuccess, now: number
     case "review_bearer":
       expiresAt = now + sessionTtlMs;
       method = "review";
-      role = identity.role;
+      role = claims.role;
       break;
     default:
-      return assertNever(identity.credential);
+      return assertNever(claims.credential);
   }
 
-  const actor = Buffer.from(identity.actor, "utf8").toString("base64url");
+  const actor = Buffer.from(claims.actor, "utf8").toString("base64url");
   const payload = `v3.${expiresAt}.${role}.${actor}.${method}`;
   return { cookie: `${payload}.${sign(payload)}`, expiresAt };
 }
@@ -131,7 +160,7 @@ export function verifyAdminSessionCookie(value: string | null | undefined): Admi
     actor,
     credential: method === "password" ? "password_session" : "review_session",
     expiresAt,
-    principal: "interactive",
+    principal: method === "password" ? "password" : "interactive",
     role,
   };
 }

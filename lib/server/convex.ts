@@ -1,4 +1,5 @@
 import { ConvexHttpClient } from "convex/browser";
+import { z } from "zod";
 import { api } from "@/convex/_generated/api";
 import { summarizeAdminLeads } from "@/lib/admin-lead-counts";
 import type { PrivacyDeletionReason } from "@/lib/data-retention";
@@ -195,34 +196,34 @@ export async function getAdminAggregateMetrics(limit = 100) {
     ingestSecret: client.ingestSecret,
     limit: take,
   });
-  return {
-    ok: true as const,
-    data: {
-      generatedAt: data.generatedAt,
-      metrics: {
-        activeLeads: data.metrics.activeLeads,
-        connectedSessions: data.metrics.connectedSessions,
-        engagedSessions: data.metrics.engagedSessions,
-        notificationDeliveryRate: data.metrics.notificationDeliveryRate,
-        notificationFailures: data.metrics.notificationFailures,
-        prewarmedSessions: data.metrics.prewarmedSessions,
-        qualifiedLeads: data.metrics.qualifiedLeads,
-        recentLeads: data.metrics.recentLeads,
-        reviewedSessions: data.metrics.reviewedSessions,
-        sessionsWithErrors: data.metrics.sessionsWithErrors,
-        submittedSessions: data.metrics.submittedSessions,
-        urgentLeads: data.metrics.urgentLeads,
-        voiceLeads: data.metrics.voiceLeads,
-        voiceSubmitRate: data.metrics.voiceSubmitRate,
-      },
-    },
-  };
+  const parsed = adminAggregateMetricsSchema.safeParse(data);
+  if (!parsed.success) throw new Error("Convex returned an invalid admin aggregate metrics DTO");
+  return { ok: true as const, data: parsed.data };
 }
 
-export type AdminAggregateMetricsData = Extract<
-  Awaited<ReturnType<typeof getAdminAggregateMetrics>>,
-  { ok: true }
->["data"];
+const aggregateCount = z.number().finite().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+const aggregatePercentage = z.number().finite().min(0).max(100);
+const adminAggregateMetricsSchema = z.strictObject({
+  generatedAt: aggregateCount,
+  metrics: z.strictObject({
+    activeLeads: aggregateCount,
+    connectedSessions: aggregateCount,
+    engagedSessions: aggregateCount,
+    notificationDeliveryRate: aggregatePercentage,
+    notificationFailures: aggregateCount,
+    prewarmedSessions: aggregateCount,
+    qualifiedLeads: aggregateCount,
+    recentLeads: aggregateCount,
+    reviewedSessions: aggregateCount,
+    sessionsWithErrors: aggregateCount,
+    submittedSessions: aggregateCount,
+    urgentLeads: aggregateCount,
+    voiceLeads: aggregateCount,
+    voiceSubmitRate: aggregatePercentage,
+  }),
+});
+
+export type AdminAggregateMetricsData = z.infer<typeof adminAggregateMetricsSchema>;
 
 export async function getAdminLeadTable(limit = 500) {
   const take = Math.min(Math.max(Math.floor(limit), 1), 500);

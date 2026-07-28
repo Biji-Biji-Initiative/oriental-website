@@ -252,18 +252,19 @@ Admin review and observability:
 - `/admin/session-review` uses a same-origin, rate-limited login that accepts the
   configured `ADMIN_REVIEW_TOKEN` or the interactive password represented by
   `ADMIN_REVIEW_PASSWORD_HMAC`. The password HMAC is domain-separated and keyed
-  by `ADMIN_REVIEW_TOKEN`; plaintext is absent from the current tree and runtime
-  configuration, while historical repository exposure means the password is
-  treated as potentially known. The password is never valid bearer auth. It
-  issues a thirty-minute, viewer-only session limited to the redacted aggregate
-  metrics dashboard and logout. Customer records, email addresses, transcripts,
-  voice details, and every mutation require a fresh login with the managed
-  review token. The strong token issues the configured interactive role for
-  twelve hours and remains the bearer and only signed-session key. The session
-  signs actor, role, login method, and expiry, so provenance survives issuance
-  and role changes do not silently elevate an existing cookie. Cookie mutations
-  require same-origin JSON requests. Scheduled maintenance uses the distinct
-  bearer-only `OPS_AUTOMATION_TOKEN`, while privacy deletion uses
+  by `ADMIN_REVIEW_TOKEN`; plaintext must be absent from runtime configuration,
+  and that absence remains unverified until governed staging and production
+  materialization and readback are complete. Historical repository exposure
+  means the password is treated as potentially known. The password is never
+  valid bearer auth. It issues a thirty-minute, viewer-only session limited to the redacted
+  aggregate metrics dashboard and logout. Customer records, email addresses,
+  transcripts, voice details, and every mutation require a fresh login with the
+  managed review token. The strong token issues the configured interactive role
+  for twelve hours and remains the bearer and only signed-session key. The
+  session signs actor, role, login method, and expiry, so provenance survives
+  issuance and role changes do not silently elevate an existing cookie. Cookie
+  mutations require same-origin JSON requests. Scheduled maintenance uses the
+  distinct bearer-only `OPS_AUTOMATION_TOKEN`, while privacy deletion uses
   `PRIVACY_ADMIN_TOKEN`.
 - Sentry uses `@sentry/nextjs` config files and `withSentryConfig` in
   `next.config.ts`.

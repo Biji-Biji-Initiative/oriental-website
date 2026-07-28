@@ -1432,6 +1432,25 @@ export const adminLeadCounts = queryGeneric({
 
 export const adminAggregateMetrics = queryGeneric({
   args: { ingestSecret: v.string(), limit: v.optional(v.number()) },
+  returns: v.object({
+    generatedAt: v.number(),
+    metrics: v.object({
+      activeLeads: v.number(),
+      connectedSessions: v.number(),
+      engagedSessions: v.number(),
+      notificationDeliveryRate: v.number(),
+      notificationFailures: v.number(),
+      prewarmedSessions: v.number(),
+      qualifiedLeads: v.number(),
+      recentLeads: v.number(),
+      reviewedSessions: v.number(),
+      sessionsWithErrors: v.number(),
+      submittedSessions: v.number(),
+      urgentLeads: v.number(),
+      voiceLeads: v.number(),
+      voiceSubmitRate: v.number(),
+    }),
+  }),
   handler: async (ctx, { ingestSecret, limit }) => {
     requireIngestSecret(ingestSecret);
     const take = Math.min(Math.max(Math.floor(limit ?? 100), 1), 100);

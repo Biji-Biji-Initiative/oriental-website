@@ -1,5 +1,5 @@
 import { globSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { relative, resolve } from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
@@ -25,16 +25,10 @@ const canonicalAdminRoutePermissions = {
   },
 } as const;
 const canonicalAdminRoutes = Object.keys(canonicalAdminRoutePermissions).sort();
-const adminRoutePaths = globSync(`app/api/admin/**/route.${sourceExtensions}`).sort();
-const productionPaths = globSync([
-  `{app,components,convex,lib,pages,scripts,src}/**/*.${sourceExtensions}`,
-  `*.${sourceExtensions}`,
-])
-  .filter(
-    (path) =>
-      !path.startsWith("convex/_generated/") && !path.includes("/__tests__/") && !/\.(?:test|spec)\.[^.]+$/u.test(path),
-  )
-  .sort();
+const adminRoutePaths = globSync([
+  `app/api/admin/**/route.${sourceExtensions}`,
+  `pages/api/admin/**/*.${sourceExtensions}`,
+]).sort();
 const httpMethodNames = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] as const;
 type HttpMethod = (typeof httpMethodNames)[number];
 const httpMethods = new Set<string>(httpMethodNames);
@@ -44,6 +38,29 @@ const parsedTsConfig = ts.parseJsonConfigFileContent(
   ts.sys,
   process.cwd(),
 );
+const productionProgram = ts.createProgram(parsedTsConfig.fileNames, parsedTsConfig.options);
+const productionChecker = productionProgram.getTypeChecker();
+
+function isProductionPath(path: string) {
+  return (
+    !path.startsWith(".") &&
+    !path.startsWith("node_modules/") &&
+    !path.startsWith("convex/_generated/") &&
+    !path.includes("/__tests__/") &&
+    !/(?:^|\/)tests?\//u.test(path) &&
+    !/\.(?:test|spec)\.[^.]+$/u.test(path) &&
+    !path.endsWith(".d.ts")
+  );
+}
+
+const productionPaths = [
+  ...new Set([
+    ...parsedTsConfig.fileNames.map((path) => relative(process.cwd(), path)),
+    ...globSync(`**/*.${sourceExtensions}`),
+  ]),
+]
+  .filter(isProductionPath)
+  .sort();
 
 function sourceFile(path: string, sourceText = readFileSync(path, "utf8")) {
   const extension = path.slice(path.lastIndexOf("."));
@@ -75,6 +92,42 @@ function propertyNameText(name: ts.PropertyName | undefined) {
 
 function isExported(node: { modifiers?: ts.NodeArray<ts.ModifierLike> }) {
   return Boolean(node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword));
+}
+
+function isDefaultExported(node: { modifiers?: ts.NodeArray<ts.ModifierLike> }) {
+  return Boolean(node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.DefaultKeyword));
+}
+
+function forbiddenRouteExportForms(source: ts.SourceFile) {
+  const errors: string[] = [];
+  if (source.statements.some(ts.isExportDeclaration)) errors.push("route modules cannot use re-export declarations");
+  let commonJs = false;
+  const visit = (node: ts.Node) => {
+    if (ts.isIdentifier(node) && (node.text === "exports" || node.text === "module")) commonJs = true;
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  if (commonJs) errors.push("route modules cannot use CommonJS export mechanisms");
+  return errors;
+}
+
+function effectiveModuleExports(path: string) {
+  const source = productionProgram.getSourceFile(resolve(path));
+  if (!source) throw new Error(`TypeScript program omitted production module ${path}`);
+  const symbol = productionChecker.getSymbolAtLocation(source);
+  if (!symbol) throw new Error(`TypeScript checker could not resolve production module ${path}`);
+  return productionChecker.getExportsOfModule(symbol).map((entry) => entry.name);
+}
+
+function effectiveModuleExportTargets(path: string) {
+  const source = productionProgram.getSourceFile(resolve(path));
+  if (!source) throw new Error(`TypeScript program omitted production module ${path}`);
+  const symbol = productionChecker.getSymbolAtLocation(source);
+  if (!symbol) throw new Error(`TypeScript checker could not resolve production module ${path}`);
+  return productionChecker.getExportsOfModule(symbol).map((entry) => {
+    const target = (entry.flags & ts.SymbolFlags.Alias) !== 0 ? productionChecker.getAliasedSymbol(entry) : entry;
+    return { exported: entry.name, local: target.name };
+  });
 }
 
 type HttpExport = {
@@ -227,6 +280,7 @@ function analyzeProtectedRoute(
   const parseDiagnostics =
     (source as ts.SourceFile & { parseDiagnostics?: readonly ts.Diagnostic[] }).parseDiagnostics ?? [];
   const errors = parseDiagnostics.map((diagnostic) => `parse:${diagnostic.code}`);
+  errors.push(...forbiddenRouteExportForms(source));
   const aliases = wrapperAliases(source, path, errors);
   const handlers = exportedHttpBindings(source);
   const counts = new Map<HttpMethod, number>();
@@ -282,9 +336,20 @@ function analyzeLoginRoute(path: string, sourceText = readFileSync(path, "utf8")
   const parseDiagnostics =
     (source as ts.SourceFile & { parseDiagnostics?: readonly ts.Diagnostic[] }).parseDiagnostics ?? [];
   const errors = parseDiagnostics.map((diagnostic) => `parse:${diagnostic.code}`);
+  errors.push(...forbiddenRouteExportForms(source));
   const handlers = exportedHttpBindings(source);
-  if (handlers.length !== 1 || handlers[0]?.method !== "POST" || handlers[0]?.kind !== "function") {
-    errors.push("login route must export exactly one function-declaration POST handler");
+  const postDeclaration = source.statements.find(
+    (statement): statement is ts.FunctionDeclaration =>
+      ts.isFunctionDeclaration(statement) && statement.name?.text === "POST" && isExported(statement),
+  );
+  if (
+    handlers.length !== 1 ||
+    handlers[0]?.method !== "POST" ||
+    handlers[0]?.kind !== "function" ||
+    !postDeclaration ||
+    isDefaultExported(postDeclaration)
+  ) {
+    errors.push("login route must export exactly one named non-default function-declaration POST handler");
   }
   return errors;
 }
@@ -384,9 +449,35 @@ function protectedSymbolAuthority(path: string, sourceText = readFileSync(path, 
   return { calls, forbiddenAccesses, imports };
 }
 
+function resolvedProtectedSymbolCalls() {
+  const calls: Array<{ path: string; symbol: string }> = [];
+  for (const path of productionPaths) {
+    const source = productionProgram.getSourceFile(resolve(path));
+    if (!source) continue;
+    const visit = (node: ts.Node) => {
+      if (ts.isCallExpression(node)) {
+        const symbolNode = ts.isPropertyAccessExpression(node.expression) ? node.expression.name : node.expression;
+        let symbol = productionChecker.getSymbolAtLocation(symbolNode);
+        if (symbol && (symbol.flags & ts.SymbolFlags.Alias) !== 0) symbol = productionChecker.getAliasedSymbol(symbol);
+        if (
+          symbol &&
+          protectedLoginSymbols.has(symbol.name) &&
+          symbol.declarations?.some((declaration) => resolve(declaration.getSourceFile().fileName) === adminAuthPath)
+        ) {
+          calls.push({ path, symbol: symbol.name });
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+  }
+  return calls;
+}
+
 describe("admin authentication production boundary", () => {
   it("gives the login route sole symbol-level authority to verify passwords and mint sessions", () => {
     const authority = productionPaths.map((path) => ({ path, ...protectedSymbolAuthority(path) }));
+    const resolvedCalls = resolvedProtectedSymbolCalls();
     expect(
       authority.flatMap(({ path, forbiddenAccesses }) => forbiddenAccesses.map((kind) => `${path}:${kind}`)),
     ).toEqual([]);
@@ -396,8 +487,8 @@ describe("admin authentication production boundary", () => {
         `${symbol} import authority`,
       ).toEqual([adminLoginRoute]);
       expect(
-        authority.flatMap(({ path, calls }) => calls.filter((called) => called === symbol).map(() => path)),
-        `${symbol} call authority`,
+        resolvedCalls.filter((call) => call.symbol === symbol).map((call) => call.path),
+        `${symbol} checker-resolved call authority`,
       ).toEqual([adminLoginRoute]);
     }
 
@@ -427,6 +518,12 @@ describe("admin authentication production boundary", () => {
   it("pins every exact admin path and method to its one permission", () => {
     expect(adminRoutePaths).toEqual(canonicalAdminRoutes);
     for (const [path, permissions] of Object.entries(canonicalAdminRoutePermissions)) {
+      expect(
+        effectiveModuleExports(path)
+          .filter((name) => httpMethods.has(name))
+          .sort(),
+        `${path} effective exports`,
+      ).toEqual(Object.keys(permissions).sort());
       if (path === adminLoginRoute) {
         expect(analyzeLoginRoute(path), path).toEqual([]);
       } else {
@@ -458,9 +555,14 @@ describe("admin authentication production boundary", () => {
       `${prelude}export const GET = guard(variablePermission, async () => new Response());`,
       `${prelude}export const GET = guard("dashboard.read", namedHandler);`,
       `${prelude}export const GET = guard("dashboard.read", async () => new Response()); export const POST = guard("leads.update", async () => new Response());`,
+      `${prelude}export const GET = guard("dashboard.read", async () => new Response()); export * from "./unguarded-handlers";`,
       `${prelude}module.exports.GET = async () => new Response();`,
       `${prelude}module.exports = { GET: async () => new Response() };`,
       `${prelude}Object.assign(exports, { GET: async () => new Response() });`,
+      `${prelude}Object.defineProperty(module.exports, "DELETE", { value: async () => new Response() });`,
+      `${prelude}exports.HEAD ??= async () => new Response();`,
+      `${prelude}module["exports"].POST ||= async () => new Response();`,
+      `${prelude}Reflect.set(exports, "OPTIONS", async () => new Response());`,
     ]) {
       expect(analyzeProtectedRoute("fixture.ts", fixture, expected), fixture).not.toEqual([]);
     }
@@ -468,33 +570,68 @@ describe("admin authentication production boundary", () => {
 
   it("applies the same fail-closed handler inventory to every supported route extension", () => {
     const prelude = 'import { withAdminPermission as guard } from "@/lib/server/admin-route";\n';
+    const hostileSuffixes = [
+      'export * from "./unguarded-handlers";',
+      'Object.defineProperty(module.exports, "DELETE", { value: async () => new Response() });',
+      "exports.HEAD ??= async () => new Response();",
+      'module["exports"].POST ||= async () => new Response();',
+      'Reflect.set(exports, "OPTIONS", async () => new Response());',
+    ];
     for (const extension of ["ts", "tsx", "js", "jsx", "mjs", "cjs", "mts", "cts"]) {
       const path = `fixture.${extension}`;
-      expect(
-        analyzeProtectedRoute(
-          path,
-          `${prelude}export const GET = guard("dashboard.read", async () => new Response());`,
-          { GET: "dashboard.read" },
-        ),
-        path,
-      ).toEqual([]);
+      const accepted = `${prelude}export const GET = guard("dashboard.read", async () => new Response());`;
+      expect(analyzeProtectedRoute(path, accepted, { GET: "dashboard.read" }), path).toEqual([]);
+      for (const hostileSuffix of hostileSuffixes) {
+        expect(
+          analyzeProtectedRoute(path, `${accepted}\n${hostileSuffix}`, { GET: "dashboard.read" }),
+          `${path}:${hostileSuffix}`,
+        ).not.toEqual([]);
+      }
     }
+  });
+
+  it("includes formerly unlisted top-level runtime bridges in authority analysis", () => {
+    const path = "runtime-helpers/auth-bridge.ts";
+    expect(isProductionPath(path)).toBe(true);
+    const bridge = protectedSymbolAuthority(
+      path,
+      'import { createAdminLoginSession as mint } from "../lib/server/admin-auth"; mint({} as never, 0);',
+    );
+    expect(bridge.imports).toEqual(["createAdminLoginSession"]);
+    expect(bridge.calls).toEqual(["createAdminLoginSession"]);
   });
 
   it("allows only the login function POST and rejects every additional export form", () => {
     const loginPost = "export async function POST() { return new Response(); }\n";
-    expect(analyzeLoginRoute("login-fixture.ts", loginPost)).toEqual([]);
-    for (const fixture of [
+    const hostileForms = [
       `${loginPost}export const GET = async () => new Response();`,
       `${loginPost}const handlers = { DELETE: async () => new Response() }; export const { DELETE } = handlers;`,
       `${loginPost}module.exports = { OPTIONS: async () => new Response() };`,
       `${loginPost}exports["HEAD"] = async () => new Response();`,
-    ]) {
-      expect(analyzeLoginRoute("login-fixture.ts", fixture), fixture).not.toEqual([]);
+      `${loginPost}export * from "./unguarded-handlers";`,
+      "export default async function POST() { return new Response(); }",
+      `${loginPost}Object.defineProperty(module.exports, "DELETE", { value: async () => new Response() });`,
+      `${loginPost}exports.HEAD ??= async () => new Response();`,
+      `${loginPost}module["exports"].POST ||= async () => new Response();`,
+      `${loginPost}Reflect.set(exports, "OPTIONS", async () => new Response());`,
+    ];
+    for (const extension of ["ts", "tsx", "js", "jsx", "mjs", "cjs", "mts", "cts"]) {
+      const path = `login-fixture.${extension}`;
+      expect(analyzeLoginRoute(path, loginPost), path).toEqual([]);
+      for (const fixture of hostileForms) {
+        expect(analyzeLoginRoute(path, fixture), `${path}:${fixture}`).not.toEqual([]);
+      }
     }
   });
 
   it("keeps bearer verification private to the central auth module", () => {
+    const effectiveAuthExports = effectiveModuleExports("lib/server/admin-auth.ts");
+    const effectiveAuthTargets = effectiveModuleExportTargets("lib/server/admin-auth.ts");
+    expect(effectiveAuthExports).not.toContain("verifyAdminBearerToken");
+    expect(effectiveAuthExports).not.toContain("sign");
+    expect(effectiveAuthTargets.filter((entry) => ["verifyAdminBearerToken", "sign"].includes(entry.local))).toEqual(
+      [],
+    );
     const authSource = sourceFile("lib/server/admin-auth.ts");
     const bearerVerifier = authSource.statements.find(
       (statement): statement is ts.FunctionDeclaration =>
