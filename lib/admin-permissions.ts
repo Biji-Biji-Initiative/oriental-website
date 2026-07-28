@@ -2,7 +2,9 @@ import { readEnv } from "@/lib/env";
 
 export const ADMIN_ROLES = ["viewer", "operator", "admin"] as const;
 export const ADMIN_PERMISSIONS = [
+  "dashboard.aggregate",
   "dashboard.read",
+  "session.logout",
   "leads.read",
   "leads.update",
   "leads.bulk_assign",
@@ -18,12 +20,14 @@ export const ADMIN_PERMISSIONS = [
 
 export type AdminRole = (typeof ADMIN_ROLES)[number];
 export type AdminPermission = (typeof ADMIN_PERMISSIONS)[number];
-export type AdminPrincipal = "interactive" | "automation" | "privacy";
+export type AdminPrincipal = "interactive" | "password" | "automation" | "privacy";
 
 const interactiveRolePermissions: Record<AdminRole, readonly AdminPermission[]> = {
-  viewer: ["dashboard.read", "leads.read", "voice.read"],
+  viewer: ["dashboard.aggregate", "dashboard.read", "session.logout", "leads.read", "voice.read"],
   operator: [
+    "dashboard.aggregate",
     "dashboard.read",
+    "session.logout",
     "leads.read",
     "leads.update",
     "leads.bulk_assign",
@@ -34,7 +38,9 @@ const interactiveRolePermissions: Record<AdminRole, readonly AdminPermission[]> 
     "evals.run",
   ],
   admin: [
+    "dashboard.aggregate",
     "dashboard.read",
+    "session.logout",
     "leads.read",
     "leads.update",
     "leads.bulk_assign",
@@ -47,6 +53,7 @@ const interactiveRolePermissions: Record<AdminRole, readonly AdminPermission[]> 
 };
 
 const principalPermissions: Record<Exclude<AdminPrincipal, "interactive">, readonly AdminPermission[]> = {
+  password: ["dashboard.aggregate", "session.logout"],
   automation: ["evals.run", "ops.sla_check", "ops.retention"],
   privacy: ["privacy.delete"],
 };

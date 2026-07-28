@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { isAllowedAdminEvalModel } from "@/lib/eval/admin-models";
-import { adminAuthFailureStatus, verifyAdminPermission } from "@/lib/server/admin-auth";
+import { withAdminPermission } from "@/lib/server/admin-route";
 import { logInfo, logWarn } from "@/lib/server/logger";
 import { checkRateLimit, noStoreJson, rateLimitResponseHeaders } from "@/lib/server/security";
 import {
@@ -20,12 +20,7 @@ const requestSchema = z.object({
   force: z.boolean().optional(),
 });
 
-export async function POST(request: Request) {
-  const auth = verifyAdminPermission(request, "evals.run");
-  if (!auth.ok) {
-    return noStoreJson({ ok: false, error: auth.reason }, { status: adminAuthFailureStatus(auth) });
-  }
-
+export const POST = withAdminPermission("evals.run", async (request, auth) => {
   const body = await request.json().catch(() => null);
   const parsed = requestSchema.safeParse(body ?? {});
   if (!parsed.success) {
@@ -81,4 +76,4 @@ export async function POST(request: Request) {
   });
   const { ok: _ok, ...summary } = result;
   return noStoreJson({ ok: true, ...summary });
-}
+});

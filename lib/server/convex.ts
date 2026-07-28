@@ -1,4 +1,5 @@
 import { ConvexHttpClient } from "convex/browser";
+import { z } from "zod";
 import { api } from "@/convex/_generated/api";
 import { summarizeAdminLeads } from "@/lib/admin-lead-counts";
 import type { PrivacyDeletionReason } from "@/lib/data-retention";
@@ -186,6 +187,74 @@ export async function getAdminReviewDashboard(limit = 50) {
   const data = withAvailabilityFailures(await queryAdminReviewDashboard(client, limit));
   return { ok: true as const, data };
 }
+
+export async function getAdminAggregateMetrics(limit = 100) {
+  const client = createConvexClient();
+  if (!client) return { ok: false as const, reason: "convex_unconfigured" };
+  const take = Math.min(Math.max(Math.floor(limit), 1), 100);
+  const data = await client.client.query(api.leads.adminAggregateMetrics, {
+    ingestSecret: client.ingestSecret,
+    limit: take,
+  });
+  const parsed = adminAggregateMetricsSchema(take).safeParse(data);
+  if (!parsed.success) throw new Error("Convex returned an invalid admin aggregate metrics DTO");
+  return { ok: true as const, data: parsed.data };
+}
+
+const aggregateTimestamp = z.number().finite().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+const aggregatePercentage = z.number().finite().min(0).max(100);
+const leadSubsetCounts = [
+  "activeLeads",
+  "notificationFailures",
+  "qualifiedLeads",
+  "urgentLeads",
+  "voiceLeads",
+] as const;
+const voiceSubsetCounts = [
+  "connectedSessions",
+  "engagedSessions",
+  "prewarmedSessions",
+  "sessionsWithErrors",
+  "submittedSessions",
+] as const;
+
+function adminAggregateMetricsSchema(take: number) {
+  const aggregateCount = z.number().finite().int().nonnegative().max(take);
+  return z.strictObject({
+    generatedAt: aggregateTimestamp,
+    metrics: z
+      .strictObject({
+        activeLeads: aggregateCount,
+        connectedSessions: aggregateCount,
+        engagedSessions: aggregateCount,
+        notificationDeliveryRate: aggregatePercentage,
+        notificationFailures: aggregateCount,
+        prewarmedSessions: aggregateCount,
+        qualifiedLeads: aggregateCount,
+        recentLeads: aggregateCount,
+        reviewedSessions: aggregateCount,
+        sessionsWithErrors: aggregateCount,
+        submittedSessions: aggregateCount,
+        urgentLeads: aggregateCount,
+        voiceLeads: aggregateCount,
+        voiceSubmitRate: aggregatePercentage,
+      })
+      .superRefine((metrics, context) => {
+        for (const key of leadSubsetCounts) {
+          if (metrics[key] > metrics.recentLeads) {
+            context.addIssue({ code: "custom", message: `${key} cannot exceed recentLeads`, path: [key] });
+          }
+        }
+        for (const key of voiceSubsetCounts) {
+          if (metrics[key] > metrics.reviewedSessions) {
+            context.addIssue({ code: "custom", message: `${key} cannot exceed reviewedSessions`, path: [key] });
+          }
+        }
+      }),
+  });
+}
+
+export type AdminAggregateMetricsData = z.infer<ReturnType<typeof adminAggregateMetricsSchema>>;
 
 export async function getAdminLeadTable(limit = 500) {
   const take = Math.min(Math.max(Math.floor(limit), 1), 500);

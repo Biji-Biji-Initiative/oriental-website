@@ -106,7 +106,10 @@ if [[ ! "$ga_measurement_id" =~ ^G-[A-Z0-9]+$ ]]; then
   echo "NEXT_PUBLIC_GA_MEASUREMENT_ID must be supplied by the managed application environment." >&2
   exit 1
 fi
-if [[ ! "$google_site_verification" =~ ^[A-Za-z0-9_-]{20,255}$ ]]; then
+if
+  (( ${#google_site_verification} < 20 || ${#google_site_verification} > 255 )) ||
+  [[ "$google_site_verification" == *[!A-Za-z0-9_-]* ]]
+then
   echo "NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION must be supplied by the managed application environment." >&2
   exit 1
 fi
@@ -327,7 +330,10 @@ if [[ ! "$ga_measurement_id" =~ ^G-[A-Z0-9]+$ ]]; then
   echo "NEXT_PUBLIC_GA_MEASUREMENT_ID from the managed environment is malformed." >&2
   exit 1
 fi
-if [[ ! "$google_site_verification" =~ ^[A-Za-z0-9_-]{20,255}$ ]]; then
+if
+  (( ${#google_site_verification} < 20 || ${#google_site_verification} > 255 )) ||
+  [[ "$google_site_verification" == *[!A-Za-z0-9_-]* ]]
+then
   echo "NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION from the managed environment is malformed." >&2
   exit 1
 fi
