@@ -3,15 +3,15 @@
 ## Immutable implementation identity
 
 The source implementation under review is the exact commit
-`56f1dba7cd3b9dd052645b70b87c56e592e64ebe` on base
+`71f6d0c11eaa9c9885fb0183528b96daf7f5f7b4` on base
 `e3bb6c333cbf4bf8e52456a1b5144f556f50636a`.
 
-- Implementation tree: `07f9c2f310628b881ec8f9ae526479c3a590c1cf`
+- Implementation tree: `e765a147b2dd9cd3a7ca5c6144ffb6750a7834a2`
 - Authoritative source-only patch:
   `.apr/evidence/oriental-admin-password-security.patch`
 - Patch SHA-256:
-  `b8259805e939bca93a702684b9aeec65b0645126d969f16babf51aec4a798a43`
-- The 5,165-line, 235,921-byte patch contains all forty-five changed non-APR
+  `b2a6060759139711e321ff475eea567674a4c1a9f31529af1463e809f45b1c6f`
+- The 5,397-line, 249,566-byte patch contains all forty-five changed non-APR
   source, test, release, UI, environment-example, workflow, and documentation
   files.
 
@@ -194,8 +194,8 @@ runtime state.
 ## Exact implementation verification
 
 Completed against exact implementation commit
-`56f1dba7cd3b9dd052645b70b87c56e592e64ebe`, tree
-`07f9c2f310628b881ec8f9ae526479c3a590c1cf`:
+`71f6d0c11eaa9c9885fb0183528b96daf7f5f7b4`, tree
+`e765a147b2dd9cd3a7ca5c6144ffb6750a7834a2`:
 
 - `pnpm lint`: pass, 285 branch files, no warnings
 - strict application and Convex TypeScript: pass
@@ -205,36 +205,36 @@ Completed against exact implementation commit
 - `pnpm build`: pass, including all admin route handlers on Next.js 16.2.10
 - source-only `git diff --check`: pass
 - exact-head GitHub Actions workflow `CI`, event `pull_request`: success
-  - run ID: `30385889863`
-  - job/check-run ID: `90364964491`
-  - check-suite ID: `82358314571`
-  - checked-out head SHA: `56f1dba7cd3b9dd052645b70b87c56e592e64ebe`
-  - checked-out tree: `07f9c2f310628b881ec8f9ae526479c3a590c1cf`
-  - run URL: `https://github.com/Biji-Biji-Initiative/oriental-website/actions/runs/30385889863`
+  - run ID: `30390585854`
+  - job/check-run ID: `90380851632`
+  - check-suite ID: `82372480006`
+  - checked-out head SHA: `71f6d0c11eaa9c9885fb0183528b96daf7f5f7b4`
+  - checked-out tree: `e765a147b2dd9cd3a7ca5c6144ffb6750a7834a2`
+  - run URL: `https://github.com/Biji-Biji-Initiative/oriental-website/actions/runs/30390585854`
 - synthetic eight-PR integration commit
-  `0e0e3376bb8044015a38b83d1a71574b697fee78`, tree
-  `13b7f4fa47989a5604bbf5e25b27ac763414ae5a`, based on
+  `998ba3b2dd9f43feae32d9d7bb7de181e3466246`, tree
+  `48b97f55b1cd55e254154b73f7cca7b271b533e1`, based on
   `e3bb6c333cbf4bf8e52456a1b5144f556f50636a`, composed from exact heads:
   - #78 `7657afae19433f276c89967ca9f6c2a94a509fd9`
   - #79 `aaeba89264b34a902d4d1595bf4d31907a91b2d4`
-  - #80 `56f1dba7cd3b9dd052645b70b87c56e592e64ebe` (source state)
+  - #80 `71f6d0c11eaa9c9885fb0183528b96daf7f5f7b4` (source state)
   - #81 `297e0b1a47d7d8cf3a005c606146b7de8dd7ff96`
   - #82 `d81140cb87ff36a6e4196f230a9b4d7bf9a69806`
   - #83 `f9467a918708c9385163516e01f34f4d9bb58d3f`
   - #84 `413fdf0eaf758394c68d817aaf588558ead80a57`
   - #85 `42bd5f078754ae925d71f7f9cc1e5eb8778a5f20`
 - the integration passed exact-head GitHub Actions `CI`, run
-  `30386074734`, job/check `90365587296`, suite `82358888463`, event
+  `30390733647`, job/check `90381360568`, suite `82372938344`, event
   `pull_request`, with checked-out SHA
-  `0e0e3376bb8044015a38b83d1a71574b697fee78` and tree
-  `13b7f4fa47989a5604bbf5e25b27ac763414ae5a`
+  `998ba3b2dd9f43feae32d9d7bb7de181e3466246` and tree
+  `48b97f55b1cd55e254154b73f7cca7b271b533e1`
 - the integration passed frozen pnpm 10.34.5 install, warning-free lint on
   295 files, strict TypeScript, production audit with zero findings across 378
   dependencies, all 89 test files and 2,337 tests with zero failed or pending,
   the Next.js 16.2.12 production build, and the mobile performance gate
 - machine-readable Vitest JSON SHA-256:
-  `058f8b776d33b03a229d250af2e67795f327f1e1dc0c6d4176bb42b088a0eef1`
-  (865,301 bytes; 216 suites; 2,337 passed; 0 failed)
+  `3c0975967b34ced7a382e7b4519f369410b63d62aa2e8f5339561b1d6982e40c`
+  (865,534 bytes; 216 suites; 2,337 passed; 0 failed)
 - machine-readable production audit JSON SHA-256:
   `e6b1e426bee90fc309ed49cf51fff66f7d2218cca7fcb42e88b1b312521a615c`
   (310 bytes; 378 dependencies; 0 info/low/moderate/high/critical findings)
@@ -242,41 +242,39 @@ Completed against exact implementation commit
 Machine summary:
 
 ```json
-{"audit":{"critical":0,"high":0,"info":0,"low":0,"moderate":0,"totalDependencies":378},"github":{"checkRunId":90364964491,"checkSuiteId":82358314571,"event":"pull_request","headSha":"56f1dba7cd3b9dd052645b70b87c56e592e64ebe","runId":30385889863},"integration":{"checkRunId":90365587296,"checkSuiteId":82358888463,"commit":"0e0e3376bb8044015a38b83d1a71574b697fee78","runId":30386074734,"tree":"13b7f4fa47989a5604bbf5e25b27ac763414ae5a"},"tests":{"failed":0,"files":89,"passed":2337,"pending":0}}
+{"audit":{"critical":0,"high":0,"info":0,"low":0,"moderate":0,"totalDependencies":378},"github":{"checkRunId":90380851632,"checkSuiteId":82372480006,"event":"pull_request","headSha":"71f6d0c11eaa9c9885fb0183528b96daf7f5f7b4","runId":30390585854},"integration":{"checkRunId":90381360568,"checkSuiteId":82372938344,"commit":"998ba3b2dd9f43feae32d9d7bb7de181e3466246","runId":30390733647,"tree":"48b97f55b1cd55e254154b73f7cca7b271b533e1"},"tests":{"failed":0,"files":89,"passed":2337,"pending":0}}
 ```
 
-The round-eleven reviewer receives the actual immutable support bytes alongside
+The round-twelve reviewer receives the actual immutable support bytes alongside
 this manifest and source patch, rather than digest strings alone:
 
-- `github-evidence.json` (119,618 bytes; SHA-256
-  `b19d105563cfd7b14ae9478498ebf73f3d97662e1e8e9d36a37921f42cd37c34`):
+- `github-evidence.json` (119,766 bytes; SHA-256
+  `46aab7e31c00b7914f0bc8dcc846234cd156ab27ce7c9b13972b26a2bd3ce543`):
   raw PR #80 and integration-attestation PR objects plus raw run, job,
   check-run, and check-suite API responses;
-- `source-ci.log` (71,104 bytes; SHA-256
-  `edd86bcdc9ad84f244c461f5c91ab722a96e685952143fc5ab714f82b9aeea79`)
-  and `integration-ci.log` (76,838 bytes; SHA-256
-  `8c5efc9c788a9a7c794985ccb67997303e908475756daa3a3ea93ab9bcbea44d`):
+- `source-ci.log` (71,217 bytes; SHA-256
+  `71b4316b38953d43a3e7f43438992e3d4ea59d98550e6b3340ebda5700d1158e`)
+  and `integration-ci.log` (76,676 bytes; SHA-256
+  `a8e52af1ef4f23289e68d94706e20030b6e828aa42ad211c561e4ee4ba4502d0`):
   exact GitHub logs containing the checkout SHA/tree attestations and all CI
   command output;
-- `integration-merge-dag.txt` (97,426 bytes; SHA-256
-  `7f3daafafe52ea403b4e85c4bcd103fc31b2723b363b5a979063aa0b879b99cf`):
+- `integration-merge-dag.txt` (99,093 bytes; SHA-256
+  `4a8926798ced0d9b4ddef8433ac68de8a1f451961cdccd591cfee80437405595`):
   raw commit/tree graph, first-parent merge identities, exact PR ancestors, and
   integration path ledger;
 - `source-to-integration-overlap.diff` (34,002 bytes; SHA-256
   `61654a437f0abb79038add16e78bddbc422a5b43cc7927584c078d723c10c0ee`):
   the source-to-integration overlapping-path diff for conflict-resolution
   review;
-- `integration-vitest.json` (865,301 bytes; SHA-256
-  `058f8b776d33b03a229d250af2e67795f327f1e1dc0c6d4176bb42b088a0eef1`)
-  and `integration-audit.json` (310 bytes; SHA-256
-  `e6b1e426bee90fc309ed49cf51fff66f7d2218cca7fcb42e88b1b312521a615c`);
+- `integration-vitest.json` (865,534 bytes; SHA-256
+  `3c0975967b34ced7a382e7b4519f369410b63d62aa2e8f5339561b1d6982e40c`);
 - the final live PR object, exact final-head CI evidence, and
   `source-to-live-head.diff`, captured after this APR-only evidence commit.
 
 The reviewer must recompute hashes from those attached bytes, confirm the
 source CI and synthetic integration identities, and use the final PR object
 plus the attached source-to-live-head diff to prove that every descendant
-change after `56f1dba7cd3b9dd052645b70b87c56e592e64ebe` is APR-only.
+change after `71f6d0c11eaa9c9885fb0183528b96daf7f5f7b4` is APR-only.
 
 The focused suite proves:
 
@@ -337,12 +335,25 @@ closed; governed mutation targets include global receivers, bound primitives,
 call/apply, `Reflect.apply`, definition primitives, and container aliases; typed
 private-authority taint follows logical/comma results, nested and destructured
 containers, getters, factories, bind results, arrays, Maps, Sets, and later
-mutations. The live verifier proves cookie metadata and TTLs, password bearer
-rejection, review-token role and twelve-hour TTL, Redis store identity, shared
+mutations. Round 11 reproduced the remaining semantically equivalent paths:
+destructured/reflected `process.getBuiltinModule` and `module.require` loader
+acquisition; aliases/destructuring/reflection of the global `Object`/`Reflect`
+receivers; allowed exports inserted later into object properties, arrays, and
+dynamic apply vectors; and private authority inserted through
+`Array`/`Map`/`Set` prototype call/apply forms or dynamically built definition
+vectors. The repaired implementation now propagates privileged loader and
+global receiver identity through aliases and reflection, records mutable export
+identity through later container insertion, resolves prototype-mediated
+receiver mutation to the actual target, and links dynamic argument-vector
+containers to inserted targets and protected values. Exact hostile fixtures for
+every reproduced snippet fail while safe reflected reads, harmless global
+mutation, safe dynamic vectors, and safe prototype mutation remain admitted.
+The live verifier proves cookie metadata and TTLs, password bearer rejection,
+review-token role and twelve-hour TTL, Redis store identity, shared
 remaining counts, and 429 exhaustion. Exact-origin enforcement, exact-source
 checkout attestation, Linux CI, a rebuilt eight-PR integration, and the attached
 raw GitHub, git, Vitest, audit, and overlap evidence bind those controls to the
-reviewed bytes. Round 11 must review this regenerated exact patch and attached
+reviewed bytes. Round 12 must review this regenerated exact patch and attached
 support bundle. Live secret and deployment checks remain post-merge gates and
 are not waived.
 
