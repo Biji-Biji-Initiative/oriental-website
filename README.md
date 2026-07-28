@@ -212,9 +212,11 @@ During local testing, run `pnpm voice:debug` after a call to inspect the latest 
 The internal review surface lives at `/admin/session-review`. Its same-origin,
 rate-limited login accepts either the configured `ADMIN_REVIEW_TOKEN` or the
 human password whose domain-separated HMAC is stored in
-`ADMIN_REVIEW_PASSWORD_HMAC`. The plaintext is absent from the current tree and
-runtime configuration, but historical repository exposure means the password is
-treated as potentially known. It is never accepted as bearer auth. A password
+`ADMIN_REVIEW_PASSWORD_HMAC`. Plaintext must remain absent from source,
+Infisical, Coolify, and the running container; the launch checklist keeps that
+redacted live readback pending until the configuration release is performed.
+Historical repository exposure means the password is treated as potentially
+known. It is never accepted as bearer auth. A password
 login receives a signed, provenance-bound, viewer-only session for thirty
 minutes; it can read only the redacted aggregate metrics dashboard and can log
 out. It cannot read customer records, email addresses, transcripts, or voice

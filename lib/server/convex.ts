@@ -187,6 +187,43 @@ export async function getAdminReviewDashboard(limit = 50) {
   return { ok: true as const, data };
 }
 
+export async function getAdminAggregateMetrics(limit = 100) {
+  const client = createConvexClient();
+  if (!client) return { ok: false as const, reason: "convex_unconfigured" };
+  const take = Math.min(Math.max(Math.floor(limit), 1), 100);
+  const data = await client.client.query(api.leads.adminAggregateMetrics, {
+    ingestSecret: client.ingestSecret,
+    limit: take,
+  });
+  return {
+    ok: true as const,
+    data: {
+      generatedAt: data.generatedAt,
+      metrics: {
+        activeLeads: data.metrics.activeLeads,
+        connectedSessions: data.metrics.connectedSessions,
+        engagedSessions: data.metrics.engagedSessions,
+        notificationDeliveryRate: data.metrics.notificationDeliveryRate,
+        notificationFailures: data.metrics.notificationFailures,
+        prewarmedSessions: data.metrics.prewarmedSessions,
+        qualifiedLeads: data.metrics.qualifiedLeads,
+        recentLeads: data.metrics.recentLeads,
+        reviewedSessions: data.metrics.reviewedSessions,
+        sessionsWithErrors: data.metrics.sessionsWithErrors,
+        submittedSessions: data.metrics.submittedSessions,
+        urgentLeads: data.metrics.urgentLeads,
+        voiceLeads: data.metrics.voiceLeads,
+        voiceSubmitRate: data.metrics.voiceSubmitRate,
+      },
+    },
+  };
+}
+
+export type AdminAggregateMetricsData = Extract<
+  Awaited<ReturnType<typeof getAdminAggregateMetrics>>,
+  { ok: true }
+>["data"];
+
 export async function getAdminLeadTable(limit = 500) {
   const take = Math.min(Math.max(Math.floor(limit), 1), 500);
   const fixturePath = readEnv("ADMIN_REVIEW_DASHBOARD_FIXTURE");

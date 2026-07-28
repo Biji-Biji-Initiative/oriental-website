@@ -26,7 +26,12 @@ import {
 } from "@/lib/admin-workflow";
 import { getSegment } from "@/lib/segments";
 import { adminCookieName, verifyAdminSessionCookie } from "@/lib/server/admin-auth";
-import { getAdminLeadTable, getAdminReviewDashboard } from "@/lib/server/convex";
+import {
+  type AdminAggregateMetricsData,
+  getAdminAggregateMetrics,
+  getAdminLeadTable,
+  getAdminReviewDashboard,
+} from "@/lib/server/convex";
 import { isBenignVoiceError, type VoiceRuntimeError } from "@/lib/voice/realtime-events";
 import { publicLeadUtm } from "@/lib/voice/submission-evidence";
 
@@ -39,7 +44,7 @@ export const metadata: Metadata = {
 
 type DashboardResult = Awaited<ReturnType<typeof getAdminReviewDashboard>>;
 type DashboardData = Extract<DashboardResult, { ok: true }>["data"];
-type DashboardMetrics = DashboardData["metrics"];
+type DashboardMetrics = AdminAggregateMetricsData["metrics"];
 type LeadRow = DashboardData["leads"][number];
 type VoiceSessionRow = DashboardData["voiceSessions"][number];
 type LeadEventRow = DashboardData["leadEvents"][number];
@@ -64,7 +69,7 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
   const auth = verifyAdminSessionCookie(cookieStore.get(adminCookieName)?.value);
   if (!auth.ok) return <AdminLoginForm reason={auth.reason} />;
   if (auth.credential === "password_session") {
-    const aggregate = await getAdminReviewDashboard(100).catch(() => ({
+    const aggregate = await getAdminAggregateMetrics(100).catch(() => ({
       ok: false as const,
       reason: "convex_failed",
     }));

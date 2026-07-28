@@ -147,9 +147,11 @@ Secret contract is enforced by `scripts/check-secrets.ts`.
 
 Admin authority is split across a human login and three distinct managed
 bearer credentials. `ADMIN_REVIEW_PASSWORD_HMAC` is the domain-separated
-HMAC-SHA256 of the human password keyed by `ADMIN_REVIEW_TOKEN`; plaintext is
-absent from the current tree and Coolify configuration, while historical
-repository exposure means the password is treated as potentially known. The
+HMAC-SHA256 of the human password keyed by `ADMIN_REVIEW_TOKEN`; plaintext
+must be absent from source, Infisical, Coolify, and the running container, and
+that absence requires a redacted complete environment readback during the
+configuration release. Historical repository exposure means the password is
+treated as potentially known. The
 same-origin, rate-limited login accepts that password or `ADMIN_REVIEW_TOKEN`,
 but only the high-entropy token is valid bearer auth or signs sessions. Password
 login produces a signed viewer-only session for thirty minutes that can access

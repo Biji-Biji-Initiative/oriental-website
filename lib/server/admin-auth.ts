@@ -17,6 +17,7 @@ const passwordSessionTtlMs = 30 * 60 * 1000;
 const adminPasswordHmacDomain = "oriental-admin-password:v1\0";
 const adminSessionHmacDomain = "oriental-admin-session:v3\0";
 const unsafeMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+const verifiedAdminLoginProof = Symbol("verified-admin-login");
 type AdminCredential =
   | "interactive_password"
   | "review_bearer"
@@ -37,6 +38,7 @@ export type AdminAuthState =
 export type AdminLoginSuccess = Extract<AdminAuthState, { ok: true }> & {
   credential: "interactive_password" | "review_bearer";
   principal: "interactive";
+  readonly [verifiedAdminLoginProof]: true;
 };
 type AdminLoginState = AdminLoginSuccess | Extract<AdminAuthState, { ok: false }>;
 
@@ -60,11 +62,13 @@ export function verifyAdminLoginCredential(credential: string | null | undefined
     expiresAt: Date.now() + (passwordLogin ? passwordSessionTtlMs : sessionTtlMs),
     principal: "interactive",
     role: passwordLogin ? "viewer" : identity.role,
+    [verifiedAdminLoginProof]: true,
   };
 }
 
 export function createAdminLoginSession(identity: AdminLoginSuccess, now: number) {
   if (
+    identity[verifiedAdminLoginProof] !== true ||
     identity.principal !== "interactive" ||
     !isValidAdminActor(identity.actor) ||
     !isAdminRole(identity.role) ||
