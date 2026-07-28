@@ -1,5 +1,6 @@
 import { createHmac } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { hasAdminPermission } from "@/lib/admin-permissions";
 import {
   adminCookieHeader,
   adminCookieName,
@@ -59,7 +60,7 @@ describe("admin auth helpers", () => {
       ok: true,
       actor: "Interactive operator",
       credential: "interactive_password",
-      principal: "interactive",
+      principal: "password",
       role: "viewer",
     });
 
@@ -76,6 +77,7 @@ describe("admin auth helpers", () => {
       ok: true,
       credential: "password_session",
       expiresAt: now + 30 * 60 * 1000,
+      principal: "password",
       role: "viewer",
     });
 
@@ -85,6 +87,7 @@ describe("admin auth helpers", () => {
     expect(verifyAdminRequest(request)).toMatchObject({
       ok: true,
       credential: "password_session",
+      principal: "password",
       role: "viewer",
     });
     expect(
@@ -106,7 +109,10 @@ describe("admin auth helpers", () => {
     });
     for (const permission of ["dashboard.read", "leads.read", "voice.read"] as const) {
       expect(verifyAdminPermission(request, permission)).toEqual({ ok: false, reason: "forbidden" });
+      expect(hasAdminPermission("viewer", permission, "password")).toBe(false);
     }
+    expect(hasAdminPermission("viewer", "dashboard.aggregate", "password")).toBe(true);
+    expect(hasAdminPermission("viewer", "session.logout", "password")).toBe(true);
     expect(
       verifyAdminPermission(
         new Request("http://localhost/api/admin/logout", {
@@ -122,7 +128,7 @@ describe("admin auth helpers", () => {
     ).toMatchObject({ ok: true, credential: "password_session" });
   });
 
-  it("rejects a structurally forged login identity at the session-mint boundary", () => {
+  it("rejects copied, proxied, replayed, and structurally forged login identities", () => {
     expect(() =>
       createAdminLoginSession(
         {
@@ -136,6 +142,26 @@ describe("admin auth helpers", () => {
         Date.now(),
       ),
     ).toThrow("Invalid admin login identity");
+
+    const verified = verifyAdminLoginCredential(interactivePassword);
+    if (!verified.ok) throw new Error("Expected a verified password login");
+    expect(Object.getOwnPropertySymbols(verified)).toEqual([]);
+    const copied = { ...verified, credential: "review_bearer", principal: "interactive", role: "admin" };
+    expect(() => createAdminLoginSession(copied as never, Date.now())).toThrow("Invalid admin login identity");
+    expect(() => createAdminLoginSession(new Proxy(verified, {}) as never, Date.now())).toThrow(
+      "Invalid admin login identity",
+    );
+
+    Object.assign(verified, { credential: "review_bearer", principal: "interactive", role: "admin" });
+    const now = Date.now();
+    const session = createAdminLoginSession(verified, now);
+    expect(verifyAdminSessionCookie(session.cookie)).toMatchObject({
+      credential: "password_session",
+      expiresAt: now + 30 * 60 * 1000,
+      principal: "password",
+      role: "viewer",
+    });
+    expect(() => createAdminLoginSession(verified, now)).toThrow("Invalid admin login identity");
   });
 
   it("keeps the interactive password out of bearer authentication and fails closed on invalid HMAC configuration", () => {
@@ -183,28 +209,42 @@ describe("admin auth helpers", () => {
     const passwordCookie = loginSession(interactivePassword).cookie;
     const baseline = { ...process.env };
     const bearerNames = ["ADMIN_REVIEW_TOKEN", "OPS_AUTOMATION_TOKEN", "PRIVACY_ADMIN_TOKEN"] as const;
-    for (const name of bearerNames) {
+    const requestedBearers = bearerNames.map((name) => {
+      const value = baseline[name];
+      if (!value) throw new Error(`${name} is missing from the test environment`);
+      return [name, value] as const;
+    });
+    for (const collisionName of bearerNames) {
       process.env = { ...baseline };
-      const bearer = process.env[name];
-      if (!bearer) throw new Error(`${name} is missing from the test environment`);
+      const collisionCandidate = process.env[collisionName];
+      if (!collisionCandidate) throw new Error(`${collisionName} is missing from the test environment`);
       process.env = {
         ...process.env,
-        ADMIN_REVIEW_PASSWORD_HMAC: interactivePasswordHmac(bearer),
+        ADMIN_REVIEW_PASSWORD_HMAC: interactivePasswordHmac(collisionCandidate),
       };
-      expect(verifyAdminLoginCredential(bearer), name).toEqual({ ok: false, reason: "unconfigured" });
-      expect(
-        verifyAdminRequest(
-          new Request("http://localhost/api/admin/review", {
-            headers: { authorization: `Bearer ${bearer}` },
-          }),
-        ),
-        name,
-      ).toEqual({ ok: false, reason: "unconfigured" });
-      expect(verifyAdminSessionCookie(reviewCookie), `${name}:review-cookie`).toEqual({
+      expect(verifyAdminLoginCredential(adminReviewToken), `${collisionName}:review-login`).toEqual({
         ok: false,
         reason: "unconfigured",
       });
-      expect(verifyAdminSessionCookie(passwordCookie), `${name}:password-cookie`).toEqual({
+      expect(verifyAdminLoginCredential(interactivePassword), `${collisionName}:password-login`).toEqual({
+        ok: false,
+        reason: "unconfigured",
+      });
+      for (const [requestedName, bearer] of requestedBearers) {
+        expect(
+          verifyAdminRequest(
+            new Request("http://localhost/api/admin/review", {
+              headers: { authorization: `Bearer ${bearer}` },
+            }),
+          ),
+          `${collisionName}:${requestedName}`,
+        ).toEqual({ ok: false, reason: "unconfigured" });
+      }
+      expect(verifyAdminSessionCookie(reviewCookie), `${collisionName}:review-cookie`).toEqual({
+        ok: false,
+        reason: "unconfigured",
+      });
+      expect(verifyAdminSessionCookie(passwordCookie), `${collisionName}:password-cookie`).toEqual({
         ok: false,
         reason: "unconfigured",
       });

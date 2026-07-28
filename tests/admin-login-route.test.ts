@@ -62,6 +62,7 @@ describe("admin login route", () => {
     expect(passwordSession).toMatchObject({
       ok: true,
       credential: "password_session",
+      principal: "password",
       role: "viewer",
     });
     expect(passwordSession.ok && passwordSession.expiresAt).toBeGreaterThanOrEqual(passwordStartedAt + 30 * 60 * 1000);
