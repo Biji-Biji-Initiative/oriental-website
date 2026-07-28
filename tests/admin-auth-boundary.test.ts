@@ -332,6 +332,7 @@ function constantStringExpression(
 ): string | null {
   const unwrapped = unwrapExpression(expression);
   if (ts.isStringLiteral(unwrapped) || ts.isNoSubstitutionTemplateLiteral(unwrapped)) return unwrapped.text;
+  if (ts.isNumericLiteral(unwrapped)) return unwrapped.text;
   if (ts.isBinaryExpression(unwrapped) && unwrapped.operatorToken.kind === ts.SyntaxKind.PlusToken) {
     const left = constantStringExpression(unwrapped.left, bindings, visited);
     const right = constantStringExpression(unwrapped.right, bindings, visited);
@@ -454,6 +455,11 @@ function authBuiltinReceiver(
       ) {
         return reflectedMember;
       }
+      if (member === "get" && target) {
+        const targetRoot = expressionRootName(target);
+        const containedReceiver = targetRoot ? receiverAliases.get(targetRoot) : null;
+        if (containedReceiver) return containedReceiver;
+      }
     }
     return null;
   }
@@ -464,9 +470,11 @@ function authBuiltinReceiver(
     : unwrapped.argumentExpression
       ? constantStringExpression(unwrapped.argumentExpression, bindings)
       : null;
-  return ts.isIdentifier(receiver) && globalAliases.has(receiver.text) && (member === "Object" || member === "Reflect")
-    ? member
-    : null;
+  if (ts.isIdentifier(receiver) && globalAliases.has(receiver.text) && (member === "Object" || member === "Reflect")) {
+    return member;
+  }
+  const receiverRoot = expressionRootName(receiver);
+  return receiverRoot ? (receiverAliases.get(receiverRoot) ?? null) : null;
 }
 
 function directAuthMutationPrimitive(
@@ -547,6 +555,181 @@ function mutationPrimitiveAliases(source: ts.SourceFile, bindings: ReadonlyMap<s
     visit(node);
     return primitives;
   };
+  type MutationBindingIdentity = {
+    global?: true;
+    primitive?: AuthMutationPrimitive;
+    receiver?: AuthBuiltinReceiver;
+  };
+  const mergeMutationIdentities = (identities: readonly MutationBindingIdentity[]): MutationBindingIdentity => {
+    const globals = identities.some((identity) => identity.global);
+    const receivers = new Set(identities.flatMap((identity) => (identity.receiver ? [identity.receiver] : [])));
+    const primitives = new Set(identities.flatMap((identity) => (identity.primitive ? [identity.primitive] : [])));
+    return {
+      ...(globals ? { global: true as const } : {}),
+      ...(receivers.size === 1 ? { receiver: receivers.values().next().value as AuthBuiltinReceiver } : {}),
+      ...(primitives.size === 1
+        ? { primitive: primitives.values().next().value as AuthMutationPrimitive }
+        : primitives.size > 1
+          ? { primitive: "Object.<unresolved>" as AuthMutationPrimitive }
+          : {}),
+    };
+  };
+  const mutationBindingIdentity = (
+    expression: ts.Expression,
+    visited = new Set<ts.Expression>(),
+  ): MutationBindingIdentity => {
+    const unwrapped = unwrapExpression(expression);
+    if (visited.has(unwrapped)) return {};
+    const nextVisited = new Set(visited).add(unwrapped);
+    const direct: MutationBindingIdentity = {
+      ...(isGlobalAlias(unwrapped) ? { global: true as const } : {}),
+      ...(receiverFor(unwrapped) ? { receiver: receiverFor(unwrapped) ?? undefined } : {}),
+      ...(primitiveFor(unwrapped) ? { primitive: primitiveFor(unwrapped) ?? undefined } : {}),
+    };
+    if (direct.global || direct.receiver || direct.primitive) return direct;
+    if (ts.isPropertyAccessExpression(unwrapped) || ts.isElementAccessExpression(unwrapped)) {
+      const root = expressionRootName(unwrapped.expression);
+      const member = ts.isPropertyAccessExpression(unwrapped)
+        ? unwrapped.name.text
+        : unwrapped.argumentExpression
+          ? constantStringExpression(unwrapped.argumentExpression, bindings)
+          : null;
+      if (root && globalAliases.has(root) && (member === null || /^(?:\d+|at)$/u.test(member))) {
+        return { global: true };
+      }
+    }
+    if (ts.isArrayLiteralExpression(unwrapped)) {
+      return mergeMutationIdentities(
+        unwrapped.elements.flatMap((element) =>
+          ts.isExpression(element) ? [mutationBindingIdentity(element, nextVisited)] : [],
+        ),
+      );
+    }
+    if (ts.isObjectLiteralExpression(unwrapped)) {
+      return mergeMutationIdentities(
+        unwrapped.properties.flatMap((property) => {
+          if (ts.isPropertyAssignment(property)) {
+            return [mutationBindingIdentity(property.initializer, nextVisited)];
+          }
+          if (ts.isShorthandPropertyAssignment(property)) {
+            return [mutationBindingIdentity(property.name, nextVisited)];
+          }
+          if (ts.isSpreadAssignment(property)) {
+            return [mutationBindingIdentity(property.expression, nextVisited)];
+          }
+          return [];
+        }),
+      );
+    }
+    if (ts.isBinaryExpression(unwrapped)) {
+      const operator = unwrapped.operatorToken.kind;
+      if (
+        operator === ts.SyntaxKind.AmpersandAmpersandToken ||
+        operator === ts.SyntaxKind.BarBarToken ||
+        operator === ts.SyntaxKind.QuestionQuestionToken ||
+        operator === ts.SyntaxKind.CommaToken ||
+        (operator >= ts.SyntaxKind.FirstAssignment && operator <= ts.SyntaxKind.LastAssignment)
+      ) {
+        return mergeMutationIdentities([
+          mutationBindingIdentity(unwrapped.left, nextVisited),
+          mutationBindingIdentity(unwrapped.right, nextVisited),
+        ]);
+      }
+    }
+    if (ts.isCallExpression(unwrapped)) {
+      const callee = unwrapExpression(unwrapped.expression);
+      if (ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee)) {
+        const member = ts.isPropertyAccessExpression(callee)
+          ? callee.name.text
+          : callee.argumentExpression
+            ? constantStringExpression(callee.argumentExpression, bindings)
+            : null;
+        if (member === "concat") {
+          return mergeMutationIdentities([
+            mutationBindingIdentity(callee.expression, nextVisited),
+            ...unwrapped.arguments.map((argument) => mutationBindingIdentity(argument, nextVisited)),
+          ]);
+        }
+      }
+      const bridgedIdentity = mutationBindingIdentity(unwrapped.expression, nextVisited);
+      if (bridgedIdentity.global || bridgedIdentity.receiver) {
+        return {
+          ...(bridgedIdentity.global ? { global: true as const } : {}),
+          ...(bridgedIdentity.receiver ? { receiver: bridgedIdentity.receiver } : {}),
+        };
+      }
+    }
+    return {};
+  };
+  const mutationMemberIdentity = (
+    identity: MutationBindingIdentity,
+    member: string | null,
+  ): MutationBindingIdentity => {
+    if (!member) return identity;
+    if (identity.global && (member === "Object" || member === "Reflect")) return { receiver: member };
+    if (identity.receiver) {
+      const primitive = `${identity.receiver}.${member}` as AuthMutationPrimitive;
+      if (authMutationPrimitiveNames.has(primitive)) return { primitive };
+    }
+    if (identity.primitive && (member === "bind" || member === "call" || member === "apply")) {
+      return { primitive: identity.primitive };
+    }
+    return {};
+  };
+  const recordMutationBinding = (name: ts.BindingName, identity: MutationBindingIdentity) => {
+    if (ts.isIdentifier(name)) {
+      if (identity.global && !globalAliases.has(name.text)) {
+        globalAliases.add(name.text);
+        changed = true;
+      }
+      if (identity.receiver && receiverAliases.get(name.text) !== identity.receiver) {
+        receiverAliases.set(name.text, identity.receiver);
+        changed = true;
+      }
+      if (identity.primitive && aliases.get(name.text) !== identity.primitive) {
+        aliases.set(name.text, identity.primitive);
+        changed = true;
+      }
+      return;
+    }
+    for (const element of name.elements) {
+      if (ts.isOmittedExpression(element)) continue;
+      const member = ts.isObjectBindingPattern(name)
+        ? propertyNameText(element.propertyName ?? (ts.isIdentifier(element.name) ? element.name : undefined))
+        : null;
+      recordMutationBinding(element.name, mutationMemberIdentity(identity, member));
+    }
+  };
+  const recordMutationAssignmentTarget = (target: ts.Expression, identity: MutationBindingIdentity) => {
+    const unwrapped = unwrapExpression(target);
+    if (ts.isIdentifier(unwrapped)) {
+      recordMutationBinding(unwrapped, identity);
+      return;
+    }
+    if (ts.isObjectLiteralExpression(unwrapped)) {
+      for (const property of unwrapped.properties) {
+        if (ts.isPropertyAssignment(property)) {
+          recordMutationAssignmentTarget(
+            property.initializer,
+            mutationMemberIdentity(identity, propertyNameText(property.name)),
+          );
+        } else if (ts.isShorthandPropertyAssignment(property)) {
+          recordMutationAssignmentTarget(
+            property.name,
+            mutationMemberIdentity(identity, propertyNameText(property.name)),
+          );
+        }
+      }
+      return;
+    }
+    if (ts.isArrayLiteralExpression(unwrapped)) {
+      for (const element of unwrapped.elements) {
+        if (ts.isExpression(element)) recordMutationAssignmentTarget(element, identity);
+      }
+    }
+    const root = expressionRootName(unwrapped);
+    if (root) recordMutationBinding(ts.factory.createIdentifier(root), identity);
+  };
   const accessMember = (expression: ts.Expression) => {
     const unwrapped = unwrapExpression(expression);
     if (ts.isPropertyAccessExpression(unwrapped)) return unwrapped.name.text;
@@ -604,6 +787,7 @@ function mutationPrimitiveAliases(source: ts.SourceFile, bindings: ReadonlyMap<s
     changed = false;
     const visit = (node: ts.Node) => {
       if (ts.isVariableDeclaration(node) && node.initializer) {
+        recordMutationBinding(node.name, mutationBindingIdentity(node.initializer));
         if (ts.isIdentifier(node.name)) {
           if (isGlobalAlias(node.initializer) && !globalAliases.has(node.name.text)) {
             globalAliases.add(node.name.text);
@@ -654,6 +838,31 @@ function mutationPrimitiveAliases(source: ts.SourceFile, bindings: ReadonlyMap<s
                 changed = true;
               }
             }
+          }
+        }
+      }
+      if (
+        ts.isBinaryExpression(node) &&
+        node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+        node.operatorToken.kind <= ts.SyntaxKind.LastAssignment
+      ) {
+        recordMutationAssignmentTarget(node.left, mutationBindingIdentity(node.right));
+      }
+      if (ts.isFunctionDeclaration(node) && node.name && node.body) {
+        const returnedIdentity = mergeMutationIdentities(
+          returnedExpressions(node.body).map((expression) => mutationBindingIdentity(expression)),
+        );
+        recordMutationBinding(node.name, returnedIdentity);
+      }
+      if (ts.isCallExpression(node)) {
+        const mutation = receiverMutationCall(node, bindings);
+        if (mutation) {
+          const targetRoot = expressionRootName(mutation.target);
+          if (targetRoot) {
+            recordMutationBinding(
+              ts.factory.createIdentifier(targetRoot),
+              mergeMutationIdentities(mutation.values.map((value) => mutationBindingIdentity(value))),
+            );
           }
         }
       }
@@ -839,13 +1048,40 @@ function containerReferenceRoots(expression: ts.Expression): Set<string> {
   const collect = (candidate: ts.Expression) => {
     for (const name of containerReferenceRoots(candidate)) roots.add(name);
   };
-  if (ts.isArrayLiteralExpression(unwrapped)) {
+  if (ts.isSpreadElement(unwrapped)) {
+    collect(unwrapped.expression);
+  } else if (ts.isArrayLiteralExpression(unwrapped)) {
     for (const element of unwrapped.elements) if (ts.isExpression(element)) collect(element);
   } else if (ts.isObjectLiteralExpression(unwrapped)) {
     for (const property of unwrapped.properties) {
       if (ts.isPropertyAssignment(property)) collect(property.initializer);
       else if (ts.isShorthandPropertyAssignment(property)) roots.add(property.name.text);
       else if (ts.isSpreadAssignment(property)) collect(property.expression);
+    }
+  } else if (ts.isBinaryExpression(unwrapped)) {
+    const operator = unwrapped.operatorToken.kind;
+    if (
+      operator === ts.SyntaxKind.AmpersandAmpersandToken ||
+      operator === ts.SyntaxKind.BarBarToken ||
+      operator === ts.SyntaxKind.QuestionQuestionToken ||
+      operator === ts.SyntaxKind.CommaToken ||
+      (operator >= ts.SyntaxKind.FirstAssignment && operator <= ts.SyntaxKind.LastAssignment)
+    ) {
+      collect(unwrapped.left);
+      collect(unwrapped.right);
+    }
+  } else if (ts.isCallExpression(unwrapped)) {
+    const callee = unwrapExpression(unwrapped.expression);
+    if (ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee)) {
+      const member = ts.isPropertyAccessExpression(callee)
+        ? callee.name.text
+        : callee.argumentExpression
+          ? constantStringExpression(callee.argumentExpression)
+          : null;
+      if (member === "concat" || member === "bind") {
+        collect(callee.expression);
+        for (const argument of unwrapped.arguments) collect(argument);
+      }
     }
   }
   return roots;
@@ -857,33 +1093,62 @@ function receiverMutationCall(
   call: ts.CallExpression,
   bindings: ReadonlyMap<string, ts.Expression>,
 ): { target: ts.Expression; values: readonly ts.Expression[] } | null {
+  const accessMember = (expression: ts.Expression) => {
+    const unwrapped = unwrapExpression(expression);
+    if (ts.isPropertyAccessExpression(unwrapped)) return unwrapped.name.text;
+    if (ts.isElementAccessExpression(unwrapped) && unwrapped.argumentExpression) {
+      return constantStringExpression(unwrapped.argumentExpression, bindings);
+    }
+    return null;
+  };
+  const mutationMethod = (expression: ts.Expression) => {
+    const member = accessMember(expression);
+    return member && receiverMutationMethodNames.has(member) ? member : null;
+  };
   const callee = unwrapExpression(call.expression);
+  if (ts.isCallExpression(callee) && accessMember(callee.expression) === "bind") {
+    const boundCallee = unwrapExpression(callee.expression);
+    if (
+      (ts.isPropertyAccessExpression(boundCallee) || ts.isElementAccessExpression(boundCallee)) &&
+      mutationMethod(boundCallee.expression) &&
+      callee.arguments[0]
+    ) {
+      return { target: callee.arguments[0], values: [...callee.arguments.slice(1), ...call.arguments] };
+    }
+  }
   if (!ts.isPropertyAccessExpression(callee) && !ts.isElementAccessExpression(callee)) return null;
-  const member = ts.isPropertyAccessExpression(callee)
-    ? callee.name.text
-    : callee.argumentExpression
-      ? constantStringExpression(callee.argumentExpression, bindings)
-      : null;
+  const member = accessMember(callee);
   if (member && receiverMutationMethodNames.has(member)) {
     return { target: callee.expression, values: call.arguments };
   }
   if (member !== "call" && member !== "apply") return null;
   const invoked = unwrapExpression(callee.expression);
-  if (!ts.isPropertyAccessExpression(invoked) && !ts.isElementAccessExpression(invoked)) return null;
-  const invokedMember = ts.isPropertyAccessExpression(invoked)
-    ? invoked.name.text
-    : invoked.argumentExpression
-      ? constantStringExpression(invoked.argumentExpression, bindings)
-      : null;
-  if (!invokedMember || !receiverMutationMethodNames.has(invokedMember) || !call.arguments[0]) return null;
-  if (member === "call") return { target: call.arguments[0], values: call.arguments.slice(1) };
-  const vector = call.arguments[1] ? unwrapExpression(call.arguments[1]) : null;
+  if (ts.isPropertyAccessExpression(invoked) || ts.isElementAccessExpression(invoked)) {
+    const invokedMember = accessMember(invoked);
+    if (invokedMember && receiverMutationMethodNames.has(invokedMember) && call.arguments[0]) {
+      if (member === "call") return { target: call.arguments[0], values: call.arguments.slice(1) };
+      const vector = call.arguments[1] ? unwrapExpression(call.arguments[1]) : null;
+      return {
+        target: call.arguments[0],
+        values:
+          vector && ts.isArrayLiteralExpression(vector)
+            ? vector.elements.filter((element): element is ts.Expression => ts.isExpression(element))
+            : call.arguments.slice(1),
+      };
+    }
+  }
+  const wrappedMutationIndex = call.arguments.findIndex((argument) => mutationMethod(argument) !== null);
+  if (wrappedMutationIndex < 0 || !call.arguments[wrappedMutationIndex + 1]) return null;
+  const target = call.arguments[wrappedMutationIndex + 1] as ts.Expression;
+  const possibleVector = call.arguments[wrappedMutationIndex + 2]
+    ? unwrapExpression(call.arguments[wrappedMutationIndex + 2] as ts.Expression)
+    : null;
   return {
-    target: call.arguments[0],
+    target,
     values:
-      vector && ts.isArrayLiteralExpression(vector)
-        ? vector.elements.filter((element): element is ts.Expression => ts.isExpression(element))
-        : call.arguments.slice(1),
+      member === "apply" && possibleVector && ts.isArrayLiteralExpression(possibleVector)
+        ? possibleVector.elements.filter((element): element is ts.Expression => ts.isExpression(element))
+        : call.arguments.slice(wrappedMutationIndex + 2),
   };
 }
 
@@ -941,6 +1206,184 @@ function authRuntimeExportViolations(sourceText = readFileSync("lib/server/admin
     taintAliasGraph.set(left, leftLinks);
     taintAliasGraph.set(right, rightLinks);
   };
+  const lexicalScope = (node: ts.Node): ts.Node => {
+    let current: ts.Node | undefined = node.parent;
+    while (current && current !== source) {
+      if (ts.isFunctionLike(current)) return current;
+      current = current.parent;
+    }
+    return source;
+  };
+  type BoundReceiverMutation = { target: ts.Expression; values: readonly ts.Expression[] };
+  const boundMutationKey = (node: ts.Node, name: string) => `${lexicalScope(node).pos}:${name}`;
+  const boundReceiverMutations = new Map<string, BoundReceiverMutation>();
+  const accessMember = (expression: ts.Expression) => {
+    const unwrapped = unwrapExpression(expression);
+    if (ts.isPropertyAccessExpression(unwrapped)) return unwrapped.name.text;
+    if (ts.isElementAccessExpression(unwrapped) && unwrapped.argumentExpression) {
+      return constantStringExpression(unwrapped.argumentExpression, constantBindings);
+    }
+    return null;
+  };
+  const directBoundReceiverMutation = (expression: ts.Expression): BoundReceiverMutation | null => {
+    const unwrapped = unwrapExpression(expression);
+    if (!ts.isCallExpression(unwrapped) || accessMember(unwrapped.expression) !== "bind" || !unwrapped.arguments[0]) {
+      return null;
+    }
+    const callee = unwrapExpression(unwrapped.expression);
+    if (!ts.isPropertyAccessExpression(callee) && !ts.isElementAccessExpression(callee)) return null;
+    const mutationMember = accessMember(callee.expression);
+    if (!mutationMember || !receiverMutationMethodNames.has(mutationMember)) return null;
+    return { target: unwrapped.arguments[0], values: unwrapped.arguments.slice(1) };
+  };
+  let boundMutationChanged = true;
+  while (boundMutationChanged) {
+    boundMutationChanged = false;
+    const recordBoundMutation = (node: ts.Node, name: string, mutation: BoundReceiverMutation | null) => {
+      if (!mutation) return;
+      const key = boundMutationKey(node, name);
+      if (boundReceiverMutations.has(key)) return;
+      boundReceiverMutations.set(key, mutation);
+      boundMutationChanged = true;
+    };
+    const boundMutationFor = (node: ts.Node, expression: ts.Expression) => {
+      const direct = directBoundReceiverMutation(expression);
+      if (direct) return direct;
+      const unwrapped = unwrapExpression(expression);
+      return ts.isIdentifier(unwrapped)
+        ? (boundReceiverMutations.get(boundMutationKey(node, unwrapped.text)) ?? null)
+        : null;
+    };
+    const visitBoundMutations = (node: ts.Node) => {
+      if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
+        recordBoundMutation(node, node.name.text, boundMutationFor(node, node.initializer));
+      }
+      if (
+        ts.isBinaryExpression(node) &&
+        node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+        node.operatorToken.kind <= ts.SyntaxKind.LastAssignment &&
+        ts.isIdentifier(unwrapExpression(node.left))
+      ) {
+        recordBoundMutation(
+          node,
+          (unwrapExpression(node.left) as ts.Identifier).text,
+          boundMutationFor(node, node.right),
+        );
+      }
+      ts.forEachChild(node, visitBoundMutations);
+    };
+    visitBoundMutations(source);
+  }
+  const boundReceiverMutationCall = (call: ts.CallExpression): BoundReceiverMutation | null => {
+    const callee = unwrapExpression(call.expression);
+    if (ts.isIdentifier(callee)) {
+      const bound = boundReceiverMutations.get(boundMutationKey(call, callee.text));
+      return bound ? { target: bound.target, values: [...bound.values, ...call.arguments] } : null;
+    }
+    if (ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee)) {
+      const member = accessMember(callee);
+      const receiver = unwrapExpression(callee.expression);
+      if ((member === "call" || member === "apply") && ts.isIdentifier(receiver)) {
+        const bound = boundReceiverMutations.get(boundMutationKey(call, receiver.text));
+        if (bound) {
+          if (member === "call") {
+            return { target: bound.target, values: [...bound.values, ...call.arguments.slice(1)] };
+          }
+          const vector = call.arguments[1] ? unwrapExpression(call.arguments[1]) : null;
+          return {
+            target: bound.target,
+            values: [
+              ...bound.values,
+              ...(vector && ts.isArrayLiteralExpression(vector)
+                ? vector.elements.filter((element): element is ts.Expression => ts.isExpression(element))
+                : call.arguments.slice(1)),
+            ],
+          };
+        }
+      }
+    }
+    if (mutationAnalysis.primitiveFor(call.expression) === "Reflect.apply") {
+      const invoked = call.arguments[0] ? unwrapExpression(call.arguments[0]) : null;
+      if (invoked && ts.isIdentifier(invoked)) {
+        const bound = boundReceiverMutations.get(boundMutationKey(call, invoked.text));
+        if (bound) {
+          return {
+            target: bound.target,
+            values: [...bound.values, ...(call.arguments[2] ? [call.arguments[2]] : [])],
+          };
+        }
+      }
+    }
+    return null;
+  };
+  const invocationVectorValues = (
+    expression: ts.Expression,
+    call: ts.CallExpression,
+    visited = new Set<string>(),
+  ): ts.Expression[] => {
+    const unwrapped = unwrapExpression(expression);
+    if (ts.isArrayLiteralExpression(unwrapped)) {
+      return unwrapped.elements.flatMap((element) => (ts.isExpression(element) ? [element] : []));
+    }
+    if (ts.isCallExpression(unwrapped)) {
+      const callee = unwrapExpression(unwrapped.expression);
+      if (ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee)) {
+        const member = ts.isPropertyAccessExpression(callee)
+          ? callee.name.text
+          : callee.argumentExpression
+            ? constantStringExpression(callee.argumentExpression, constantBindings)
+            : null;
+        if (member === "concat") {
+          return [...invocationVectorValues(callee.expression, call, visited), ...unwrapped.arguments];
+        }
+      }
+      return [];
+    }
+    if (!ts.isIdentifier(unwrapped) || visited.has(unwrapped.text)) return [];
+    const nextVisited = new Set(visited).add(unwrapped.text);
+    const values: ts.Expression[] = [];
+    const scope = lexicalScope(call);
+    const visit = (node: ts.Node) => {
+      if (node !== scope && ts.isFunctionLike(node)) return;
+      if (node.pos >= call.pos) return;
+      if (
+        ts.isVariableDeclaration(node) &&
+        ts.isIdentifier(node.name) &&
+        node.name.text === unwrapped.text &&
+        node.initializer
+      ) {
+        values.push(...invocationVectorValues(node.initializer, call, nextVisited));
+      }
+      if (
+        ts.isBinaryExpression(node) &&
+        node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+        node.operatorToken.kind <= ts.SyntaxKind.LastAssignment &&
+        expressionRootName(node.left) === unwrapped.text
+      ) {
+        values.push(node.right);
+      }
+      if (ts.isCallExpression(node)) {
+        const callee = unwrapExpression(node.expression);
+        if (
+          (ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee)) &&
+          expressionRootName(callee.expression) === unwrapped.text
+        ) {
+          const member = ts.isPropertyAccessExpression(callee)
+            ? callee.name.text
+            : callee.argumentExpression
+              ? constantStringExpression(callee.argumentExpression, constantBindings)
+              : null;
+          if (member === "push" || member === "unshift" || member === "splice") values.push(...node.arguments);
+        }
+        for (const { target } of mutationAnalysis.mutationTargets(node)) {
+          if (expressionRootName(target) === unwrapped.text) values.push(...node.arguments);
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(scope);
+    return values;
+  };
   const visitTaintAliases = (node: ts.Node) => {
     if (ts.isVariableDeclaration(node) && node.initializer) {
       const roots = containerReferenceRoots(node.initializer);
@@ -949,13 +1392,26 @@ function authRuntimeExportViolations(sourceText = readFileSync("lib/server/admin
       }
     }
     if (ts.isCallExpression(node)) {
-      const mutation = receiverMutationCall(node, constantBindings);
+      const mutation = receiverMutationCall(node, constantBindings) ?? boundReceiverMutationCall(node);
       if (mutation) {
         const targetRoots = containerReferenceRoots(mutation.target);
         for (const value of mutation.values) {
           const valueRoots = containerReferenceRoots(value);
           for (const targetRoot of targetRoots) {
             for (const valueRoot of valueRoots) linkTaintAliases(targetRoot, valueRoot);
+          }
+        }
+      }
+      if (mutationAnalysis.primitiveFor(node.expression) === "Reflect.apply" && node.arguments[2]) {
+        const vectorRoots = [
+          ...containerReferenceRoots(node.arguments[2]),
+          ...invocationVectorValues(node.arguments[2], node).flatMap((value) => [...containerReferenceRoots(value)]),
+        ];
+        for (let leftIndex = 0; leftIndex < vectorRoots.length; leftIndex += 1) {
+          for (let rightIndex = leftIndex + 1; rightIndex < vectorRoots.length; rightIndex += 1) {
+            const left = vectorRoots[leftIndex];
+            const right = vectorRoots[rightIndex];
+            if (left && right) linkTaintAliases(left, right);
           }
         }
       }
@@ -1018,7 +1474,7 @@ function authRuntimeExportViolations(sourceText = readFileSync("lib/server/admin
           .map((argument) => taintOf(argument))
           .find((taint): taint is PrivateAuthTaint => Boolean(taint));
         if (argumentTaint) {
-          const receiverMutation = receiverMutationCall(node, constantBindings);
+          const receiverMutation = receiverMutationCall(node, constantBindings) ?? boundReceiverMutationCall(node);
           const receiverRoot = receiverMutation ? expressionRootName(receiverMutation.target) : null;
           if (
             receiverRoot &&
@@ -1078,6 +1534,26 @@ function authRuntimeExportViolations(sourceText = readFileSync("lib/server/admin
         containsIdentifierFrom(node.right, mutableAuthExportAliases)
       ) {
         recordMutableRoot(node.left);
+      }
+      if (
+        ts.isBinaryExpression(node) &&
+        node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+        node.operatorToken.kind <= ts.SyntaxKind.LastAssignment &&
+        containsIdentifierFrom(node.right, mutableAuthExportAliases)
+      ) {
+        recordMutableRoot(node.left);
+      }
+      if (
+        ts.isFunctionDeclaration(node) &&
+        node.name &&
+        node.body &&
+        returnedExpressions(node.body).some((expression) =>
+          containsIdentifierFrom(expression, mutableAuthExportAliases),
+        ) &&
+        !mutableAuthExportAliases.has(node.name.text)
+      ) {
+        mutableAuthExportAliases.add(node.name.text);
+        changed = true;
       }
       if (
         ts.isCallExpression(node) &&
@@ -1575,6 +2051,233 @@ function protectedSymbolAuthority(path: string, sourceText = readFileSync(path, 
     visitPrivilegedAliases(source);
   }
 
+  type PrivilegedIdentity =
+    | "commonJsLoader"
+    | "createRequire"
+    | "global"
+    | "module"
+    | "moduleGetter"
+    | "process"
+    | "reflect"
+    | "reflectGet";
+  const semanticPrivilegedAliases = new Map<string, Set<PrivilegedIdentity>>([
+    ["globalThis", new Set(["global"])],
+    ["module", new Set(["module"])],
+    ["process", new Set(["process"])],
+    ["Reflect", new Set(["reflect"])],
+    ["require", new Set(["commonJsLoader"])],
+  ]);
+  for (const name of createRequireAliases) semanticPrivilegedAliases.set(name, new Set(["createRequire"]));
+  const mergePrivilegedIdentities = (
+    target: Set<PrivilegedIdentity>,
+    sourceIdentities: Iterable<PrivilegedIdentity>,
+  ) => {
+    let added = false;
+    for (const identity of sourceIdentities) {
+      if (target.has(identity)) continue;
+      target.add(identity);
+      added = true;
+    }
+    return added;
+  };
+  const memberPrivilegedIdentities = (identities: ReadonlySet<PrivilegedIdentity>, member: string | null) => {
+    const result = new Set<PrivilegedIdentity>();
+    if (!member) return result;
+    for (const identity of identities) {
+      if (identity === "global" && member === "process") result.add("process");
+      else if (identity === "global" && member === "Reflect") result.add("reflect");
+      else if (identity === "process" && member === "getBuiltinModule") result.add("moduleGetter");
+      else if (identity === "module" && member === "require") result.add("commonJsLoader");
+      else if (identity === "module" && member === "createRequire") result.add("createRequire");
+      else if (identity === "reflect" && member === "get") result.add("reflectGet");
+      else if (
+        (member === "bind" || member === "call" || member === "apply") &&
+        (identity === "commonJsLoader" || identity === "createRequire" || identity === "moduleGetter")
+      ) {
+        result.add(identity);
+      } else if (/^(?:\d+|at)$/u.test(member) && identity === "module") {
+        result.add("module");
+      } else if (identity === "module" || identity === "process" || identity === "reflect") {
+        result.add(identity);
+      } else if (identity === "global") {
+        result.add("global");
+      }
+    }
+    return result;
+  };
+  const privilegedIdentitiesFor = (
+    expression: ts.Expression,
+    visited = new Set<ts.Expression>(),
+  ): Set<PrivilegedIdentity> => {
+    const unwrapped = unwrapExpression(expression);
+    if (visited.has(unwrapped)) return new Set();
+    const nextVisited = new Set(visited).add(unwrapped);
+    if (ts.isIdentifier(unwrapped)) {
+      return new Set(semanticPrivilegedAliases.get(unwrapped.text) ?? []);
+    }
+    if (ts.isPropertyAccessExpression(unwrapped) || ts.isElementAccessExpression(unwrapped)) {
+      const member = ts.isPropertyAccessExpression(unwrapped)
+        ? unwrapped.name.text
+        : unwrapped.argumentExpression
+          ? constantStringExpression(unwrapped.argumentExpression, constantBindings)
+          : null;
+      return memberPrivilegedIdentities(privilegedIdentitiesFor(unwrapped.expression, nextVisited), member);
+    }
+    if (ts.isArrayLiteralExpression(unwrapped)) {
+      const result = new Set<PrivilegedIdentity>();
+      for (const element of unwrapped.elements) {
+        if (ts.isExpression(element)) mergePrivilegedIdentities(result, privilegedIdentitiesFor(element, nextVisited));
+      }
+      return result;
+    }
+    if (ts.isObjectLiteralExpression(unwrapped)) {
+      const result = new Set<PrivilegedIdentity>();
+      for (const property of unwrapped.properties) {
+        if (ts.isPropertyAssignment(property)) {
+          mergePrivilegedIdentities(result, privilegedIdentitiesFor(property.initializer, nextVisited));
+        } else if (ts.isShorthandPropertyAssignment(property)) {
+          mergePrivilegedIdentities(result, privilegedIdentitiesFor(property.name, nextVisited));
+        } else if (ts.isSpreadAssignment(property)) {
+          mergePrivilegedIdentities(result, privilegedIdentitiesFor(property.expression, nextVisited));
+        }
+      }
+      return result;
+    }
+    if (ts.isBinaryExpression(unwrapped)) {
+      const operator = unwrapped.operatorToken.kind;
+      if (
+        operator === ts.SyntaxKind.AmpersandAmpersandToken ||
+        operator === ts.SyntaxKind.BarBarToken ||
+        operator === ts.SyntaxKind.QuestionQuestionToken ||
+        operator === ts.SyntaxKind.CommaToken ||
+        (operator >= ts.SyntaxKind.FirstAssignment && operator <= ts.SyntaxKind.LastAssignment)
+      ) {
+        const result = privilegedIdentitiesFor(unwrapped.left, nextVisited);
+        mergePrivilegedIdentities(result, privilegedIdentitiesFor(unwrapped.right, nextVisited));
+        return result;
+      }
+      return new Set();
+    }
+    if (ts.isCallExpression(unwrapped)) {
+      const calleeIdentities = privilegedIdentitiesFor(unwrapped.expression, nextVisited);
+      if (calleeIdentities.has("reflectGet")) {
+        const target = unwrapped.arguments[0]
+          ? privilegedIdentitiesFor(unwrapped.arguments[0], nextVisited)
+          : new Set<PrivilegedIdentity>();
+        const member = unwrapped.arguments[1]
+          ? constantStringExpression(unwrapped.arguments[1], constantBindings)
+          : null;
+        return memberPrivilegedIdentities(target, member);
+      }
+      if (calleeIdentities.has("moduleGetter")) return new Set(["module"]);
+      if (calleeIdentities.has("createRequire")) return new Set(["commonJsLoader"]);
+      const callee = unwrapExpression(unwrapped.expression);
+      if (ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee)) {
+        const member = ts.isPropertyAccessExpression(callee)
+          ? callee.name.text
+          : callee.argumentExpression
+            ? constantStringExpression(callee.argumentExpression, constantBindings)
+            : null;
+        if (member === "concat") {
+          const result = privilegedIdentitiesFor(callee.expression, nextVisited);
+          for (const argument of unwrapped.arguments) {
+            mergePrivilegedIdentities(result, privilegedIdentitiesFor(argument, nextVisited));
+          }
+          return result;
+        }
+        if (
+          member === "bind" &&
+          (calleeIdentities.has("commonJsLoader") ||
+            calleeIdentities.has("createRequire") ||
+            calleeIdentities.has("moduleGetter"))
+        ) {
+          return calleeIdentities;
+        }
+      }
+      return new Set(
+        [...calleeIdentities].filter(
+          (identity) =>
+            identity !== "commonJsLoader" &&
+            identity !== "createRequire" &&
+            identity !== "moduleGetter" &&
+            identity !== "reflectGet",
+        ),
+      );
+    }
+    return new Set();
+  };
+  let semanticPrivilegedChanged = true;
+  while (semanticPrivilegedChanged) {
+    semanticPrivilegedChanged = false;
+    const recordName = (name: string, identities: ReadonlySet<PrivilegedIdentity>) => {
+      if (identities.size === 0) return;
+      const existing = semanticPrivilegedAliases.get(name) ?? new Set<PrivilegedIdentity>();
+      if (mergePrivilegedIdentities(existing, identities)) semanticPrivilegedChanged = true;
+      semanticPrivilegedAliases.set(name, existing);
+    };
+    const recordBinding = (name: ts.BindingName, identities: ReadonlySet<PrivilegedIdentity>) => {
+      if (ts.isIdentifier(name)) {
+        recordName(name.text, identities);
+        return;
+      }
+      for (const element of name.elements) {
+        if (ts.isOmittedExpression(element)) continue;
+        const member = ts.isObjectBindingPattern(name)
+          ? propertyNameText(element.propertyName ?? (ts.isIdentifier(element.name) ? element.name : undefined))
+          : null;
+        recordBinding(element.name, member ? memberPrivilegedIdentities(identities, member) : identities);
+      }
+    };
+    const recordAssignmentTarget = (target: ts.Expression, identities: ReadonlySet<PrivilegedIdentity>) => {
+      const unwrapped = unwrapExpression(target);
+      if (ts.isIdentifier(unwrapped)) {
+        recordName(unwrapped.text, identities);
+      } else if (ts.isObjectLiteralExpression(unwrapped)) {
+        for (const property of unwrapped.properties) {
+          if (ts.isPropertyAssignment(property)) {
+            recordAssignmentTarget(
+              property.initializer,
+              memberPrivilegedIdentities(identities, propertyNameText(property.name)),
+            );
+          } else if (ts.isShorthandPropertyAssignment(property)) {
+            recordAssignmentTarget(
+              property.name,
+              memberPrivilegedIdentities(identities, propertyNameText(property.name)),
+            );
+          }
+        }
+      } else if (ts.isArrayLiteralExpression(unwrapped)) {
+        for (const element of unwrapped.elements) {
+          if (ts.isExpression(element)) recordAssignmentTarget(element, identities);
+        }
+      } else {
+        const root = expressionRootName(unwrapped);
+        if (root) recordName(root, identities);
+      }
+    };
+    const visitSemanticAliases = (node: ts.Node) => {
+      if (ts.isVariableDeclaration(node) && node.initializer) {
+        recordBinding(node.name, privilegedIdentitiesFor(node.initializer));
+      }
+      if (
+        ts.isBinaryExpression(node) &&
+        node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+        node.operatorToken.kind <= ts.SyntaxKind.LastAssignment
+      ) {
+        recordAssignmentTarget(node.left, privilegedIdentitiesFor(node.right));
+      }
+      if (ts.isFunctionDeclaration(node) && node.name && node.body) {
+        const returned = new Set<PrivilegedIdentity>();
+        for (const expression of returnedExpressions(node.body)) {
+          mergePrivilegedIdentities(returned, privilegedIdentitiesFor(expression));
+        }
+        recordName(node.name.text, returned);
+      }
+      ts.forEachChild(node, visitSemanticAliases);
+    };
+    visitSemanticAliases(source);
+  }
+
   const isModuleRequire = (expression: ts.Expression) => {
     const unwrapped = unwrapExpression(expression);
     if (ts.isPropertyAccessExpression(unwrapped)) {
@@ -1662,6 +2365,10 @@ function protectedSymbolAuthority(path: string, sourceText = readFileSync(path, 
 
   const visit = (node: ts.Node) => {
     if (ts.isCallExpression(node)) {
+      const semanticCallee = privilegedIdentitiesFor(node.expression);
+      if (semanticCallee.has("commonJsLoader")) forbiddenAccesses.push("semantic CommonJS loader call");
+      if (semanticCallee.has("moduleGetter")) forbiddenAccesses.push("semantic privileged module getter call");
+      if (semanticCallee.has("createRequire")) forbiddenAccesses.push("semantic createRequire call");
       if (reflectGetReference(node.expression)) {
         const target = node.arguments[0] ? unwrapExpression(node.arguments[0]) : null;
         const reflectedMember = node.arguments[1]
@@ -1706,7 +2413,9 @@ function protectedSymbolAuthority(path: string, sourceText = readFileSync(path, 
           ? constantStringExpression(node.argumentExpression, constantBindings)
           : null;
       const receiver = unwrapExpression(node.expression);
-      if (member === "getBuiltinModule") forbiddenAccesses.push("process.getBuiltinModule reference");
+      if (member === "getBuiltinModule" && privilegedIdentitiesFor(node.expression).has("moduleGetter")) {
+        forbiddenAccesses.push("process.getBuiltinModule reference");
+      }
       if (member === "require" && ts.isIdentifier(receiver) && moduleAliases.has(receiver.text)) {
         forbiddenAccesses.push("module.require reference");
       }
@@ -1877,6 +2586,11 @@ describe("admin authentication production boundary", () => {
       'const P = globalThis.process; const { getBuiltinModule } = P as any; const nodeModule = getBuiltinModule("module"); const req = nodeModule.createRequire(import.meta.url); const auth = req("../../../../lib/server/admin-auth"); auth.createAdminLoginSession({} as never, 0);',
       'const M = module; const req = M.require; const auth = req("../../../../lib/server/admin-auth"); auth.createAdminLoginSession({} as never, 0);',
       'const R = globalThis.Reflect; const req = R.get(module, "require") as NodeRequire; const auth = req("../../../../lib/server/admin-auth"); auth.createAdminLoginSession({} as never, 0);',
+      'const { getBuiltinModule } = globalThis.process as any; const nodeModule = getBuiltinModule("module"); const req = nodeModule.createRequire(import.meta.url); const auth = req("../../../../lib/server/admin-auth"); auth.createAdminLoginSession({} as never, 0);',
+      'const modules = [module]; const M = modules[0]!; const req = Reflect.get(M, "require").bind(M) as NodeRequire; const auth = req("../../../../lib/server/admin-auth"); auth.createAdminLoginSession({} as never, 0);',
+      'function moduleBridge() { return [module][0]!; } const M = moduleBridge(); const req = Reflect.get(M, "require") as NodeRequire; const auth = req("../../../../lib/server/admin-auth"); auth.createAdminLoginSession({} as never, 0);',
+      'const box: Record<string, unknown> = {}; box.loader ||= module; const M = box.loader as NodeModule; const req = Reflect.get(M, "require") as NodeRequire; const auth = req("../../../../lib/server/admin-auth"); auth.createAdminLoginSession({} as never, 0);',
+      'const globals = [globalThis]; const G = globals[0]!; const { process: P } = G; const getter = Reflect.get(P, "getBuiltinModule"); const M = getter("module"); const req = M.createRequire(import.meta.url); const auth = req("../../../../lib/server/admin-auth"); auth.createAdminLoginSession({} as never, 0);',
     ]) {
       expect(protectedSymbolAuthority(relativePath, sourceText).forbiddenAccesses, sourceText).not.toEqual([]);
     }
@@ -1886,6 +2600,18 @@ describe("admin authentication production boundary", () => {
     expect(
       protectedSymbolAuthority(relativePath, 'const value = Reflect.get({ safe: true }, "safe"); void value;')
         .forbiddenAccesses,
+    ).toEqual([]);
+    expect(
+      protectedSymbolAuthority(
+        relativePath,
+        "const { getBuiltinModule } = { getBuiltinModule: () => ({ safe: true }) }; void getBuiltinModule();",
+      ).forbiddenAccesses,
+    ).toEqual([]);
+    expect(
+      protectedSymbolAuthority(
+        relativePath,
+        'const modules = [{ ["require"]: () => ({ safe: true }) }]; const M = modules[0]!; void Reflect.get(M, "require")();',
+      ).forbiddenAccesses,
     ).toEqual([]);
   });
 
@@ -2196,6 +2922,14 @@ describe("admin authentication production boundary", () => {
       "const box: Record<string, unknown> = {}; Object.defineProperty(box, 'target', { value: adminCookieHeader }); Reflect.set(box.target as object, 'signer', sign);",
       "const args: any[] = []; args.push(adminCookieHeader, { signer: sign }); Reflect.apply(Object.assign, null, args);",
       "const G = globalThis; const R = G.Reflect; const O = R.get(G, 'Object') as ObjectConstructor; O.assign(adminCookieHeader, { signer: sign });",
+      "const { Object: { assign: mutate } } = globalThis; mutate(adminCookieHeader, { signer: sign });",
+      "let O: ObjectConstructor; ({ Object: O } = globalThis); O.assign(adminCookieHeader, { signer: sign });",
+      "const box: any = {}; box.target ??= adminCookieHeader; Object.assign(box.target, { signer: sign });",
+      "const box: any = {}; box.target ||= adminCookieHeader; Reflect.set(box.target, 'signer', sign);",
+      "const receivers = [globalThis.Object]; const O = receivers[0]!; O.assign(adminCookieHeader, { signer: sign });",
+      "const receiverBox: any = {}; receiverBox.value ??= Reflect.get(globalThis, 'Object'); const O = receiverBox.value; O.assign(adminCookieHeader, { signer: sign });",
+      "function objectBridge() { return globalThis.Object; } const O = objectBridge(); O.assign(adminCookieHeader, { signer: sign });",
+      "function cookieBridge() { return adminCookieHeader; } Object.assign(cookieBridge(), { signer: sign });",
     ]) {
       expect(authRuntimeExportViolations(`${authSourceText}\n${hostileSuffix}`), hostileSuffix).not.toEqual([]);
     }
@@ -2247,6 +2981,16 @@ describe("admin authentication production boundary", () => {
       "const result = new Map<string, unknown>(); Map.prototype.set.call(result, 'signer', sign); return result as unknown as string;",
       "const result = new Set<unknown>(); Set.prototype.add.apply(result, [verifyAdminBearerToken]); return result as unknown as string;",
       "const result: Record<string, unknown> = {}; const args: any[] = []; args.push(result, 'signer', sign); Reflect.apply(Reflect.set, null, args); return result as unknown as string;",
+      "const result = { values: [] as unknown[] }; Function.prototype.call.call(Array.prototype.push, result.values, sign); return result as unknown as string;",
+      "const result = new Map<string, unknown>(); Function.prototype.call.call(Map.prototype.set, result, 'signer', sign); return result as unknown as string;",
+      "const result = new Set<unknown>(); Function.prototype.apply.call(Set.prototype.add, result, [sign]); return result as unknown as string;",
+      "const result = { values: [] as unknown[] }; Array.prototype.push.bind(result.values)(sign); return result as unknown as string;",
+      "const result = { values: [] as unknown[] }; const push = Array.prototype.push.bind(result.values); push(sign); return result as unknown as string;",
+      "const result = { values: [] as unknown[] }; Function.prototype.call.call(Function.prototype.call, Array.prototype.push, result.values, sign); return result as unknown as string;",
+      "const result = { values: [] as unknown[] }; Reflect.apply(Function.prototype.call, Array.prototype.push, [result.values, sign]); return result as unknown as string;",
+      "const result: Record<string, unknown> = {}; const args: any[] = []; args[0] = result; args[1] = 'signer'; args[2] = sign; Reflect.apply(Reflect.set, null, args); return result as unknown as string;",
+      "const result: Record<string, unknown> = {}; const args = ([] as any[]).concat(result, 'signer', sign); Reflect.apply(Reflect.set, null, args); return result as unknown as string;",
+      "const result: Record<string, unknown> = {}; const args = [result, 'signer', ...[sign]]; Reflect.apply(Reflect.set, null, args); return result as unknown as string;",
     ]) {
       const escapedLocalAlias = authSourceText.replace(
         "export function clearAdminCookieHeader() {",
@@ -2270,6 +3014,19 @@ describe("admin authentication production boundary", () => {
     expect(authRuntimeExportViolations(safePrototypeMutationBody)).not.toContain(
       "allowed auth export clearAdminCookieHeader cannot return private authority or claims state",
     );
+    for (const safeBody of [
+      "const result = { values: [] as string[] }; Function.prototype.call.call(Array.prototype.push, result.values, 'safe'); return result as unknown as string;",
+      "const result: Record<string, unknown> = {}; const args: any[] = []; args[0] = result; args[1] = 'value'; args[2] = 'safe'; Reflect.apply(Reflect.set, null, args); return result as unknown as string;",
+      "const result: Record<string, unknown> = {}; const args = ([] as any[]).concat(result, 'value', 'safe'); Reflect.apply(Reflect.set, null, args); return result as unknown as string;",
+    ]) {
+      const safeMutationBody = authSourceText.replace(
+        "export function clearAdminCookieHeader() {",
+        `export function clearAdminCookieHeader() { ${safeBody} }\nfunction originalClearAdminCookieHeader() {`,
+      );
+      expect(authRuntimeExportViolations(safeMutationBody), safeBody).not.toContain(
+        "allowed auth export clearAdminCookieHeader cannot return private authority or claims state",
+      );
+    }
     const authSource = sourceFile("lib/server/admin-auth.ts", authSourceText);
     const bearerVerifier = authSource.statements.find(
       (statement): statement is ts.FunctionDeclaration =>
@@ -2283,5 +3040,5 @@ describe("admin authentication production boundary", () => {
     for (const path of productionPaths.filter((candidate) => candidate !== "lib/server/admin-auth.ts")) {
       expect(callExpressionsNamed(sourceFile(path), "verifyAdminBearerToken"), path).toHaveLength(0);
     }
-  });
+  }, 60_000);
 });
