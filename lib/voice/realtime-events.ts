@@ -3818,7 +3818,8 @@ function validateEmailCaptureGrounding(
     recentUserText,
   );
   const recentLiteralEmails = getLiteralEmailMentions(recentUserText);
-  const recentSpokenSubstitution = findSpokenEmailSubstitution(recentUserText, email);
+  const recentSpokenSubstitutions = findSpokenEmailSubstitutions(recentUserText, email);
+  const recentSpokenSubstitution = recentSpokenSubstitutions.at(-1);
   const spokenSubstitutionDistance = recentSpokenSubstitution?.distance ?? Number.POSITIVE_INFINITY;
   const boundedAsrSupport = hasEmailCue && spokenSubstitutionDistance <= maxAsrEdits;
   if (turnContainsExactEmail(recentUserText, email) && !supersedesRecentEmailGrounding(recentUserText, email)) {
@@ -3860,15 +3861,15 @@ function validateEmailCaptureGrounding(
     );
     const entryLiteralEmails = getLiteralEmailMentions(entry.text);
     const literalMismatch = entryLiteralEmails.length > 0 && !entryLiteralEmails.some((m) => m.email === email);
-    const substitution = findSpokenEmailSubstitution(entry.text, email);
-    const substitutionDistance = substitution?.distance ?? Number.POSITIVE_INFINITY;
+    const substitutions = findSpokenEmailSubstitutions(entry.text, email);
+    const substitutionDistance = substitutions[0]?.distance ?? Number.POSITIVE_INFINITY;
     return (
       entryHasEmailCue &&
       substitutionDistance > 0 &&
       substitutionDistance <= maxAsrEdits &&
       !hasEmbeddedEmailCollision(entry.text, email) &&
       !literalMismatch &&
-      !approximateEmailTurnRejectsGrounding(entry.text, email, substitution)
+      !approximateEmailTurnRejectsGrounding(entry.text, email, substitutions)
     );
   });
   if (
@@ -3907,7 +3908,7 @@ function validateEmailCaptureGrounding(
     // auto-correct one valid mailbox into another valid mailbox.
     return { ok: false, error: "ungrounded_identity_capture" };
   }
-  if (approximateEmailTurnRejectsGrounding(recentUserText, email, recentSpokenSubstitution)) {
+  if (approximateEmailTurnRejectsGrounding(recentUserText, email, recentSpokenSubstitutions)) {
     return { ok: false, error: "ungrounded_identity_capture" };
   }
 
@@ -3926,14 +3927,33 @@ function supersedesRecentEmailGrounding(text: string, groundedEmail: string) {
 function approximateEmailTurnRejectsGrounding(
   text: string,
   groundedEmail: string,
-  substitution = findSpokenEmailSubstitution(text, groundedEmail),
+  substitutions = findSpokenEmailSubstitutions(text, groundedEmail),
 ) {
   const literalSelection = resolveLiteralEmailSelection(text, groundedEmail);
   if (literalSelection === "different" || literalSelection === "ambiguous") return true;
   if (emailTurnRejectsTarget(text, groundedEmail)) return true;
-  if (substitution && followingApproximateEmailDispositionRejects(substitution)) return true;
+  if (approximateEmailMatchDispositionRejects(substitutions)) return true;
   return /\b(?:no|nope|nah|not|never|instead|rather\s+than|wrong|incorrect|do\s+not\s+use|don['’]?t\s+use|dont\s+use|forget|bukan)\b/iu.test(
     text,
+  );
+}
+
+function approximateEmailMatchDispositionRejects(matches: SpokenEmailSubstitutionMatch[]) {
+  let finalDisposition: "selected" | "rejected" | undefined;
+  for (const match of matches) {
+    if (followingApproximateEmailDispositionRejects(match)) finalDisposition = "rejected";
+    else if (precedingApproximateEmailSelectionStarts(match)) finalDisposition = "selected";
+  }
+  return finalDisposition === "rejected";
+}
+
+function precedingApproximateEmailSelectionStarts(match: SpokenEmailSubstitutionMatch) {
+  const introduction = match.tokens
+    .slice(Math.max(0, match.start - 8), match.start)
+    .map((token) => token.toLowerCase())
+    .join("");
+  return /(?:use|choose|select|prefer|keep|gowith|switchto|contactmeat|contactusat|contactaddress|contactaddressis|reachmeat|reachusat|senditto|myemailis|myemailaddressis|correctemailis|changedto|guna)$/u.test(
+    introduction,
   );
 }
 
@@ -4330,7 +4350,7 @@ function emailTurnSelectsTarget(text: string, selectedEmail: string) {
       .map((token) => token.toLowerCase())
       .join("");
     if (
-      /(?:use|choose|select|prefer|keep|gowith|switchto|contactmeat|contactusat|contactaddress|contactaddressis|reachmeat|reachusat|senditto|myemailis|correctemailis|changedto|guna)$/.test(
+      /(?:use|choose|select|prefer|keep|gowith|switchto|contactmeat|contactusat|contactaddress|contactaddressis|reachmeat|reachusat|senditto|myemailis|myemailaddressis|correctemailis|changedto|guna)$/.test(
         introduction,
       )
     ) {
@@ -4428,24 +4448,37 @@ type SpokenEmailSubstitutionMatch = {
   tokens: string[];
 };
 
-function findSpokenEmailSubstitution(text: string, groundedEmail: string): SpokenEmailSubstitutionMatch | undefined {
+function findSpokenEmailSubstitutions(text: string, groundedEmail: string): SpokenEmailSubstitutionMatch[] {
   const tokens = getEmailSpeechTokens(text);
-  let best: SpokenEmailSubstitutionMatch | undefined;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  let best: SpokenEmailSubstitutionMatch[] = [];
   for (let start = 0; start < tokens.length; start += 1) {
     for (let end = start + 1; end <= Math.min(tokens.length, start + 18); end += 1) {
-      for (const candidate of canonicalizeEmailSpeechInterpretations(tokens.slice(start, end).join(" "))) {
+      for (const candidate of emailSpeechInterpretationsForWindow(tokens, start, end).map(({ value }) => value)) {
         if (candidate.length !== groundedEmail.length || !isLikelyEmail(candidate)) continue;
         if (introducesUnspokenHomophoneDigit(tokens, start, end, candidate, groundedEmail)) continue;
         const distance = fullEditDistance(candidate, groundedEmail);
-        if (!best || distance < best.distance) best = { candidate, distance, start, end, tokens };
+        const match = { candidate, distance, start, end, tokens };
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          best = [match];
+        } else if (
+          distance === bestDistance &&
+          !best.some(
+            (existing) =>
+              existing.start === match.start && existing.end === match.end && existing.candidate === match.candidate,
+          )
+        ) {
+          best.push(match);
+        }
       }
     }
   }
-  return best;
+  return best.sort((left, right) => left.start - right.start || left.end - right.end);
 }
 
 function spokenEmailSubstitutionDistance(left: string, right: string) {
-  return findSpokenEmailSubstitution(left, right)?.distance ?? Number.POSITIVE_INFINITY;
+  return findSpokenEmailSubstitutions(left, right)[0]?.distance ?? Number.POSITIVE_INFINITY;
 }
 
 function getEmailSpeechTokens(text: string) {
@@ -4468,15 +4501,14 @@ function introducesUnspokenHomophoneDigit(
     (character, index) => /[0-9]/u.test(character) && !/[0-9]/u.test(candidate[index] ?? ""),
   );
   if (!introducesDigit) return false;
-  const hasUnsafeHomophone = tokens.slice(start, end).some((token) => /^(?:to|too|for)$/iu.test(token));
-  return hasUnsafeHomophone && !emailWindowHasExplicitDigitIntent(tokens, start, end);
+  return tokens.slice(start, end).some((token) => /^(?:to|too|for)$/iu.test(token));
 }
 
 function hasEmbeddedEmailCollision(text: string, groundedEmail: string) {
   const tokens = getEmailSpeechTokens(text);
   for (let start = 0; start < tokens.length; start += 1) {
     for (let end = start + 1; end <= Math.min(tokens.length, start + 18); end += 1) {
-      for (const candidate of canonicalizeEmailSpeechInterpretations(tokens.slice(start, end).join(" "))) {
+      for (const candidate of emailSpeechInterpretationsForWindow(tokens, start, end).map(({ value }) => value)) {
         if (
           candidate !== groundedEmail &&
           isLikelyEmail(candidate) &&
@@ -4501,9 +4533,9 @@ function hasAmbiguousSpokenDigitEmail(text: string, groundedEmail: string) {
     const tokens = getEmailSpeechTokens(clause);
     for (let start = 0; start < tokens.length; start += 1) {
       for (let end = start + 1; end <= Math.min(tokens.length, start + 18); end += 1) {
-        const interpretations = canonicalizeEmailSpeechInterpretations(tokens.slice(start, end).join(" ")).filter(
-          isLikelyEmail,
-        );
+        const interpretations = getSpokenEmailInterpretations(tokens.slice(start, end).join(" "))
+          .map(({ value }) => value)
+          .filter(isLikelyEmail);
         if (
           new Set(interpretations).size > 1 &&
           interpretations.includes(target) &&
@@ -4526,13 +4558,31 @@ function emailWindowHasExplicitDigitIntent(tokens: string[], start: number, end:
   for (let contextIndex = start - 1; contextIndex >= 0; contextIndex -= 1) {
     const context = tokens[contextIndex]?.toLowerCase() ?? "";
     if (!/^(?:digit|digits|number|numbers|numeric|numeral|numerals)$/u.test(context)) continue;
-    const intervening = tokens.slice(contextIndex + 1, start).map((token) => token.toLowerCase());
-    if (intervening.some((token) => Object.hasOwn(SPOKEN_DIGIT_WORDS, token))) continue;
-    const polarityWindow = tokens.slice(Math.max(0, contextIndex - 3), start).join(" ");
-    if (/\b(?:no|not|never|without|don['’]?t|dont|isn['’]?t|isnt)\b/iu.test(polarityWindow)) continue;
+    const preceding = tokens.slice(0, contextIndex).map((token) => token.toLowerCase());
+    if (preceding.some((token) => /^(?:no|not|never|without|don['’]?t|dont|isn['’]?t|isnt)$/u.test(token))) {
+      continue;
+    }
+    const attachment = tokens
+      .slice(contextIndex + 1, start)
+      .map((token) => token.toLowerCase())
+      .join(" ");
+    if (
+      !/^(?:(?:(?:for\s+)?(?:my\s+)?e-?mail(?:\s+address)?(?:\s+is)?)|(?:(?:for\s+)?(?:the\s+)?(?:local\s+part|mailbox)(?:\s+is)?))?$/u.test(
+        attachment,
+      )
+    ) {
+      continue;
+    }
     return true;
   }
   return false;
+}
+
+function emailSpeechInterpretationsForWindow(tokens: string[], start: number, end: number) {
+  const interpretations = getSpokenEmailInterpretations(tokens.slice(start, end).join(" "));
+  return emailWindowHasExplicitDigitIntent(tokens, start, end)
+    ? interpretations.filter(({ kind }) => kind !== "literal")
+    : interpretations;
 }
 
 function findExactEmailTokenWindow(text: string, groundedEmail: string, minimumStart = 0) {
@@ -4542,7 +4592,8 @@ function findExactEmailTokenWindow(text: string, groundedEmail: string, minimumS
   const tokens = getEmailSpeechTokens(text);
   for (let start = minimumStart; start < tokens.length; start += 1) {
     for (let end = start + 1; end <= Math.min(tokens.length, start + 18); end += 1) {
-      if (!canonicalizeEmailSpeechInterpretations(tokens.slice(start, end).join(" ")).includes(groundedEmail)) continue;
+      if (!emailSpeechInterpretationsForWindow(tokens, start, end).some(({ value }) => value === groundedEmail))
+        continue;
       const previousToken = tokens[start - 1]?.toLowerCase();
       const targetLocalPart = groundedEmail.split("@")[0] ?? "";
       const repeatedInitialBeforeFullSpelling =
@@ -4679,10 +4730,20 @@ function canonicalizeEmailSpeech(value: string, foldSpokenDigits = true): string
     .replace(/[^\p{Letter}\p{Number}@._+-]+/gu, "");
 }
 
-function canonicalizeEmailSpeechInterpretations(value: string) {
+type SpokenEmailInterpretation = {
+  value: string;
+  kind: "numeric" | "literal" | "unambiguous";
+};
+
+function getSpokenEmailInterpretations(value: string): SpokenEmailInterpretation[] {
   const numeric = canonicalizeEmailSpeech(value, true);
   const literal = canonicalizeEmailSpeech(value, false);
-  return numeric === literal ? [numeric] : [numeric, literal];
+  return numeric === literal
+    ? [{ value: numeric, kind: "unambiguous" }]
+    : [
+        { value: numeric, kind: "numeric" },
+        { value: literal, kind: "literal" },
+      ];
 }
 
 function collapseHyphenSeparatedLetterRun(value: string) {

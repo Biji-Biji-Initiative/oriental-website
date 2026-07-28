@@ -1008,8 +1008,36 @@ describe("reduceRealtimeServerEvent", () => {
   });
 
   it.each([
+    ["one@example.com", "one at example dot com"],
+    ["samone@example.com", "sam one at example dot com"],
+  ])("rejects literal-word mailbox %s when the user explicitly selects digits", (email, spoken) => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: `call_explicit_digits_reject_literal_${email}`,
+              arguments: JSON.stringify({ key: "email", value: email, evidence: spoken }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: `Those are digits: my email is ${spoken}.` }] }),
+    );
+
+    expect(result.state.captured.email).toBe("");
+    expect(result.commands[0]).toMatchObject({ output: { ok: false, error: "ungrounded_identity_capture" } });
+  });
+
+  it.each([
     "Room number one is ready. My email is two at example dot com.",
+    "For room number 7, my email is two at example dot com.",
     "Those are not digits. My email is two at example dot com.",
+    "Do not ever treat this phrase as a numeric digit label; my email is two at example dot com.",
     "billing@example.com is only for invoices. My email is two at example dot com.",
   ])("keeps unrelated or negative turn context from authorizing a numeric mailbox: %s", (turn) => {
     const capture = reduceRealtimeServerEvent(
@@ -1127,6 +1155,9 @@ describe("reduceRealtimeServerEvent", () => {
     ["22@longexample.com", "to at longexample dot com"],
     ["222@longexample.com", "too at longexample dot com"],
     ["444@longexample.com", "for at longexample dot com"],
+    ["122@longexample.com", "digits one to at longexample dot com"],
+    ["1222@longexample.com", "digits one too at longexample dot com"],
+    ["1444@longexample.com", "digits one for at longexample dot com"],
   ])("never treats a homophone as numeric mailbox %s", (email, spoken) => {
     const result = reduceRealtimeServerEvent(
       {
@@ -3034,6 +3065,92 @@ describe("reduceRealtimeServerEvent", () => {
 
     expect(result.state.captured.email).toBe("");
     expect(result.commands[0]).toMatchObject({ output: { ok: false, error: "ungrounded_identity_capture" } });
+  });
+
+  it.each([
+    "scratch that",
+    "ignore that",
+    "retract that",
+    "take that back",
+    "cancel that",
+    "replace that with final dot address at example dot com",
+    "change that to final dot address at example dot com",
+    "switch that to final dot address at example dot com",
+  ])("lets a later disposition reject an earlier equal-distance approximate candidate: %s", (disposition) => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: `call_later_approx_disposition_${disposition}`,
+              arguments: JSON.stringify({
+                key: "email",
+                value: "sam.carter@gmail.com",
+                evidence: "sam dot carter at gmail dot com",
+              }),
+            },
+          ],
+        },
+      },
+      state({
+        transcript: [
+          {
+            role: "user",
+            text: `The transcript says sam dot carper at gmail dot com. My email is sam dot carper at gmail dot com, ${disposition}.`,
+          },
+        ],
+      }),
+    );
+
+    expect(result.state.captured.email).toBe("");
+    expect(result.commands[0]).toMatchObject({ output: { ok: false, error: "ungrounded_identity_capture" } });
+  });
+
+  it.each([
+    "scratch that",
+    "ignore that",
+    "retract that",
+    "take that back",
+    "cancel that",
+    "replace that with final dot address at example dot com",
+    "change that to final dot address at example dot com",
+    "switch that to final dot address at example dot com",
+  ])("lets a later explicit restatement supersede an earlier disposition: %s", (disposition) => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: `call_later_approx_restatement_${disposition}`,
+              arguments: JSON.stringify({
+                key: "email",
+                value: "sam.carter@gmail.com",
+                evidence: "sam dot carter at gmail dot com",
+              }),
+            },
+          ],
+        },
+      },
+      state({
+        transcript: [
+          {
+            role: "user",
+            text: `My email is sam dot carper at gmail dot com, ${disposition}. Actually, my email is sam dot carper at gmail dot com.`,
+          },
+        ],
+      }),
+    );
+
+    expect(result.state.captured.email).toBe("sam.carter@gmail.com");
+    expect(result.state.emailVerification).toMatchObject({ status: "pending", confidence: "medium" });
   });
 
   it("does not reopen an exact address that the same turn replaces", () => {
