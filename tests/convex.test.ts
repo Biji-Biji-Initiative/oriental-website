@@ -3,10 +3,12 @@ import { createLead, recordVoiceSession } from "@/convex/leads";
 import { summarizeIntakeAttribution } from "@/lib/intake-attribution-analytics";
 import {
   archiveAdminLeads,
+  backfillVoiceSessionLifecycle,
   bulkAssignAdminLeads,
   deletePersonalData,
   getAdminLeadSlaSnapshot,
   getAdminLeadTable,
+  getAdminOrphanedVoiceSessions,
   getAdminReviewDashboard,
   getAdminVoiceSession,
   getPrivacyDeletionPlan,
@@ -40,7 +42,9 @@ vi.mock("@/convex/_generated/api", () => ({
       adminLeadCounts: "adminLeadCounts",
       adminLeadSlaSnapshot: "adminLeadSlaSnapshot",
       adminLeadTable: "adminLeadTable",
+      adminOrphanedVoiceSessionsSweep: "adminOrphanedVoiceSessionsSweep",
       archiveLeads: "archiveLeads",
+      backfillVoiceSessionLifecycle: "backfillVoiceSessionLifecycle",
       createLead: "createLead",
       deletePersonalData: "deletePersonalData",
       bulkAssignLeads: "bulkAssignLeads",
@@ -609,6 +613,46 @@ describe("getAdminLeadSlaSnapshot", () => {
       maxUnownedMs: 4 * 60 * 60 * 1000,
     });
     expect(mocks.query).not.toHaveBeenCalledWith("reviewDashboard", expect.anything());
+  });
+});
+
+describe("orphan-session lifecycle operations", () => {
+  beforeEach(() => {
+    process.env = {
+      ...originalEnv,
+      CONVEX_URL: "https://convex.example",
+      CONVEX_INGEST_SECRET: "ingest-secret",
+    };
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+    vi.clearAllMocks();
+  });
+
+  it("queries the dedicated orphan aggregate with the requested stale boundary", async () => {
+    const data = {
+      generatedAt: 1_800_000_000_000,
+      migrationPending: false,
+      orphaned: { count: 2, truncated: false, rows: [] },
+    };
+    mocks.query.mockResolvedValue(data);
+
+    await expect(getAdminOrphanedVoiceSessions(35 * 60_000)).resolves.toEqual({ ok: true, data });
+    expect(mocks.query).toHaveBeenCalledWith("adminOrphanedVoiceSessionsSweep", {
+      ingestSecret: "ingest-secret",
+      maxStaleMs: 35 * 60_000,
+    });
+  });
+
+  it("runs the bounded non-destructive lifecycle migration through the secret-owning adapter", async () => {
+    mocks.mutation.mockResolvedValue({ updated: 25, hasMore: true });
+
+    await expect(backfillVoiceSessionLifecycle(25)).resolves.toEqual({ ok: true, updated: 25, hasMore: true });
+    expect(mocks.mutation).toHaveBeenCalledWith("backfillVoiceSessionLifecycle", {
+      ingestSecret: "ingest-secret",
+      limit: 25,
+    });
   });
 });
 

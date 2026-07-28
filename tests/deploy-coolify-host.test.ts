@@ -56,6 +56,15 @@ describe("Coolify host deploy image cells", () => {
     expect(deployScript).toContain('if [[ "$current_sha" != "$expected_current_sha" ]]');
   });
 
+  it("blocks every host deploy until the indexed orphan sweep is available", () => {
+    expect(deployScript).toContain('local_head="$(git rev-parse HEAD)"');
+    expect(deployScript).toContain('if [[ "$local_head" != "$sha" ]]');
+    expect(deployScript).toContain("pnpm release:verify:orphan-sweep");
+    expect(deployScript.indexOf("pnpm release:verify:orphan-sweep")).toBeLessThan(
+      deployScript.indexOf("declare -a ssh_command"),
+    );
+  });
+
   it("restores host ownership and recreates the previous service after any post-mutation failure", () => {
     expect(deployScript).toContain("deployment_mutated=true");
     expect(deployScript).toContain("trap on_exit EXIT");

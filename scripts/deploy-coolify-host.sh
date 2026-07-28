@@ -106,10 +106,20 @@ if [[ ! "$ga_measurement_id" =~ ^G-[A-Z0-9]+$ ]]; then
   echo "NEXT_PUBLIC_GA_MEASUREMENT_ID must be supplied by the managed application environment." >&2
   exit 1
 fi
-if [[ ! "$google_site_verification" =~ ^[A-Za-z0-9_-]{20,256}$ ]]; then
+if (( ${#google_site_verification} < 20 || ${#google_site_verification} > 256 )) ||
+  [[ ! "$google_site_verification" =~ ^[A-Za-z0-9_-]+$ ]]; then
   echo "NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION must be supplied by the managed application environment." >&2
   exit 1
 fi
+
+# The shared Convex schema/functions must already be live and every legacy
+# voice row must have its materialized lifecycle before any web mutation.
+local_head="$(git rev-parse HEAD)"
+if [[ "$local_head" != "$sha" ]]; then
+  echo "Host deploy source $local_head does not match reviewed SHA $sha." >&2
+  exit 1
+fi
+pnpm release:verify:orphan-sweep
 
 declare -a ssh_command
 if [[ -n "${COOLIFY_SSH_COMMAND:-}" ]]; then
@@ -327,7 +337,8 @@ if [[ ! "$ga_measurement_id" =~ ^G-[A-Z0-9]+$ ]]; then
   echo "NEXT_PUBLIC_GA_MEASUREMENT_ID from the managed environment is malformed." >&2
   exit 1
 fi
-if [[ ! "$google_site_verification" =~ ^[A-Za-z0-9_-]{20,256}$ ]]; then
+if (( ${#google_site_verification} < 20 || ${#google_site_verification} > 256 )) ||
+  [[ ! "$google_site_verification" =~ ^[A-Za-z0-9_-]+$ ]]; then
   echo "NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION from the managed environment is malformed." >&2
   exit 1
 fi

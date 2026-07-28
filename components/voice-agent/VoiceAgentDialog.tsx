@@ -51,6 +51,7 @@ import {
   postVoiceReviewSnapshot,
   type VoiceReviewCredentials,
 } from "@/lib/voice/review-snapshot";
+import { VOICE_HEARTBEAT_INTERVAL_MS } from "@/lib/voice/session-policy";
 import { DEFAULT_VOICE_VARIANT_ID, VOICE_VARIANTS, type VoiceVariantId } from "@/lib/voice/variants";
 import { HandoffPanel } from "./HandoffPanel";
 import { playArmCue, playLiveCue } from "./live-chime";
@@ -72,10 +73,6 @@ import {
 } from "./voice-dialog-copy";
 import { useVoice } from "./voice-state";
 import { readTunerFlag } from "./voice-tuner";
-
-// How often a live call persists a full review snapshot, so state survives even
-// when the final close snapshot is lost to a tab close or network drop.
-const VOICE_HEARTBEAT_INTERVAL_MS = 12_000;
 
 type VoiceAgentDialogProps = {
   open: boolean;

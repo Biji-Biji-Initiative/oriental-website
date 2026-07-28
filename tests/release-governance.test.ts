@@ -224,6 +224,20 @@ describe("release governance", () => {
     );
   });
 
+  it("requires lifecycle migration and a live secondary sweep before web release mutation", () => {
+    expect(packageScripts.scripts["convex:backfill:voice-session-lifecycle"]).toBe(
+      "tsx scripts/backfill-voice-session-lifecycle.ts",
+    );
+    expect(packageScripts.scripts["release:verify:orphan-sweep"]).toBe("tsx scripts/verify-orphan-sweep.ts");
+    expect(releaseRunbook).toContain("-- pnpm convex:deploy");
+    expect(releaseRunbook).toContain("-- pnpm convex:backfill:voice-session-lifecycle");
+    expect(releaseRunbook).toContain("-- pnpm release:verify:orphan-sweep");
+    expect(productionDeployer).toContain('execFileSync("pnpm", ["release:verify:orphan-sweep"], { stdio: "inherit" })');
+    expect(productionDeployer.indexOf("release:verify:orphan-sweep")).toBeLessThan(
+      productionDeployer.indexOf('requireEnv("COOLIFY_API_TOKEN")'),
+    );
+  });
+
   it("rejects a candidate production scope before credentials, Git, health, or Coolify access", () => {
     const candidate = spawnSync(
       "pnpm",

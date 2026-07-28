@@ -69,19 +69,48 @@ describe("admin CRM data integrity contract", () => {
     expect(slaQuery).not.toContain(".collect()");
   });
 
-  it("filters open connected orphan candidates before applying the bounded alert cap", () => {
+  it("uses a materialized lifecycle index before applying the bounded orphan alert cap", () => {
+    const recordMutation = convexSource.slice(
+      convexSource.indexOf("export const recordVoiceSession"),
+      convexSource.indexOf("export const applyDataRetention"),
+    );
+    const retentionMutation = convexSource.slice(
+      convexSource.indexOf("export const applyDataRetention"),
+      convexSource.indexOf("export const normalizeLegacyPrivacyEmails"),
+    );
+    const lifecycleBackfill = convexSource.slice(
+      convexSource.indexOf("export const backfillVoiceSessionLifecycle"),
+      convexSource.indexOf("export const normalizeLegacyPrivacyEmails"),
+    );
     const orphanQuery = convexSource.slice(
       convexSource.indexOf("export const adminOrphanedVoiceSessionsSweep"),
       convexSource.indexOf("function summarizeSlaBuckets"),
     );
-    const openSessionFilter = orphanQuery.indexOf(
-      '.filter((q) => q.and(q.neq(q.field("connectedAt"), undefined), q.eq(q.field("closedAt"), undefined)))',
-    );
+    const indexedLifecycle = orphanQuery.indexOf('.withIndex("by_safe_session_state_updated_at"');
     const boundedTake = orphanQuery.indexOf(".take(SLA_QUERY_BUCKET_LIMIT + 1)");
 
-    expect(openSessionFilter).toBeGreaterThan(-1);
-    expect(boundedTake).toBeGreaterThan(openSessionFilter);
-    expect(orphanQuery).not.toContain("candidates.filter(");
+    expect(schemaSource).toContain(
+      '.index("by_safe_session_state_updated_at", ["payloadSafe", "sessionState", "updatedAt"])',
+    );
+    expect(recordMutation).toContain(
+      'const sessionState = closedAt ? "closed" : connectedAt ? "connected_open" : "preconnected"',
+    );
+    expect(recordMutation).toContain("sessionState,");
+    expect(retentionMutation).toContain('.eq("sessionState", undefined)');
+    expect(retentionMutation).toContain(
+      'sessionState: session.closedAt ? "closed" : session.connectedAt ? "connected_open" : "preconnected"',
+    );
+    expect(lifecycleBackfill).toContain('.withIndex("by_payload_safe_updated_at"');
+    expect(lifecycleBackfill).toContain('.withIndex("by_safe_session_state_updated_at"');
+    expect(lifecycleBackfill).toContain(".take(take + 1)");
+    expect(lifecycleBackfill).not.toContain("ctx.db.delete");
+    expect(indexedLifecycle).toBeGreaterThan(-1);
+    expect(orphanQuery).toContain('.eq("sessionState", "connected_open").lt("updatedAt", staleCutoff)');
+    expect(boundedTake).toBeGreaterThan(indexedLifecycle);
+    expect(orphanQuery).toContain('.eq("sessionState", undefined)');
+    expect(orphanQuery).toContain("migrationPending: legacyState.length > 0");
+    expect(orphanQuery).not.toContain("lookbackCutoff");
+    expect(orphanQuery).not.toContain(".filter(");
     expect(orphanQuery).not.toContain(".collect()");
   });
 

@@ -306,6 +306,7 @@ async function main() {
   if (voiceCellFailures.length > 0) {
     throw new Error(`production voice cell: ${voiceCellFailures.join("; ")}`);
   }
+  execFileSync("pnpm", ["release:verify:orphan-sweep"], { stdio: "inherit" });
   const token = requireEnv("COOLIFY_API_TOKEN");
   const baseUrl = process.env.COOLIFY_API_URL?.trim() || DEFAULT_API_URL;
   const applicationUuid = process.env.COOLIFY_ORIENTAL_APPLICATION_UUID?.trim() || DEFAULT_APPLICATION_UUID;
