@@ -3,6 +3,12 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // Sharp 0.35 resolves its platform addon and libvips package dynamically.
+  // Include both packages so the standalone image optimizer never ships with
+  // package metadata but without the native runtime files.
+  outputFileTracingIncludes: {
+    "/*": ["node_modules/.pnpm/@img+sharp-*/node_modules/@img/sharp-*/**/*"],
+  },
   poweredByHeader: false,
   // This repository is often checked out below a home directory that contains
   // unrelated fleet lockfiles. Keep dependency tracing and Turbopack's build

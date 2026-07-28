@@ -1,0 +1,40 @@
+name: oriental-dependency-security
+description: Exact-tree security and runtime review for patched Oriental production dependencies
+
+documents:
+  readme: .apr/evidence/oriental-dependency-security.md
+  spec: .apr/specs/oriental-dependency-security.md
+  implementation: .apr/evidence/oriental-dependency-security.patch
+
+oracle:
+  model: "gpt-5.6-sol"
+
+rounds:
+  output_dir: .apr/rounds/oriental-dependency-security
+  impl_every_n: 1
+
+template: |
+  Perform an adversarial exact-tree security and runtime review of Oriental
+  dependency implementation commit
+  bcd50efba4e330c58b9df496eb65f9ee9c9df825. Use the source-only patch and
+  evidence manifest. Reconcile the earlier pnpm-endpoint concern with the cited
+  live GitHub run that installed pnpm 10.33.0 and completed the audit, then verify
+  the new explicit version/registry log and machine-readable JSON command. Confirm
+  that scoped overrides cover every vulnerable production edge, the lockfile test
+  rejects vulnerable resolutions, Next.js and eslint-config-next remain aligned,
+  Sharp native/libvips tracing is complete, and full exact-head Linux CI remains
+  mandatory. Do not waive final staging image-optimizer or production proof. End
+  with `VERDICT: MERGE` or `VERDICT: DO NOT MERGE` on its own final line.
+
+template_with_impl: |
+  Perform an adversarial exact-tree security and runtime review of Oriental
+  dependency implementation commit
+  bcd50efba4e330c58b9df496eb65f9ee9c9df825. Use the source-only patch and
+  evidence manifest. Reconcile the earlier pnpm-endpoint concern with the cited
+  live GitHub run that installed pnpm 10.33.0 and completed the audit, then verify
+  the new explicit version/registry log and machine-readable JSON command. Confirm
+  that scoped overrides cover every vulnerable production edge, the lockfile test
+  rejects vulnerable resolutions, Next.js and eslint-config-next remain aligned,
+  Sharp native/libvips tracing is complete, and full exact-head Linux CI remains
+  mandatory. Do not waive final staging image-optimizer or production proof. End
+  with `VERDICT: MERGE` or `VERDICT: DO NOT MERGE` on its own final line.
