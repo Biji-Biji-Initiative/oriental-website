@@ -36,6 +36,27 @@ ${snapshots}
 `;
 }
 
+function productionLockfileFixture({
+  dependency = "app:\n        version: 1.0.0",
+  packages = "  app@1.0.0: {}",
+  snapshot = "  app@1.0.0: {}",
+}: {
+  dependency?: string;
+  packages?: string;
+  snapshot?: string;
+} = {}) {
+  return `
+importers:
+  .:
+    dependencies:
+      ${dependency}
+packages:
+${packages}
+snapshots:
+${snapshot}
+`;
+}
+
 describe("production dependency security", () => {
   it("pins only the exact vulnerable transitive resolutions", () => {
     expect(manifest.pnpm?.overrides).toEqual({
@@ -71,6 +92,103 @@ describe("production dependency security", () => {
       "  brace-expansion@5.0.8: {}\n  minimatch@10.2.5:\n    dependencies:\n      brace-expansion: 5.0.7",
     );
     expect(governedSnapshotEdgeProblems(vulnerableEdge)).toEqual([expect.stringContaining("brace-expansion@5.0.7")]);
+  });
+
+  it("rejects external references and preserves npm alias target identity", () => {
+    const matchingExternal = productionLockfileFixture({
+      dependency: 'remote:\n        version: "https://example.invalid/remote.tgz"',
+      packages: '  "remote@https://example.invalid/remote.tgz": {}',
+      snapshot: '  "remote@https://example.invalid/remote.tgz": {}',
+    });
+    expect(governedSnapshotEdgeProblems(matchingExternal)).toEqual([]);
+    expect(() => collectProductionSnapshotKeys(matchingExternal)).toThrow(/non-registry production dependency/u);
+    const matchingExternalEdge = productionLockfileFixture({
+      packages: '  app@1.0.0: {}\n  "remote@https://example.invalid/remote.tgz": {}',
+      snapshot:
+        '  app@1.0.0:\n    dependencies:\n      remote: "https://example.invalid/remote.tgz"\n  "remote@https://example.invalid/remote.tgz": {}',
+    });
+    expect(governedSnapshotEdgeProblems(matchingExternalEdge)).toEqual([
+      expect.stringContaining("non-registry dependency edge for remote"),
+    ]);
+    expect(() => collectProductionSnapshotKeys(matchingExternalEdge)).toThrow(/non-registry production dependency/u);
+    for (const reference of [
+      "git+ssh://git@example.invalid/package.git",
+      "file:../package",
+      "link:../package",
+      "workspace:*",
+      "portal:../package",
+      "github:owner/package",
+      "npm:postcss@https://example.invalid/postcss.tgz",
+      "8.5.23()",
+      "8.5.23(unclosed",
+    ]) {
+      const hostile = productionLockfileFixture({
+        dependency: `remote:\n        version: ${JSON.stringify(reference)}`,
+        packages: `  ${JSON.stringify(`remote@${reference}`)}: {}`,
+        snapshot: `  ${JSON.stringify(`remote@${reference}`)}: {}`,
+      });
+      expect(() => collectProductionSnapshotKeys(hostile), reference).toThrow(/non-registry production dependency/u);
+    }
+
+    const aliasSubstitution = lockfileFixture(
+      "  substitute-package@8.5.23: {}",
+      "  app@1.0.0:\n    dependencies:\n      postcss: npm:substitute-package@8.5.23",
+    );
+    expect(governedSnapshotEdgeProblems(aliasSubstitution)).toEqual([
+      expect.stringContaining("aliases governed postcss to different package substitute-package"),
+    ]);
+
+    const governedAliasTarget = lockfileFixture(
+      "  postcss@8.5.17: {}",
+      "  app@1.0.0:\n    dependencies:\n      css-engine: npm:postcss@8.5.17",
+    );
+    expect(governedSnapshotEdgeProblems(governedAliasTarget)).toEqual([
+      expect.stringContaining("resolves vulnerable postcss@8.5.17"),
+    ]);
+
+    const validAlias = productionLockfileFixture({
+      dependency: "css-engine:\n        version: npm:postcss@8.5.23",
+      packages: "  postcss@8.5.23: {}",
+      snapshot: "  postcss@8.5.23: {}",
+    });
+    expect(collectProductionSnapshotKeys(validAlias)).toEqual(new Set(["postcss@8.5.23"]));
+  });
+
+  it("fails closed on malformed or incomplete production graph nodes", () => {
+    for (const dependencySection of ["null", "[]", '"not an object"']) {
+      const malformedRoot = `
+importers:
+  .:
+    dependencies: ${dependencySection}
+packages: {}
+snapshots: {}
+`;
+      expect(() => collectProductionSnapshotKeys(malformedRoot), dependencySection).toThrow(
+        /object-valued dependency map/u,
+      );
+    }
+
+    for (const snapshot of [
+      "  app@1.0.0:",
+      "  app@1.0.0: []",
+      '  app@1.0.0: "not an object"',
+      '  app@1.0.0:\n    dependencies: "not an object"',
+      "  app@1.0.0:\n    optionalDependencies: []",
+    ]) {
+      expect(() => collectProductionSnapshotKeys(productionLockfileFixture({ snapshot })), snapshot).toThrow(
+        /object-valued/u,
+      );
+    }
+
+    expect(() => collectProductionSnapshotKeys(productionLockfileFixture({ packages: "  other@1.0.0: {}" }))).toThrow(
+      /has no package metadata app@1.0.0/u,
+    );
+    for (const packageNode of ["  app@1.0.0:", "  app@1.0.0: []", '  app@1.0.0: "opaque"']) {
+      expect(
+        () => collectProductionSnapshotKeys(productionLockfileFixture({ packages: packageNode })),
+        packageNode,
+      ).toThrow(/object-valued graph node/u);
+    }
   });
 
   it("walks every production snapshot edge and excludes dev-only legacy ancestry", () => {
