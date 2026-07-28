@@ -1,0 +1,38 @@
+name: oriental-dependency-security
+description: Exact-tree security and runtime review for patched Oriental production dependencies
+
+documents:
+  readme: .apr/evidence/oriental-dependency-security.md
+  spec: .apr/specs/oriental-dependency-security.md
+  implementation: .apr/evidence/0001-fix-deps-patch-production-advisories.patch
+
+oracle:
+  model: "gpt-5.6-sol"
+
+rounds:
+  output_dir: .apr/rounds/oriental-dependency-security
+  impl_every_n: 1
+
+template: |
+  Perform an adversarial exact-tree security and runtime review of Oriental
+  dependency implementation commit
+  48fd87305ca6a188ad3577c4ac24f38a140800cd. Use the complete mail patch and
+  evidence manifest. Confirm that every high-severity production advisory is
+  removed from the frozen graph; overrides are precise and maintainable; CI
+  cannot skip the production audit; Next.js and eslint-config-next remain
+  aligned; Sharp's native packages and libvips are present in standalone output;
+  and the image endpoint proof covers the deployed runtime failure mode. Do not
+  waive full CI or exact-SHA staging and production verification. End with
+  `VERDICT: MERGE` or `VERDICT: DO NOT MERGE` on its own final line.
+
+template_with_impl: |
+  Perform an adversarial exact-tree security and runtime review of Oriental
+  dependency implementation commit
+  48fd87305ca6a188ad3577c4ac24f38a140800cd. Use the complete mail patch and
+  evidence manifest. Confirm that every high-severity production advisory is
+  removed from the frozen graph; overrides are precise and maintainable; CI
+  cannot skip the production audit; Next.js and eslint-config-next remain
+  aligned; Sharp's native packages and libvips are present in standalone output;
+  and the image endpoint proof covers the deployed runtime failure mode. Do not
+  waive full CI or exact-SHA staging and production verification. End with
+  `VERDICT: MERGE` or `VERDICT: DO NOT MERGE` on its own final line.
