@@ -8,14 +8,20 @@ optimization.
 
 ## Required behavior
 
-1. `pnpm audit --prod --audit-level=high` must pass from the frozen lockfile.
-2. CI must execute the production audit before lint, typecheck, tests, and build.
+1. The explicitly pinned pnpm version must run
+   `pnpm audit --prod --audit-level=high --json` successfully from the frozen
+   lockfile against a recorded registry, with machine-readable zero-high output.
+2. CI must record pnpm version and registry, then execute the production audit
+   before lint, typecheck, tests, and build.
 3. Next.js and `eslint-config-next` must use the same patched release.
-4. Patched transitive versions must be explicit and lockfile-enforced.
-5. The standalone output must contain Sharp's native runtime and libvips assets.
-6. The production standalone server must load Sharp and serve an optimized
+4. Patched transitive versions must use vulnerable-resolution or
+   vulnerable-range scoped overrides and be lockfile-enforced.
+5. Tests must inspect the frozen package/snapshot graph and reject every
+   governed vulnerable resolution, not merely inspect manifest strings.
+6. The standalone output must contain Sharp's native runtime and libvips assets.
+7. The production standalone server must load Sharp and serve an optimized
    image, not merely compile successfully.
-7. The existing full test, lint, type, build, and performance gates remain
+8. The existing full test, lint, type, build, and performance gates remain
    mandatory.
 
 ## Acceptance evidence

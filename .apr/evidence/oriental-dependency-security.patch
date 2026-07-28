@@ -1,32 +1,21 @@
-From 48fd87305ca6a188ad3577c4ac24f38a140800cd Mon Sep 17 00:00:00 2001
-From: "dependabot[bot]" <49699333+dependabot[bot]@users.noreply.github.com>
-Date: Tue, 28 Jul 2026 02:19:32 +0000
-Subject: [PATCH] fix(deps): patch production advisories
-
-Upgrade Next and its ESLint config to the latest stable patch, pin the four audited transitive fixes, and require the production audit in CI. Trace Sharp 0.35 native assets into standalone output and cover the release contract with focused tests.
----
- .github/workflows/ci.yml          |   1 +
- next.config.ts                    |   6 +
- package.json                      |  13 +-
- pnpm-lock.yaml                    | 726 +++++++++++++++++++-----------
- tests/dependency-security.test.ts |  33 ++
- 5 files changed, 521 insertions(+), 258 deletions(-)
- create mode 100644 tests/dependency-security.test.ts
-
 diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
-index 6a776ed..21943b0 100644
+index 6a776ed4fdbf7b662da7a224cb97b3e8a4bf0a3a..8ed9153935734c2d95ef25646a874cef0b1b3418 100644
 --- a/.github/workflows/ci.yml
 +++ b/.github/workflows/ci.yml
-@@ -18,6 +18,7 @@ jobs:
+@@ -18,6 +18,11 @@ jobs:
            node-version: 22
            cache: pnpm
        - run: pnpm install --frozen-lockfile
++      - name: Record dependency audit toolchain
++        run: |
++          pnpm --version
++          pnpm config get registry
 +      - run: pnpm audit:prod
        - run: pnpm lint
        - run: pnpm typecheck
        - run: pnpm test
 diff --git a/next.config.ts b/next.config.ts
-index de1ae68..31b9a65 100644
+index de1ae68699305ebc7dd2f290ebbb0c507cb98f07..31b9a6578e8100bfcf26bcdf28ae734ad4c802e0 100644
 --- a/next.config.ts
 +++ b/next.config.ts
 @@ -3,6 +3,12 @@ import type { NextConfig } from "next";
@@ -43,7 +32,7 @@ index de1ae68..31b9a65 100644
    // This repository is often checked out below a home directory that contains
    // unrelated fleet lockfiles. Keep dependency tracing and Turbopack's build
 diff --git a/package.json b/package.json
-index 3a65ad3..206c2a5 100644
+index 3a65ad3d8ba48ea80ede78f9a65cae07adea3769..0bce3d42e1ff55963a78e27789ba224b5b250122 100644
 --- a/package.json
 +++ b/package.json
 @@ -3,10 +3,19 @@
@@ -53,16 +42,16 @@ index 3a65ad3..206c2a5 100644
 +  "pnpm": {
 +    "overrides": {
 +      "brace-expansion@5.0.7": "5.0.8",
-+      "fast-uri": "3.1.4",
-+      "postcss": "8.5.23",
-+      "sharp": "0.35.3"
++      "fast-uri@3.1.3": "3.1.4",
++      "postcss@<8.5.18": "8.5.23",
++      "sharp@0.34.5": "0.35.3"
 +    }
 +  },
    "scripts": {
      "dev": "next dev --turbopack",
      "build": "next build",
      "start": "next start",
-+    "audit:prod": "pnpm audit --prod --audit-level=high",
++    "audit:prod": "pnpm audit --prod --audit-level=high --json",
      "lint": "biome check .",
      "format": "biome format --write .",
      "typecheck": "next typegen && tsc --noEmit",
@@ -85,7 +74,7 @@ index 3a65ad3..206c2a5 100644
      "playwright": "^1.61.1",
      "shadcn": "^4.13.0",
 diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
-index 64e74af..df967aa 100644
+index 64e74afb6df3e2c919d7b1bd82e52ee86f5a434f..77d6929524d03d00dcb8e7f8b2dc6eaea0ade54f 100644
 --- a/pnpm-lock.yaml
 +++ b/pnpm-lock.yaml
 @@ -5,12 +5,10 @@ settings:
@@ -99,9 +88,9 @@ index 64e74af..df967aa 100644
 -  vite: 8.0.16
 -  ws: 8.21.0
 +  brace-expansion@5.0.7: 5.0.8
-+  fast-uri: 3.1.4
-+  postcss: 8.5.23
-+  sharp: 0.35.3
++  fast-uri@3.1.3: 3.1.4
++  postcss@<8.5.18: 8.5.23
++  sharp@0.34.5: 0.35.3
  
  importers:
  
@@ -1698,14 +1687,15 @@ index 64e74af..df967aa 100644
        - '@swc/core'
 diff --git a/tests/dependency-security.test.ts b/tests/dependency-security.test.ts
 new file mode 100644
-index 0000000..7c4eec2
+index 0000000000000000000000000000000000000000..26776b899a83dc7e63e673350112a6cb8e2eba68
 --- /dev/null
 +++ b/tests/dependency-security.test.ts
-@@ -0,0 +1,33 @@
+@@ -0,0 +1,55 @@
 +import { readFileSync } from "node:fs";
 +import { describe, expect, it } from "vitest";
 +
 +type PackageManifest = {
++  packageManager?: string;
 +  pnpm?: {
 +    overrides?: Record<string, string>;
 +  };
@@ -1715,19 +1705,40 @@ index 0000000..7c4eec2
 +const manifest = JSON.parse(readFileSync("package.json", "utf8")) as PackageManifest;
 +const nextConfig = readFileSync("next.config.ts", "utf8");
 +const ciWorkflow = readFileSync(".github/workflows/ci.yml", "utf8");
++const lockfile = readFileSync("pnpm-lock.yaml", "utf8");
++const resolvedGraph = lockfile.slice(lockfile.indexOf("\npackages:"));
 +
 +describe("production dependency security", () => {
-+  it("pins the patched transitive versions required by the production audit", () => {
-+    expect(manifest.pnpm?.overrides).toMatchObject({
++  it("pins only the exact vulnerable transitive resolutions", () => {
++    expect(manifest.pnpm?.overrides).toEqual({
 +      "brace-expansion@5.0.7": "5.0.8",
-+      "fast-uri": "3.1.4",
-+      postcss: "8.5.23",
-+      sharp: "0.35.3",
++      "fast-uri@3.1.3": "3.1.4",
++      "postcss@<8.5.18": "8.5.23",
++      "sharp@0.34.5": "0.35.3",
 +    });
 +  });
 +
-+  it("keeps the production audit required in CI", () => {
-+    expect(manifest.scripts?.["audit:prod"]).toBe("pnpm audit --prod --audit-level=high");
++  it("proves the frozen graph contains patched and no governed vulnerable resolutions", () => {
++    for (const patched of ["brace-expansion@5.0.8:", "fast-uri@3.1.4:", "postcss@8.5.23:", "sharp@0.35.3:"]) {
++      expect(resolvedGraph).toContain(patched);
++    }
++    for (const vulnerable of [
++      "brace-expansion@5.0.7:",
++      "fast-uri@3.1.3:",
++      "postcss@8.4.31:",
++      "postcss@8.5.15:",
++      "sharp@0.34.5:",
++    ]) {
++      expect(resolvedGraph).not.toMatch(new RegExp(`^\\s{2}${vulnerable.replaceAll(".", "\\.")}`, "m"));
++    }
++  });
++
++  it("keeps a reproducible machine-readable production audit required in CI", () => {
++    expect(manifest.packageManager).toBe("pnpm@10.33.0");
++    expect(manifest.scripts?.["audit:prod"]).toBe("pnpm audit --prod --audit-level=high --json");
++    expect(ciWorkflow).toContain("version: 10.33.0");
++    expect(ciWorkflow).toContain("pnpm --version");
++    expect(ciWorkflow).toContain("pnpm config get registry");
 +    expect(ciWorkflow).toContain("pnpm audit:prod");
 +  });
 +
@@ -1735,6 +1746,3 @@ index 0000000..7c4eec2
 +    expect(nextConfig).toContain("node_modules/.pnpm/@img+sharp-*/node_modules/@img/sharp-*/**/*");
 +  });
 +});
--- 
-2.50.1 (Apple Git-155)
-
