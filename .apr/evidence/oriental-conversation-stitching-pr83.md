@@ -3,15 +3,15 @@
 ## Immutable implementation identity
 
 - source implementation commit:
-  `fe713f8282331ac6cd06d4b705535c5293dd4bc5`
+  `acbf066104d6b603d092fdc02554c6dd5a67089d`
 - base:
   `e3bb6c333cbf4bf8e52456a1b5144f556f50636a`
 - implementation tree:
-  `7c969936f4cd3ae85935fece6cbb0ae7a8fa3245`
+  `6e4d1158cefb9dfe8f826492392bc48736c5ca92`
 - complete source-only patch:
   `.apr/evidence/oriental-conversation-stitching-pr83.patch`
 - patch SHA-256:
-  `d6e7ab143a0cae2c87a8420f928ead4cf9f710fb94c3c5c92565ed9baad9bdd4`
+  `9b9d0f66e6e87faf6488a10187fc85e725a5eabee11bb72cf4310c1da24dad5f`
 
 The source range changes only the admin page, a conservative email-identity
 helper, the pure grouping module, and its unit tests. Earlier APR evidence
@@ -74,21 +74,22 @@ helper; authentication, serialization, Convex, and API behavior are unchanged.
 ## Verification evidence
 
 Against source implementation commit
-`fe713f8282331ac6cd06d4b705535c5293dd4bc5`:
+`acbf066104d6b603d092fdc02554c6dd5a67089d`:
 
 - `pnpm lint`: passed, 283 files;
 - strict TypeScript: passed;
 - the focused grouping suite passed all 25 hostile tests;
 - production Next.js 16.2.10 build: passed;
-- `git diff --check`: passed;
+- source-only `git diff --check`: passed;
 - GitHub `verify`: success on exact source head
-  `fe713f8282331ac6cd06d4b705535c5293dd4bc5`;
+  `acbf066104d6b603d092fdc02554c6dd5a67089d`;
 - synthetic eight-PR integration commit
-  `c68a076448192f9227286e270bba27d88c253c38`, containing the updated PR #82
-  and #83 source heads plus every other exact PR head and both reviewed conflict
-  resolutions, passed lint on 292 files, strict TypeScript, production audit
-  with zero findings, all 89 test files and 2,283 tests, and the Next.js
-  16.2.12 production build.
+  `c7847c452eee6b1ee870470fd4ef3a338ea4d851`, tree
+  `5c870160636d620e18b25958daa86d1770ab05fa`, containing every current PR
+  source/evidence head, passed frozen pnpm 10.34.5 install, lint on 293 files,
+  strict TypeScript, production audit with zero findings across 378 production
+  dependencies, all 89 test files and 2,307 tests, and the Next.js 16.2.12
+  production build.
 
 The hostile tests cover trimmed explicit IDs, blank and whitespace IDs, ID
 namespace collision, same/different/anonymous/raw/malformed identities,
@@ -96,21 +97,20 @@ consecutive dots and control bytes, two equivalent noncanonical identities,
 mixed canonical/noncanonical explicit units, wholly noncanonical units against
 a canonical external unit, conflicting and missing identity within explicit
 units, the closed sixty-minute endpoint, beyond-window isolation,
-sparse-history rejection, actual nearest selection among several compatible
-clusters, equal-gap canonical selection with composed/decomposed Unicode cluster
-keys under all 24 permutations, all six equal-time permutations, exact-once
-original-reference preservation across every grouping branch, and input
-non-mutation.
+sparse-history rejection, actual nearest selection where the later-created,
+lexicographically larger-key cluster wins solely because its real call gap is
+smaller, equal-gap canonical selection with composed/decomposed Unicode cluster
+keys under all 24 permutations, all six equal-time permutations using three
+canonically distinct Unicode opaque IDs across membership, call order, head, and
+output order, exact-once original-reference preservation across every grouping
+branch, and input non-mutation.
 
-APR round 1 correctly rejected blank-ID collisions, raw or inconsistent email
-authority, interval bridging, partial ordering, and overstated evidence. Round 2
-correctly rejected the permissive normalized-email regex, locale-sensitive
-opaque-ID ordering, and insufficient nearest/tie/reference hostile fixtures.
-Round 3 correctly rejected normalizable-but-noncanonical stored identities,
-ASCII-only equal-gap fixtures, incomplete equal-time permutations, and missing
-admission proof. The exact implementation and integrated evidence above close
-every source and pre-merge blocker. Round 4 must review the regenerated patch
-without waiving managed runtime verification.
+APR round 4 correctly rejected a nearest-cluster fixture whose expected cluster
+also won creation and key order, plus an ASCII three-row equal-time fixture that
+could not detect locale collation across every output surface. The corrected
+fixtures close both proof gaps without changing production behavior. Round 5
+must review this exact regenerated patch without waiving managed runtime
+verification.
 
 ## Remaining admission gates
 

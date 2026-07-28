@@ -16,40 +16,46 @@ rounds:
 template: |
   Perform an adversarial exact-source privacy and data-integrity review of
   conversation-grouping implementation commit
-  fe713f8282331ac6cd06d4b705535c5293dd4bc5. Recheck every prior blocker:
+  acbf066104d6b603d092fdc02554c6dd5a67089d. Recheck every prior blocker:
   explicit IDs must be trimmed, nonempty, and namespaced away from review IDs;
   inferred edges must require one consistent conservative canonical normalized
-  email on every call; the stored value must already equal its normalized form
-  byte-for-byte, rejecting raw, missing, case-foldable, trim-recoverable,
-  malformed, whitespace/control-bearing, or conflicting identity; the
-  sixty-minute test must compare actual calls rather than sparse intervals;
-  nearest selection must exercise several compatible clusters; equal-gap
-  selection and every equal-time ordering must use exact code-unit opaque-ID
-  comparisons, never locale collation, and remain deterministic under every
-  permutation, including all 24 Unicode equal-gap and all six equal-time
-  arrangements with canonically distinct Unicode IDs; every original row
-  reference must occur exactly once across all grouping branches; and inputs
-  and persistence must not mutate. Do not waive exact-head CI, combined-tree
-  admission, or final staging verification. End with `VERDICT: MERGE` or
+  email on every call; stored identity must be byte-canonical and reject raw,
+  missing, case-foldable, trim-recoverable, malformed, whitespace/control-bearing,
+  or conflicting values; the sixty-minute rule must compare actual calls. Prove
+  nearest selection with already-separated compatible clusters where the
+  later-created, lexicographically larger-key cluster must win solely because
+  its actual-call gap is smaller. Prove equal-gap selection and every equal-time
+  ordering use exact code-unit opaque-ID comparisons, never locale collation,
+  including all 24 Unicode equal-gap permutations and all six arrangements of
+  three canonically distinct Unicode IDs across membership, call order, head,
+  and output order. Every original row reference must occur exactly once across
+  all grouping branches, and inputs and persistence must not mutate. Confirm
+  exact-source-head CI and combined commit
+  c7847c452eee6b1ee870470fd4ef3a338ea4d851, tree
+  5c870160636d620e18b25958daa86d1770ab05fa, with 89 files and 2,307 tests.
+  Do not waive canonical staging verification. End with `VERDICT: MERGE` or
   `VERDICT: DO NOT MERGE` on its own final line.
 
 template_with_impl: |
   Perform an adversarial exact-source privacy and data-integrity review of
   conversation-grouping implementation commit
-  fe713f8282331ac6cd06d4b705535c5293dd4bc5 against the attached complete
+  acbf066104d6b603d092fdc02554c6dd5a67089d against the attached complete
   source-only patch. Recheck every prior blocker: explicit IDs must be trimmed,
-  nonempty, and namespaced away from review IDs; inferred edges must require
-  one consistent conservative canonical normalized email on every call; the
-  stored value must already equal its normalized form byte-for-byte, rejecting
-  raw, missing, case-foldable, trim-recoverable, malformed,
-  whitespace/control-bearing, or conflicting identity; the sixty-minute test
-  must compare actual calls rather than sparse intervals; nearest selection
-  must exercise several compatible clusters; equal-gap selection and every
-  equal-time ordering must use exact code-unit opaque-ID comparisons, never
-  locale collation, and remain deterministic under every permutation, including
-  all 24 Unicode equal-gap and all six equal-time arrangements with
-  canonically distinct Unicode IDs; every original row reference must occur
-  exactly once across all grouping branches; and inputs and persistence must
-  not mutate. Do not waive exact-head CI, combined-tree admission, or final
-  staging verification. End with `VERDICT: MERGE` or
+  nonempty, and namespaced away from review IDs; inferred edges must require one
+  consistent conservative canonical normalized email on every call; stored
+  identity must be byte-canonical and reject raw, missing, case-foldable,
+  trim-recoverable, malformed, whitespace/control-bearing, or conflicting
+  values; the sixty-minute rule must compare actual calls. Prove nearest
+  selection with already-separated compatible clusters where the later-created,
+  lexicographically larger-key cluster must win solely because its actual-call
+  gap is smaller. Prove equal-gap selection and every equal-time ordering use
+  exact code-unit opaque-ID comparisons, never locale collation, including all
+  24 Unicode equal-gap permutations and all six arrangements of three
+  canonically distinct Unicode IDs across membership, call order, head, and
+  output order. Every original row reference must occur exactly once across all
+  grouping branches, and inputs and persistence must not mutate. Confirm
+  exact-source-head CI and combined commit
+  c7847c452eee6b1ee870470fd4ef3a338ea4d851, tree
+  5c870160636d620e18b25958daa86d1770ab05fa, with 89 files and 2,307 tests.
+  Do not waive canonical staging verification. End with `VERDICT: MERGE` or
   `VERDICT: DO NOT MERGE` on its own final line.
