@@ -1,5 +1,5 @@
 diff --git a/app/admin/session-review/page.tsx b/app/admin/session-review/page.tsx
-index 457eb360a212dbcdf6903bd889121e37f2d48b53..8479cac0ef938495e9626de55f921df10bd9bb6b 100644
+index 457eb36..8479cac 100644
 --- a/app/admin/session-review/page.tsx
 +++ b/app/admin/session-review/page.tsx
 @@ -29,6 +29,7 @@ import { adminCookieName, verifyAdminSessionCookie } from "@/lib/server/admin-au
@@ -42,7 +42,7 @@ index 457eb360a212dbcdf6903bd889121e37f2d48b53..8479cac0ef938495e9626de55f921df1
   * transcript; a multi-call one shows each call segment in order with its close
 diff --git a/lib/email-identity.ts b/lib/email-identity.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..b3a29746f3e5b15c434dad74c3a3072ec0abd426
+index 0000000..53200d1
 --- /dev/null
 +++ b/lib/email-identity.ts
 @@ -0,0 +1,52 @@
@@ -62,7 +62,7 @@ index 0000000000000000000000000000000000000000..b3a29746f3e5b15c434dad74c3a3072e
 +export function canonicalEmailIdentityKey(value: string | null | undefined) {
 +  if (!value || containsWhitespaceOrControl(value)) return "";
 +  const email = normalizeStoredEmail(value);
-+  if (email.length < 3 || email.length > 180) return "";
++  if (email !== value || email.length < 3 || email.length > 180) return "";
 +
 +  const at = email.indexOf("@");
 +  if (at <= 0 || at !== email.lastIndexOf("@") || at === email.length - 1) return "";
@@ -100,7 +100,7 @@ index 0000000000000000000000000000000000000000..b3a29746f3e5b15c434dad74c3a3072e
 +}
 diff --git a/lib/voice-conversation-grouping.ts b/lib/voice-conversation-grouping.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..433a1743db876fe3da6196e9c9344caffb7bee95
+index 0000000..433a174
 --- /dev/null
 +++ b/lib/voice-conversation-grouping.ts
 @@ -0,0 +1,130 @@
@@ -236,10 +236,10 @@ index 0000000000000000000000000000000000000000..433a1743db876fe3da6196e9c9344caf
 +}
 diff --git a/tests/voice-conversation-grouping.test.ts b/tests/voice-conversation-grouping.test.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..9e5e3b6deb1030fcb3ae2d83944314ea3d09f597
+index 0000000..b6936f1
 --- /dev/null
 +++ b/tests/voice-conversation-grouping.test.ts
-@@ -0,0 +1,400 @@
+@@ -0,0 +1,472 @@
 +import { describe, expect, it } from "vitest";
 +import {
 +  CONVERSATION_STITCH_WINDOW_MS,
@@ -480,19 +480,19 @@ index 0000000000000000000000000000000000000000..9e5e3b6deb1030fcb3ae2d83944314ea
 +    const calls = [
 +      session({
 +        reviewId: "a-start",
-+        conversationId: "conv-a",
++        conversationId: "é",
 +        updatedAt: 0,
 +        capturedEmailNormalized: "same@example.com",
 +      }),
 +      session({
 +        reviewId: "a-end",
-+        conversationId: "conv-a",
++        conversationId: "é",
 +        updatedAt: 6 * window,
 +        capturedEmailNormalized: "same@example.com",
 +      }),
 +      session({
 +        reviewId: "b",
-+        conversationId: "conv-b",
++        conversationId: "e\u0301",
 +        updatedAt: 4 * window,
 +        capturedEmailNormalized: "same@example.com",
 +      }),
@@ -509,8 +509,8 @@ index 0000000000000000000000000000000000000000..9e5e3b6deb1030fcb3ae2d83944314ea
 +        calls: head.calls.map((call) => call.reviewId),
 +      }));
 +    const expected = [
-+      { head: "a-end", calls: ["a-start", "bridge", "a-end"] },
-+      { head: "b", calls: ["b"] },
++      { head: "a-end", calls: ["a-start", "a-end"] },
++      { head: "bridge", calls: ["b", "bridge"] },
 +    ];
 +
 +    for (const permutation of permutations(calls)) expect(project(permutation)).toEqual(expected);
@@ -562,6 +562,78 @@ index 0000000000000000000000000000000000000000..9e5e3b6deb1030fcb3ae2d83944314ea
 +    expect(heads).toHaveLength(2);
 +  });
 +
++  it.each([
++    "Same@example.com",
++    "same@Example.com",
++  ])("never gives matching noncanonical normalized values identity authority: %j", (capturedEmailNormalized) => {
++    const heads = collapseConversations([
++      session({ reviewId: "bad-a", conversationId: "bad-a", updatedAt: 1000, capturedEmailNormalized }),
++      session({ reviewId: "bad-b", conversationId: "bad-b", updatedAt: 1100, capturedEmailNormalized }),
++    ]);
++
++    expect(heads).toHaveLength(2);
++  });
++
++  it("keeps a mixed canonical/noncanonical explicit unit together but denies every inferred edge", () => {
++    const heads = collapseConversations([
++      session({
++        reviewId: "canonical-in-unit",
++        conversationId: "mixed",
++        updatedAt: 1000,
++        capturedEmailNormalized: "same@example.com",
++      }),
++      session({
++        reviewId: "noncanonical-in-unit",
++        conversationId: "mixed",
++        updatedAt: 1100,
++        capturedEmailNormalized: "Same@example.com",
++      }),
++      session({
++        reviewId: "canonical-external",
++        conversationId: "external",
++        updatedAt: 1200,
++        capturedEmailNormalized: "same@example.com",
++      }),
++    ]);
++
++    expect(heads).toHaveLength(2);
++    expect(heads.find((head) => head.reviewId === "noncanonical-in-unit")?.calls.map((call) => call.reviewId)).toEqual([
++      "canonical-in-unit",
++      "noncanonical-in-unit",
++    ]);
++    expect(heads.find((head) => head.reviewId === "canonical-external")?.calls).toHaveLength(1);
++  });
++
++  it("keeps a wholly noncanonical explicit unit separate from a canonical external unit", () => {
++    const heads = collapseConversations([
++      session({
++        reviewId: "noncanonical-a",
++        conversationId: "noncanonical-unit",
++        updatedAt: 1000,
++        capturedEmailNormalized: "Same@example.com",
++      }),
++      session({
++        reviewId: "noncanonical-b",
++        conversationId: "noncanonical-unit",
++        updatedAt: 1100,
++        capturedEmailNormalized: "Same@example.com",
++      }),
++      session({
++        reviewId: "canonical-external",
++        conversationId: "external",
++        updatedAt: 1200,
++        capturedEmailNormalized: "same@example.com",
++      }),
++    ]);
++
++    expect(heads).toHaveLength(2);
++    expect(heads.find((head) => head.reviewId === "noncanonical-b")?.calls.map((call) => call.reviewId)).toEqual([
++      "noncanonical-a",
++      "noncanonical-b",
++    ]);
++    expect(heads.find((head) => head.reviewId === "canonical-external")?.calls).toHaveLength(1);
++  });
++
 +  it("preserves every original row reference exactly once across all grouping branches", () => {
 +    const calls = [
 +      session({ reviewId: "explicit-a", conversationId: "explicit", updatedAt: 0 }),
@@ -589,7 +661,7 @@ index 0000000000000000000000000000000000000000..9e5e3b6deb1030fcb3ae2d83944314ea
 +    for (const call of calls) expect(flattened.filter((candidate) => candidate === call)).toHaveLength(1);
 +  });
 +
-+  it("is deterministic under input permutations and equal timestamps", () => {
++  it("is deterministic under every input permutation at equal timestamps", () => {
 +    const calls = [
 +      session({
 +        reviewId: "a",
@@ -611,11 +683,11 @@ index 0000000000000000000000000000000000000000..9e5e3b6deb1030fcb3ae2d83944314ea
 +        calls: head.calls.map((call) => call.reviewId),
 +      }));
 +
-+    expect(project(calls)).toEqual(project([...calls].reverse()));
-+    expect(project(calls)).toEqual([
++    const expected = [
 +      { head: "z", calls: ["z"] },
 +      { head: "b", calls: ["a", "b"] },
-+    ]);
++    ];
++    for (const permutation of permutations(calls)) expect(project(permutation)).toEqual(expected);
 +  });
 +
 +  it("does not mutate input rows or their ordering", () => {
