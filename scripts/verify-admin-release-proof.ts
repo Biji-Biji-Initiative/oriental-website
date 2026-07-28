@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import chromium from "@sparticuz/chromium";
+import { validatedAdminReleaseOrigin } from "./lib/admin-release-proof";
 
 type PlaywrightJsonReport = {
   stats?: {
@@ -11,8 +12,6 @@ type PlaywrightJsonReport = {
   };
 };
 
-const canonicalAdminHosts = new Set(["staging.oriental.mereka.io", "oriental.mereka.io"]);
-
 function requiredEnvironment(name: string) {
   const value = process.env[name];
   if (!value) throw new Error(`Admin release proof requires ${name}`);
@@ -20,15 +19,7 @@ function requiredEnvironment(name: string) {
 }
 
 async function main() {
-  const baseUrl = new URL(requiredEnvironment("PLAYWRIGHT_BASE_URL"));
-  if (
-    baseUrl.protocol !== "https:" ||
-    baseUrl.username ||
-    baseUrl.password ||
-    !canonicalAdminHosts.has(baseUrl.hostname)
-  ) {
-    throw new Error("Admin release proof target must be a canonical HTTPS Oriental environment");
-  }
+  const targetOrigin = validatedAdminReleaseOrigin(requiredEnvironment("PLAYWRIGHT_BASE_URL"));
   requiredEnvironment("ADMIN_REVIEW_TOKEN");
   requiredEnvironment("ADMIN_REVIEW_PASSWORD_HMAC");
   requiredEnvironment("E2E_ADMIN_SHARED_PASSWORD");
@@ -80,7 +71,7 @@ async function main() {
       flaky,
       ok: true,
       skipped,
-      target: baseUrl.hostname,
+      target: targetOrigin,
       unexpected,
     })}\n`,
   );
