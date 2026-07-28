@@ -241,7 +241,12 @@ describe("release governance", () => {
     expect(productionDeployer).toContain('execFileSync("pnpm", ["release:verify:orphan-sweep"], {');
     expect(productionDeployer).toContain("timeout: 20_000");
     expect(productionDeployer).toContain('killSignal: "SIGKILL"');
-    expect(deadlineRunner).toContain('process.kill(-child.pid, "SIGKILL")');
+    expect(deadlineRunner).toContain('process.kill(-childGroupPid, "SIGKILL")');
+    expect(deadlineRunner).toContain("process.kill(-childGroupPid, 0)");
+    expect(deadlineRunner).toContain("Release command leader exited while descendants remained");
+    expect(deadlineRunner.indexOf("process.on(signal, handler)")).toBeLessThan(
+      deadlineRunner.indexOf("child = spawn(command, commandArgs"),
+    );
     expect(lifecycleBackfill).toContain("RPC_DEADLINE_MS = 30_000");
     expect(orphanVerifier).toContain("QUERY_DEADLINE_MS = 5_000");
     expect(hostDeployer.indexOf("pnpm release:verify:orphan-sweep")).toBeLessThan(

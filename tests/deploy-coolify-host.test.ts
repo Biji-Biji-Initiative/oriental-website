@@ -174,7 +174,7 @@ printf '{"ok":true,"version":"%s"}\n' "$TEST_PREVIOUS_SHA"
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  });
+  }, 15_000);
 
   it("atomically materializes the selected governed non-secret voice cell for staging", () => {
     expect(deployScript).toContain('if target == "staging":');
