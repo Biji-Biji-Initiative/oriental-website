@@ -1008,6 +1008,89 @@ describe("reduceRealtimeServerEvent", () => {
   });
 
   it.each([
+    "Room number one is ready. My email is two at example dot com.",
+    "Those are not digits. My email is two at example dot com.",
+    "billing@example.com is only for invoices. My email is two at example dot com.",
+  ])("keeps unrelated or negative turn context from authorizing a numeric mailbox: %s", (turn) => {
+    const capture = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: `call_scoped_digit_context_${turn}`,
+              arguments: JSON.stringify({
+                key: "email",
+                value: "2@example.com",
+                evidence: "two at example dot com",
+              }),
+            },
+          ],
+        },
+      },
+      state({ transcript: [{ role: "user", text: turn }] }),
+    );
+
+    expect(capture.state.captured.email).toBe("2@example.com");
+    expect(capture.state.emailVerification).toMatchObject({ status: "pending", confidence: "medium" });
+    const routed = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "route_to_team",
+              call_id: `call_scoped_digit_route_${turn}`,
+              arguments: JSON.stringify({ segment: "technology" }),
+            },
+          ],
+        },
+      },
+      capture.state,
+    );
+    expect(routed.commands.some((command) => command.type === "submit_voice")).toBe(false);
+  });
+
+  it("does not let an unrelated literal address authorize an ambiguous alphanumeric mailbox", () => {
+    const result = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_unrelated_literal_digit_context",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "sam1@example.com",
+                evidence: "sam one at example dot com",
+              }),
+            },
+          ],
+        },
+      },
+      state({
+        transcript: [
+          {
+            role: "user",
+            text: "billing@example.com is only for invoices. My email is sam one at example dot com.",
+          },
+        ],
+      }),
+    );
+
+    expect(result.state.captured.email).toBe("sam1@example.com");
+    expect(result.state.emailVerification).toMatchObject({ status: "pending", confidence: "medium" });
+  });
+
+  it.each([
     ["one@example.com", "one at example dot com"],
     ["1@example.com", "one at example dot com"],
     ["two@example.com", "two at example dot com"],
@@ -1041,6 +1124,9 @@ describe("reduceRealtimeServerEvent", () => {
     ["2@example.com", "to at example dot com"],
     ["2@example.com", "too at example dot com"],
     ["4@example.com", "for at example dot com"],
+    ["22@longexample.com", "to at longexample dot com"],
+    ["222@longexample.com", "too at longexample dot com"],
+    ["444@longexample.com", "for at longexample dot com"],
   ])("never treats a homophone as numeric mailbox %s", (email, spoken) => {
     const result = reduceRealtimeServerEvent(
       {
@@ -2915,6 +3001,14 @@ describe("reduceRealtimeServerEvent", () => {
     "No, use sam dot carper at gmail dot com instead.",
     "Not sam dot carper at gmail dot com; use the other address.",
     "Sam dot carper at gmail dot com was wrong.",
+    "Sam dot carper at gmail dot com, scratch that.",
+    "Sam dot carper at gmail dot com, ignore that.",
+    "Sam dot carper at gmail dot com, retract that.",
+    "Sam dot carper at gmail dot com, take that back.",
+    "Sam dot carper at gmail dot com, cancel that.",
+    "Sam dot carper at gmail dot com; replace that with final dot address at example dot com.",
+    "Sam dot carper at gmail dot com; change that to final dot address at example dot com.",
+    "Sam dot carper at gmail dot com; switch that to final dot address at example dot com.",
   ])("does not ground an approximate candidate from its own correction turn: %s", (turn) => {
     const result = reduceRealtimeServerEvent(
       {
