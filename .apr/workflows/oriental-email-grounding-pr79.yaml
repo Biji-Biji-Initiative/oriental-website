@@ -1,0 +1,58 @@
+name: oriental-email-grounding-pr79
+description: Exact-tree voice email-grounding review for PR 79
+
+documents:
+  readme: .apr/evidence/oriental-email-grounding-pr79.md
+  spec: .apr/specs/oriental-email-grounding-closure.md
+  implementation: .apr/evidence/oriental-email-grounding-pr79.patch
+
+oracle:
+  model: "gpt-5.6-sol"
+
+rounds:
+  output_dir: .apr/rounds/oriental-email-grounding-pr79
+  impl_every_n: 1
+
+template: |
+  Perform an adversarial exact-source voice data-integrity review of
+  implementation commit 590807c5e9cbd4d179423d77a376df26787e1d86 using
+  the complete source-only patch. Recheck every round-one blocker: the delayed
+  approximate candidate turn itself must reject explicit negation,
+  replacement, mixed literal selection, and exact-path reopening; newer typed
+  or spoken decisions must win; strict mode and the six-turn history bound must
+  remain fail closed; and spoken digit words must preserve distinct literal
+  and numeric valid mailboxes unless the visitor supplies explicit digit
+  context. Also prove unrelated literal addresses or numeric sentences cannot
+  suppress ambiguity, negative digit language cannot authorize it,
+  equal-length to/too/for forms cannot introduce numeric mailbox digits, and
+  candidate-relative scratch/ignore/retract/take-back/cancel/replace/change/
+  switch language rejects the approximation. Exercise one/1, two/2, samone/sam1,
+  and to/too/for through the full matcher. Confirm stored values are never
+  rewritten. Confirm exact-source-head GitHub CI and combined-tree admission at
+  integration commit 94c4457a37820d5cfbac220ac4881c19cc296005, tree
+  2236e4bf2c93545431c38484ab2326b48cb9dec3, with all 89 files and 2,337 tests.
+  Do not waive exact-head CI, combined-tree admission, or staging voice proof.
+  End with
+  `VERDICT: MERGE` or `VERDICT: DO NOT MERGE` on its own final line.
+
+template_with_impl: |
+  Perform an adversarial exact-source voice data-integrity review of
+  implementation commit 590807c5e9cbd4d179423d77a376df26787e1d86 against
+  the attached complete source-only patch. Recheck every round-one blocker:
+  the delayed approximate candidate turn itself must reject explicit negation,
+  replacement, mixed literal selection, and exact-path reopening; newer typed
+  or spoken decisions must win; strict mode and the six-turn history bound must
+  remain fail closed; and spoken digit words must preserve distinct literal
+  and numeric valid mailboxes unless the visitor supplies explicit digit
+  context. Also prove unrelated literal addresses or numeric sentences cannot
+  suppress ambiguity, negative digit language cannot authorize it,
+  equal-length to/too/for forms cannot introduce numeric mailbox digits, and
+  candidate-relative scratch/ignore/retract/take-back/cancel/replace/change/
+  switch language rejects the approximation. Exercise one/1, two/2, samone/sam1,
+  and to/too/for through the full matcher. Confirm stored values are never
+  rewritten. Confirm exact-source-head GitHub CI and combined-tree admission at
+  integration commit 94c4457a37820d5cfbac220ac4881c19cc296005, tree
+  2236e4bf2c93545431c38484ab2326b48cb9dec3, with all 89 files and 2,337 tests.
+  Do not waive exact-head CI, combined-tree admission, or staging voice proof.
+  End with
+  `VERDICT: MERGE` or `VERDICT: DO NOT MERGE` on its own final line.
