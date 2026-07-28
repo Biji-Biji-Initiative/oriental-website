@@ -3,19 +3,16 @@
 ## Immutable implementation identity
 
 The source implementation under review is the exact commit
-`a79184b5d60aeeb5eca1c8071bfc6d5ba9accb5c` on base
+`36d7a40ebfb81d8a1018ba69de10bae410f253ba` on base
 `e3bb6c333cbf4bf8e52456a1b5144f556f50636a`.
 
-- Implementation tree: `3ee9f9a4f5082deb958f43427c6aab7766d7b180`
+- Implementation tree: `79ed6665eb8e5170f5a6625737fc4855a638984f`
 - Authoritative source-only patch:
   `.apr/evidence/oriental-admin-password-security.patch`
 - Patch SHA-256:
-  `5d133743bec08f6085c1a8e08f0320a644d6a7ed2fe8537d0684202b495eaf39`
-- The patch contains all thirty-five changed non-APR source, test, release, UI,
+  `732a17232aa07d37a94c66eb51cf7e88e25090437b13b1f2c8b9f0d29bda963b`
+- The patch contains all thirty-eight changed non-APR source, test, release, UI,
   environment-example, and documentation files.
-- The replaced unsafe PR commit
-  `4703d44822d2c23f367b23a4664b720e7c8a6f16` is not an ancestor of this
-  implementation.
 
 The obsolete mail patch that conflicted with the evidence manifest was removed.
 The authoritative patch excludes `.apr/`, so saved review rounds cannot change
@@ -38,8 +35,11 @@ The password is retained only with these compensating controls:
 - it mints a signed `method=password`, role `viewer` session for thirty minutes;
 - password-session authority is limited to `dashboard.aggregate` and
   `session.logout`;
-- it cannot read customer records, email addresses, transcripts, raw lead or
-  voice evidence, analytics detail, or queues;
+- its page and API call only a dedicated Convex aggregate query whose
+  Convex-to-Next return type contains `generatedAt` and a fixed numeric metrics
+  DTO; the Next adapter explicitly projects every field again at runtime;
+- it cannot materialize or read customer records, email addresses, transcripts,
+  raw lead or voice evidence, event data, analytics detail, or queues;
 - it cannot mutate, bulk-assign, archive, export, follow up, run evals, execute
   SLA/retention jobs, or delete privacy data;
 - raw customer data and interactive actions require signing out and completing a
@@ -77,11 +77,13 @@ credential, password HMAC, review token, cookie, or request body.
 ## Login-only and bearer call graph
 
 `verifyAdminLoginCredential` is the only function that reads and verifies the
-password HMAC. The only public session-minting API accepts a narrowed successful
-login result, requires an explicit timestamp, exhaustively handles exactly
-`interactive_password` and `review_bearer`, and owns no default identity. Its
-private signer cannot be imported. Both verifier and mint API have one
-production import and invocation, in the login route.
+password HMAC. A successful result carries a module-private `Symbol` proof that
+cannot be structurally forged outside the auth module; the session mint function
+checks that proof at runtime before considering actor, principal, role, or
+credential provenance. It requires an explicit timestamp, exhaustively handles
+exactly `interactive_password` and `review_bearer`, and owns no default
+identity. Its private signer cannot be imported. Both verifier and mint API have
+one production import and invocation, in the login route.
 
 `verifyAdminBearerToken` is private and considers only:
 
@@ -89,19 +91,22 @@ production import and invocation, in the login route.
 2. `OPS_AUTOMATION_TOKEN`,
 3. `PRIVACY_ADMIN_TOKEN`.
 
-`tests/admin-auth-boundary.test.ts` parses the production AST rather than
-searching strings. It proves:
+`tests/admin-auth-boundary.test.ts` parses the production AST with the
+TypeScript module resolver rather than searching strings. It proves:
 
-- one exact canonical inventory of twelve admin route modules across every
-  supported TypeScript and JavaScript route extension;
-- every non-login HTTP export, including `HEAD` and `OPTIONS`, is an exported
-  const directly initialized by `withAdminPermission` with a canonical literal
-  permission and inline protected callback;
-- variable handlers, named callbacks, method aliases, re-exports, namespace or
-  dynamic imports, CommonJS exports, and manual positional auth checks fail the
-  analyzer's hostile fixtures;
-- the structural wrapper authenticates and authorizes before the protected
-  callback can parse a body, await I/O, log, or mutate state;
+- one exact canonical path/method/permission map for twelve admin route modules
+  across every supported TypeScript and JavaScript route extension;
+- every non-login HTTP export, including `HEAD` and `OPTIONS`, is one immutable
+  simple-identifier exported `const` directly initialized by
+  `withAdminPermission` with that route method's exact literal permission and
+  an inline protected callback;
+- `let` reassignment, object/array destructuring, named callbacks, method
+  aliases, re-exports, namespace/default/import-equals/dynamic/relative/CommonJS
+  imports, CommonJS property and object exports, `Object.assign`, extra login
+  methods, wrong-but-valid permissions, and manual positional auth all fail
+  hostile fixtures;
+- the runtime scan covers app, components, Convex, lib, pages, scripts, src, and
+  root Next entrypoints while excluding tests and generated declarations;
 - exactly one production import and call each of
   `verifyAdminLoginCredential` and `createAdminLoginSession`, both in login;
 - `verifyAdminBearerToken` is not exported and has no outside production call.
@@ -136,26 +141,31 @@ complete managed runtime inventory, reconciles from Infisical into Coolify, and
 participates in exact post-write parity readback. Missing values cannot silently
 clear or retire it.
 
-`docs/09-LAUNCH-CHECKLIST.md` now truthfully marks both-scope materialization,
-reconciliation, and live reduced-session proof as post-merge pending. Current
-documentation says the plaintext is absent from the current tree and runtime
-configuration while historical exposure is treated as real; it no longer claims
-the value was never committed.
+`docs/09-LAUNCH-CHECKLIST.md` truthfully marks both-scope materialization,
+reconciliation, plaintext-alias absence, and live reduced-session proof as
+post-merge pending. README and infrastructure guidance state that plaintext
+must be absent from source, Infisical, Coolify, and the running container and
+require a redacted live readback; they do not claim source review proved current
+runtime state.
 
 ## Exact implementation verification
 
 Completed against implementation commit
-`a79184b5d60aeeb5eca1c8071bfc6d5ba9accb5c`:
+`36d7a40ebfb81d8a1018ba69de10bae410f253ba`:
 
-- `pnpm lint`: pass, 283 files
+- `pnpm lint`: pass, 283 files on the source branch
 - `pnpm typecheck`: pass
-- admin and secret focused Vitest: 18 files and 105 tests passed
+- focused auth, route-governance, aggregate DTO, Convex adapter, login, and
+  secret suite: 6 files and 71 tests passed
 - `pnpm build`: pass, including all admin route handlers
 - `git diff --check`: pass
-- full standalone branch Vitest: 79 files and 2,195 tests passed; the remaining
-  15 failures are the exact-base macOS Node localStorage and Bash ERE
-  portability defects already corrected and independently reviewed in PR #78.
-  Final combined-tree admission must prove all tests after #78 is integrated.
+- GitHub `verify`: success on exact remote PR head
+  `36d7a40ebfb81d8a1018ba69de10bae410f253ba`
+- synthetic integration commit
+  `22d9d905bab9ac93095c1e24ac6c062ae9cf97da`, containing all eight exact PR
+  heads and both reviewed conflict resolutions, passed lint on 292 files,
+  strict TypeScript, production audit with zero findings, all 89 test files and
+  2,278 tests, and the Next.js 16.2.12 production build
 
 The focused suite proves:
 
@@ -163,22 +173,35 @@ The focused suite proves:
 - review-token login creates a configured-role twelve-hour signed session;
 - signed provenance survives cookie issuance and verification;
 - password sessions authorize only aggregate metrics and same-origin logout;
-- raw dashboard, lead, voice, transcript, and mutation permissions return
-  forbidden for the same signed password cookie;
+- the password page, aggregate API, and fixed adapter call only
+  `getAdminAggregateMetrics`; raw dashboard and lead-table mocks throw if
+  touched, and malicious extra Convex fields are stripped;
 - the server-rendered password page never calls the raw lead-table query and
   renders no raw sentinel data;
 - password rejection as bearer auth;
 - missing/malformed HMAC failure without disabling the strong token;
-- stale password HMAC and old sessions fail after token rotation;
+- stale password HMAC and both password/review sessions fail after token
+  rotation;
+- every pre-existing session and bearer plane fails under any password/bearer
+  collision;
 - co-rotated token/HMAC succeeds;
 - missing, malformed, cross-origin, and non-JSON login rejection;
-- spoofed earlier forwarding hops cannot rotate the login bucket;
+- spoofed earlier forwarding hops cannot rotate the login bucket while two
+  distinct proxy-owned identities retain independent buckets;
 - the ninth attempt is rejected;
-- whole-production AST authorization ownership;
+- whole-production, TypeScript-resolved exact permission and login authority;
+- module-private mint-proof forgery rejection;
 - managed environment mutation and parity readback.
 
-The final synthetic integration and exact-head GitHub CI must be rerun after
-this implementation commit. They are mandatory pre-merge gates.
+The exact-head GitHub verification and the final synthetic eight-PR integration
+are complete. Final merge-head and deployed-runtime gates remain.
+
+APR round 4 correctly rejected broad dashboard materialization, mutable or
+destructured handler blind spots, globally-valid but route-wrong permissions,
+forgeable login identities, incomplete negative tests, unproven live
+documentation claims, and missing exact-head/integration admission. The
+implementation and evidence above close every source and pre-merge blocker.
+Live secret and deployment checks remain post-merge gates and are not waived.
 
 ## Mandatory post-merge gates
 
