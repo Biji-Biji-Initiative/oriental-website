@@ -15,24 +15,32 @@ rounds:
 
 template: |
   Perform an adversarial exact-range data-integrity and operations review of
-  Oriental dropped-session implementation head
-  ed57627546bdfc7340e5650841f74dfee268a413. Review the complete patch after
-  stacked base 75f42e345106810467b2e048e0d3dc7654066b7e. Confirm that client
-  failure reporting stays PII-free; the Convex query cannot miss orphans under
-  healthy-session saturation; live calls and never-connected sessions cannot
-  be falsely flagged; every scan is indexed and bounded; the secondary sweep
-  cannot fail the lead SLA plane; only ops automation can invoke the route; and
-  Convex-before-web release ordering is mandatory. End with `VERDICT: MERGE` or
-  `VERDICT: DO NOT MERGE` on its own final line.
+  Oriental dropped-session implementation commit
+  caa2ff15b6c5ca44f8e376f3784fee4db0356639. Review the complete patch after
+  stacked base 75f42e3205ac65f50e0a76bd7a58a2b651726ad2. Recheck every
+  round-one blocker: lifecycle membership must be selected by a compound index
+  before the cap; real orphans must not age out through a lower lookback; the
+  stale floor must derive from the maximum valid call and heartbeat policy;
+  failed, timed-out, or migration-pending telemetry must remain unknown rather
+  than zero; the secondary plane must have bounded latency; the release
+  migration must be bounded and non-destructive; and both web deploy
+  entrypoints must fail before external mutation unless Convex is deployed,
+  migrated, and queryable. Also confirm client failure reporting stays PII-free
+  and only ops automation can invoke the SLA route. End with `VERDICT: MERGE`
+  or `VERDICT: DO NOT MERGE` on its own final line.
 
 template_with_impl: |
   Perform an adversarial exact-range data-integrity and operations review of
-  Oriental dropped-session implementation head
-  ed57627546bdfc7340e5650841f74dfee268a413. Review the complete patch after
-  stacked base 75f42e345106810467b2e048e0d3dc7654066b7e. Confirm that client
-  failure reporting stays PII-free; the Convex query cannot miss orphans under
-  healthy-session saturation; live calls and never-connected sessions cannot
-  be falsely flagged; every scan is indexed and bounded; the secondary sweep
-  cannot fail the lead SLA plane; only ops automation can invoke the route; and
-  Convex-before-web release ordering is mandatory. End with `VERDICT: MERGE` or
-  `VERDICT: DO NOT MERGE` on its own final line.
+  Oriental dropped-session implementation commit
+  caa2ff15b6c5ca44f8e376f3784fee4db0356639 against the attached source-only
+  patch after stacked base 75f42e3205ac65f50e0a76bd7a58a2b651726ad2.
+  Recheck every round-one blocker: lifecycle membership must be selected by a
+  compound index before the cap; real orphans must not age out through a lower
+  lookback; the stale floor must derive from the maximum valid call and
+  heartbeat policy; failed, timed-out, or migration-pending telemetry must
+  remain unknown rather than zero; the secondary plane must have bounded
+  latency; the release migration must be bounded and non-destructive; and both
+  web deploy entrypoints must fail before external mutation unless Convex is
+  deployed, migrated, and queryable. Also confirm client failure reporting
+  stays PII-free and only ops automation can invoke the SLA route. End with
+  `VERDICT: MERGE` or `VERDICT: DO NOT MERGE` on its own final line.
