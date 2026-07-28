@@ -1,88 +1,171 @@
-# Oriental interactive admin password implementation evidence
+# Oriental interactive admin password exact-tree evidence
 
-## Exact source head
+## Immutable implementation identity
 
-APR must compare `git rev-parse HEAD` in its clean hermetic worktree with the
-live PR head before review. The previous hard-coded-digest commit was replaced
-before merge. The current tree contains no plaintext production password and
-no hard-coded password verifier.
+The complete implementation under review is the single commit
+`f21791098715a4c28db2695227784c78b8f4afad` on base
+`e3bb6c333cbf4bf8e52456a1b5144f556f50636a`.
 
-## Runtime implementation
+- Implementation tree: `f6c13072aadbcbb4c4e0b0ffcc4439c3389ac151`
+- Commit count above the recorded base: `1`
+- Full mail patch:
+  `.apr/evidence/0001-fix-auth-manage-interactive-password.patch`
+- Patch SHA-256:
+  `bb9b959f2b818230da1a7d0d0e42085114d18c427f427ce31e087432be48352b`
+- The replaced unsafe PR commit
+  `4703d44822d2c23f367b23a4664b720e7c8a6f16` is not an ancestor of the
+  implementation commit (`git merge-base --is-ancestor` exits `1`).
 
-`lib/server/admin-auth.ts` keeps the strong token as the required root
-credential:
+The saved APR round may be added by an evidence-only child commit after review.
+APR must still compare the remote PR head with the clean review worktree and
+confirm that any commits after the implementation SHA touch only `.apr/`.
+GitHub CI must pass on the final exact PR head.
 
-```ts
-export function verifyAdminToken(token: string | null | undefined): AdminAuthState {
-  const expected = readEnv("ADMIN_REVIEW_TOKEN");
-  if (!expected) return { ok: false, reason: "unconfigured" };
-  if (!token) return { ok: false, reason: "missing" };
-  if (!constantTimeEqual(token, expected) && !verifyInteractivePassword(token, expected)) {
-    return { ok: false, reason: "invalid" };
-  }
-  return {
-    ok: true,
-    ...configuredAdminIdentity(),
-    credential: "review_bearer",
-    expiresAt: Date.now() + sessionTtlMs,
-    principal: "interactive",
-  };
-}
-```
+The patch contains every changed source, test, release, UI, and documentation
+file. It is the authoritative implementation input, not the excerpts below.
 
-The alternative password path uses a fixed domain separator and a
-secret-managed HMAC:
+## Explicit risk boundary
 
-```ts
-const adminPasswordHmacDomain = "oriental-admin-password:v1\0";
+The owner-selected password is a convenience credential and is not represented
+as a high-entropy secret or bearer authority. Earlier repository history
+contained a universal password alias, so this design does not rely on the
+password remaining unknown. The compensating boundary is deliberate:
 
-function verifyInteractivePassword(password: string, signingKey: string) {
-  const expectedHmac = readEnv("ADMIN_REVIEW_PASSWORD_HMAC");
-  if (!expectedHmac || !/^[a-f0-9]{64}$/.test(expectedHmac)) return false;
-  const actualHmac = createHmac("sha256", signingKey)
-    .update(adminPasswordHmacDomain)
-    .update(password)
-    .digest("hex");
-  return constantTimeEqual(actualHmac, expectedHmac);
-}
-```
+- only `POST /api/admin/login` can evaluate the password;
+- the endpoint requires same-origin JSON before authentication;
+- attempts are limited to eight per proxy-owned identity per fifteen minutes;
+- successful login produces a signed, HTTP-only, SameSite session;
+- every `Authorization: Bearer` path rejects the password;
+- the three bearer credentials remain independent, high-entropy secrets;
+- the password is never a session-signing key.
 
-`verifyAdminBearerToken` remains separate and lists only
-`ADMIN_REVIEW_TOKEN`, `OPS_AUTOMATION_TOKEN`, and `PRIVACY_ADMIN_TOKEN`.
-Session signatures continue to call `signingSecret()`, which reads only
-`ADMIN_REVIEW_TOKEN`.
+The owner has explicitly reaffirmed this exact convenience password. This risk
+acceptance does not authorize weakening any of the controls above.
 
-`POST /api/admin/login` is unchanged around the verifier: it rejects
-cross-origin or non-JSON requests, hashes the trusted-proxy client identity,
-allows eight attempts per fifteen minutes, and issues an HTTP-only SameSite
-session only after successful verification.
+## Login-only implementation and provenance
 
-## Managed release and documentation
+`verifyAdminLoginCredential` is the only function that can evaluate
+`ADMIN_REVIEW_PASSWORD_HMAC`. It returns `interactive_password` for password
+success and `review_bearer` for strong-token success. The login route is its
+only production call site.
 
-- `ADMIN_REVIEW_PASSWORD_HMAC` is included in
-  `MANAGED_APPLICATION_ENVIRONMENT_KEYS`, so staging and production deployers
-  reconcile it from Infisical and read back governed scope metadata.
-- Production `check-secrets` requires a lowercase 64-hex HMAC.
-- The existing 32-character minimum and distinctness gates continue to apply
-  only to the three bearer credentials.
-- The login UI says "Password or review token" while preserving password input
-  behavior.
-- The env example, README, technical spec, API contract, infrastructure doc,
-  launch checklist, runbook, and agent guide describe the same boundary and
-  token/HMAC co-rotation requirement.
+`verifyAdminRequest` never calls the login verifier. Authorization headers are
+sent directly to the private `verifyAdminBearerToken`, whose candidates are
+only:
 
-## Verification completed
+1. `ADMIN_REVIEW_TOKEN`,
+2. `OPS_AUTOMATION_TOKEN`,
+3. `PRIVACY_ADMIN_TOKEN`.
 
-- `pnpm lint` passed.
-- `pnpm typecheck` passed.
-- Focused Vitest passed: 4 files and 48 tests, including positive password
-  login and negative bearer, malformed-HMAC, and stale-key cases.
-- `git diff --check` passed.
-- GitHub CI is required on the pushed exact head before merge.
-- The full combined release tree will be tested after PR integration because
-  PR #78 supplies the repository's Node 26 Web Storage and BSD regex
-  portability fixes.
+There are twelve admin route handlers. A static governance test inventories all
+of them, proves only `app/api/admin/login/route.ts` references
+`verifyAdminLoginCredential`, and proves every other handler references
+`verifyAdminPermission`.
 
-Post-merge Infisical mutation, exact-SHA staging deployment, real browser
-password proof, production promotion, and rollback readiness remain mandatory
-release gates.
+## Cryptographic boundaries
+
+- Password verifier domain: `oriental-admin-password:v1\0`
+- Session-signature domain: `oriental-admin-session:v2\0`
+- Password verifier: HMAC-SHA256 keyed only by `ADMIN_REVIEW_TOKEN`
+- Session signer: HMAC-SHA256 keyed only by `ADMIN_REVIEW_TOKEN`
+- Stored password representation: exactly 64 lowercase hexadecimal characters
+- Session format: `v2.<expiresAt>.<role>.<base64url actor>.<signature>`
+- Session verification checks field count, version, constant-time signature
+  comparison, finite future expiry, governed role, bounded canonical actor
+  encoding, and actor validity.
+
+`constantTimeEqual` converts both values to buffers, rejects unequal lengths,
+and calls `timingSafeEqual` only for equal-length buffers. The raw password-HMAC
+environment value is validated without trimming or quote normalization, so
+missing, short, long, uppercase, padded, and nonhex values fail closed.
+
+Rotating `ADMIN_REVIEW_TOKEN` immediately invalidates both the prior session
+signature and the prior password HMAC. A new password HMAC deliberately derived
+with the new token restores only interactive password login.
+
+## Request and rate-limit boundaries
+
+`POST /api/admin/login` runs these checks in order:
+
+1. same-origin and `application/json`;
+2. Redis-backed rate limit with the existing fail-closed memory fallback;
+3. schema validation;
+4. login-specific credential verification;
+5. signed session issuance.
+
+The rate-limit identity uses the proxy-owned rightmost valid
+`X-Forwarded-For` address. Tests vary attacker-controlled earlier hops while
+holding the proxy-owned address constant and prove the ninth request is blocked.
+Missing, malformed, cross-origin, and non-JSON requests are rejected before
+credential evaluation.
+
+## Managed release boundary
+
+`ADMIN_REVIEW_PASSWORD_HMAC` is:
+
+- required by production `check-secrets`;
+- a member of `MANAGED_APPLICATION_ENVIRONMENT_KEYS`;
+- a runtime, non-build-time Coolify value;
+- reconciled from the complete Infisical application scope;
+- included in post-write parity readback;
+- not eligible for implicit retirement.
+
+Tests prove a missing Coolify entry produces an explicit mutation, an exact
+readback passes, and a mismatched readback fails. The existing deployer applies
+and reads back the complete managed environment before changing the release
+SHA. The token/HMAC pair therefore moves as one governed configuration set.
+
+Secret materialization remains a post-merge operation. The derivation command
+uses environment input rather than command arguments and emits only the HMAC
+into the managed secret write. Neither plaintext password nor
+`ADMIN_REVIEW_TOKEN` may appear in logs, patches, shell history, or diagnostics.
+
+## Exact implementation verification
+
+Completed against implementation commit
+`f21791098715a4c28db2695227784c78b8f4afad`:
+
+- `pnpm lint`: pass, 280 files
+- `pnpm typecheck`: pass
+- focused Vitest: pass, 4 files and 57 tests
+- `git diff --check`: pass
+
+The focused suite proves:
+
+- password and strong review-token login with distinct provenance;
+- password rejection as a bearer;
+- missing, short, long, uppercase, padded, and nonhex HMAC failure;
+- valid review-token operation when password-HMAC configuration is malformed;
+- stale password-HMAC failure after token rotation;
+- old signed-session failure after token rotation;
+- deliberately co-rotated password-HMAC success;
+- missing, malformed, cross-origin, and non-JSON login rejection;
+- proxy-hop spoofing cannot rotate login buckets;
+- the ninth attempt is rate-limited;
+- the login-only call-site inventory across all twelve admin routes;
+- managed environment mutation and parity readback for the HMAC.
+
+The conflict-free combined release tree with PRs 78 through 85 was also
+validated before this evidence update:
+
+- production dependency audit: no known vulnerabilities;
+- lint: pass;
+- typecheck: pass;
+- Vitest: 86 files and 2,208 tests passed;
+- Next.js 16.2.12 production build: pass.
+
+The combined tree must be rebuilt after this hardened implementation commit is
+integrated, and exact-head GitHub CI remains mandatory.
+
+## Mandatory post-merge gates
+
+1. Derive the reaffirmed password HMAC without logging either input.
+2. Write it to the governed staging and production Infisical scopes.
+3. Reconcile and read back the complete managed Coolify environment.
+4. Deploy the exact merge SHA to canonical staging.
+5. Prove password login, password rejection as a bearer, valid review-token
+   behavior, secure session-cookie attributes, exact running SHA, and rate-limit
+   behavior.
+6. Promote the same SHA to production control.
+7. Repeat health, authentication, and managed-environment proof while retaining
+   the prior production SHA as the rollback target.
