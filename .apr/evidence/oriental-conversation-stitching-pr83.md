@@ -84,12 +84,12 @@ Against source implementation commit
 - GitHub `verify`: success on exact source head
   `acbf066104d6b603d092fdc02554c6dd5a67089d`;
 - synthetic eight-PR integration commit
-  `ed34b5e8c1639af5b97bb834de417b5d03c1acc6`, tree
-  `861800a67e9af8b49a76480ba2cebb812680346a`, containing every current PR
+  `94c4457a37820d5cfbac220ac4881c19cc296005`, tree
+  `2236e4bf2c93545431c38484ab2326b48cb9dec3`, containing every current PR
   implementation source head (later descendants are APR-only), passed frozen
   pnpm 10.34.5 install, warning-free lint on
-  293 files, strict TypeScript, production audit with zero findings across 378
-  production dependencies, all 89 test files and 2,336 tests, and the Next.js
+  295 files, strict TypeScript, production audit with zero findings across 378
+  production dependencies, all 89 test files and 2,337 tests, and the Next.js
   16.2.12 production build.
 
 The hostile tests cover trimmed explicit IDs, blank and whitespace IDs, ID
