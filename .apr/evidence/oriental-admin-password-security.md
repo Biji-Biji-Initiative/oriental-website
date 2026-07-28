@@ -3,22 +3,24 @@
 ## Immutable implementation identity
 
 The source implementation under review is the exact commit
-`550da92f77be2c500bafde7619d98b451046a69a` on base
+`56f1dba7cd3b9dd052645b70b87c56e592e64ebe` on base
 `e3bb6c333cbf4bf8e52456a1b5144f556f50636a`.
 
-- Implementation tree: `836e22cc877c975772beca9d9e3e4a87fe34b9b2`
+- Implementation tree: `07f9c2f310628b881ec8f9ae526479c3a590c1cf`
 - Authoritative source-only patch:
   `.apr/evidence/oriental-admin-password-security.patch`
 - Patch SHA-256:
-  `f4cd4a1889d8ca84327f7c8e994d5b895dea4030a5904eeedec4d08709ba5051`
-- The 4,903-line patch contains all forty-five changed non-APR source, test,
-  release, UI, environment-example, workflow, and documentation files.
+  `b8259805e939bca93a702684b9aeec65b0645126d969f16babf51aec4a798a43`
+- The 5,165-line, 235,921-byte patch contains all forty-five changed non-APR
+  source, test, release, UI, environment-example, workflow, and documentation
+  files.
 
 The obsolete mail patch that conflicted with the evidence manifest was removed.
 The authoritative patch excludes `.apr/`, so saved review rounds cannot change
 its bytes or implementation tree. APR must compare the live PR head with the
 clean review worktree and verify that every implementation byte is represented
-by the patch. GitHub CI passed on the final exact PR head.
+by the patch. GitHub CI passed on the exact source implementation head; the
+final evidence-only descendant head is a separate mandatory check.
 
 ## Explicit threat and authority boundary
 
@@ -192,47 +194,47 @@ runtime state.
 ## Exact implementation verification
 
 Completed against exact implementation commit
-`550da92f77be2c500bafde7619d98b451046a69a`, tree
-`836e22cc877c975772beca9d9e3e4a87fe34b9b2`:
+`56f1dba7cd3b9dd052645b70b87c56e592e64ebe`, tree
+`07f9c2f310628b881ec8f9ae526479c3a590c1cf`:
 
-- `pnpm lint`: pass, 284 branch files, no warnings
+- `pnpm lint`: pass, 285 branch files, no warnings
 - strict application and Convex TypeScript: pass
 - all 85 branch test files and 2,222 tests: pass
 - mandatory admin release proof missing-configuration guard: pass; it exits
   nonzero before browser launch and emits no credential material
-- `pnpm build`: pass, including all admin route handlers
+- `pnpm build`: pass, including all admin route handlers on Next.js 16.2.10
 - source-only `git diff --check`: pass
 - exact-head GitHub Actions workflow `CI`, event `pull_request`: success
-  - run ID: `30380126522`
-  - job/check-run ID: `90345634811`
-  - check-suite ID: `82340970175`
-  - checked-out head SHA: `550da92f77be2c500bafde7619d98b451046a69a`
-  - checked-out tree: `836e22cc877c975772beca9d9e3e4a87fe34b9b2`
-  - run URL: `https://github.com/Biji-Biji-Initiative/oriental-website/actions/runs/30380126522`
+  - run ID: `30385889863`
+  - job/check-run ID: `90364964491`
+  - check-suite ID: `82358314571`
+  - checked-out head SHA: `56f1dba7cd3b9dd052645b70b87c56e592e64ebe`
+  - checked-out tree: `07f9c2f310628b881ec8f9ae526479c3a590c1cf`
+  - run URL: `https://github.com/Biji-Biji-Initiative/oriental-website/actions/runs/30385889863`
 - synthetic eight-PR integration commit
-  `217cb9eb11423e550de5c85d168f78e759e60310`, tree
-  `207018627ce96529f59de10161b597b5647c9fae`, based on
+  `0e0e3376bb8044015a38b83d1a71574b697fee78`, tree
+  `13b7f4fa47989a5604bbf5e25b27ac763414ae5a`, based on
   `e3bb6c333cbf4bf8e52456a1b5144f556f50636a`, composed from exact heads:
   - #78 `7657afae19433f276c89967ca9f6c2a94a509fd9`
   - #79 `aaeba89264b34a902d4d1595bf4d31907a91b2d4`
-  - #80 `550da92f77be2c500bafde7619d98b451046a69a` (source state)
+  - #80 `56f1dba7cd3b9dd052645b70b87c56e592e64ebe` (source state)
   - #81 `297e0b1a47d7d8cf3a005c606146b7de8dd7ff96`
   - #82 `d81140cb87ff36a6e4196f230a9b4d7bf9a69806`
   - #83 `f9467a918708c9385163516e01f34f4d9bb58d3f`
   - #84 `413fdf0eaf758394c68d817aaf588558ead80a57`
   - #85 `42bd5f078754ae925d71f7f9cc1e5eb8778a5f20`
 - the integration passed exact-head GitHub Actions `CI`, run
-  `30380150560`, job/check `90345713930`, suite `82341039430`, event
+  `30386074734`, job/check `90365587296`, suite `82358888463`, event
   `pull_request`, with checked-out SHA
-  `217cb9eb11423e550de5c85d168f78e759e60310` and tree
-  `207018627ce96529f59de10161b597b5647c9fae`
+  `0e0e3376bb8044015a38b83d1a71574b697fee78` and tree
+  `13b7f4fa47989a5604bbf5e25b27ac763414ae5a`
 - the integration passed frozen pnpm 10.34.5 install, warning-free lint on
-  294 files, strict TypeScript, production audit with zero findings across 378
+  295 files, strict TypeScript, production audit with zero findings across 378
   dependencies, all 89 test files and 2,337 tests with zero failed or pending,
   the Next.js 16.2.12 production build, and the mobile performance gate
 - machine-readable Vitest JSON SHA-256:
-  `e96d208ba78f9a91295ac35767a7a375c352f1028c510f04dc31afac08c527a6`
-  (865,288 bytes; 89 files; 2,337 passed; 0 failed; 0 pending)
+  `058f8b776d33b03a229d250af2e67795f327f1e1dc0c6d4176bb42b088a0eef1`
+  (865,301 bytes; 216 suites; 2,337 passed; 0 failed)
 - machine-readable production audit JSON SHA-256:
   `e6b1e426bee90fc309ed49cf51fff66f7d2218cca7fcb42e88b1b312521a615c`
   (310 bytes; 378 dependencies; 0 info/low/moderate/high/critical findings)
@@ -240,32 +242,32 @@ Completed against exact implementation commit
 Machine summary:
 
 ```json
-{"audit":{"critical":0,"high":0,"info":0,"low":0,"moderate":0,"totalDependencies":378},"github":{"checkRunId":90345634811,"checkSuiteId":82340970175,"event":"pull_request","headSha":"550da92f77be2c500bafde7619d98b451046a69a","runId":30380126522},"integration":{"checkRunId":90345713930,"checkSuiteId":82341039430,"commit":"217cb9eb11423e550de5c85d168f78e759e60310","runId":30380150560,"tree":"207018627ce96529f59de10161b597b5647c9fae"},"tests":{"failed":0,"files":89,"passed":2337,"pending":0}}
+{"audit":{"critical":0,"high":0,"info":0,"low":0,"moderate":0,"totalDependencies":378},"github":{"checkRunId":90364964491,"checkSuiteId":82358314571,"event":"pull_request","headSha":"56f1dba7cd3b9dd052645b70b87c56e592e64ebe","runId":30385889863},"integration":{"checkRunId":90365587296,"checkSuiteId":82358888463,"commit":"0e0e3376bb8044015a38b83d1a71574b697fee78","runId":30386074734,"tree":"13b7f4fa47989a5604bbf5e25b27ac763414ae5a"},"tests":{"failed":0,"files":89,"passed":2337,"pending":0}}
 ```
 
-The round-ten reviewer receives the actual immutable support bytes alongside
+The round-eleven reviewer receives the actual immutable support bytes alongside
 this manifest and source patch, rather than digest strings alone:
 
-- `github-evidence.json` (55,760 bytes; SHA-256
-  `787b897dec0623b8b870537af989a8fd838166bac22cb2b2a9effd2f739a0d91`):
+- `github-evidence.json` (119,618 bytes; SHA-256
+  `b19d105563cfd7b14ae9478498ebf73f3d97662e1e8e9d36a37921f42cd37c34`):
   raw PR #80 and integration-attestation PR objects plus raw run, job,
   check-run, and check-suite API responses;
-- `source-ci.log` (71,549 bytes; SHA-256
-  `b377da7df42c6db3638366b002e700c137b11136360fd7175a3d5374a958cf53`)
-  and `integration-ci.log` (76,576 bytes; SHA-256
-  `0736894d1c93c7587e372abe0e4fa0dbf5dee0a3617bf4eeb600c1d82336f70d`):
+- `source-ci.log` (71,104 bytes; SHA-256
+  `edd86bcdc9ad84f244c461f5c91ab722a96e685952143fc5ab714f82b9aeea79`)
+  and `integration-ci.log` (76,838 bytes; SHA-256
+  `8c5efc9c788a9a7c794985ccb67997303e908475756daa3a3ea93ab9bcbea44d`):
   exact GitHub logs containing the checkout SHA/tree attestations and all CI
   command output;
-- `integration-merge-dag.txt` (60,027 bytes; SHA-256
-  `5cc7ca47ce9a4e97ff52001ab10d61f50245498096560357c7ae7b877826dea6`):
+- `integration-merge-dag.txt` (97,426 bytes; SHA-256
+  `7f3daafafe52ea403b4e85c4bcd103fc31b2723b363b5a979063aa0b879b99cf`):
   raw commit/tree graph, first-parent merge identities, exact PR ancestors, and
   integration path ledger;
-- `source-to-integration-overlap.diff` (33,276 bytes; SHA-256
-  `b530dcb6ad0cb4c39ba20c0f9c6cae6d1595d1f7be0de8343fc203bbd45a5813`):
+- `source-to-integration-overlap.diff` (34,002 bytes; SHA-256
+  `61654a437f0abb79038add16e78bddbc422a5b43cc7927584c078d723c10c0ee`):
   the source-to-integration overlapping-path diff for conflict-resolution
   review;
-- `integration-vitest.json` (865,288 bytes; SHA-256
-  `e96d208ba78f9a91295ac35767a7a375c352f1028c510f04dc31afac08c527a6`)
+- `integration-vitest.json` (865,301 bytes; SHA-256
+  `058f8b776d33b03a229d250af2e67795f327f1e1dc0c6d4176bb42b088a0eef1`)
   and `integration-audit.json` (310 bytes; SHA-256
   `e6b1e426bee90fc309ed49cf51fff66f7d2218cca7fcb42e88b1b312521a615c`);
 - the final live PR object, exact final-head CI evidence, and
@@ -274,7 +276,7 @@ this manifest and source patch, rather than digest strings alone:
 The reviewer must recompute hashes from those attached bytes, confirm the
 source CI and synthetic integration identities, and use the final PR object
 plus the attached source-to-live-head diff to prove that every descendant
-change after `550da92f77be2c500bafde7619d98b451046a69a` is APR-only.
+change after `56f1dba7cd3b9dd052645b70b87c56e592e64ebe` is APR-only.
 
 The focused suite proves:
 
@@ -306,9 +308,6 @@ The focused suite proves:
   field mutation, symbol discovery, proxies, structural forgery, and replay;
 - managed environment mutation and parity readback.
 
-The exact-head GitHub verification and the final synthetic eight-PR integration
-are complete. Final merge-head and deployed-runtime gates remain.
-
 APR rounds 4 and 5 correctly rejected broad dashboard materialization, mutable
 or destructured handler blind spots, globally-valid but route-wrong
 permissions, forgeable or copyable login identities, incomplete effective-export
@@ -328,17 +327,22 @@ correctly rejected CommonJS loader aliases, `module.require`, `createRequire`,
 lexical shadowing, receiver/computed/indirect mutation aliases, incomplete
 nested/destructured/private claims taint, incomplete live cookie/bearer/token/
 Redis proof, and integration evidence without exact composition and raw CI
-proof. The repaired implementation closes each path with hostile regression
-coverage: ambiguous or mutable loader bindings fail closed; governed mutation
-receivers include computed, call/apply, `Reflect.apply`,
-`setPrototypeOf`, and definition primitives; typed private-authority taint
-follows nested containers, getters, factories, bind results, and mutations;
-the live verifier proves cookie metadata and TTLs, password bearer rejection,
-review-token role and twelve-hour TTL, Redis store identity, shared remaining
-counts, and 429 exhaustion. Exact-origin enforcement, exact-source checkout
-attestation, Linux CI, a rebuilt eight-PR integration, and the attached raw
-GitHub, git, Vitest, audit, and overlap evidence bind those controls to the
-reviewed bytes. Round 10 must review this regenerated exact patch and attached
+proof. Round 10 then reproduced three additional false-green classes:
+namespace/default/import-equals and `process.getBuiltinModule` loader
+acquisition; global, bound, call/apply, and container mutation receiver aliases;
+and private-taint loss through logical/comma expressions plus later receiver
+mutation. The repaired implementation closes those exact classes with hostile
+regressions and safe differentials. Ambiguous or mutable loader bindings fail
+closed; governed mutation targets include global receivers, bound primitives,
+call/apply, `Reflect.apply`, definition primitives, and container aliases; typed
+private-authority taint follows logical/comma results, nested and destructured
+containers, getters, factories, bind results, arrays, Maps, Sets, and later
+mutations. The live verifier proves cookie metadata and TTLs, password bearer
+rejection, review-token role and twelve-hour TTL, Redis store identity, shared
+remaining counts, and 429 exhaustion. Exact-origin enforcement, exact-source
+checkout attestation, Linux CI, a rebuilt eight-PR integration, and the attached
+raw GitHub, git, Vitest, audit, and overlap evidence bind those controls to the
+reviewed bytes. Round 11 must review this regenerated exact patch and attached
 support bundle. Live secret and deployment checks remain post-merge gates and
 are not waived.
 
