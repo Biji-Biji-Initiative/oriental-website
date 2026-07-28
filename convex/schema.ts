@@ -141,6 +141,7 @@ export default defineSchema({
     segment: v.string(),
     status: v.string(),
     connectionStatus: v.string(),
+    sessionState: v.optional(v.union(v.literal("preconnected"), v.literal("connected_open"), v.literal("closed"))),
     closeReason: v.optional(v.string()),
     deviceProfile: v.optional(v.union(v.literal("mobile"), v.literal("desktop"))),
     deploymentEnvironment: v.optional(v.union(v.literal("local"), v.literal("staging"), v.literal("production"))),
@@ -322,6 +323,7 @@ export default defineSchema({
     .index("by_lead_updated_at", ["leadId", "updatedAt"])
     .index("by_captured_email_normalized", ["capturedEmailNormalized"])
     .index("by_safe_retention_expires_at", ["payloadSafe", "retentionExpiresAt"])
+    .index("by_safe_session_state_updated_at", ["payloadSafe", "sessionState", "updatedAt"])
     .index("by_payload_safe_updated_at", ["payloadSafe", "updatedAt"])
     .index("by_updated_at", ["updatedAt"]),
 });
