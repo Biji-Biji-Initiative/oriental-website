@@ -1,61 +1,292 @@
 import { globSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
-import { ADMIN_PERMISSIONS } from "@/lib/admin-permissions";
 
-const adminAuthModule = "@/lib/server/admin-auth";
-const adminRouteModule = "@/lib/server/admin-route";
 const adminLoginRoute = "app/api/admin/login/route.ts";
-const canonicalAdminRoutes = [
-  "app/api/admin/evals/route.ts",
-  "app/api/admin/leads/[leadId]/route.ts",
-  "app/api/admin/leads/archive/route.ts",
-  "app/api/admin/leads/bulk/route.ts",
-  adminLoginRoute,
-  "app/api/admin/logout/route.ts",
-  "app/api/admin/metrics/route.ts",
-  "app/api/admin/privacy/route.ts",
-  "app/api/admin/retention/route.ts",
-  "app/api/admin/review/route.ts",
-  "app/api/admin/sla-check/route.ts",
-  "app/api/admin/voice-sessions/[reviewId]/route.ts",
-].sort();
-const adminRoutePaths = globSync("app/api/admin/**/route.{ts,tsx,js,jsx,mjs,cjs,mts,cts}").sort();
+const adminAuthPath = resolve("lib/server/admin-auth.ts");
+const adminRoutePath = resolve("lib/server/admin-route.ts");
+const sourceExtensions = "{ts,tsx,js,jsx,mjs,cjs,mts,cts}";
+const canonicalAdminRoutePermissions = {
+  "app/api/admin/evals/route.ts": { POST: "evals.run" },
+  "app/api/admin/leads/[leadId]/route.ts": { PATCH: "leads.update" },
+  "app/api/admin/leads/archive/route.ts": { POST: "leads.archive" },
+  "app/api/admin/leads/bulk/route.ts": { POST: "leads.bulk_assign" },
+  [adminLoginRoute]: { POST: "login" },
+  "app/api/admin/logout/route.ts": { POST: "session.logout" },
+  "app/api/admin/metrics/route.ts": { GET: "dashboard.aggregate" },
+  "app/api/admin/privacy/route.ts": { DELETE: "privacy.delete" },
+  "app/api/admin/retention/route.ts": { POST: "ops.retention" },
+  "app/api/admin/review/route.ts": { GET: "dashboard.read" },
+  "app/api/admin/sla-check/route.ts": { POST: "ops.sla_check" },
+  "app/api/admin/voice-sessions/[reviewId]/route.ts": {
+    GET: "voice.read",
+    PATCH: "voice.follow_up",
+  },
+} as const;
+const canonicalAdminRoutes = Object.keys(canonicalAdminRoutePermissions).sort();
+const adminRoutePaths = globSync(`app/api/admin/**/route.${sourceExtensions}`).sort();
 const productionPaths = globSync([
-  "app/**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts}",
-  "components/**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts}",
-  "lib/**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts}",
-]).sort();
-const httpMethods = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]);
+  `{app,components,convex,lib,pages,scripts,src}/**/*.${sourceExtensions}`,
+  `*.${sourceExtensions}`,
+])
+  .filter(
+    (path) =>
+      !path.startsWith("convex/_generated/") && !path.includes("/__tests__/") && !/\.(?:test|spec)\.[^.]+$/u.test(path),
+  )
+  .sort();
+const httpMethodNames = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] as const;
+type HttpMethod = (typeof httpMethodNames)[number];
+const httpMethods = new Set<string>(httpMethodNames);
 const protectedLoginSymbols = new Set(["verifyAdminLoginCredential", "createAdminLoginSession"]);
-const permissionNames = new Set<string>(ADMIN_PERMISSIONS);
+const parsedTsConfig = ts.parseJsonConfigFileContent(
+  ts.readConfigFile("tsconfig.json", ts.sys.readFile).config,
+  ts.sys,
+  process.cwd(),
+);
 
-function sourceFile(path: string) {
-  return ts.createSourceFile(
-    path,
-    readFileSync(path, "utf8"),
-    ts.ScriptTarget.Latest,
-    true,
-    path.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+function sourceFile(path: string, sourceText = readFileSync(path, "utf8")) {
+  const extension = path.slice(path.lastIndexOf("."));
+  const scriptKind = extension === ".tsx" || extension === ".jsx" ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  return ts.createSourceFile(path, sourceText, ts.ScriptTarget.Latest, true, scriptKind);
+}
+
+function resolvesToModule(moduleName: string, containingPath: string, targetPath: string) {
+  const resolved = ts.resolveModuleName(
+    moduleName,
+    resolve(containingPath),
+    parsedTsConfig.options,
+    ts.sys,
+  ).resolvedModule;
+  return Boolean(resolved && resolve(resolved.resolvedFileName) === targetPath);
+}
+
+function bindingNames(name: ts.BindingName): string[] {
+  if (ts.isIdentifier(name)) return [name.text];
+  return name.elements.flatMap((element) => (ts.isOmittedExpression(element) ? [] : bindingNames(element.name)));
+}
+
+function propertyNameText(name: ts.PropertyName | undefined) {
+  if (!name) return null;
+  if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name)) return name.text;
+  if (ts.isComputedPropertyName(name) && ts.isStringLiteral(name.expression)) return name.expression.text;
+  return null;
+}
+
+function isExported(node: { modifiers?: ts.NodeArray<ts.ModifierLike> }) {
+  return Boolean(node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword));
+}
+
+type HttpExport = {
+  declaration?: ts.VariableDeclaration;
+  declarationList?: ts.VariableDeclarationList;
+  kind: "assignment" | "commonjs" | "function" | "reexport" | "variable";
+  method: HttpMethod;
+};
+
+function asHttpMethod(value: string | null | undefined): HttpMethod | null {
+  return value && httpMethods.has(value) ? (value as HttpMethod) : null;
+}
+
+function commonJsPropertyMethod(node: ts.Expression): HttpMethod | null {
+  if (ts.isPropertyAccessExpression(node)) {
+    const direct = asHttpMethod(node.name.text);
+    if (
+      direct &&
+      ((ts.isIdentifier(node.expression) && node.expression.text === "exports") ||
+        (ts.isPropertyAccessExpression(node.expression) &&
+          ts.isIdentifier(node.expression.expression) &&
+          node.expression.expression.text === "module" &&
+          node.expression.name.text === "exports"))
+    ) {
+      return direct;
+    }
+  }
+  if (ts.isElementAccessExpression(node) && node.argumentExpression && ts.isStringLiteral(node.argumentExpression)) {
+    const direct = asHttpMethod(node.argumentExpression.text);
+    if (
+      direct &&
+      ((ts.isIdentifier(node.expression) && node.expression.text === "exports") ||
+        (ts.isPropertyAccessExpression(node.expression) &&
+          ts.isIdentifier(node.expression.expression) &&
+          node.expression.expression.text === "module" &&
+          node.expression.name.text === "exports"))
+    ) {
+      return direct;
+    }
+  }
+  return null;
+}
+
+function isCommonJsExportsObject(node: ts.Expression) {
+  return (
+    (ts.isIdentifier(node) && node.text === "exports") ||
+    (ts.isPropertyAccessExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === "module" &&
+      node.name.text === "exports")
   );
 }
 
-function importedNames(source: ts.SourceFile, moduleName: string) {
-  return source.statements.flatMap((statement) => {
+function httpProperties(object: ts.ObjectLiteralExpression) {
+  return object.properties.flatMap((property) => {
+    if (ts.isSpreadAssignment(property)) return [];
+    const method = asHttpMethod(propertyNameText(property.name));
+    return method ? [method] : [];
+  });
+}
+
+function exportedHttpBindings(source: ts.SourceFile): HttpExport[] {
+  const exports: HttpExport[] = [];
+  const exportedVariables = new Set<HttpMethod>();
+
+  for (const statement of source.statements) {
+    if (ts.isFunctionDeclaration(statement) && statement.name && isExported(statement)) {
+      const method = asHttpMethod(statement.name.text);
+      if (method) exports.push({ kind: "function", method });
+    }
+    if (ts.isVariableStatement(statement) && isExported(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        for (const name of bindingNames(declaration.name)) {
+          const method = asHttpMethod(name);
+          if (!method) continue;
+          exportedVariables.add(method);
+          exports.push({ declaration, declarationList: statement.declarationList, kind: "variable", method });
+        }
+      }
+    }
+    if (ts.isExportDeclaration(statement) && statement.exportClause && ts.isNamedExports(statement.exportClause)) {
+      for (const element of statement.exportClause.elements) {
+        const method = asHttpMethod(element.name.text) ?? asHttpMethod(element.propertyName?.text);
+        if (method) exports.push({ kind: "reexport", method });
+      }
+    }
+  }
+
+  const visit = (node: ts.Node) => {
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+      if (ts.isIdentifier(node.left)) {
+        const method = asHttpMethod(node.left.text);
+        if (method && exportedVariables.has(method)) exports.push({ kind: "assignment", method });
+      }
+      const directCommonJs = commonJsPropertyMethod(node.left);
+      if (directCommonJs) exports.push({ kind: "commonjs", method: directCommonJs });
+      if (isCommonJsExportsObject(node.left) && ts.isObjectLiteralExpression(node.right)) {
+        for (const method of httpProperties(node.right)) exports.push({ kind: "commonjs", method });
+      }
+    }
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      ts.isIdentifier(node.expression.expression) &&
+      node.expression.expression.text === "Object" &&
+      node.expression.name.text === "assign" &&
+      node.arguments[0] &&
+      isCommonJsExportsObject(node.arguments[0]) &&
+      node.arguments[1] &&
+      ts.isObjectLiteralExpression(node.arguments[1])
+    ) {
+      for (const method of httpProperties(node.arguments[1])) exports.push({ kind: "commonjs", method });
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return exports;
+}
+
+function wrapperAliases(source: ts.SourceFile, path: string, errors: string[]) {
+  const aliases = new Set<string>();
+  for (const statement of source.statements) {
     if (
       !ts.isImportDeclaration(statement) ||
       !ts.isStringLiteral(statement.moduleSpecifier) ||
-      statement.moduleSpecifier.text !== moduleName ||
-      !statement.importClause?.namedBindings ||
-      !ts.isNamedImports(statement.importClause.namedBindings)
+      !resolvesToModule(statement.moduleSpecifier.text, path, adminRoutePath)
     ) {
-      return [];
+      continue;
     }
-    return statement.importClause.namedBindings.elements.map((element) => ({
-      imported: element.propertyName?.text ?? element.name.text,
-      local: element.name.text,
-    }));
-  });
+    const bindings = statement.importClause?.namedBindings;
+    if (!bindings || !ts.isNamedImports(bindings) || statement.importClause?.name) {
+      errors.push("admin route wrapper must use only a named import");
+      continue;
+    }
+    for (const element of bindings.elements) {
+      if ((element.propertyName?.text ?? element.name.text) === "withAdminPermission") {
+        aliases.add(element.name.text);
+      }
+    }
+  }
+  return aliases;
+}
+
+function analyzeProtectedRoute(
+  path: string,
+  sourceText = readFileSync(path, "utf8"),
+  expectedPermissions: Partial<Record<HttpMethod, string>> = {},
+) {
+  const source = sourceFile(path, sourceText);
+  const parseDiagnostics =
+    (source as ts.SourceFile & { parseDiagnostics?: readonly ts.Diagnostic[] }).parseDiagnostics ?? [];
+  const errors = parseDiagnostics.map((diagnostic) => `parse:${diagnostic.code}`);
+  const aliases = wrapperAliases(source, path, errors);
+  const handlers = exportedHttpBindings(source);
+  const counts = new Map<HttpMethod, number>();
+
+  for (const handler of handlers) {
+    counts.set(handler.method, (counts.get(handler.method) ?? 0) + 1);
+    const expectedPermission = expectedPermissions[handler.method];
+    if (!expectedPermission) errors.push(`${handler.method} is not in the canonical route inventory`);
+    if (handler.kind !== "variable" || !handler.declaration || !handler.declarationList) {
+      errors.push(`${handler.method} must be one directly wrapped exported const`);
+      continue;
+    }
+    if (!ts.isIdentifier(handler.declaration.name)) {
+      errors.push(`${handler.method} must use a simple identifier binding`);
+      continue;
+    }
+    if ((handler.declarationList.flags & ts.NodeFlags.Const) === 0) {
+      errors.push(`${handler.method} must be immutable`);
+    }
+    const initializer = handler.declaration.initializer;
+    if (
+      !initializer ||
+      !ts.isCallExpression(initializer) ||
+      !ts.isIdentifier(initializer.expression) ||
+      !aliases.has(initializer.expression.text)
+    ) {
+      errors.push(`${handler.method} must call the imported wrapper directly`);
+      continue;
+    }
+    if (initializer.arguments.length !== 2) errors.push(`${handler.method} wrapper must have exactly two arguments`);
+    const permission = initializer.arguments[0];
+    if (!permission || !ts.isStringLiteral(permission) || permission.text !== expectedPermission) {
+      errors.push(`${handler.method} must declare exact permission ${expectedPermission}`);
+    }
+    const callback = initializer.arguments[1];
+    if (!callback || (!ts.isArrowFunction(callback) && !ts.isFunctionExpression(callback))) {
+      errors.push(`${handler.method} must supply an inline protected callback`);
+    }
+  }
+
+  for (const [method, permission] of Object.entries(expectedPermissions)) {
+    if (permission && counts.get(method as HttpMethod) !== 1) {
+      errors.push(`${method} must occur exactly once`);
+    }
+  }
+  if (handlers.length === 0) errors.push("route must export at least one HTTP handler");
+  if (aliases.size !== 1) errors.push("route must import exactly one structural wrapper binding");
+  return errors;
+}
+
+function analyzeLoginRoute(path: string, sourceText = readFileSync(path, "utf8")) {
+  const source = sourceFile(path, sourceText);
+  const parseDiagnostics =
+    (source as ts.SourceFile & { parseDiagnostics?: readonly ts.Diagnostic[] }).parseDiagnostics ?? [];
+  const errors = parseDiagnostics.map((diagnostic) => `parse:${diagnostic.code}`);
+  const handlers = exportedHttpBindings(source);
+  if (handlers.length !== 1 || handlers[0]?.method !== "POST" || handlers[0]?.kind !== "function") {
+    errors.push("login route must export exactly one function-declaration POST handler");
+  }
+  return errors;
 }
 
 function callExpressionsNamed(node: ts.Node, name: string) {
@@ -70,154 +301,86 @@ function callExpressionsNamed(node: ts.Node, name: string) {
   return calls;
 }
 
-function exportedHttpHandlers(source: ts.SourceFile) {
-  return source.statements.filter(
-    (statement): statement is ts.FunctionDeclaration =>
-      ts.isFunctionDeclaration(statement) &&
-      Boolean(statement.body) &&
-      Boolean(statement.name && httpMethods.has(statement.name.text)) &&
-      Boolean(statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)),
-  );
-}
-
-function analyzeProtectedRoute(path: string, sourceText = readFileSync(path, "utf8")) {
-  const source = ts.createSourceFile(path, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-  const parseDiagnostics =
-    (source as ts.SourceFile & { parseDiagnostics?: readonly ts.Diagnostic[] }).parseDiagnostics ?? [];
-  const errors = parseDiagnostics.map((diagnostic) => `parse:${diagnostic.code}`);
-  const wrapperAliases = new Set<string>();
-  let handlerCount = 0;
-
-  for (const statement of source.statements) {
-    if (
-      ts.isImportDeclaration(statement) &&
-      ts.isStringLiteral(statement.moduleSpecifier) &&
-      statement.moduleSpecifier.text === adminRouteModule
-    ) {
-      const bindings = statement.importClause?.namedBindings;
-      if (!bindings || !ts.isNamedImports(bindings)) {
-        errors.push("admin route wrapper must use a named import");
-        continue;
-      }
-      for (const element of bindings.elements) {
-        if ((element.propertyName?.text ?? element.name.text) === "withAdminPermission") {
-          wrapperAliases.add(element.name.text);
-        }
-      }
-    }
-
-    if (
-      ts.isFunctionDeclaration(statement) &&
-      statement.name &&
-      httpMethods.has(statement.name.text) &&
-      statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)
-    ) {
-      handlerCount += 1;
-      errors.push(`${statement.name.text} must be a directly wrapped exported const`);
-    }
-
-    if (
-      ts.isVariableStatement(statement) &&
-      statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)
-    ) {
-      for (const declaration of statement.declarationList.declarations) {
-        if (!ts.isIdentifier(declaration.name) || !httpMethods.has(declaration.name.text)) continue;
-        handlerCount += 1;
-        const method = declaration.name.text;
-        const initializer = declaration.initializer;
-        if (
-          !initializer ||
-          !ts.isCallExpression(initializer) ||
-          !ts.isIdentifier(initializer.expression) ||
-          !wrapperAliases.has(initializer.expression.text)
-        ) {
-          errors.push(`${method} must call the imported wrapper directly`);
-          continue;
-        }
-        if (initializer.arguments.length !== 2) errors.push(`${method} wrapper must have exactly two arguments`);
-        const permission = initializer.arguments[0];
-        if (!permission || !ts.isStringLiteral(permission) || !permissionNames.has(permission.text)) {
-          errors.push(`${method} must declare one canonical literal permission`);
-        }
-        const handler = initializer.arguments[1];
-        if (!handler || (!ts.isArrowFunction(handler) && !ts.isFunctionExpression(handler))) {
-          errors.push(`${method} must supply an inline protected callback`);
-        }
-      }
-    }
-
-    if (ts.isExportDeclaration(statement)) {
-      for (const element of statement.exportClause && ts.isNamedExports(statement.exportClause)
-        ? statement.exportClause.elements
-        : []) {
-        const exported = element.name.text;
-        const local = element.propertyName?.text ?? exported;
-        if (httpMethods.has(exported) || httpMethods.has(local)) {
-          handlerCount += 1;
-          errors.push(`${exported} must not be exported through an alias or re-export`);
-        }
-      }
-    }
-  }
-
-  for (const method of httpMethods) {
-    if (
-      new RegExp(`(?:module\\.exports|exports)\\s*(?:\\.\\s*${method}|\\[\\s*["']${method}["']\\s*\\])`).test(
-        sourceText,
-      )
-    ) {
-      errors.push(`${method} must not use a CommonJS export`);
-    }
-  }
-  if (handlerCount === 0) errors.push("route must export at least one HTTP handler");
-  if (wrapperAliases.size !== 1) errors.push("route must import exactly one structural wrapper binding");
-  return errors;
-}
-
-function protectedSymbolAuthority(path: string) {
-  const source = sourceFile(path);
-  const imports = importedNames(source, adminAuthModule).filter(({ imported }) => protectedLoginSymbols.has(imported));
-  const importAliases = new Map(imports.map(({ imported, local }) => [local, imported]));
+function protectedSymbolAuthority(path: string, sourceText = readFileSync(path, "utf8")) {
+  const source = sourceFile(path, sourceText);
+  const importAliases = new Map<string, string>();
+  const namespaceAliases = new Set<string>();
+  const imports: string[] = [];
   const calls: string[] = [];
   const forbiddenAccesses: string[] = [];
-  const visit = (node: ts.Node) => {
-    if (ts.isCallExpression(node)) {
-      if (ts.isIdentifier(node.expression)) {
-        const imported = importAliases.get(node.expression.text);
-        if (imported) calls.push(imported);
-      } else if (node.expression.kind === ts.SyntaxKind.ImportKeyword) {
-        const argument = node.arguments[0];
-        if (argument && ts.isStringLiteral(argument) && argument.text === adminAuthModule) {
-          forbiddenAccesses.push("dynamic import");
-        }
-      }
-    }
-    if (ts.isPropertyAccessExpression(node) && protectedLoginSymbols.has(node.name.text)) {
-      forbiddenAccesses.push(node.name.text);
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(source);
 
   for (const statement of source.statements) {
     if (
       ts.isImportDeclaration(statement) &&
       ts.isStringLiteral(statement.moduleSpecifier) &&
-      statement.moduleSpecifier.text === adminAuthModule &&
-      (statement.importClause?.name ||
-        (statement.importClause?.namedBindings && ts.isNamespaceImport(statement.importClause.namedBindings)))
+      resolvesToModule(statement.moduleSpecifier.text, path, adminAuthPath)
     ) {
-      forbiddenAccesses.push("default or namespace import");
+      if (statement.importClause?.name) forbiddenAccesses.push("default import");
+      const bindings = statement.importClause?.namedBindings;
+      if (bindings && ts.isNamespaceImport(bindings)) {
+        namespaceAliases.add(bindings.name.text);
+        forbiddenAccesses.push("namespace import");
+      } else if (bindings && ts.isNamedImports(bindings)) {
+        for (const element of bindings.elements) {
+          const imported = element.propertyName?.text ?? element.name.text;
+          if (!protectedLoginSymbols.has(imported)) continue;
+          imports.push(imported);
+          importAliases.set(element.name.text, imported);
+        }
+      }
     }
     if (
       ts.isExportDeclaration(statement) &&
       statement.moduleSpecifier &&
       ts.isStringLiteral(statement.moduleSpecifier) &&
-      statement.moduleSpecifier.text === adminAuthModule
+      resolvesToModule(statement.moduleSpecifier.text, path, adminAuthPath)
     ) {
       forbiddenAccesses.push("re-export");
     }
+    if (
+      ts.isImportEqualsDeclaration(statement) &&
+      ts.isExternalModuleReference(statement.moduleReference) &&
+      statement.moduleReference.expression &&
+      ts.isStringLiteral(statement.moduleReference.expression) &&
+      resolvesToModule(statement.moduleReference.expression.text, path, adminAuthPath)
+    ) {
+      forbiddenAccesses.push("import equals");
+    }
   }
+
+  const visit = (node: ts.Node) => {
+    if (ts.isCallExpression(node)) {
+      if (ts.isIdentifier(node.expression)) {
+        const imported = importAliases.get(node.expression.text);
+        if (imported) calls.push(imported);
+        if (
+          node.expression.text === "require" &&
+          node.arguments[0] &&
+          ts.isStringLiteral(node.arguments[0]) &&
+          resolvesToModule(node.arguments[0].text, path, adminAuthPath)
+        ) {
+          forbiddenAccesses.push("require");
+        }
+      } else if (
+        node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+        node.arguments[0] &&
+        ts.isStringLiteral(node.arguments[0]) &&
+        resolvesToModule(node.arguments[0].text, path, adminAuthPath)
+      ) {
+        forbiddenAccesses.push("dynamic import");
+      }
+    }
+    if (
+      ts.isPropertyAccessExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      namespaceAliases.has(node.expression.text) &&
+      protectedLoginSymbols.has(node.name.text)
+    ) {
+      forbiddenAccesses.push(node.name.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
   return { calls, forbiddenAccesses, imports };
 }
 
@@ -229,7 +392,7 @@ describe("admin authentication production boundary", () => {
     ).toEqual([]);
     for (const symbol of protectedLoginSymbols) {
       expect(
-        authority.flatMap(({ path, imports }) => imports.filter(({ imported }) => imported === symbol).map(() => path)),
+        authority.flatMap(({ path, imports }) => imports.filter((imported) => imported === symbol).map(() => path)),
         `${symbol} import authority`,
       ).toEqual([adminLoginRoute]);
       expect(
@@ -242,34 +405,92 @@ describe("admin authentication production boundary", () => {
     expect(authSource).not.toMatch(/export\s+(?:async\s+)?function\s+createAdminSessionCookie\b/);
   });
 
-  it("pins every admin route and structurally wraps every non-login HTTP export", () => {
-    expect(adminRoutePaths).toEqual(canonicalAdminRoutes);
-    for (const path of canonicalAdminRoutes.filter((candidate) => candidate !== adminLoginRoute)) {
-      expect(analyzeProtectedRoute(path), path).toEqual([]);
-    }
+  it("resolves relative and aliased auth imports to one canonical module and rejects indirect access", () => {
+    const relativePath = "app/api/admin/example/route.ts";
+    const relative = protectedSymbolAuthority(
+      relativePath,
+      'import { createAdminLoginSession as mint } from "../../../../lib/server/admin-auth"; mint({} as never, 0);',
+    );
+    expect(relative.imports).toEqual(["createAdminLoginSession"]);
+    expect(relative.calls).toEqual(["createAdminLoginSession"]);
 
-    const loginSource = sourceFile(adminLoginRoute);
-    expect(exportedHttpHandlers(loginSource).map((handler) => handler.name?.text)).toEqual(["POST"]);
+    for (const sourceText of [
+      'const auth = require("../../../../lib/server/admin-auth"); auth.createAdminLoginSession({} as never, 0);',
+      'void import("../../../../lib/server/admin-auth");',
+      'export { createAdminLoginSession } from "../../../../lib/server/admin-auth";',
+      'import auth = require("../../../../lib/server/admin-auth");',
+    ]) {
+      expect(protectedSymbolAuthority(relativePath, sourceText).forbiddenAccesses, sourceText).not.toEqual([]);
+    }
   });
 
-  it("rejects hostile handler shapes while accepting a direct wrapper alias", () => {
+  it("pins every exact admin path and method to its one permission", () => {
+    expect(adminRoutePaths).toEqual(canonicalAdminRoutes);
+    for (const [path, permissions] of Object.entries(canonicalAdminRoutePermissions)) {
+      if (path === adminLoginRoute) {
+        expect(analyzeLoginRoute(path), path).toEqual([]);
+      } else {
+        expect(
+          analyzeProtectedRoute(path, readFileSync(path, "utf8"), permissions as Partial<Record<HttpMethod, string>>),
+          path,
+        ).toEqual([]);
+      }
+    }
+  });
+
+  it("rejects mutable, destructured, aliased, CommonJS, extra, and permission-substituted handlers", () => {
     const prelude = 'import { withAdminPermission as guard } from "@/lib/server/admin-route";\n';
+    const expected = { GET: "dashboard.read" };
     expect(
       analyzeProtectedRoute(
         "fixture.ts",
         `${prelude}export const GET = guard("dashboard.read", async () => new Response());`,
+        expected,
       ),
     ).toEqual([]);
+
     for (const fixture of [
       `${prelude}export async function GET() { return new Response(); }`,
-      `${prelude}export const HEAD = async () => new Response();`,
+      `${prelude}export let GET = guard("dashboard.read", async () => new Response()); GET = async () => new Response();`,
+      `${prelude}const handlers = { GET: async () => new Response() }; export const { GET } = handlers;`,
       `${prelude}const hidden = guard("dashboard.read", async () => new Response()); export { hidden as GET };`,
-      `${prelude}export const OPTIONS = verifyAdminPermission(new Request("https://x"), "dashboard.read");`,
-      `${prelude}export const POST = guard(variablePermission, async () => new Response());`,
-      `${prelude}export const PATCH = guard("leads.update", namedHandler);`,
+      `${prelude}export const GET = guard("dashboard.aggregate", async () => new Response());`,
+      `${prelude}export const GET = guard(variablePermission, async () => new Response());`,
+      `${prelude}export const GET = guard("dashboard.read", namedHandler);`,
+      `${prelude}export const GET = guard("dashboard.read", async () => new Response()); export const POST = guard("leads.update", async () => new Response());`,
       `${prelude}module.exports.GET = async () => new Response();`,
+      `${prelude}module.exports = { GET: async () => new Response() };`,
+      `${prelude}Object.assign(exports, { GET: async () => new Response() });`,
     ]) {
-      expect(analyzeProtectedRoute("fixture.ts", fixture), fixture).not.toEqual([]);
+      expect(analyzeProtectedRoute("fixture.ts", fixture, expected), fixture).not.toEqual([]);
+    }
+  });
+
+  it("applies the same fail-closed handler inventory to every supported route extension", () => {
+    const prelude = 'import { withAdminPermission as guard } from "@/lib/server/admin-route";\n';
+    for (const extension of ["ts", "tsx", "js", "jsx", "mjs", "cjs", "mts", "cts"]) {
+      const path = `fixture.${extension}`;
+      expect(
+        analyzeProtectedRoute(
+          path,
+          `${prelude}export const GET = guard("dashboard.read", async () => new Response());`,
+          { GET: "dashboard.read" },
+        ),
+        path,
+      ).toEqual([]);
+    }
+  });
+
+  it("allows only the login function POST and rejects every additional export form", () => {
+    const loginPost = "export async function POST() { return new Response(); }\n";
+    expect(analyzeLoginRoute("login-fixture.ts", loginPost)).toEqual([]);
+    for (const fixture of [
+      `${loginPost}export const GET = async () => new Response();`,
+      `${loginPost}const handlers = { DELETE: async () => new Response() }; export const { DELETE } = handlers;`,
+      `${loginPost}module.exports = { OPTIONS: async () => new Response() };`,
+      `${loginPost}exports["HEAD"] = async () => new Response();`,
+    ]) {
+      expect(analyzeLoginRoute("login-fixture.ts", fixture), fixture).not.toEqual([]);
     }
   });
 

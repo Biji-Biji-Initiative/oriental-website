@@ -77,6 +77,13 @@ describe("admin login route", () => {
     const blocked = await POST(loginRequest(adminReviewToken, "192.0.2.44, 203.0.113.99"));
     expect(blocked.status).toBe(429);
     await expect(blocked.json()).resolves.toEqual({ ok: false, error: "rate_limited" });
+
+    const independent = await POST(loginRequest(adminReviewToken, "192.0.2.44, 203.0.113.100"));
+    expect(independent.status).toBe(200);
+    expect(verifyAdminSessionCookie(sessionValue(independent))).toMatchObject({
+      ok: true,
+      credential: "review_session",
+    });
   });
 
   it("rejects missing, malformed, cross-origin, and non-JSON login attempts before consuming credentials", async () => {

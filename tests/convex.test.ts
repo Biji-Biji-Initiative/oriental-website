@@ -6,6 +6,7 @@ import {
   backfillVoiceSessionLifecycle,
   bulkAssignAdminLeads,
   deletePersonalData,
+  getAdminAggregateMetrics,
   getAdminLeadSlaSnapshot,
   getAdminLeadTable,
   getAdminOrphanedVoiceSessions,
@@ -39,6 +40,7 @@ vi.mock("convex/browser", () => ({
 vi.mock("@/convex/_generated/api", () => ({
   api: {
     leads: {
+      adminAggregateMetrics: "adminAggregateMetrics",
       adminLeadCounts: "adminLeadCounts",
       adminLeadSlaSnapshot: "adminLeadSlaSnapshot",
       adminLeadTable: "adminLeadTable",
@@ -653,6 +655,57 @@ describe("orphan-session lifecycle operations", () => {
       ingestSecret: "ingest-secret",
       limit: 25,
     });
+  });
+});
+
+describe("getAdminAggregateMetrics", () => {
+  beforeEach(() => {
+    process.env = {
+      ...originalEnv,
+      CONVEX_URL: "https://convex.example",
+      CONVEX_INGEST_SECRET: "ingest-secret",
+    };
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+    vi.clearAllMocks();
+  });
+
+  it("returns a fixed aggregate DTO and strips accidental raw fields", async () => {
+    const metrics = {
+      activeLeads: 4,
+      connectedSessions: 7,
+      engagedSessions: 6,
+      notificationDeliveryRate: 92,
+      notificationFailures: 1,
+      prewarmedSessions: 8,
+      qualifiedLeads: 3,
+      recentLeads: 12,
+      reviewedSessions: 8,
+      sessionsWithErrors: 2,
+      submittedSessions: 5,
+      urgentLeads: 1,
+      voiceLeads: 6,
+      voiceSubmitRate: 83,
+    };
+    mocks.query.mockResolvedValue({
+      generatedAt: 1_800_000_000_000,
+      metrics: { ...metrics, rawMetric: "must-not-cross" },
+      leads: [{ email: "must-not-cross@example.com" }],
+      rawSentinel: "must-not-cross",
+    });
+
+    await expect(getAdminAggregateMetrics(10_000)).resolves.toEqual({
+      ok: true,
+      data: { generatedAt: 1_800_000_000_000, metrics },
+    });
+    expect(mocks.query).toHaveBeenCalledWith("adminAggregateMetrics", {
+      ingestSecret: "ingest-secret",
+      limit: 100,
+    });
+    expect(mocks.query).not.toHaveBeenCalledWith("reviewDashboard", expect.anything());
+    expect(mocks.query).not.toHaveBeenCalledWith("adminLeadTable", expect.anything());
   });
 });
 

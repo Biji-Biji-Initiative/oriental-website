@@ -122,11 +122,38 @@ describe("admin auth helpers", () => {
     ).toMatchObject({ ok: true, credential: "password_session" });
   });
 
+  it("rejects a structurally forged login identity at the session-mint boundary", () => {
+    expect(() =>
+      createAdminLoginSession(
+        {
+          actor: "Injected administrator",
+          credential: "review_bearer",
+          expiresAt: Date.now() + 60_000,
+          ok: true,
+          principal: "interactive",
+          role: "admin",
+        } as never,
+        Date.now(),
+      ),
+    ).toThrow("Invalid admin login identity");
+  });
+
   it("keeps the interactive password out of bearer authentication and fails closed on invalid HMAC configuration", () => {
     const passwordBearer = new Request("http://localhost/api/admin/review", {
       headers: { authorization: `Bearer ${interactivePassword}` },
     });
     expect(verifyAdminRequest(passwordBearer)).toEqual({ ok: false, reason: "invalid" });
+    const validCookie = loginSession().cookie;
+    expect(
+      verifyAdminRequest(
+        new Request("http://localhost/api/admin/review", {
+          headers: {
+            authorization: "Basic invalid",
+            cookie: `${adminCookieName}=${validCookie}`,
+          },
+        }),
+      ),
+    ).toEqual({ ok: false, reason: "invalid" });
 
     for (const malformed of [
       "",
@@ -152,8 +179,12 @@ describe("admin auth helpers", () => {
   });
 
   it("fails every auth plane closed when the password collides with any bearer credential", () => {
+    const reviewCookie = loginSession(adminReviewToken).cookie;
+    const passwordCookie = loginSession(interactivePassword).cookie;
+    const baseline = { ...process.env };
     const bearerNames = ["ADMIN_REVIEW_TOKEN", "OPS_AUTOMATION_TOKEN", "PRIVACY_ADMIN_TOKEN"] as const;
     for (const name of bearerNames) {
+      process.env = { ...baseline };
       const bearer = process.env[name];
       if (!bearer) throw new Error(`${name} is missing from the test environment`);
       process.env = {
@@ -169,18 +200,28 @@ describe("admin auth helpers", () => {
         ),
         name,
       ).toEqual({ ok: false, reason: "unconfigured" });
+      expect(verifyAdminSessionCookie(reviewCookie), `${name}:review-cookie`).toEqual({
+        ok: false,
+        reason: "unconfigured",
+      });
+      expect(verifyAdminSessionCookie(passwordCookie), `${name}:password-cookie`).toEqual({
+        ok: false,
+        reason: "unconfigured",
+      });
     }
   });
 
-  it("invalidates the old password HMAC and signed session after review-token rotation", () => {
-    const oldCookie = loginSession().cookie;
+  it("invalidates the old password HMAC and both signed session methods after review-token rotation", () => {
+    const oldReviewCookie = loginSession(adminReviewToken).cookie;
+    const oldPasswordCookie = loginSession(interactivePassword).cookie;
     process.env = {
       ...process.env,
       ADMIN_REVIEW_TOKEN: "rotated-admin-review-token-123456789",
     };
 
     expect(verifyAdminLoginCredential(interactivePassword)).toEqual({ ok: false, reason: "invalid" });
-    expect(verifyAdminSessionCookie(oldCookie)).toEqual({ ok: false, reason: "invalid" });
+    expect(verifyAdminSessionCookie(oldReviewCookie)).toEqual({ ok: false, reason: "invalid" });
+    expect(verifyAdminSessionCookie(oldPasswordCookie)).toEqual({ ok: false, reason: "invalid" });
 
     process.env = {
       ...process.env,

@@ -7,6 +7,7 @@ import { GET as getRawReview } from "@/app/api/admin/review/route";
 import { adminCookieName, createAdminLoginSession, verifyAdminLoginCredential } from "@/lib/server/admin-auth";
 
 const convex = vi.hoisted(() => ({
+  getAdminAggregateMetrics: vi.fn(),
   getAdminLeadTable: vi.fn(),
   getAdminReviewDashboard: vi.fn(),
 }));
@@ -62,16 +63,18 @@ describe("aggregate-only admin password dashboard", () => {
     const login = verifyAdminLoginCredential(password);
     if (!login.ok) throw new Error(`Test password login failed: ${login.reason}`);
     nextHeaders.cookieValue = createAdminLoginSession(login, Date.now()).cookie;
+    convex.getAdminAggregateMetrics.mockReset();
     convex.getAdminLeadTable.mockReset();
     convex.getAdminReviewDashboard.mockReset();
-    convex.getAdminReviewDashboard.mockResolvedValue({
+    convex.getAdminAggregateMetrics.mockResolvedValue({
       ok: true,
       data: {
         generatedAt: Date.now(),
         metrics,
-        rawSentinel: "must-never-render",
       },
     });
+    convex.getAdminLeadTable.mockRejectedValue(new Error("password path touched raw lead table"));
+    convex.getAdminReviewDashboard.mockRejectedValue(new Error("password path touched broad dashboard"));
   });
 
   afterEach(() => {
@@ -86,7 +89,9 @@ describe("aggregate-only admin password dashboard", () => {
     expect(screen.getByText("12")).toBeVisible();
     expect(screen.queryByText("must-never-render")).not.toBeInTheDocument();
     expect(screen.queryByText("What needs attention now")).not.toBeInTheDocument();
+    expect(convex.getAdminAggregateMetrics).toHaveBeenCalledTimes(1);
     expect(convex.getAdminLeadTable).not.toHaveBeenCalled();
+    expect(convex.getAdminReviewDashboard).not.toHaveBeenCalled();
   });
 
   it("allows the aggregate API but forbids raw review data for the same password session", async () => {
@@ -94,6 +99,9 @@ describe("aggregate-only admin password dashboard", () => {
     const aggregate = await getMetrics(new Request("http://localhost/api/admin/metrics", { headers }), undefined);
     expect(aggregate.status).toBe(200);
     await expect(aggregate.json()).resolves.toEqual({ ok: true, metrics });
+    expect(convex.getAdminAggregateMetrics).toHaveBeenCalledTimes(1);
+    expect(convex.getAdminLeadTable).not.toHaveBeenCalled();
+    expect(convex.getAdminReviewDashboard).not.toHaveBeenCalled();
 
     const raw = await getRawReview(new Request("http://localhost/api/admin/review", { headers }), undefined);
     expect(raw.status).toBe(403);
