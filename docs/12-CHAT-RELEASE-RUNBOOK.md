@@ -271,12 +271,22 @@ include release docs before the first deployment.
      -- pnpm release:verify:orphan-sweep
    ```
 
-   The migration only normalizes legacy voice rows and materializes
-   `sessionState`; it does not invoke retention deletion or transcript
-   redaction. Both staging and production deploy entrypoints rerun the read-only
-   verifier before their first external mutation, so a missing function,
-   incomplete migration, or unavailable query cannot be represented as zero
-   dropped sessions and cannot be bypassed by runbook drift.
+   The lifecycle migration changes only `sessionState` on rows already marked
+   payload-safe; it preserves every customer, transcript, email, retention, and
+   non-lifecycle field exactly. Unsafe legacy payload normalization and retention
+   scheduling remain separately governed by `applyDataRetention` and are never
+   run implicitly by release. The read-only verifier checks both unsafe legacy
+   rows and safe rows missing `sessionState`; either population blocks release
+   as migration-pending rather than appearing as zero dropped sessions.
+
+   The migration command has a ten-minute process deadline with a thirty-second
+   per-RPC deadline. The verifier has a fifteen-second process deadline with a
+   five-second query deadline. The supervisor kills the whole child process
+   group on expiry. Both staging and production deploy entrypoints rerun the
+   bounded verifier before their first external mutation, so a missing function,
+   incomplete migration, unsafe legacy row, timeout, or unavailable query cannot
+   be represented as zero dropped sessions and cannot be bypassed by runbook
+   drift.
 2. Build the distinct `staging-<sha>` image and recreate host-managed staging:
 
    ```bash

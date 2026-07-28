@@ -1061,8 +1061,9 @@ export const applyDataRetention = mutation({
 
 /**
  * Release migration for the materialized voice-session lifecycle index.
- * It only normalizes existing rows and is deliberately separate from the
- * retention mutation so a release does not delete or redact customer data.
+ * It changes only sessionState on already payload-safe rows. Unsafe legacy
+ * payload normalization and retention scheduling remain separately governed by
+ * applyDataRetention; the release verifier blocks while any such row exists.
  */
 export const backfillVoiceSessionLifecycle = mutation({
   args: { ingestSecret: v.string(), limit: v.number() },
@@ -1070,39 +1071,15 @@ export const backfillVoiceSessionLifecycle = mutation({
   handler: async (ctx, { ingestSecret, limit }) => {
     requireIngestSecret(ingestSecret);
     const take = Math.min(Math.max(Math.floor(limit), 1), RETENTION_BATCH_LIMITS.legacyVoiceSessions);
-    const [legacyPayloads, legacyStates] = await Promise.all([
-      ctx.db
-        .query("voiceSessions")
-        .withIndex("by_payload_safe_updated_at", (query) => query.eq("payloadSafe", undefined))
-        .order("asc")
-        .take(take + 1),
-      ctx.db
-        .query("voiceSessions")
-        .withIndex("by_safe_session_state_updated_at", (query) =>
-          query.eq("payloadSafe", true).eq("sessionState", undefined),
-        )
-        .order("asc")
-        .take(take + 1),
-    ]);
+    const legacyStates = await ctx.db
+      .query("voiceSessions")
+      .withIndex("by_safe_session_state_updated_at", (query) =>
+        query.eq("payloadSafe", true).eq("sessionState", undefined),
+      )
+      .order("asc")
+      .take(take + 1);
 
     let updated = 0;
-    for (const session of legacyPayloads.slice(0, take)) {
-      const capturedEmailNormalized = normalizeStoredEmail(session.captured.email);
-      await ctx.db.patch(session._id, {
-        captured: { ...session.captured, email: capturedEmailNormalized },
-        capturedEmailNormalized,
-        transcript: boundTranscript(session.transcript),
-        payloadSafe: true,
-        sessionState: session.closedAt ? "closed" : session.connectedAt ? "connected_open" : "preconnected",
-        retentionExpiresAt: voiceRetentionExpiresAt({
-          createdAt: session.createdAt,
-          ...(typeof session.submittedAt === "number" ? { submittedAt: session.submittedAt } : {}),
-          ...(typeof session.closedAt === "number" ? { closedAt: session.closedAt } : {}),
-          linked: session.status === "submitted" || Boolean(session.leadId),
-        }),
-      });
-      updated += 1;
-    }
     for (const session of legacyStates.slice(0, take)) {
       await ctx.db.patch(session._id, {
         sessionState: session.closedAt ? "closed" : session.connectedAt ? "connected_open" : "preconnected",
@@ -1112,7 +1089,7 @@ export const backfillVoiceSessionLifecycle = mutation({
 
     return {
       updated,
-      hasMore: legacyPayloads.length > take || legacyStates.length > take,
+      hasMore: legacyStates.length > take,
     };
   },
 });
@@ -1590,9 +1567,14 @@ export const adminOrphanedVoiceSessionsSweep = query({
       )
       .order("asc")
       .take(SLA_QUERY_BUCKET_LIMIT + 1);
-    const legacyState = await ctx.db
+    const legacyStates = await ctx.db
       .query("voiceSessions")
       .withIndex("by_safe_session_state_updated_at", (q) => q.eq("payloadSafe", true).eq("sessionState", undefined))
+      .take(1);
+
+    const legacyPayloads = await ctx.db
+      .query("voiceSessions")
+      .withIndex("by_payload_safe_updated_at", (q) => q.eq("payloadSafe", undefined))
       .take(1);
 
     const orphaned = candidates.slice(0, SLA_QUERY_BUCKET_LIMIT).map((row) => ({
@@ -1606,7 +1588,7 @@ export const adminOrphanedVoiceSessionsSweep = query({
 
     return {
       generatedAt,
-      migrationPending: legacyState.length > 0,
+      migrationPending: legacyPayloads.length > 0 || legacyStates.length > 0,
       orphaned: {
         count: orphaned.length,
         truncated: candidates.length > SLA_QUERY_BUCKET_LIMIT,

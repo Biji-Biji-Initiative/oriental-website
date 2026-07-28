@@ -27,6 +27,10 @@ const sha = "bb8e2673e5f129f342fba78f3eb653a54de8763b";
 const releasePreflight = readFileSync("scripts/release-preflight.ts", "utf8");
 const releaseVerifier = readFileSync("scripts/release-verify.ts", "utf8");
 const productionDeployer = readFileSync("scripts/deploy-coolify-production.ts", "utf8");
+const hostDeployer = readFileSync("scripts/deploy-coolify-host.sh", "utf8");
+const deadlineRunner = readFileSync("scripts/run-command-with-deadline.ts", "utf8");
+const lifecycleBackfill = readFileSync("scripts/backfill-voice-session-lifecycle.ts", "utf8");
+const orphanVerifier = readFileSync("scripts/verify-orphan-sweep.ts", "utf8");
 const stagingVoiceSmoke = readFileSync("scripts/smoke-staging-voice.ts", "utf8");
 const stagingIntakeSmoke = readFileSync("scripts/smoke-staging-intake.ts", "utf8");
 const leadsRoute = readFileSync("app/api/leads/route.ts", "utf8");
@@ -226,15 +230,22 @@ describe("release governance", () => {
 
   it("requires lifecycle migration and a live secondary sweep before web release mutation", () => {
     expect(packageScripts.scripts["convex:backfill:voice-session-lifecycle"]).toBe(
-      "tsx scripts/backfill-voice-session-lifecycle.ts",
+      "tsx scripts/run-command-with-deadline.ts --timeout-ms 600000 -- pnpm exec tsx scripts/backfill-voice-session-lifecycle.ts",
     );
-    expect(packageScripts.scripts["release:verify:orphan-sweep"]).toBe("tsx scripts/verify-orphan-sweep.ts");
+    expect(packageScripts.scripts["release:verify:orphan-sweep"]).toBe(
+      "tsx scripts/run-command-with-deadline.ts --timeout-ms 15000 -- pnpm exec tsx scripts/verify-orphan-sweep.ts",
+    );
     expect(releaseRunbook).toContain("-- pnpm convex:deploy");
     expect(releaseRunbook).toContain("-- pnpm convex:backfill:voice-session-lifecycle");
     expect(releaseRunbook).toContain("-- pnpm release:verify:orphan-sweep");
-    expect(productionDeployer).toContain('execFileSync("pnpm", ["release:verify:orphan-sweep"], { stdio: "inherit" })');
-    expect(productionDeployer.indexOf("release:verify:orphan-sweep")).toBeLessThan(
-      productionDeployer.indexOf('requireEnv("COOLIFY_API_TOKEN")'),
+    expect(productionDeployer).toContain('execFileSync("pnpm", ["release:verify:orphan-sweep"], {');
+    expect(productionDeployer).toContain("timeout: 20_000");
+    expect(productionDeployer).toContain('killSignal: "SIGKILL"');
+    expect(deadlineRunner).toContain('process.kill(-child.pid, "SIGKILL")');
+    expect(lifecycleBackfill).toContain("RPC_DEADLINE_MS = 30_000");
+    expect(orphanVerifier).toContain("QUERY_DEADLINE_MS = 5_000");
+    expect(hostDeployer.indexOf("pnpm release:verify:orphan-sweep")).toBeLessThan(
+      hostDeployer.indexOf("declare -a ssh_command"),
     );
   });
 

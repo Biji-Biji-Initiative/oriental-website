@@ -100,15 +100,32 @@ describe("admin CRM data integrity contract", () => {
     expect(retentionMutation).toContain(
       'sessionState: session.closedAt ? "closed" : session.connectedAt ? "connected_open" : "preconnected"',
     );
-    expect(lifecycleBackfill).toContain('.withIndex("by_payload_safe_updated_at"');
+    expect(lifecycleBackfill).not.toContain('.withIndex("by_payload_safe_updated_at"');
     expect(lifecycleBackfill).toContain('.withIndex("by_safe_session_state_updated_at"');
     expect(lifecycleBackfill).toContain(".take(take + 1)");
+    expect(lifecycleBackfill.match(/ctx\.db\.patch/g)).toHaveLength(1);
+    expect(lifecycleBackfill).toMatch(
+      /ctx\.db\.patch\(session\._id,\s*\{\s*sessionState: session\.closedAt \? "closed" : session\.connectedAt \? "connected_open" : "preconnected",\s*\}\);/,
+    );
+    expect(lifecycleBackfill).not.toContain("captured:");
+    expect(lifecycleBackfill).not.toContain("capturedEmailNormalized:");
+    expect(lifecycleBackfill).not.toContain("transcript:");
+    expect(lifecycleBackfill).not.toContain("payloadSafe:");
+    expect(lifecycleBackfill).not.toContain("retentionExpiresAt:");
     expect(lifecycleBackfill).not.toContain("ctx.db.delete");
     expect(indexedLifecycle).toBeGreaterThan(-1);
     expect(orphanQuery).toContain('.eq("sessionState", "connected_open").lt("updatedAt", staleCutoff)');
     expect(boundedTake).toBeGreaterThan(indexedLifecycle);
     expect(orphanQuery).toContain('.eq("sessionState", undefined)');
-    expect(orphanQuery).toContain("migrationPending: legacyState.length > 0");
+    expect(orphanQuery).toContain('.withIndex("by_payload_safe_updated_at"');
+    expect(orphanQuery).toContain('.eq("payloadSafe", undefined)');
+    expect(orphanQuery).toContain('.eq("sessionState", undefined)');
+    expect(orphanQuery).toContain("migrationPending: legacyPayloads.length > 0 || legacyStates.length > 0");
+    const migrationPending = (legacyPayloads: unknown[], legacyStates: unknown[]) =>
+      legacyPayloads.length > 0 || legacyStates.length > 0;
+    expect(migrationPending([{}], [])).toBe(true);
+    expect(migrationPending([], [{}])).toBe(true);
+    expect(migrationPending([], [])).toBe(false);
     expect(orphanQuery).not.toContain("lookbackCutoff");
     expect(orphanQuery).not.toContain(".filter(");
     expect(orphanQuery).not.toContain(".collect()");
