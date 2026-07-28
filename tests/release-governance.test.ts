@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { validatedAdminReleaseOrigin } from "../scripts/lib/admin-release-proof";
 import {
   MANAGED_APPLICATION_ENVIRONMENT_KEYS,
   type ManagedApplicationEnvironmentKey,
@@ -64,12 +65,31 @@ describe("release governance", () => {
     expect(adminReleaseVerifier).toContain("skipped !== 0");
     expect(adminReleaseVerifier).toContain("unexpected !== 0");
     expect(adminReleaseVerifier).toContain("flaky !== 0");
-    expect(adminReleaseVerifier).toContain('"staging.oriental.mereka.io", "oriental.mereka.io"');
+    expect(adminReleaseVerifier).toContain("target: targetOrigin");
     expect(adminReviewE2e).toContain('process.env.E2E_ADMIN_RELEASE_PROOF === "1"');
     expect(adminReviewE2e).toContain('reviewLogin.credential !== "review_bearer"');
     expect(adminReviewE2e).toContain('passwordLogin.credential !== "interactive_password"');
     expect(releaseRunbook.match(/pnpm release:verify:admin/gu)).toHaveLength(2);
     expect(releaseRunbook).toContain("`skipped=0`");
+  });
+
+  it("accepts only exact canonical root origins for the live admin proof", () => {
+    expect(validatedAdminReleaseOrigin("https://staging.oriental.mereka.io")).toBe(
+      "https://staging.oriental.mereka.io",
+    );
+    expect(validatedAdminReleaseOrigin("https://oriental.mereka.io/")).toBe("https://oriental.mereka.io");
+    for (const target of [
+      "http://staging.oriental.mereka.io",
+      "https://staging.oriental.mereka.io:8443",
+      "https://oriental.mereka.io:9443",
+      "https://user@oriental.mereka.io",
+      "https://oriental.mereka.io/admin",
+      "https://oriental.mereka.io/?shadow=true",
+      "https://oriental.mereka.io/#shadow",
+      "https://oriental.deploy.mereka.io",
+    ]) {
+      expect(() => validatedAdminReleaseOrigin(target), target).toThrow("exact canonical HTTPS Oriental origin");
+    }
   });
 
   it("pins canonical and compatibility-only hostnames", () => {
