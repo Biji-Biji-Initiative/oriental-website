@@ -31,8 +31,8 @@ template: |
   and output order. Every original row reference must occur exactly once across
   all grouping branches, and inputs and persistence must not mutate. Confirm
   exact-source-head CI and combined commit
-  1ee96d3357a1fab01490a943abc6ed89d71c023a, tree
-  46db3784f044be67e5292b53f72a38d23105ab7c, with 89 files and 2,336 tests.
+  ed34b5e8c1639af5b97bb834de417b5d03c1acc6, tree
+  861800a67e9af8b49a76480ba2cebb812680346a, with 89 files and 2,336 tests.
   Do not waive canonical staging verification. End with `VERDICT: MERGE` or
   `VERDICT: DO NOT MERGE` on its own final line.
 
@@ -55,7 +55,7 @@ template_with_impl: |
   output order. Every original row reference must occur exactly once across all
   grouping branches, and inputs and persistence must not mutate. Confirm
   exact-source-head CI and combined commit
-  1ee96d3357a1fab01490a943abc6ed89d71c023a, tree
-  46db3784f044be67e5292b53f72a38d23105ab7c, with 89 files and 2,336 tests.
+  ed34b5e8c1639af5b97bb834de417b5d03c1acc6, tree
+  861800a67e9af8b49a76480ba2cebb812680346a, with 89 files and 2,336 tests.
   Do not waive canonical staging verification. End with `VERDICT: MERGE` or
   `VERDICT: DO NOT MERGE` on its own final line.

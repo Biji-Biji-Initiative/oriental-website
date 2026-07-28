@@ -84,8 +84,8 @@ Against source implementation commit
 - GitHub `verify`: success on exact source head
   `acbf066104d6b603d092fdc02554c6dd5a67089d`;
 - synthetic eight-PR integration commit
-  `1ee96d3357a1fab01490a943abc6ed89d71c023a`, tree
-  `46db3784f044be67e5292b53f72a38d23105ab7c`, containing every current PR
+  `ed34b5e8c1639af5b97bb834de417b5d03c1acc6`, tree
+  `861800a67e9af8b49a76480ba2cebb812680346a`, containing every current PR
   implementation source head (later descendants are APR-only), passed frozen
   pnpm 10.34.5 install, warning-free lint on
   293 files, strict TypeScript, production audit with zero findings across 378
