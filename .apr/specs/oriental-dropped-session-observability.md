@@ -18,15 +18,24 @@ letting the secondary orphan sweep break the primary lead SLA job.
    orphan membership.
 5. Closed or never-connected sessions must never enter the orphan index range,
    and there must be no lower lookback window that can age a real orphan out.
-6. Legacy lifecycle migration must be bounded, non-destructive, drainable, and
-   explicitly block a clean availability result until complete.
-7. The hourly automation route must report and alert on orphan counts.
-8. Rejection, timeout, unconfigured Convex, or pending migration must be
-   represented as unknown (`null`) rather than a false zero, while the primary
-   lead SLA result still succeeds.
-9. The secondary sweep must have a finite deadline.
-10. Only the ops automation principal may invoke the mutation-capable SLA route.
-11. Convex deploy, lifecycle migration, and a read-only availability verifier
+6. The lifecycle release migration must be bounded, drainable, and change only
+   `sessionState` on already payload-safe rows. It must preserve every other
+   field exactly and must never normalize email/transcript, alter payload safety,
+   schedule retention, redact, or delete data. Unsafe-payload normalization and
+   retention remain a separately governed operation.
+7. The read-only sweep must use bounded completion checks for both rows with
+   `payloadSafe === undefined` and payload-safe rows missing `sessionState`.
+   Either population must block a clean availability result until separately
+   resolved.
+8. The hourly automation route must report and alert on orphan counts.
+9. Rejection, timeout, unconfigured Convex, or either pending migration
+   population must be represented as unknown (`null`) rather than a false zero,
+   while the primary lead SLA result still succeeds.
+10. The secondary query, migration RPCs, and total release child processes must
+    have finite deadlines. A stuck child must be killed as a process group and
+    terminate nonzero before external mutation.
+11. Only the ops automation principal may invoke the mutation-capable SLA route.
+12. Convex deploy, lifecycle migration, and a read-only availability verifier
     must execute before either staging or production web mutation.
 
 ## Acceptance evidence
@@ -34,8 +43,9 @@ letting the secondary orphan sweep break the primary lead SLA job.
 - Exact implementation range and complete patch are recorded.
 - Lint, strict TypeScript, focused route/data-integrity/reducer tests, and
   exact-head GitHub CI pass.
-- Tests prove alerting, tri-state secondary failure isolation, bounded latency,
-  lifecycle index membership, no lower lookback, non-destructive migration,
-  and deploy-entrypoint enforcement.
+- Tests prove alerting, tri-state secondary failure isolation, bounded query and
+  process latency, process-group termination before delayed mutation, lifecycle
+  index membership, both legacy-population completion checks, no lower lookback,
+  exact non-lifecycle field preservation, and deploy-entrypoint enforcement.
 - Hermetic APR returns an explicit merge verdict.
 - The final integrated tree receives managed staging and production proof.

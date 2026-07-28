@@ -7,16 +7,16 @@ PR #82 is stacked on PR #79 commit
 The exact source implementation under review is:
 
 - implementation commit:
-  `caa2ff15b6c5ca44f8e376f3784fee4db0356639`
+  `7efaad2e01683c1a44e5ee6c65c417a06178a3c0`
 - implementation tree:
-  `d2d5c725e2636488807b745810d732351ba2d500`
+  `e87b21d0bbfb91afaf2965496e031a349eab0391`
 - complete source-only range patch:
   `.apr/evidence/oriental-dropped-session-observability.patch`
 - patch SHA-256:
-  `dd6fddac44f0c075251b407b100692dad71dc34ada265b202b639a04999616e0`
+  `a27807bed7766bd15a7bd95aea0503e3314dfb2067a6fcff4068a853975be855`
 
-The patch contains all source, schema, release automation, documentation, and
-test changes in the exact range after the stacked base. Any child of the
+The patch contains all twenty source, schema, release automation,
+documentation, and test files in the exact range after the stacked base. Any child of the
 implementation commit may touch only `.apr/`. APR must compare the remote PR
 head with this commit plus APR-only descendants, and GitHub CI must pass on the
 final exact PR head.
@@ -56,12 +56,25 @@ to 31 minutes. The default is 35 minutes. Live or never-connected sessions
 cannot enter the indexed candidate set, while old real orphans remain visible
 until closure or retention.
 
-Legacy rows are never represented as a clean zero. The query returns
-`migrationPending` while any payload-safe row lacks lifecycle state. A
-dedicated bounded release mutation handles both older unsafe rows and
-payload-safe rows missing lifecycle state. It only normalizes and patches
-rows; it contains no delete or transcript-redaction path. The release script
-drains it to `hasMore=false`, detects non-progress, and has a finite round cap.
+Legacy rows are never represented as a clean zero. The query performs bounded
+`take(1)` checks for both populations outside the orphan candidate index:
+
+- any row with `payloadSafe === undefined`;
+- any payload-safe row with `sessionState === undefined`.
+
+Either makes `migrationPending` true, including a database containing only one
+unsafe legacy row. The dedicated release lifecycle mutation deliberately drains
+only the second population. Its one exact database patch contains only
+`sessionState`; customer fields, normalized email, transcript, payload marker,
+retention expiry, and every other non-lifecycle field remain byte/value
+unchanged. Unsafe payload normalization and retention scheduling remain the
+separately governed `applyDataRetention` operation and are never invoked
+implicitly by release. If unsafe legacy rows remain, the verifier blocks web
+deployment rather than rewriting or expiring them.
+
+The lifecycle script drains to `hasMore=false`, detects non-progress, and has a
+finite row/round cap. Each RPC has a thirty-second deadline and a parent process
+supervisor kills the entire process group after ten minutes.
 
 ## SLA isolation and honest availability
 
@@ -81,33 +94,37 @@ cannot invoke its Slack-capable operation.
 
 ## Enforced Convex-before-web ordering
 
-The release runbook requires exact-SHA Convex deployment, non-destructive
-lifecycle backfill, and the read-only orphan verifier before staging.
-`scripts/deploy-coolify-host.sh` independently verifies its local exact SHA and
-runs the orphan verifier before any SSH or environment mutation.
-`scripts/deploy-coolify-production.ts` runs the same verifier before reading
-Coolify credentials or mutating the production control plane. Staging repeats
-the verifier after both browser smokes. Missing functions, incomplete
-migration, or query failure therefore block both web deployment entrypoints.
+The release runbook requires exact-SHA Convex deployment, metadata-only
+lifecycle backfill, and the read-only orphan verifier before staging. The
+verifier has a five-second query deadline and a process-level fifteen-second
+supervisor; the production deployer adds an outer twenty-second `SIGKILL`
+deadline. `scripts/deploy-coolify-host.sh` independently verifies its local exact
+SHA and runs the bounded verifier before constructing or invoking SSH.
+`scripts/deploy-coolify-production.ts` runs it before reading Coolify credentials
+or mutating the production control plane. A deliberately non-resolving child
+test proves exit 124 within the bound, kills its process group, and prevents a
+delayed external mutation. Staging repeats the verifier after both browser
+smokes. Missing functions, either incomplete migration population, timeout, or
+query failure therefore block both web deployment entrypoints.
 
 ## Verification completed
 
 Against implementation commit
-`caa2ff15b6c5ca44f8e376f3784fee4db0356639`:
+`7efaad2e01683c1a44e5ee6c65c417a06178a3c0`:
 
-- `pnpm lint`: passed, 282 files;
+- `pnpm lint`: passed, 284 files;
 - `pnpm typecheck`: passed;
-- focused lifecycle, SLA, Convex adapter, release-governance, host rollback,
-  and retention suites: 7 files and 101 tests passed;
-- hermetic full Vitest through `scripts/run-release-tests.ts`: 83 files and
-  2,204 tests passed;
+- focused lifecycle, SLA, deadline, and release-governance suites: 4 files and
+  49 tests passed;
+- hermetic full Vitest through `scripts/run-release-tests.ts`: 84 files and
+  2,205 tests passed;
 - Next.js 16.2.10 production build: passed;
 - `git diff --check`: passed.
 
-APR round 1 correctly rejected the earlier lexical filter, narrow lookback,
-unsafe threshold floor, false-zero fallback, unbounded secondary latency, and
-prose-only deployment ordering. The exact source commit above implements every
-required remediation. Round 2 must review this regenerated exact patch.
+APR round 2 correctly rejected the omitted unsafe-legacy completion population,
+the data-changing email/transcript/retention rewrite, and the absence of a hard
+release-process deadline. The exact source commit above closes all three; round
+3 must review the regenerated patch.
 
 ## Remaining admission gates
 
