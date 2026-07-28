@@ -644,6 +644,20 @@ describe("getAdminAggregateMetrics", () => {
     voiceLeads: 6,
     voiceSubmitRate: 83,
   };
+  const aggregateCountKeys = [
+    "activeLeads",
+    "connectedSessions",
+    "engagedSessions",
+    "notificationFailures",
+    "prewarmedSessions",
+    "qualifiedLeads",
+    "recentLeads",
+    "reviewedSessions",
+    "sessionsWithErrors",
+    "submittedSessions",
+    "urgentLeads",
+    "voiceLeads",
+  ] as const;
 
   it("returns the exact validated aggregate DTO", async () => {
     mocks.query.mockResolvedValue({ generatedAt: 1_800_000_000_000, metrics });
@@ -693,6 +707,23 @@ describe("getAdminAggregateMetrics", () => {
     for (const key of ["activeLeads", "recentLeads"] as const) {
       mocks.query.mockResolvedValueOnce({ generatedAt: 1_800_000_000_000, metrics: { ...metrics, [key]: 1.5 } });
       await expect(getAdminAggregateMetrics()).rejects.toThrow("invalid admin aggregate metrics DTO");
+    }
+
+    for (const key of aggregateCountKeys) {
+      mocks.query.mockResolvedValueOnce({ generatedAt: 1_800_000_000_000, metrics: { ...metrics, [key]: 76 } });
+      await expect(getAdminAggregateMetrics(75), `${key} cannot exceed the bounded take`).rejects.toThrow(
+        "invalid admin aggregate metrics DTO",
+      );
+    }
+
+    for (const [key, value] of [
+      ["activeLeads", metrics.recentLeads + 1],
+      ["connectedSessions", metrics.reviewedSessions + 1],
+    ] as const) {
+      mocks.query.mockResolvedValueOnce({ generatedAt: 1_800_000_000_000, metrics: { ...metrics, [key]: value } });
+      await expect(getAdminAggregateMetrics(), `${key} cannot exceed its parent population`).rejects.toThrow(
+        "invalid admin aggregate metrics DTO",
+      );
     }
   });
 });

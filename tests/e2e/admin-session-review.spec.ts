@@ -4,14 +4,28 @@ import { adminCookieName, createAdminLoginSession, verifyAdminLoginCredential } 
 
 const adminReviewToken = process.env.ADMIN_REVIEW_TOKEN;
 const adminPassword = process.env.E2E_ADMIN_SHARED_PASSWORD;
+const adminReleaseProof = process.env.E2E_ADMIN_RELEASE_PROOF === "1";
 const adminOrigin = new URL(process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3011").origin;
+
+if (adminReleaseProof) {
+  if (!adminReviewToken) throw new Error("Admin release proof requires ADMIN_REVIEW_TOKEN");
+  if (!adminPassword) throw new Error("Admin release proof requires E2E_ADMIN_SHARED_PASSWORD");
+  const reviewLogin = verifyAdminLoginCredential(adminReviewToken);
+  if (!reviewLogin.ok || reviewLogin.credential !== "review_bearer") {
+    throw new Error("Admin release proof review-token configuration is invalid");
+  }
+  const passwordLogin = verifyAdminLoginCredential(adminPassword);
+  if (!passwordLogin.ok || passwordLogin.credential !== "interactive_password") {
+    throw new Error("Admin release proof password configuration is invalid");
+  }
+}
 
 test.describe("admin session review console", () => {
   test.beforeEach(async ({ context, page }) => {
     const reviewToken = adminReviewToken;
-    test.skip(!reviewToken, "Set ADMIN_REVIEW_TOKEN to run admin E2E.");
+    test.skip(!adminReleaseProof && !reviewToken, "Set ADMIN_REVIEW_TOKEN to run admin E2E.");
     const login = verifyAdminLoginCredential(reviewToken);
-    test.skip(!login.ok, "Admin review credential configuration is invalid.");
+    test.skip(!adminReleaseProof && !login.ok, "Admin review credential configuration is invalid.");
     if (!login.ok) return;
     const session = createAdminLoginSession(login, Date.now());
     await context.addCookies([
@@ -61,7 +75,10 @@ test.describe("admin session review console", () => {
     context,
     page,
   }) => {
-    test.skip(!adminPassword, "Set E2E_ADMIN_SHARED_PASSWORD to prove the aggregate-only password lane.");
+    test.skip(
+      !adminReleaseProof && !adminPassword,
+      "Set E2E_ADMIN_SHARED_PASSWORD to prove the aggregate-only password lane.",
+    );
     if (!adminPassword) return;
     await context.clearCookies();
     const login = await context.request.post("/api/admin/login", {

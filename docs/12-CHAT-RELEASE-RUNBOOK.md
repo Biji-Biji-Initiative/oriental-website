@@ -398,6 +398,27 @@ include release docs before the first deployment.
      '
    ```
 
+9. Run the aggregate-only password lane against canonical staging. Enter the
+   human password through hidden terminal input; never place it in a command
+   argument, shell history, file, or managed environment. The command hard-fails
+   when the token, password HMAC, password, browser, or target is missing or
+   invalid. Retain its JSON report and require `unexpected=0`, `flaky=0`, and
+   `skipped=0`:
+
+   ```bash
+   IFS= read -r -s -p "Admin password: " E2E_ADMIN_SHARED_PASSWORD
+   printf "\n"
+   export E2E_ADMIN_SHARED_PASSWORD
+   infisical run \
+     --domain https://secrets.mereka.io \
+     --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
+     --env staging \
+     --path /deploy/oriental-website \
+     -- env PLAYWRIGHT_BASE_URL=https://staging.oriental.mereka.io \
+       pnpm release:verify:admin
+   unset E2E_ADMIN_SHARED_PASSWORD
+   ```
+
 Do not submit a staging lead casually: staging still shares production Convex,
 OpenAI, Redis, and notification accounts.
 
@@ -480,7 +501,12 @@ write, retention call, or other production mutation is allowed.
    `https://oriental.mereka.io/api/admin/review` with the production
    `ADMIN_REVIEW_TOKEN` exactly as in staging. This independently proves the
    production routes, credentials, and Convex reads.
-7. Manually dispatch `.github/workflows/analytics-ops.yml` from merged `main`
+7. Run `pnpm release:verify:admin` against
+   `https://oriental.mereka.io` inside the production application scope, using
+   the same hidden ephemeral password-input pattern as staging. Require the
+   retained JSON report to show nonzero expected tests and exactly zero skipped,
+   flaky, and unexpected tests.
+8. Manually dispatch `.github/workflows/analytics-ops.yml` from merged `main`
    and require every job to pass. This is the release proof for the separately
    stored GitHub `OPS_AUTOMATION_TOKEN`; Infisical/Coolify parity cannot prove a
    GitHub Actions secret:
@@ -492,7 +518,7 @@ write, retention call, or other production mutation is allowed.
    gh run watch "$run_id" --exit-status
    ```
 
-8. For voice releases, rerun the dry evaluator and report `insufficient_data`
+9. For voice releases, rerun the dry evaluator and report `insufficient_data`
    honestly when its minimum evidence gate is not met.
 
 ## Failure handling
