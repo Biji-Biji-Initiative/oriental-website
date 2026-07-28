@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { adminAuthFailureStatus, verifyAdminPermission } from "@/lib/server/admin-auth";
+import { withAdminPermission } from "@/lib/server/admin-route";
 import { deletePersonalData, getPrivacyDeletionPlan } from "@/lib/server/convex";
 import { logInfo, logWarn } from "@/lib/server/logger";
 import { normalizePrivacyEmail } from "@/lib/server/privacy";
@@ -17,12 +17,7 @@ const requestSchema = z.object({
   manualCopiesConfirmedDeleted: z.boolean().default(false),
 });
 
-export async function DELETE(request: Request) {
-  const auth = verifyAdminPermission(request, "privacy.delete");
-  if (!auth.ok) {
-    return noStoreJson({ ok: false, error: auth.reason }, { status: adminAuthFailureStatus(auth) });
-  }
-
+export const DELETE = withAdminPermission("privacy.delete", async (request, auth) => {
   const parsed = requestSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return noStoreJson({ ok: false, error: "invalid_request" }, { status: 400 });
 
@@ -94,4 +89,4 @@ export async function DELETE(request: Request) {
     manualCopiesConfirmedDeleted: parsed.data.manualCopiesConfirmedDeleted,
   });
   return noStoreJson({ ok: true, deleted: result.deleted, complete: true });
-}
+});

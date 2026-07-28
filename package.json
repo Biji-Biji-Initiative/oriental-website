@@ -23,6 +23,7 @@
     "smoke:staging:voice": "tsx scripts/smoke-staging-voice.ts",
     "release:preflight": "pnpm lint && pnpm typecheck && tsx scripts/run-release-tests.ts && env NODE_ENV=production pnpm check-secrets && pnpm build && tsx scripts/release-preflight.ts",
     "release:verify:voice-cell": "tsx scripts/release-preflight.ts --voice-cell-only",
+    "release:verify:admin": "tsx scripts/verify-admin-release-proof.ts",
     "release:deploy:production": "tsx scripts/deploy-coolify-production.ts",
     "release:verify": "tsx scripts/release-verify.ts",
     "ops:status": "tsx scripts/ops-status.ts",

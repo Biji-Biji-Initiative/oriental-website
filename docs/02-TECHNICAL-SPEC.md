@@ -152,6 +152,7 @@ TURNSTILE_SITE_KEY=
 TURNSTILE_SECRET_KEY=
 IP_HASH_SECRET=
 ADMIN_REVIEW_TOKEN=
+ADMIN_REVIEW_PASSWORD_HMAC=
 ADMIN_REVIEW_ROLE=operator
 ADMIN_REVIEW_ACTOR=Oriental intake operator
 OPS_AUTOMATION_TOKEN=
@@ -248,11 +249,23 @@ No Drizzle migrations or `DATABASE_URL` are part of the launch runtime.
 
 Admin review and observability:
 
-- `/admin/session-review` is protected by the configured `ADMIN_REVIEW_TOKEN`
-  principal. Its signed cookie embeds that actor and role; role changes do not
-  silently elevate an existing session. Cookie mutations require same-origin
-  JSON requests. Scheduled maintenance uses the distinct bearer-only
-  `OPS_AUTOMATION_TOKEN`, while privacy deletion uses `PRIVACY_ADMIN_TOKEN`.
+- `/admin/session-review` uses a same-origin, rate-limited login that accepts the
+  configured `ADMIN_REVIEW_TOKEN` or the interactive password represented by
+  `ADMIN_REVIEW_PASSWORD_HMAC`. The password HMAC is domain-separated and keyed
+  by `ADMIN_REVIEW_TOKEN`; plaintext must be absent from runtime configuration,
+  and that absence remains unverified until governed staging and production
+  materialization and readback are complete. Historical repository exposure
+  means the password is treated as potentially known. The password is never
+  valid bearer auth. It issues a thirty-minute, viewer-only session limited to the redacted
+  aggregate metrics dashboard and logout. Customer records, email addresses,
+  transcripts, voice details, and every mutation require a fresh login with the
+  managed review token. The strong token issues the configured interactive role
+  for twelve hours and remains the bearer and only signed-session key. The
+  session signs actor, role, login method, and expiry, so provenance survives
+  issuance and role changes do not silently elevate an existing cookie. Cookie
+  mutations require same-origin JSON requests. Scheduled maintenance uses the
+  distinct bearer-only `OPS_AUTOMATION_TOKEN`, while privacy deletion uses
+  `PRIVACY_ADMIN_TOKEN`.
 - Sentry uses `@sentry/nextjs` config files and `withSentryConfig` in
   `next.config.ts`.
 - Production ops alerts use `OPS_ALERT_SLACK_CHANNEL_ID`; the current smoke

@@ -1,14 +1,33 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
-import { adminCookieName, createAdminSessionCookie } from "../../lib/server/admin-auth";
+import { adminCookieName, createAdminLoginSession, verifyAdminLoginCredential } from "../../lib/server/admin-auth";
 
-const adminPassword = process.env.E2E_ADMIN_SHARED_PASSWORD ?? process.env.ADMIN_REVIEW_TOKEN;
+const adminReviewToken = process.env.ADMIN_REVIEW_TOKEN;
+const adminPassword = process.env.E2E_ADMIN_SHARED_PASSWORD;
+const adminReleaseProof = process.env.E2E_ADMIN_RELEASE_PROOF === "1";
 const adminOrigin = new URL(process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3011").origin;
+
+if (adminReleaseProof) {
+  if (!adminReviewToken) throw new Error("Admin release proof requires ADMIN_REVIEW_TOKEN");
+  if (!adminPassword) throw new Error("Admin release proof requires E2E_ADMIN_SHARED_PASSWORD");
+  const reviewLogin = verifyAdminLoginCredential(adminReviewToken);
+  if (!reviewLogin.ok || reviewLogin.credential !== "review_bearer") {
+    throw new Error("Admin release proof review-token configuration is invalid");
+  }
+  const passwordLogin = verifyAdminLoginCredential(adminPassword);
+  if (!passwordLogin.ok || passwordLogin.credential !== "interactive_password") {
+    throw new Error("Admin release proof password configuration is invalid");
+  }
+}
 
 test.describe("admin session review console", () => {
   test.beforeEach(async ({ context, page }) => {
-    const password = adminPassword;
-    test.skip(!password, "Set ADMIN_REVIEW_TOKEN or E2E_ADMIN_SHARED_PASSWORD to run admin E2E.");
+    const reviewToken = adminReviewToken;
+    test.skip(!adminReleaseProof && !reviewToken, "Set ADMIN_REVIEW_TOKEN to run admin E2E.");
+    const login = verifyAdminLoginCredential(reviewToken);
+    test.skip(!adminReleaseProof && !login.ok, "Admin review credential configuration is invalid.");
+    if (!login.ok) return;
+    const session = createAdminLoginSession(login, Date.now());
     await context.addCookies([
       {
         expires: Math.floor(Date.now() / 1000) + 12 * 60 * 60,
@@ -17,7 +36,7 @@ test.describe("admin session review console", () => {
         sameSite: "Lax",
         secure: false,
         url: process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3011",
-        value: createAdminSessionCookie(),
+        value: session.cookie,
       },
     ]);
     await page.goto("/admin/session-review");
@@ -28,7 +47,7 @@ test.describe("admin session review console", () => {
   test("uses the real root-scoped login cookie for protected admin mutations", async ({ context, page }) => {
     await context.clearCookies();
     const login = await context.request.post("/api/admin/login", {
-      data: { token: adminPassword },
+      data: { token: adminReviewToken },
       headers: { origin: adminOrigin },
     });
     expect(login.status()).toBe(200);
@@ -50,6 +69,38 @@ test.describe("admin session review console", () => {
 
     await page.goto("/admin/session-review?view=leads");
     await expect(page.getByRole("heading", { name: "Enquiry CRM" })).toBeVisible();
+  });
+
+  test("keeps password login on aggregate metrics and requires token step-up for customer data", async ({
+    context,
+    page,
+  }) => {
+    test.skip(
+      !adminReleaseProof && !adminPassword,
+      "Set E2E_ADMIN_SHARED_PASSWORD to prove the aggregate-only password lane.",
+    );
+    if (!adminPassword) return;
+    await context.clearCookies();
+    const login = await context.request.post("/api/admin/login", {
+      data: { token: adminPassword },
+      headers: { origin: adminOrigin },
+    });
+    expect(login.status()).toBe(200);
+
+    await page.goto("/admin/session-review");
+    await expect(page.getByRole("heading", { name: "Aggregate overview" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "What needs attention now" })).toHaveCount(0);
+    await expect(page.getByText("Customer records", { exact: false })).toBeVisible();
+
+    const rawReview = await context.request.get("/api/admin/review");
+    expect(rawReview.status()).toBe(403);
+    const rawVoice = await context.request.get("/api/admin/voice-sessions/private-session");
+    expect(rawVoice.status()).toBe(403);
+    const mutation = await context.request.patch("/api/admin/leads/private-lead", {
+      data: { status: "archived" },
+      headers: { origin: adminOrigin },
+    });
+    expect(mutation.status()).toBe(403);
   });
 
   test("turns the default overview into an executive enquiry command center", async ({ page }, testInfo) => {
