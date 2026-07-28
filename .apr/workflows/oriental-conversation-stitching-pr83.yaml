@@ -16,28 +16,36 @@ rounds:
 template: |
   Perform an adversarial exact-source privacy and data-integrity review of
   conversation-grouping implementation commit
-  4a79dad0cc1331e3fb9a53cb9b107c7ebdd98344. Recheck every round-one
-  blocker: explicit IDs must be trimmed, nonempty, and namespaced away from
-  review IDs; inferred edges must require one consistent valid normalized
-  email on every call and reject raw, missing, malformed, or conflicting
+  267756841dcbef362c5d741ed80240c885d88479. Recheck every round-one and
+  round-two blocker: explicit IDs must be trimmed, nonempty, and namespaced
+  away from review IDs; inferred edges must require one consistent
+  conservative canonical normalized email on every call and reject raw,
+  missing, non-canonical, malformed, whitespace/control-bearing, or conflicting
   identity; the sixty-minute test must compare actual calls rather than sparse
-  intervals; nearest-cluster selection and every equal-time ordering must be
-  deterministic under input permutations; every row must remain inspectable
-  exactly once; and inputs and persistence must not mutate. Do not waive
-  exact-head CI, combined-tree admission, or final staging verification. End
-  with `VERDICT: MERGE` or `VERDICT: DO NOT MERGE` on its own final line.
+  intervals; nearest selection must exercise several compatible clusters;
+  equal-gap selection and every equal-time ordering must use exact code-unit
+  opaque-ID comparisons, never locale collation, and remain deterministic
+  under every permutation including canonically distinct Unicode IDs; every
+  original row reference must occur exactly once across all grouping branches;
+  and inputs and persistence must not mutate. Do not waive exact-head CI,
+  combined-tree admission, or final staging verification. End with
+  `VERDICT: MERGE` or `VERDICT: DO NOT MERGE` on its own final line.
 
 template_with_impl: |
   Perform an adversarial exact-source privacy and data-integrity review of
   conversation-grouping implementation commit
-  4a79dad0cc1331e3fb9a53cb9b107c7ebdd98344 against the attached complete
-  source-only patch. Recheck every round-one blocker: explicit IDs must be
-  trimmed, nonempty, and namespaced away from review IDs; inferred edges must
-  require one consistent valid normalized email on every call and reject raw,
-  missing, malformed, or conflicting identity; the sixty-minute test must
-  compare actual calls rather than sparse intervals; nearest-cluster selection
-  and every equal-time ordering must be deterministic under input
-  permutations; every row must remain inspectable exactly once; and inputs and
-  persistence must not mutate. Do not waive exact-head CI, combined-tree
-  admission, or final staging verification. End with `VERDICT: MERGE` or
+  267756841dcbef362c5d741ed80240c885d88479 against the attached complete
+  source-only patch. Recheck every round-one and round-two blocker: explicit
+  IDs must be trimmed, nonempty, and namespaced away from review IDs; inferred
+  edges must require one consistent conservative canonical normalized email on
+  every call and reject raw, missing, non-canonical, malformed,
+  whitespace/control-bearing, or conflicting identity; the sixty-minute test
+  must compare actual calls rather than sparse intervals; nearest selection
+  must exercise several compatible clusters; equal-gap selection and every
+  equal-time ordering must use exact code-unit opaque-ID comparisons, never
+  locale collation, and remain deterministic under every permutation including
+  canonically distinct Unicode IDs; every original row reference must occur
+  exactly once across all grouping branches; and inputs and persistence must
+  not mutate. Do not waive exact-head CI, combined-tree admission, or final
+  staging verification. End with `VERDICT: MERGE` or
   `VERDICT: DO NOT MERGE` on its own final line.
