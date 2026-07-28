@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { adminAuthFailureStatus, verifyAdminPermission } from "@/lib/server/admin-auth";
+import { withAdminPermission } from "@/lib/server/admin-route";
 import { getAdminLeadSlaSnapshot, getAdminOrphanedVoiceSessions } from "@/lib/server/convex";
 import { logInfo, logWarn } from "@/lib/server/logger";
 import { sendOpsAlert } from "@/lib/server/ops-alerts";
@@ -25,12 +25,7 @@ const requestSchema = z.object({
  * beyond the window or notifications have failed, so breaches surface without
  * anyone watching the console.
  */
-export async function POST(request: Request) {
-  const auth = verifyAdminPermission(request, "ops.sla_check");
-  if (!auth.ok) {
-    return noStoreJson({ ok: false, error: auth.reason }, { status: adminAuthFailureStatus(auth) });
-  }
-
+export const POST = withAdminPermission("ops.sla_check", async (request, auth) => {
   const body = await request.json().catch(() => null);
   const parsed = requestSchema.safeParse(body ?? {});
   if (!parsed.success) return noStoreJson({ ok: false, error: "invalid_request" }, { status: 400 });
@@ -129,7 +124,7 @@ export async function POST(request: Request) {
     },
     alerted,
   });
-}
+});
 
 async function orphanSweepWithDeadline(maxVoiceStaleMs: number) {
   let timeout: ReturnType<typeof setTimeout> | undefined;

@@ -49,6 +49,7 @@ describe("release governance", () => {
         "ADMIN_REVIEW_ACTOR",
         "ADMIN_REVIEW_ROLE",
         "ADMIN_REVIEW_TOKEN",
+        "ADMIN_REVIEW_PASSWORD_HMAC",
         "OPS_AUTOMATION_TOKEN",
         "PRIVACY_ADMIN_TOKEN",
       ]),
@@ -315,6 +316,29 @@ describe("release governance", () => {
     );
     expect(finalCurrentAssertion).toBeLessThan(
       productionDeployer.indexOf("body: JSON.stringify({ git_commit_sha: args.sha })"),
+    );
+  });
+
+  it("reconciles and reads back the password HMAC as a governed runtime secret", () => {
+    const value = "a".repeat(64);
+    const env = { ADMIN_REVIEW_PASSWORD_HMAC: value };
+    const row = {
+      key: "ADMIN_REVIEW_PASSWORD_HMAC",
+      value,
+      real_value: value,
+      is_preview: false,
+      is_runtime: true,
+      is_buildtime: false,
+      is_literal: true,
+      is_multiline: false,
+    };
+
+    expect(managedEnvironmentReconciliationPlan(env, []).mutations).toEqual([
+      { key: "ADMIN_REVIEW_PASSWORD_HMAC", value },
+    ]);
+    expect(managedEnvironmentParityFailures(env, [row])).toEqual([]);
+    expect(managedEnvironmentParityFailures(env, [{ ...row, real_value: "b".repeat(64) }])).toContain(
+      "ADMIN_REVIEW_PASSWORD_HMAC Coolify value or runtime/build scope does not match Infisical",
     );
   });
 

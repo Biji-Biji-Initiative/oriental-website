@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { adminLeadArchiveSchema } from "@/lib/schemas";
-import { adminAuthFailureStatus, verifyAdminPermission } from "@/lib/server/admin-auth";
+import { withAdminPermission } from "@/lib/server/admin-route";
 import { archiveAdminLeads } from "@/lib/server/convex";
 import { logInfo, logWarn } from "@/lib/server/logger";
 import { noStoreJson } from "@/lib/server/security";
@@ -8,12 +8,7 @@ import { noStoreJson } from "@/lib/server/security";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(request: Request) {
-  const auth = verifyAdminPermission(request, "leads.archive");
-  if (!auth.ok) {
-    return noStoreJson({ ok: false, error: auth.reason }, { status: adminAuthFailureStatus(auth) });
-  }
-
+export const POST = withAdminPermission("leads.archive", async (request, auth) => {
   const raw = await request.json().catch(() => null);
   const parsed = adminLeadArchiveSchema.safeParse(raw);
   if (!parsed.success) {
@@ -60,7 +55,7 @@ export async function POST(request: Request) {
     requestId,
   });
   return noStoreJson({ ok: true, action: parsed.data.action, count: result.count });
-}
+});
 
 function normalizedRequestId(value: string | null) {
   const candidate = value?.trim();

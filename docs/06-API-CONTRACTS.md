@@ -444,17 +444,28 @@ Production errors:
 
 ### `POST /api/admin/login`
 
-Accepts only a same-origin JSON request, validates `ADMIN_REVIEW_TOKEN`, and
-sets the principal-bound signed `oriental_admin` HTTP-only, SameSite=Lax
-cookie with `Path=/`, so the same actor and configured role authenticate both
-the `/admin` UI and ordinary `/api/admin/*` routes. Production cookies also set
-`Secure`.
+Accepts only a same-origin JSON request and rate-limits attempts by trusted
+proxy identity. It validates either `ADMIN_REVIEW_TOKEN` or the human password
+represented by the domain-separated `ADMIN_REVIEW_PASSWORD_HMAC`, then sets a
+principal-bound signed `oriental_admin` HTTP-only, SameSite=Lax cookie with
+`Path=/`. A password login signs `method=password`, forces role `viewer`, and
+expires after thirty minutes. It can access only the redacted aggregate metrics
+dashboard and logout. Customer records, email addresses, transcripts, voice
+details, and every mutation return `403 forbidden` until a fresh managed review
+token login. A strong review-token login signs `method=review`, retains
+the configured interactive role, and expires after twelve hours. The human
+password is never accepted as bearer auth and never signs sessions; historical
+repository exposure means it is treated as potentially known. Production
+cookies also set `Secure`. Successful login telemetry records only bounded
+actor, method, role, and expiry metadata, never the supplied credential.
 
 ### `GET /api/admin/review`
 
-Bearer-token or admin-cookie protected JSON endpoint returning recent `leads`,
-`voiceSessions`, `leadEvents`, aggregate metrics, analytics buckets, and queue
-slices for the internal operations console.
+Strong review-token bearer or review-session-cookie protected JSON endpoint
+returning recent `leads`, `voiceSessions`, `leadEvents`, aggregate metrics,
+analytics buckets, and queue slices for the internal operations console.
+Password-issued sessions receive `403 forbidden`; they use
+`GET /api/admin/metrics`, which returns only the PII-free `metrics` object.
 
 ### `PATCH /api/admin/leads/[leadId]`
 

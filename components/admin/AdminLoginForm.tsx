@@ -106,7 +106,8 @@ export function AdminLoginForm({ reason }: { reason?: string }) {
             </div>
             <h1 className="mt-4 text-2xl font-bold tracking-tight text-slate-100">Session review</h1>
             <p className="mt-2 text-sm leading-6 text-slate-400">
-              Enter the internal review token to inspect recent lead handoffs and voice transcripts.
+              Use the admin password for redacted operational totals. The managed review token is required for customer
+              records, transcripts, voice details, and workflow changes.
             </p>
             {reason === "unconfigured" ? (
               <div className="mt-5 rounded-lg border border-rose-400/25 bg-rose-400/10 p-3 text-sm text-rose-300">
@@ -126,14 +127,14 @@ export function AdminLoginForm({ reason }: { reason?: string }) {
                   name="token"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Review token</FormLabel>
+                      <FormLabel>Password or review token</FormLabel>
                       <FormControl>
                         <div className="relative">
                           <Input
                             {...field}
                             autoComplete="current-password"
                             className="h-11 pr-11"
-                            placeholder="Paste admin review token"
+                            placeholder="Enter admin password or review token"
                             type={showToken ? "text" : "password"}
                           />
                           <button
@@ -170,7 +171,8 @@ export function AdminLoginForm({ reason }: { reason?: string }) {
 }
 
 function loginErrorCopy(error: string) {
-  if (error === "unconfigured") return "ADMIN_REVIEW_TOKEN is missing from this environment.";
-  if (error === "invalid" || error === "missing") return "The token did not match the configured review token.";
+  if (error === "unconfigured") return "Admin login credentials are missing from this environment.";
+  if (error === "invalid" || error === "missing")
+    return "The password or token did not match the configured admin login.";
   return "Please retry, then check the server logs if this keeps failing.";
 }

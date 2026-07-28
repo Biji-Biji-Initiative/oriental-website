@@ -39,6 +39,7 @@ export const metadata: Metadata = {
 
 type DashboardResult = Awaited<ReturnType<typeof getAdminReviewDashboard>>;
 type DashboardData = Extract<DashboardResult, { ok: true }>["data"];
+type DashboardMetrics = DashboardData["metrics"];
 type LeadRow = DashboardData["leads"][number];
 type VoiceSessionRow = DashboardData["voiceSessions"][number];
 type LeadEventRow = DashboardData["leadEvents"][number];
@@ -62,6 +63,23 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
   const cookieStore = await cookies();
   const auth = verifyAdminSessionCookie(cookieStore.get(adminCookieName)?.value);
   if (!auth.ok) return <AdminLoginForm reason={auth.reason} />;
+  if (auth.credential === "password_session") {
+    const aggregate = await getAdminReviewDashboard(100).catch(() => ({
+      ok: false as const,
+      reason: "convex_failed",
+    }));
+    if (!aggregate.ok) {
+      return (
+        <AdminShell>
+          <StatusPanel
+            title="Dashboard unavailable"
+            detail={`Aggregate review metrics could not be loaded: ${aggregate.reason}`}
+          />
+        </AdminShell>
+      );
+    }
+    return <PasswordAggregateDashboard generatedAt={aggregate.data.generatedAt} metrics={aggregate.data.metrics} />;
+  }
 
   const [dashboard, leadTable] = await Promise.all([
     getAdminReviewDashboard(100).catch(() => ({ ok: false as const, reason: "convex_failed" })),
@@ -179,6 +197,43 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
           </section>
         </DisclosureSection>
       ) : null}
+    </AdminShell>
+  );
+}
+
+function PasswordAggregateDashboard({ generatedAt, metrics }: { generatedAt: number; metrics: DashboardMetrics }) {
+  const items = [
+    { label: "Recent enquiries", value: metrics.recentLeads },
+    { label: "Active enquiries", value: metrics.activeLeads },
+    { label: "Qualified enquiries", value: metrics.qualifiedLeads },
+    { label: "Urgent enquiries", value: metrics.urgentLeads },
+    { label: "Notification delivery", value: `${metrics.notificationDeliveryRate}%` },
+    { label: "Voice submit rate", value: `${metrics.voiceSubmitRate}%` },
+    { label: "Reviewed voice sessions", value: metrics.reviewedSessions },
+    { label: "Sessions with errors", value: metrics.sessionsWithErrors },
+  ];
+
+  return (
+    <AdminShell generatedAt={generatedAt}>
+      <Card>
+        <CardHeader>
+          <CardTitle>Aggregate overview</CardTitle>
+          <CardDescription>
+            This password session shows redacted operational totals only. Customer records, email addresses,
+            transcripts, voice details, and mutations require signing out and stepping up with the managed review token.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <section aria-label="Aggregate admin metrics" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {items.map((item) => (
+              <div className="rounded-xl border border-white/10 bg-white/[0.04] p-4" key={item.label}>
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{item.label}</p>
+                <p className="mt-3 text-2xl font-bold tabular-nums text-slate-100">{item.value}</p>
+              </div>
+            ))}
+          </section>
+        </CardContent>
+      </Card>
     </AdminShell>
   );
 }
