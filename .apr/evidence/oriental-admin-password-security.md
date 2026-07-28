@@ -3,14 +3,14 @@
 ## Immutable implementation identity
 
 The source implementation under review is the exact commit
-`cf083667a2e2fd54d478edbc8906ef0f4adf0d19` on base
+`18efa9768bc46df960fe06edafbaa4e6090901dc` on base
 `e3bb6c333cbf4bf8e52456a1b5144f556f50636a`.
 
-- Implementation tree: `a593231700e3cbc1f38281ca6c7108b89f14fbc0`
+- Implementation tree: `c6443ebb35e64df2d5460af99a011de25b9e6b3f`
 - Authoritative source-only patch:
   `.apr/evidence/oriental-admin-password-security.patch`
 - Patch SHA-256:
-  `f68b58b75df50b559316fd7ae0d778c098f54297d784cdd4f286fab32b746825`
+  `3e66319487cd5fe944eaea710fbaff0aea09870fb5c2cca416b79011438c9034`
 - The patch contains all thirty-eight changed non-APR source, test, release, UI,
   environment-example, and documentation files.
 
@@ -104,26 +104,26 @@ production import and invocation, in the login route.
 2. `OPS_AUTOMATION_TOKEN`,
 3. `PRIVACY_ADMIN_TOKEN`.
 
-`tests/admin-auth-boundary.test.ts` parses the production AST with the
-TypeScript module resolver rather than searching strings. It proves:
+`tests/admin-auth-boundary.test.ts` parses the complete governed production AST
+with the TypeScript module resolver rather than searching strings. Its checker
+program is built from every governed TypeScript and JavaScript production path
+and throws if any such path is absent. It proves:
 
-- one exact canonical path/method/permission map for twelve admin route modules
-  across every supported TypeScript and JavaScript route extension;
-- every non-login HTTP export, including `HEAD` and `OPTIONS`, is one immutable
-  simple-identifier exported `const` directly initialized by
-  `withAdminPermission` with that route method's exact literal permission and
-  an inline protected callback;
-- `let` reassignment, object/array destructuring, named callbacks, method
-  aliases, re-exports, namespace/default/import-equals/dynamic/relative/CommonJS
-  imports, CommonJS property and object exports, `Object.assign`, extra login
-  methods, wrong-but-valid permissions, and manual positional auth all fail
-  hostile fixtures;
-- effective TypeScript module exports are compared with the canonical method map;
-- star and namespace re-exports, default login handlers, every CommonJS export
-  mechanism, and the full hostile matrix across all supported extensions fail;
-- all non-test tsconfig sources plus JavaScript sources in any top-level
-  directory are scanned, legacy Pages admin handlers are part of the route
-  inventory, and checker-resolved symbol calls catch alias and bridge modules;
+- effective URL matching over all App and Pages route candidates, including
+  `src` roots, route groups, interception segments, flat Pages files, dynamic,
+  catch-all, and optional-catch-all patterns, across every supported extension;
+- one exact canonical path/method/permission map for all admin route modules;
+- complete effective route runtime exports are limited to exact HTTP methods and
+  a small explicit Next route-configuration allowlist; every default export,
+  default expression/class/function, `export =`, named re-export, star/namespace
+  re-export, and CommonJS mechanism fails;
+- the complete effective runtime export set of `admin-auth.ts` is pinned by name,
+  local declaration identity, and declaration kind; variables, objects, arrays,
+  getters, factories, `.bind` results, re-exports, and default facades cannot
+  expose the verifier, minter, signer, or bearer verifier;
+- checker-resolved protected calls follow declaration identity through imports,
+  variables, properties, arrays, and call expressions, while top-level
+  JavaScript bridges are included and missing checker sources fail closed;
 - exactly one production import and checker-resolved call each of
   `verifyAdminLoginCredential` and `createAdminLoginSession`, both in login;
 - `verifyAdminBearerToken` and the private signer are absent from the auth
@@ -169,23 +169,25 @@ runtime state.
 ## Exact implementation verification
 
 Completed against implementation commit
-`cf083667a2e2fd54d478edbc8906ef0f4adf0d19`:
+`18efa9768bc46df960fe06edafbaa4e6090901dc`:
 
-- `pnpm lint`: pass, 283 files on the source branch
+- `pnpm lint`: pass, 283 files, no warnings
 - strict application and Convex TypeScript: pass
-- focused auth, route-governance, aggregate DTO, Convex adapter, and login
-  suites: 5 files and 55 tests passed
+- focused auth, route-governance, aggregate DTO, release-preflight, secret, and
+  login suites: 17 files and 109 tests passed
+- all remaining branch-local tests passed with only the two known cross-PR macOS
+  platform cells excluded; both pass without exclusions in the integrated proof
 - `pnpm build`: pass, including all admin route handlers
 - source-only `git diff --check`: pass
 - GitHub `verify`: success on exact remote source head
-  `cf083667a2e2fd54d478edbc8906ef0f4adf0d19`
+  `18efa9768bc46df960fe06edafbaa4e6090901dc`
 - synthetic integration commit
-  `76746d98e6a7b220c3abaf4a93dd426236fc2b2b`, tree
-  `058805ee5d6860b760b14657d3ede08735111a91`, containing all eight exact PR
-  source/evidence heads, passed frozen pnpm 10.34.5 install, lint on 293 files,
-  strict TypeScript, production audit with zero findings across 378 production
-  dependencies, all 89 test files and 2,303 tests, and the Next.js 16.2.12
-  production build
+  `470dd990f0078ecca55c4475b4be80cf602c784f`, tree
+  `22c331f96cb46187870d572386b1cab5f7d27504`, containing all eight exact PR
+  source/evidence heads, passed frozen pnpm 10.34.5 install, warning-free lint
+  on 293 files, strict TypeScript, production audit with zero findings across
+  378 production dependencies, all 89 test files and 2,333 tests, and the
+  Next.js 16.2.12 production build
 
 The focused suite proves:
 
@@ -223,10 +225,13 @@ or destructured handler blind spots, globally-valid but route-wrong
 permissions, forgeable or copyable login identities, incomplete effective-export
 and complete-runtime route governance, missing strict runtime DTO validation,
 incomplete collision cross-products, unproven live documentation claims, and
-missing exact-head/integration admission. The implementation and evidence above
-close every source and pre-merge blocker. Round 6 must review this exact
-regenerated patch. Live secret and deployment checks remain post-merge gates
-and are not waived.
+missing exact-head/integration admission. Round 6 correctly rejected literal
+filesystem-only route discovery, value-alias authority escape, incomplete
+default/export-assignment rejection, and one premature live-runtime plaintext
+claim. The repaired implementation, hostile filesystem matrix, exact runtime
+export pin, declaration-aware checker, and pending-language correction close
+all source blockers. Round 7 must review this regenerated exact patch. Live
+secret and deployment checks remain post-merge gates and are not waived.
 
 ## Mandatory post-merge gates
 
