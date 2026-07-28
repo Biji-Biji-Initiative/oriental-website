@@ -3,14 +3,14 @@
 ## Immutable implementation identity
 
 The source implementation under review is the exact commit
-`5627ed7ffaa1594c1635938f70564176b22b2e02` on base
+`4dd1eb1bcfcc3240cefdf577c618e2c9fdbf1bd9` on base
 `e3bb6c333cbf4bf8e52456a1b5144f556f50636a`.
 
-- Implementation tree: `4a4a91e54f75c26799d3892ba164c618fba9c94f`
+- Implementation tree: `1c8a1734addd1987753718f44185c951d19e1b00`
 - Authoritative source-only patch:
   `.apr/evidence/oriental-admin-password-security.patch`
 - Patch SHA-256:
-  `99ea031d282a99013af2e7447ebe17bd0f130c12a12d1b3177cebce44b9eeed2`
+  `c02fd1ef0ebaa4c23b7546341f9ccabe24d108495640b9ba6862d7796ce5fafa`
 - The 4,209-line patch contains all forty-two changed non-APR source, test,
   release, UI, environment-example, and documentation files.
 
@@ -179,8 +179,8 @@ runtime state.
 ## Exact implementation verification
 
 Completed against exact implementation commit
-`5627ed7ffaa1594c1635938f70564176b22b2e02`, tree
-`4a4a91e54f75c26799d3892ba164c618fba9c94f`:
+`4dd1eb1bcfcc3240cefdf577c618e2c9fdbf1bd9`, tree
+`1c8a1734addd1987753718f44185c951d19e1b00`:
 
 - `pnpm lint`: pass, 284 branch files, no warnings
 - strict application and Convex TypeScript: pass
@@ -190,30 +190,30 @@ Completed against exact implementation commit
 - `pnpm build`: pass, including all admin route handlers
 - source-only `git diff --check`: pass
 - exact-head GitHub Actions workflow `CI`, event `pull_request`: success
-  - run ID: `30364376942`
-  - job/check-run ID: `90291739509`
-  - check-suite ID: `82293547785`
-  - checked-out head SHA: `5627ed7ffaa1594c1635938f70564176b22b2e02`
-  - run URL: `https://github.com/Biji-Biji-Initiative/oriental-website/actions/runs/30364376942`
+  - run ID: `30365410287`
+  - job/check-run ID: `90295268846`
+  - check-suite ID: `82296707933`
+  - checked-out head SHA: `4dd1eb1bcfcc3240cefdf577c618e2c9fdbf1bd9`
+  - run URL: `https://github.com/Biji-Biji-Initiative/oriental-website/actions/runs/30365410287`
 - synthetic eight-PR integration commit
-  `1ee96d3357a1fab01490a943abc6ed89d71c023a`, tree
-  `46db3784f044be67e5292b53f72a38d23105ab7c`, based on
+  `ed34b5e8c1639af5b97bb834de417b5d03c1acc6`, tree
+  `861800a67e9af8b49a76480ba2cebb812680346a`, based on
   `e3bb6c333cbf4bf8e52456a1b5144f556f50636a`, composed from exact heads:
   - #78 `7657afae19433f276c89967ca9f6c2a94a509fd9`
-  - #79 `c1d22de13a6db49e5dd00939bdadd269e35b0de1`
-  - #80 `5627ed7ffaa1594c1635938f70564176b22b2e02`
+  - #79 `e89f7ab802eaf120af1cf40d241af9a7af1ae112`
+  - #80 `4dd1eb1bcfcc3240cefdf577c618e2c9fdbf1bd9`
   - #81 `297e0b1a47d7d8cf3a005c606146b7de8dd7ff96`
-  - #82 `4df9f8a5f83b2a1264622569bfba4daed793767f`
-  - #83 `7538747f16f976f4b29bf4bb91a9042086fe470a`
+  - #82 `73b01486f17008eb02a78e9a2dafe647c8306eff`
+  - #83 `6803403342e25384c4d4b18bf36af575c39a559f`
   - #84 `413fdf0eaf758394c68d817aaf588558ead80a57`
-  - #85 `b56ccae9020ac5bfedf473331947ddde4184b12d`
+  - #85 `37dd569ad08c160a492e17d7512dcaad418091f6`
 - the integration passed frozen pnpm 10.34.5 install, warning-free lint on
-  293 files, strict TypeScript, production audit with zero findings across 378
+  294 files, strict TypeScript, production audit with zero findings across 378
   dependencies, all 89 test files and 2,336 tests with zero failed or pending,
   and the Next.js 16.2.12 production build
 - machine-readable Vitest JSON SHA-256:
-  `2b60acc24800f039e657f2d7610b3b50beb8d3c28b82d27bc37ccb3baeaf2f69`
-  (864,934 bytes; 89 files; 2,336 passed; 0 failed; 0 pending)
+  `11b1170251095f15d9521b4c93d15a3d50eae6dd85c2bfc94cd24f7de3cb1f25`
+  (864,872 bytes; 89 files; 2,336 passed; 0 failed; 0 pending)
 - machine-readable production audit JSON SHA-256:
   `e6b1e426bee90fc309ed49cf51fff66f7d2218cca7fcb42e88b1b312521a615c`
   (310 bytes; 378 dependencies; 0 info/low/moderate/high/critical findings)
@@ -221,7 +221,7 @@ Completed against exact implementation commit
 Machine summary:
 
 ```json
-{"audit":{"critical":0,"high":0,"info":0,"low":0,"moderate":0,"totalDependencies":378},"github":{"checkRunId":90291739509,"checkSuiteId":82293547785,"event":"pull_request","headSha":"5627ed7ffaa1594c1635938f70564176b22b2e02","runId":30364376942},"integration":{"commit":"1ee96d3357a1fab01490a943abc6ed89d71c023a","tree":"46db3784f044be67e5292b53f72a38d23105ab7c"},"tests":{"failed":0,"files":89,"passed":2336,"pending":0}}
+{"audit":{"critical":0,"high":0,"info":0,"low":0,"moderate":0,"totalDependencies":378},"github":{"checkRunId":90295268846,"checkSuiteId":82296707933,"event":"pull_request","headSha":"4dd1eb1bcfcc3240cefdf577c618e2c9fdbf1bd9","runId":30365410287},"integration":{"commit":"ed34b5e8c1639af5b97bb834de417b5d03c1acc6","tree":"861800a67e9af8b49a76480ba2cebb812680346a"},"tests":{"failed":0,"files":89,"passed":2336,"pending":0}}
 ```
 
 The focused suite proves:
