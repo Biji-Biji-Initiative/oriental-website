@@ -145,10 +145,10 @@ Completed against implementation
 - GitHub `verify`: success on exact source head
   `5455169e5c3560101f2178617568c1795926a26f`
 - synthetic eight-PR integration commit
-  `470dd990f0078ecca55c4475b4be80cf602c784f`, tree
-  `22c331f96cb46187870d572386b1cab5f7d27504`: frozen pnpm 10.34.5 install,
+  `1ee96d3357a1fab01490a943abc6ed89d71c023a`, tree
+  `46db3784f044be67e5292b53f72a38d23105ab7c`: frozen pnpm 10.34.5 install,
   warning-free lint on 293 files, strict TypeScript, zero production-audit
-  findings across 378 dependencies, all 89 files and 2,333 tests, and the
+  findings across 378 dependencies, all 89 files and 2,336 tests, and the
   Next.js 16.2.12 production build passed
 
 APR round 2 correctly rejected pnpm 10.33, raw-text lockfile assertions,
