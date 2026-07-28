@@ -2,11 +2,20 @@
   "name": "oriental-website",
   "version": "0.1.0",
   "private": true,
-  "packageManager": "pnpm@10.33.0",
+  "packageManager": "pnpm@10.34.5",
+  "pnpm": {
+    "overrides": {
+      "brace-expansion@5.0.7": "5.0.8",
+      "fast-uri@3.1.3": "3.1.4",
+      "postcss@<8.5.18": "8.5.23",
+      "sharp@0.34.5": "0.35.3"
+    }
+  },
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
+    "audit:prod": "pnpm audit --prod --audit-level=high --json",
     "lint": "biome check .",
     "format": "biome format --write .",
     "typecheck": "next typegen && tsc --noEmit",
@@ -16,6 +25,7 @@
     "test:performance": "tsx scripts/run-page-performance.ts",
     "convex:codegen": "convex codegen",
     "convex:deploy": "convex deploy",
+    "convex:backfill:voice-session-lifecycle": "tsx scripts/run-command-with-deadline.ts --timeout-ms 600000 -- pnpm exec tsx scripts/backfill-voice-session-lifecycle.ts",
     "check-secrets": "tsx scripts/check-secrets.ts",
     "backfill:clickup": "tsx scripts/backfill-clickup-leads.ts",
     "eval:voice": "tsx scripts/eval-voice.ts",
@@ -24,6 +34,7 @@
     "release:preflight": "pnpm lint && pnpm typecheck && tsx scripts/run-release-tests.ts && env NODE_ENV=production pnpm check-secrets && pnpm build && tsx scripts/release-preflight.ts",
     "release:verify:voice-cell": "tsx scripts/release-preflight.ts --voice-cell-only",
     "release:verify:admin": "tsx scripts/verify-admin-release-proof.ts",
+    "release:verify:orphan-sweep": "tsx scripts/run-command-with-deadline.ts --timeout-ms 15000 -- pnpm exec tsx scripts/verify-orphan-sweep.ts",
     "release:deploy:production": "tsx scripts/deploy-coolify-production.ts",
     "release:verify": "tsx scripts/release-verify.ts",
     "ops:status": "tsx scripts/ops-status.ts",
@@ -41,7 +52,7 @@
     "convex": "^1.42.1",
     "ioredis": "^5.11.1",
     "lucide-react": "^1.23.0",
-    "next": "16.2.10",
+    "next": "16.2.12",
     "next-themes": "^0.4.6",
     "openai": "^6.45.0",
     "react": "19.2.7",
@@ -63,15 +74,18 @@
     "@types/node": "^26.1.0",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19",
+    "@types/semver": "7.7.1",
     "@vitejs/plugin-react": "^6.0.3",
     "eslint": "^9.39.4",
-    "eslint-config-next": "16.2.10",
+    "eslint-config-next": "16.2.12",
     "jsdom": "^29.1.1",
     "playwright": "^1.61.1",
+    "semver": "7.8.5",
     "shadcn": "^4.13.0",
     "tailwindcss": "^4.3.2",
     "tsx": "^4.23.0",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "yaml": "2.9.0"
   }
 }

@@ -69,6 +69,68 @@ describe("admin CRM data integrity contract", () => {
     expect(slaQuery).not.toContain(".collect()");
   });
 
+  it("uses a materialized lifecycle index before applying the bounded orphan alert cap", () => {
+    const recordMutation = convexSource.slice(
+      convexSource.indexOf("export const recordVoiceSession"),
+      convexSource.indexOf("export const applyDataRetention"),
+    );
+    const retentionMutation = convexSource.slice(
+      convexSource.indexOf("export const applyDataRetention"),
+      convexSource.indexOf("export const normalizeLegacyPrivacyEmails"),
+    );
+    const lifecycleBackfill = convexSource.slice(
+      convexSource.indexOf("export const backfillVoiceSessionLifecycle"),
+      convexSource.indexOf("export const normalizeLegacyPrivacyEmails"),
+    );
+    const orphanQuery = convexSource.slice(
+      convexSource.indexOf("export const adminOrphanedVoiceSessionsSweep"),
+      convexSource.indexOf("function summarizeSlaBuckets"),
+    );
+    const indexedLifecycle = orphanQuery.indexOf('.withIndex("by_safe_session_state_updated_at"');
+    const boundedTake = orphanQuery.indexOf(".take(SLA_QUERY_BUCKET_LIMIT + 1)");
+
+    expect(schemaSource).toContain(
+      '.index("by_safe_session_state_updated_at", ["payloadSafe", "sessionState", "updatedAt"])',
+    );
+    expect(recordMutation).toContain(
+      'const sessionState = closedAt ? "closed" : connectedAt ? "connected_open" : "preconnected"',
+    );
+    expect(recordMutation).toContain("sessionState,");
+    expect(retentionMutation).toContain('.eq("sessionState", undefined)');
+    expect(retentionMutation).toContain(
+      'sessionState: session.closedAt ? "closed" : session.connectedAt ? "connected_open" : "preconnected"',
+    );
+    expect(lifecycleBackfill).not.toContain('.withIndex("by_payload_safe_updated_at"');
+    expect(lifecycleBackfill).toContain('.withIndex("by_safe_session_state_updated_at"');
+    expect(lifecycleBackfill).toContain(".take(take + 1)");
+    expect(lifecycleBackfill.match(/ctx\.db\.patch/g)).toHaveLength(1);
+    expect(lifecycleBackfill).toMatch(
+      /ctx\.db\.patch\(session\._id,\s*\{\s*sessionState: session\.closedAt \? "closed" : session\.connectedAt \? "connected_open" : "preconnected",\s*\}\);/,
+    );
+    expect(lifecycleBackfill).not.toContain("captured:");
+    expect(lifecycleBackfill).not.toContain("capturedEmailNormalized:");
+    expect(lifecycleBackfill).not.toContain("transcript:");
+    expect(lifecycleBackfill).not.toContain("payloadSafe:");
+    expect(lifecycleBackfill).not.toContain("retentionExpiresAt:");
+    expect(lifecycleBackfill).not.toContain("ctx.db.delete");
+    expect(indexedLifecycle).toBeGreaterThan(-1);
+    expect(orphanQuery).toContain('.eq("sessionState", "connected_open").lt("updatedAt", staleCutoff)');
+    expect(boundedTake).toBeGreaterThan(indexedLifecycle);
+    expect(orphanQuery).toContain('.eq("sessionState", undefined)');
+    expect(orphanQuery).toContain('.withIndex("by_payload_safe_updated_at"');
+    expect(orphanQuery).toContain('.eq("payloadSafe", undefined)');
+    expect(orphanQuery).toContain('.eq("sessionState", undefined)');
+    expect(orphanQuery).toContain("migrationPending: legacyPayloads.length > 0 || legacyStates.length > 0");
+    const migrationPending = (legacyPayloads: unknown[], legacyStates: unknown[]) =>
+      legacyPayloads.length > 0 || legacyStates.length > 0;
+    expect(migrationPending([{}], [])).toBe(true);
+    expect(migrationPending([], [{}])).toBe(true);
+    expect(migrationPending([], [])).toBe(false);
+    expect(orphanQuery).not.toContain("lookbackCutoff");
+    expect(orphanQuery).not.toContain(".filter(");
+    expect(orphanQuery).not.toContain(".collect()");
+  });
+
   it("excludes unmigrated oversized payloads from dashboard, eval, and count scans", () => {
     const evalQuery = convexSource.slice(
       convexSource.indexOf("export const voiceSessionsForEval"),
