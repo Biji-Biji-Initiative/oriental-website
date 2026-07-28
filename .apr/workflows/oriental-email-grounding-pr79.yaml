@@ -15,28 +15,38 @@ rounds:
 
 template: |
   Perform an adversarial exact-source voice data-integrity review of
-  implementation commit 56641b29937db8791aab8a838b78d04b940106c3 using
+  implementation commit 918805adf3bada7c64847475b00567ec63c7b324 using
   the complete source-only patch. Recheck every round-one blocker: the delayed
   approximate candidate turn itself must reject explicit negation,
   replacement, mixed literal selection, and exact-path reopening; newer typed
   or spoken decisions must win; strict mode and the six-turn history bound must
   remain fail closed; and spoken digit words must preserve distinct literal
   and numeric valid mailboxes unless the visitor supplies explicit digit
-  context. Exercise one/1, two/2, samone/sam1, and to/too/for through the full
-  matcher. Confirm stored values are never rewritten. Do not waive exact-head
-  CI, combined-tree admission, or staging voice proof. End with
+  context. Also prove unrelated literal addresses or numeric sentences cannot
+  suppress ambiguity, negative digit language cannot authorize it,
+  equal-length to/too/for forms cannot introduce numeric mailbox digits, and
+  candidate-relative scratch/ignore/retract/take-back/cancel/replace/change/
+  switch language rejects the approximation. Exercise one/1, two/2, samone/sam1,
+  and to/too/for through the full matcher. Confirm stored values are never
+  rewritten. Do not waive exact-head CI, combined-tree admission, or staging
+  voice proof. End with
   `VERDICT: MERGE` or `VERDICT: DO NOT MERGE` on its own final line.
 
 template_with_impl: |
   Perform an adversarial exact-source voice data-integrity review of
-  implementation commit 56641b29937db8791aab8a838b78d04b940106c3 against
+  implementation commit 918805adf3bada7c64847475b00567ec63c7b324 against
   the attached complete source-only patch. Recheck every round-one blocker:
   the delayed approximate candidate turn itself must reject explicit negation,
   replacement, mixed literal selection, and exact-path reopening; newer typed
   or spoken decisions must win; strict mode and the six-turn history bound must
   remain fail closed; and spoken digit words must preserve distinct literal
   and numeric valid mailboxes unless the visitor supplies explicit digit
-  context. Exercise one/1, two/2, samone/sam1, and to/too/for through the full
-  matcher. Confirm stored values are never rewritten. Do not waive exact-head
-  CI, combined-tree admission, or staging voice proof. End with
+  context. Also prove unrelated literal addresses or numeric sentences cannot
+  suppress ambiguity, negative digit language cannot authorize it,
+  equal-length to/too/for forms cannot introduce numeric mailbox digits, and
+  candidate-relative scratch/ignore/retract/take-back/cancel/replace/change/
+  switch language rejects the approximation. Exercise one/1, two/2, samone/sam1,
+  and to/too/for through the full matcher. Confirm stored values are never
+  rewritten. Do not waive exact-head CI, combined-tree admission, or staging
+  voice proof. End with
   `VERDICT: MERGE` or `VERDICT: DO NOT MERGE` on its own final line.

@@ -1,19 +1,45 @@
 diff --git a/lib/voice/realtime-events.ts b/lib/voice/realtime-events.ts
-index 4717110..e49a2ce 100644
+index 4717110..92649d0 100644
 --- a/lib/voice/realtime-events.ts
 +++ b/lib/voice/realtime-events.ts
-@@ -3232,0 +3233 @@ function reconcileCompletedEmailTranscription(
+@@ -3230,6 +3230,7 @@ function reconcileCompletedEmailTranscription(
+   const hasEmailCue = /@|\b(?:e-?mail|email address)\b|\b(?:at|dot|point|underscore|dash|hyphen|plus)\b/i.test(text);
+   const maxAsrEdits = email.length >= 10 ? Math.min(3, Math.max(1, Math.floor(email.length * 0.18))) : 0;
+   const exactPendingCapture = turnContainsExactEmail(text, email);
 +  const ambiguousSpokenDigits = exactPendingCapture && hasAmbiguousSpokenDigitEmail(text, email);
-@@ -3248 +3249 @@ function reconcileCompletedEmailTranscription(
+   const supportsPendingCapture =
+     exactPendingCapture || (hasEmailCue && spokenEmailSubstitutionDistance(text, email) <= maxAsrEdits);
+   const explicitlySupersedesPendingCapture =
+@@ -3245,7 +3246,7 @@ function reconcileCompletedEmailTranscription(
+     };
+   }
+   if (supportsPendingCapture) {
 -    const confidence: VoiceEmailCaptureConfidence = exactPendingCapture ? "high" : "medium";
 +    const confidence: VoiceEmailCaptureConfidence = exactPendingCapture && !ambiguousSpokenDigits ? "high" : "medium";
-@@ -3823 +3824,4 @@ function validateEmailCaptureGrounding(
+     return {
+       ...settled,
+       emailVerification: spokenEmailVerification(
+@@ -3817,10 +3818,14 @@ function validateEmailCaptureGrounding(
+     recentUserText,
+   );
+   const recentLiteralEmails = getLiteralEmailMentions(recentUserText);
+-  const spokenSubstitutionDistance = spokenEmailSubstitutionDistance(recentUserText, email);
++  const recentSpokenSubstitution = findSpokenEmailSubstitution(recentUserText, email);
++  const spokenSubstitutionDistance = recentSpokenSubstitution?.distance ?? Number.POSITIVE_INFINITY;
+   const boundedAsrSupport = hasEmailCue && spokenSubstitutionDistance <= maxAsrEdits;
+   if (turnContainsExactEmail(recentUserText, email) && !supersedesRecentEmailGrounding(recentUserText, email)) {
 -    return { ok: true, emailConfidence: transcriptionPending ? "medium" : "high" };
 +    return {
 +      ok: true,
 +      emailConfidence: transcriptionPending || hasAmbiguousSpokenDigitEmail(recentUserText, email) ? "medium" : "high",
 +    };
-@@ -3832 +3836,43 @@ function validateEmailCaptureGrounding(
+   }
+   const matchingTurnIndex = recentUserTurns.findLastIndex(
+     (entry) => turnContainsExactEmail(entry.text, email) && !supersedesRecentEmailGrounding(entry.text, email),
+@@ -3829,7 +3834,50 @@ function validateEmailCaptureGrounding(
+     matchingTurnIndex >= 0 &&
+     recentUserTurns.slice(matchingTurnIndex + 1).every((entry) => !supersedesRecentEmailGrounding(entry.text, email))
+   ) {
 -    return { ok: true, emailConfidence: transcriptionPending ? "medium" : "high" };
 +    const matchingTurn = recentUserTurns[matchingTurnIndex];
 +    return {
@@ -41,14 +67,15 @@ index 4717110..e49a2ce 100644
 +    );
 +    const entryLiteralEmails = getLiteralEmailMentions(entry.text);
 +    const literalMismatch = entryLiteralEmails.length > 0 && !entryLiteralEmails.some((m) => m.email === email);
-+    const substitutionDistance = spokenEmailSubstitutionDistance(entry.text, email);
++    const substitution = findSpokenEmailSubstitution(entry.text, email);
++    const substitutionDistance = substitution?.distance ?? Number.POSITIVE_INFINITY;
 +    return (
 +      entryHasEmailCue &&
 +      substitutionDistance > 0 &&
 +      substitutionDistance <= maxAsrEdits &&
 +      !hasEmbeddedEmailCollision(entry.text, email) &&
 +      !literalMismatch &&
-+      !approximateEmailTurnRejectsGrounding(entry.text, email)
++      !approximateEmailTurnRejectsGrounding(entry.text, email, substitution)
 +    );
 +  });
 +  if (
@@ -58,29 +85,121 @@ index 4717110..e49a2ce 100644
 +      .every((entry) => !supersedesRecentEmailGrounding(entry.text, email))
 +  ) {
 +    return { ok: true, emailConfidence: "medium" };
-@@ -3861,0 +3908,3 @@ function validateEmailCaptureGrounding(
-+  if (approximateEmailTurnRejectsGrounding(recentUserText, email)) {
+   }
+   const latestTurnSupersedes = supersedesRecentEmailGrounding(recentUserText, email);
+   const explicitlyReplaces =
+@@ -3859,6 +3907,9 @@ function validateEmailCaptureGrounding(
+     // auto-correct one valid mailbox into another valid mailbox.
+     return { ok: false, error: "ungrounded_identity_capture" };
+   }
++  if (approximateEmailTurnRejectsGrounding(recentUserText, email, recentSpokenSubstitution)) {
 +    return { ok: false, error: "ungrounded_identity_capture" };
 +  }
-@@ -3874,0 +3924,9 @@ function supersedesRecentEmailGrounding(text: string, groundedEmail: string) {
-+function approximateEmailTurnRejectsGrounding(text: string, groundedEmail: string) {
+ 
+   // Allow a small ASR spelling disagreement only when the latest turn clearly
+   // contains email structure. Adaptive mode records this as medium confidence;
+@@ -3872,6 +3923,29 @@ function supersedesRecentEmailGrounding(text: string, groundedEmail: string) {
+   return emailCorrectionInvalidates(text, groundedEmail);
+ }
+ 
++function approximateEmailTurnRejectsGrounding(
++  text: string,
++  groundedEmail: string,
++  substitution = findSpokenEmailSubstitution(text, groundedEmail),
++) {
 +  const literalSelection = resolveLiteralEmailSelection(text, groundedEmail);
 +  if (literalSelection === "different" || literalSelection === "ambiguous") return true;
 +  if (emailTurnRejectsTarget(text, groundedEmail)) return true;
++  if (substitution && followingApproximateEmailDispositionRejects(substitution)) return true;
 +  return /\b(?:no|nope|nah|not|never|instead|rather\s+than|wrong|incorrect|do\s+not\s+use|don['’]?t\s+use|dont\s+use|forget|bukan)\b/iu.test(
 +    text,
 +  );
 +}
 +
-@@ -4354,3 +4412,4 @@ function spokenEmailSubstitutionDistance(text: string, groundedEmail: string) {
++function followingApproximateEmailDispositionRejects(match: SpokenEmailSubstitutionMatch) {
++  const following = match.tokens.slice(match.end).join(" ");
++  if (!following) return false;
++  if (anaphoricEmailRejectionStarts(following)) return true;
++  return /^(?:(?:but|and)\s+)?(?:(?:actually|no|nope|sorry)\s+)?(?:cancel\s+(?:that|this|it)(?:\s+(?:one|e-?mail|address))?|take\s+(?:that|this|it)(?:\s+(?:one|e-?mail|address))?\s+back|(?:replace|change|switch)\s+(?:that|this|it)(?:\s+(?:one|e-?mail|address))?\s+(?:to|with))\b/iu.test(
++    following,
++  );
++}
++
+ function hasEmailCorrectionLanguage(text: string) {
+   return new RegExp(
+     `\\b(?:${CAPTURE_CORRECTION_DISCOURSE_SOURCE}|${CAPTURE_DIRECT_REPLACEMENT_CUE_SOURCE}|instead|rather|correct\\s+that|change|update|wrong|incorrect|not\\s+correct|should\\s+be|forget|replace|switch|bukan)\\b`,
+@@ -4068,7 +4142,7 @@ function containsSpokenEmailShape(text: string) {
+       ((domainTokens.length <= 4 && domainTokens.every((candidate) => /^[\p{Letter}\p{Number}-]+$/u.test(candidate))) ||
+         (domainTokens.length <= 12 && domainTokens.every((candidate) => /^[\p{Letter}\p{Number}]$/u.test(candidate))));
+     const suffixTokens = tokens.slice(atIndex + markerOffset + 2, atIndex + markerOffset + 12);
+-    const spelledSuffixEnd = suffixTokens.findIndex((candidate) => !/^[\p{Letter}]$/u.test(candidate));
++    const spelledSuffixEnd = suffixTokens.findIndex((candidate) => !/^[\p{Letter}]/u.test(candidate));
+     const suffix =
+       suffixTokens[0] && /^[\p{Letter}]{2,63}$/u.test(suffixTokens[0])
+         ? suffixTokens[0]
+@@ -4346,19 +4420,34 @@ function turnContainsExactEmail(text: string, groundedEmail: string) {
+  * ASR substitutions ("asia" for "asha") but never prefix/suffix edits that
+  * could silently change one valid mailbox into another.
+  */
+-function spokenEmailSubstitutionDistance(text: string, groundedEmail: string) {
++type SpokenEmailSubstitutionMatch = {
++  candidate: string;
++  distance: number;
++  start: number;
++  end: number;
++  tokens: string[];
++};
++
++function findSpokenEmailSubstitution(text: string, groundedEmail: string): SpokenEmailSubstitutionMatch | undefined {
+   const tokens = getEmailSpeechTokens(text);
+-  let best = Number.POSITIVE_INFINITY;
++  let best: SpokenEmailSubstitutionMatch | undefined;
+   for (let start = 0; start < tokens.length; start += 1) {
+     for (let end = start + 1; end <= Math.min(tokens.length, start + 18); end += 1) {
 -      const candidate = canonicalizeEmailSpeech(tokens.slice(start, end).join(" "));
 -      if (candidate.length !== groundedEmail.length || !isLikelyEmail(candidate)) continue;
 -      best = Math.min(best, fullEditDistance(candidate, groundedEmail));
 +      for (const candidate of canonicalizeEmailSpeechInterpretations(tokens.slice(start, end).join(" "))) {
 +        if (candidate.length !== groundedEmail.length || !isLikelyEmail(candidate)) continue;
-+        best = Math.min(best, fullEditDistance(candidate, groundedEmail));
++        if (introducesUnspokenHomophoneDigit(tokens, start, end, candidate, groundedEmail)) continue;
++        const distance = fullEditDistance(candidate, groundedEmail);
++        if (!best || distance < best.distance) best = { candidate, distance, start, end, tokens };
 +      }
-@@ -4375,7 +4434,8 @@ function hasEmbeddedEmailCollision(text: string, groundedEmail: string) {
+     }
+   }
+   return best;
+ }
+ 
++function spokenEmailSubstitutionDistance(left: string, right: string) {
++  return findSpokenEmailSubstitution(left, right)?.distance ?? Number.POSITIVE_INFINITY;
++}
++
+ function getEmailSpeechTokens(text: string) {
+   return (
+     text
+@@ -4368,23 +4457,84 @@ function getEmailSpeechTokens(text: string) {
+   );
+ }
+ 
++function introducesUnspokenHomophoneDigit(
++  tokens: string[],
++  start: number,
++  end: number,
++  candidate: string,
++  groundedEmail: string,
++) {
++  const introducesDigit = [...groundedEmail].some(
++    (character, index) => /[0-9]/u.test(character) && !/[0-9]/u.test(candidate[index] ?? ""),
++  );
++  if (!introducesDigit) return false;
++  const hasUnsafeHomophone = tokens.slice(start, end).some((token) => /^(?:to|too|for)$/iu.test(token));
++  return hasUnsafeHomophone && !emailWindowHasExplicitDigitIntent(tokens, start, end);
++}
++
+ function hasEmbeddedEmailCollision(text: string, groundedEmail: string) {
+   const tokens = getEmailSpeechTokens(text);
+   for (let start = 0; start < tokens.length; start += 1) {
+     for (let end = start + 1; end <= Math.min(tokens.length, start + 18); end += 1) {
 -      const candidate = canonicalizeEmailSpeech(tokens.slice(start, end).join(" "));
 -      if (
 -        candidate !== groundedEmail &&
@@ -96,38 +215,73 @@ index 4717110..e49a2ce 100644
 +        ) {
 +          return true;
 +        }
-@@ -4387,0 +4448,27 @@ function hasEmbeddedEmailCollision(text: string, groundedEmail: string) {
+       }
+     }
+   }
+   return false;
+ }
+ 
 +function hasAmbiguousSpokenDigitEmail(text: string, groundedEmail: string) {
-+  if (getLiteralEmailMentions(text).length > 0 || hasExplicitSpokenDigitContext(text)) {
-+    return false;
-+  }
 +  const target = groundedEmail.trim().toLowerCase();
-+  const tokens = getEmailSpeechTokens(text);
-+  for (let start = 0; start < tokens.length; start += 1) {
-+    for (let end = start + 1; end <= Math.min(tokens.length, start + 18); end += 1) {
-+      const interpretations = canonicalizeEmailSpeechInterpretations(tokens.slice(start, end).join(" ")).filter(
-+        isLikelyEmail,
-+      );
-+      if (new Set(interpretations).size > 1 && interpretations.includes(target)) return true;
++  const selectedLiteralTarget =
++    getLiteralEmailMentions(text).some((mention) => mention.email === target) &&
++    resolveLiteralEmailSelection(text, target) === "current";
++  if (selectedLiteralTarget) return false;
++
++  for (const clause of getEmailDecisionClauses(text)) {
++    const tokens = getEmailSpeechTokens(clause);
++    for (let start = 0; start < tokens.length; start += 1) {
++      for (let end = start + 1; end <= Math.min(tokens.length, start + 18); end += 1) {
++        const interpretations = canonicalizeEmailSpeechInterpretations(tokens.slice(start, end).join(" ")).filter(
++          isLikelyEmail,
++        );
++        if (
++          new Set(interpretations).size > 1 &&
++          interpretations.includes(target) &&
++          !emailWindowHasExplicitDigitIntent(tokens, start, end)
++        ) {
++          return true;
++        }
++      }
 +    }
 +  }
 +  return false;
 +}
 +
-+function hasExplicitSpokenDigitContext(text: string) {
-+  return text
-+    .split(/[.!?;]+/u)
-+    .some(
-+      (clause) =>
-+        /\b(?:digit|digits|number|numbers|numeric|numeral|numerals)\b/iu.test(clause) &&
-+        /\b(?:zero|one|two|three|four|five|six|seven|eight|nine)\b/iu.test(clause),
-+    );
++function emailWindowHasExplicitDigitIntent(tokens: string[], start: number, end: number) {
++  const targetContainsSpokenDigit = tokens
++    .slice(start, end)
++    .some((token) => Object.hasOwn(SPOKEN_DIGIT_WORDS, token.toLowerCase()));
++  if (!targetContainsSpokenDigit) return false;
++
++  for (let contextIndex = start - 1; contextIndex >= 0; contextIndex -= 1) {
++    const context = tokens[contextIndex]?.toLowerCase() ?? "";
++    if (!/^(?:digit|digits|number|numbers|numeric|numeral|numerals)$/u.test(context)) continue;
++    const intervening = tokens.slice(contextIndex + 1, start).map((token) => token.toLowerCase());
++    if (intervening.some((token) => Object.hasOwn(SPOKEN_DIGIT_WORDS, token))) continue;
++    const polarityWindow = tokens.slice(Math.max(0, contextIndex - 3), start).join(" ");
++    if (/\b(?:no|not|never|without|don['’]?t|dont|isn['’]?t|isnt)\b/iu.test(polarityWindow)) continue;
++    return true;
++  }
++  return false;
 +}
 +
-@@ -4395 +4482 @@ function findExactEmailTokenWindow(text: string, groundedEmail: string, minimumS
+ function findExactEmailTokenWindow(text: string, groundedEmail: string, minimumStart = 0) {
+   // Canonicalize bounded token windows rather than the whole sentence. This
+   // accepts "q a dot nebula at example dot test" while preventing
+@@ -4392,7 +4542,7 @@ function findExactEmailTokenWindow(text: string, groundedEmail: string, minimumS
+   const tokens = getEmailSpeechTokens(text);
+   for (let start = minimumStart; start < tokens.length; start += 1) {
+     for (let end = start + 1; end <= Math.min(tokens.length, start + 18); end += 1) {
 -      if (canonicalizeEmailSpeech(tokens.slice(start, end).join(" ")) !== groundedEmail) continue;
 +      if (!canonicalizeEmailSpeechInterpretations(tokens.slice(start, end).join(" ")).includes(groundedEmail)) continue;
-@@ -4498,2 +4585,15 @@ function fullEditDistance(left: string, right: string) {
+       const previousToken = tokens[start - 1]?.toLowerCase();
+       const targetLocalPart = groundedEmail.split("@")[0] ?? "";
+       const repeatedInitialBeforeFullSpelling =
+@@ -4495,11 +4645,31 @@ function fullEditDistance(left: string, right: string) {
+   return previous[right.length] ?? Math.max(left.length, right.length);
+ }
+ 
 -function canonicalizeEmailSpeech(value: string): string {
 -  return collapseHyphenSeparatedLetterRun(value)
 +const SPOKEN_DIGIT_WORDS: Record<string, string> = {
@@ -145,7 +299,8 @@ index 4717110..e49a2ce 100644
 +
 +function canonicalizeEmailSpeech(value: string, foldSpokenDigits = true): string {
 +  let canonical = collapseHyphenSeparatedLetterRun(value)
-@@ -4502 +4602,8 @@ function canonicalizeEmailSpeech(value: string): string {
+     .toLowerCase()
+     .normalize("NFKD")
 -    .replace(/\p{Mark}/gu, "")
 +    .replace(/\p{Mark}/gu, "");
 +  if (foldSpokenDigits) {
@@ -155,18 +310,30 @@ index 4717110..e49a2ce 100644
 +    );
 +  }
 +  return canonical
-@@ -4511,0 +4619,6 @@ function canonicalizeEmailSpeech(value: string): string {
+     .replace(/\bat\s+sign\b/gu, " @ ")
+     .replace(/\b(at)\b/gu, " @ ")
+     .replace(/\b(dot|point)\b/gu, " . ")
+@@ -4509,6 +4679,12 @@ function canonicalizeEmailSpeech(value: string): string {
+     .replace(/[^\p{Letter}\p{Number}@._+-]+/gu, "");
+ }
+ 
 +function canonicalizeEmailSpeechInterpretations(value: string) {
 +  const numeric = canonicalizeEmailSpeech(value, true);
 +  const literal = canonicalizeEmailSpeech(value, false);
 +  return numeric === literal ? [numeric] : [numeric, literal];
 +}
 +
+ function collapseHyphenSeparatedLetterRun(value: string) {
+   return value.replace(
+     /(^|[^\p{Letter}\p{Number}])((?:[\p{Letter}\p{Number}]-){1,}[\p{Letter}\p{Number}])(?=$|[^\p{Letter}\p{Number}])/gu,
 diff --git a/tests/realtime-events.test.ts b/tests/realtime-events.test.ts
-index ec3081f..4e674ad 100644
+index ec3081f..6a4801e 100644
 --- a/tests/realtime-events.test.ts
 +++ b/tests/realtime-events.test.ts
-@@ -943,0 +944,150 @@ describe("reduceRealtimeServerEvent", () => {
+@@ -941,6 +941,242 @@ describe("reduceRealtimeServerEvent", () => {
+     expect(routed.commands).toEqual([{ type: "submit_voice", callId: "call_adaptive_route", segment: "technology" }]);
+   });
+ 
 +  it("keeps an address with spoken number words pending until digit intent is explicit", () => {
 +    // "one nine nine at gmail dot com" must ground against 199@gmail.com, not
 +    // collapse to oneninenine@gmail.com and get rejected as ungrounded.
@@ -234,6 +401,89 @@ index ec3081f..4e674ad 100644
 +  });
 +
 +  it.each([
++    "Room number one is ready. My email is two at example dot com.",
++    "Those are not digits. My email is two at example dot com.",
++    "billing@example.com is only for invoices. My email is two at example dot com.",
++  ])("keeps unrelated or negative turn context from authorizing a numeric mailbox: %s", (turn) => {
++    const capture = reduceRealtimeServerEvent(
++      {
++        type: "response.done",
++        email_capture_mode: "adaptive",
++        response: {
++          output: [
++            {
++              type: "function_call",
++              name: "capture_field",
++              call_id: `call_scoped_digit_context_${turn}`,
++              arguments: JSON.stringify({
++                key: "email",
++                value: "2@example.com",
++                evidence: "two at example dot com",
++              }),
++            },
++          ],
++        },
++      },
++      state({ transcript: [{ role: "user", text: turn }] }),
++    );
++
++    expect(capture.state.captured.email).toBe("2@example.com");
++    expect(capture.state.emailVerification).toMatchObject({ status: "pending", confidence: "medium" });
++    const routed = reduceRealtimeServerEvent(
++      {
++        type: "response.done",
++        email_capture_mode: "adaptive",
++        response: {
++          output: [
++            {
++              type: "function_call",
++              name: "route_to_team",
++              call_id: `call_scoped_digit_route_${turn}`,
++              arguments: JSON.stringify({ segment: "technology" }),
++            },
++          ],
++        },
++      },
++      capture.state,
++    );
++    expect(routed.commands.some((command) => command.type === "submit_voice")).toBe(false);
++  });
++
++  it("does not let an unrelated literal address authorize an ambiguous alphanumeric mailbox", () => {
++    const result = reduceRealtimeServerEvent(
++      {
++        type: "response.done",
++        email_capture_mode: "adaptive",
++        response: {
++          output: [
++            {
++              type: "function_call",
++              name: "capture_field",
++              call_id: "call_unrelated_literal_digit_context",
++              arguments: JSON.stringify({
++                key: "email",
++                value: "sam1@example.com",
++                evidence: "sam one at example dot com",
++              }),
++            },
++          ],
++        },
++      },
++      state({
++        transcript: [
++          {
++            role: "user",
++            text: "billing@example.com is only for invoices. My email is sam one at example dot com.",
++          },
++        ],
++      }),
++    );
++
++    expect(result.state.captured.email).toBe("sam1@example.com");
++    expect(result.state.emailVerification).toMatchObject({ status: "pending", confidence: "medium" });
++  });
++
++  it.each([
 +    ["one@example.com", "one at example dot com"],
 +    ["1@example.com", "one at example dot com"],
 +    ["two@example.com", "two at example dot com"],
@@ -267,6 +517,9 @@ index ec3081f..4e674ad 100644
 +    ["2@example.com", "to at example dot com"],
 +    ["2@example.com", "too at example dot com"],
 +    ["4@example.com", "for at example dot com"],
++    ["22@longexample.com", "to at longexample dot com"],
++    ["222@longexample.com", "too at longexample dot com"],
++    ["444@longexample.com", "for at longexample dot com"],
 +  ])("never treats a homophone as numeric mailbox %s", (email, spoken) => {
 +    const result = reduceRealtimeServerEvent(
 +      {
@@ -317,7 +570,13 @@ index ec3081f..4e674ad 100644
 +    expect(result.commands[0]).toMatchObject({ output: { emailConfirmationRequired: true } });
 +  });
 +
-@@ -2723,0 +2874,229 @@ describe("reduceRealtimeServerEvent", () => {
+   it("keeps bounded ASR drift pending in the visible editor without a spoken read-back", () => {
+     const result = reduceRealtimeServerEvent(
+       {
+@@ -2721,6 +2957,243 @@ describe("reduceRealtimeServerEvent", () => {
+     expect(result.state.emailVerification).toMatchObject({ status: "confirmed" });
+   });
+ 
 +  it("accepts an ASR-drifted address spoken a turn before a delayed capture call", () => {
 +    // ASR misheard "carter" as "carper" in the turn that actually contained
 +    // the address; the assistant kept talking, and the tool call landed on a
@@ -362,6 +621,14 @@ index ec3081f..4e674ad 100644
 +    "No, use sam dot carper at gmail dot com instead.",
 +    "Not sam dot carper at gmail dot com; use the other address.",
 +    "Sam dot carper at gmail dot com was wrong.",
++    "Sam dot carper at gmail dot com, scratch that.",
++    "Sam dot carper at gmail dot com, ignore that.",
++    "Sam dot carper at gmail dot com, retract that.",
++    "Sam dot carper at gmail dot com, take that back.",
++    "Sam dot carper at gmail dot com, cancel that.",
++    "Sam dot carper at gmail dot com; replace that with final dot address at example dot com.",
++    "Sam dot carper at gmail dot com; change that to final dot address at example dot com.",
++    "Sam dot carper at gmail dot com; switch that to final dot address at example dot com.",
 +  ])("does not ground an approximate candidate from its own correction turn: %s", (turn) => {
 +    const result = reduceRealtimeServerEvent(
 +      {
@@ -547,3 +814,6 @@ index ec3081f..4e674ad 100644
 +    expect(result.state.captured.email).toBe("");
 +  });
 +
+   it("preserves an explicitly spoken dash in an email", () => {
+     const result = reduceRealtimeServerEvent(
+       {

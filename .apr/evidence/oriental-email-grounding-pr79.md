@@ -3,15 +3,15 @@
 ## Immutable implementation identity
 
 - source implementation commit:
-  `56641b29937db8791aab8a838b78d04b940106c3`
+  `918805adf3bada7c64847475b00567ec63c7b324`
 - base:
   `e3bb6c333cbf4bf8e52456a1b5144f556f50636a`
 - implementation tree:
-  `8eed8d91e0cb8c2b1ed47a1a93437d929b0f5e15`
+  `8ddd91f578f910f00b7d038b779f28a8a52def83`
 - complete source-only patch:
   `.apr/evidence/oriental-email-grounding-pr79.patch`
 - patch SHA-256:
-  `3897f91c5c574eb9e421d229d493142cd597298bdbc40fdb24931b61b6cbf0c7`
+  `990ff1ddc6d67a4eeeab51e1ea70fd2c37b353af626a8a35e51edb28219f64c8`
 
 The source range changes only `lib/voice/realtime-events.ts` and
 `tests/realtime-events.test.ts`. An earlier APR evidence commit is in the
@@ -64,27 +64,40 @@ numerals. A literal typed email remains exact authority.
 cases through the complete bounded matcher. Stored email values are never
 rewritten by the evidence canonicalizer.
 
+The candidate's literal selection, digit context, and following disposition are
+scoped to the exact candidate window and decision clause. An unrelated literal
+address, an earlier numeric sentence, or negated digit language cannot authorize
+a numeric mailbox. Equal-length `to`/`too`/`for` homophones cannot introduce
+unspoken `2`/`4` digits. Scratch, ignore, retract, take-back, cancel, replace,
+change, and switch language following an approximate candidate rejects that
+candidate without letting unrelated later text control another window.
+
 ## Verification evidence
 
 Against source implementation commit
-`56641b29937db8791aab8a838b78d04b940106c3`:
+`918805adf3bada7c64847475b00567ec63c7b324`:
 
 - `pnpm lint`: passed, 280 files;
 - strict TypeScript: passed;
-- reducer suite: 1 file and 1,547 tests passed;
+- reducer suite: 1 file and 1,562 tests passed;
 - production Next.js 16.2.10 build: passed;
-- `git diff --check`: passed.
+- `git diff --check`: passed;
+- GitHub `verify`: success on exact source head
+  `918805adf3bada7c64847475b00567ec63c7b324`.
 
-The hermetic full suite ran 83 files and 2,212 tests successfully; its only
-local failure was the pre-existing macOS `{20,256}` regex portability defect in
-the host rollback test. PR #78 owns that defect and is required to merge before
-this PR; the combined tree must rerun the complete suite. Exact-head GitHub CI
-and that combined-tree proof remain mandatory.
+The synthetic eight-PR integration commit
+`76746d98e6a7b220c3abaf4a93dd426236fc2b2b`, tree
+`058805ee5d6860b760b14657d3ede08735111a91`, passed frozen pnpm 10.34.5
+installation, lint on 293 files, strict TypeScript, a zero-finding production
+audit, all 89 test files and 2,303 tests, and the Next.js 16.2.12 production
+build.
 
 APR round 1 correctly rejected candidate-turn correction bypass, exact-path
 reopening, word/numeric mailbox collision, and missing hostile chronology
-coverage. The implementation above closes each source blocker. Round 2 must
-review this regenerated exact patch.
+coverage. Round 2 correctly rejected unrelated-context suppression,
+equal-length homophone-to-digit approximation, and same-turn retraction or
+replacement acceptance. The implementation above closes every source blocker.
+Round 3 must review this regenerated exact patch.
 
 ## Release boundary
 
