@@ -74,22 +74,42 @@ export function GoogleAnalytics() {
   );
 }
 
+// One-time-per-load guard: `js` + `config` must be enqueued exactly once, and
+// crucially BEFORE the first page_view, or gtag.js drains a page_view that has
+// no registered destination yet and drops it.
+let ga4Bootstrapped = false;
+
+function ensureGtagBootstrapped(measurementId: string) {
+  // Queue-safe stub: gtag.js consumes the Arguments object from dataLayer, so
+  // the stub must push `arguments`, never a rest array. Entries flush in order
+  // when gtag.js loads.
+  if (!window.gtag) {
+    window.dataLayer = window.dataLayer || [];
+    window.gtag = function gtag() {
+      // biome-ignore lint/complexity/noArguments: gtag.js consumes the Arguments object from dataLayer
+      window.dataLayer?.push(arguments);
+    };
+  }
+  if (ga4Bootstrapped) return;
+  ga4Bootstrapped = true;
+  window.gtag("js", new Date());
+  window.gtag("config", measurementId, {
+    send_page_view: false,
+    anonymize_ip: true,
+    allow_google_signals: false,
+    allow_ad_personalization_signals: false,
+  });
+}
+
 function GoogleAnalyticsLoader() {
   const pathname = usePathname();
 
   useEffect(() => {
     if (!GA_MEASUREMENT_ID || !shouldTrackPath(pathname)) return;
-    // Queue-safe: define the canonical stub if gtag.js has not loaded yet —
-    // entries flush when it does. gtag.js consumes the Arguments object from
-    // dataLayer, so the stub must push `arguments`, never a rest array.
-    if (!window.gtag) {
-      window.dataLayer = window.dataLayer || [];
-      window.gtag = function gtag() {
-        // biome-ignore lint/complexity/noArguments: gtag.js consumes the Arguments object from dataLayer
-        window.dataLayer?.push(arguments);
-      };
-    }
-    window.gtag("event", "page_view", {
+    // config is enqueued before this first page_view so gtag.js never drains a
+    // page_view ahead of its destination config.
+    ensureGtagBootstrapped(GA_MEASUREMENT_ID);
+    window.gtag?.("event", "page_view", {
       page_path: pathname,
       // Never send query strings or fragments: intake links may contain context.
       page_location: analyticsPageLocation(window.location.origin, pathname),
@@ -100,24 +120,10 @@ function GoogleAnalyticsLoader() {
   if (!measurementId) return null;
 
   return (
-    <>
-      <Script
-        src={`https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(measurementId)}`}
-        strategy="afterInteractive"
-      />
-      <Script id="ga4-init" strategy="afterInteractive">
-        {`window.dataLayer = window.dataLayer || [];
-function gtag(){dataLayer.push(arguments);}
-window.gtag = gtag;
-gtag('js', new Date());
-gtag('config', '${measurementId}', {
-  send_page_view: false,
-  anonymize_ip: true,
-  allow_google_signals: false,
-  allow_ad_personalization_signals: false
-});`}
-      </Script>
-    </>
+    <Script
+      src={`https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(measurementId)}`}
+      strategy="afterInteractive"
+    />
   );
 }
 
