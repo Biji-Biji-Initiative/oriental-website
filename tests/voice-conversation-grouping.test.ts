@@ -238,19 +238,19 @@ describe("collapseConversations", () => {
     const calls = [
       session({
         reviewId: "a-start",
-        conversationId: "conv-a",
+        conversationId: "é",
         updatedAt: 0,
         capturedEmailNormalized: "same@example.com",
       }),
       session({
         reviewId: "a-end",
-        conversationId: "conv-a",
+        conversationId: "é",
         updatedAt: 6 * window,
         capturedEmailNormalized: "same@example.com",
       }),
       session({
         reviewId: "b",
-        conversationId: "conv-b",
+        conversationId: "e\u0301",
         updatedAt: 4 * window,
         capturedEmailNormalized: "same@example.com",
       }),
@@ -267,8 +267,8 @@ describe("collapseConversations", () => {
         calls: head.calls.map((call) => call.reviewId),
       }));
     const expected = [
-      { head: "a-end", calls: ["a-start", "bridge", "a-end"] },
-      { head: "b", calls: ["b"] },
+      { head: "a-end", calls: ["a-start", "a-end"] },
+      { head: "bridge", calls: ["b", "bridge"] },
     ];
 
     for (const permutation of permutations(calls)) expect(project(permutation)).toEqual(expected);
@@ -320,6 +320,78 @@ describe("collapseConversations", () => {
     expect(heads).toHaveLength(2);
   });
 
+  it.each([
+    "Same@example.com",
+    "same@Example.com",
+  ])("never gives matching noncanonical normalized values identity authority: %j", (capturedEmailNormalized) => {
+    const heads = collapseConversations([
+      session({ reviewId: "bad-a", conversationId: "bad-a", updatedAt: 1000, capturedEmailNormalized }),
+      session({ reviewId: "bad-b", conversationId: "bad-b", updatedAt: 1100, capturedEmailNormalized }),
+    ]);
+
+    expect(heads).toHaveLength(2);
+  });
+
+  it("keeps a mixed canonical/noncanonical explicit unit together but denies every inferred edge", () => {
+    const heads = collapseConversations([
+      session({
+        reviewId: "canonical-in-unit",
+        conversationId: "mixed",
+        updatedAt: 1000,
+        capturedEmailNormalized: "same@example.com",
+      }),
+      session({
+        reviewId: "noncanonical-in-unit",
+        conversationId: "mixed",
+        updatedAt: 1100,
+        capturedEmailNormalized: "Same@example.com",
+      }),
+      session({
+        reviewId: "canonical-external",
+        conversationId: "external",
+        updatedAt: 1200,
+        capturedEmailNormalized: "same@example.com",
+      }),
+    ]);
+
+    expect(heads).toHaveLength(2);
+    expect(heads.find((head) => head.reviewId === "noncanonical-in-unit")?.calls.map((call) => call.reviewId)).toEqual([
+      "canonical-in-unit",
+      "noncanonical-in-unit",
+    ]);
+    expect(heads.find((head) => head.reviewId === "canonical-external")?.calls).toHaveLength(1);
+  });
+
+  it("keeps a wholly noncanonical explicit unit separate from a canonical external unit", () => {
+    const heads = collapseConversations([
+      session({
+        reviewId: "noncanonical-a",
+        conversationId: "noncanonical-unit",
+        updatedAt: 1000,
+        capturedEmailNormalized: "Same@example.com",
+      }),
+      session({
+        reviewId: "noncanonical-b",
+        conversationId: "noncanonical-unit",
+        updatedAt: 1100,
+        capturedEmailNormalized: "Same@example.com",
+      }),
+      session({
+        reviewId: "canonical-external",
+        conversationId: "external",
+        updatedAt: 1200,
+        capturedEmailNormalized: "same@example.com",
+      }),
+    ]);
+
+    expect(heads).toHaveLength(2);
+    expect(heads.find((head) => head.reviewId === "noncanonical-b")?.calls.map((call) => call.reviewId)).toEqual([
+      "noncanonical-a",
+      "noncanonical-b",
+    ]);
+    expect(heads.find((head) => head.reviewId === "canonical-external")?.calls).toHaveLength(1);
+  });
+
   it("preserves every original row reference exactly once across all grouping branches", () => {
     const calls = [
       session({ reviewId: "explicit-a", conversationId: "explicit", updatedAt: 0 }),
@@ -347,7 +419,7 @@ describe("collapseConversations", () => {
     for (const call of calls) expect(flattened.filter((candidate) => candidate === call)).toHaveLength(1);
   });
 
-  it("is deterministic under input permutations and equal timestamps", () => {
+  it("is deterministic under every input permutation at equal timestamps", () => {
     const calls = [
       session({
         reviewId: "a",
@@ -369,11 +441,11 @@ describe("collapseConversations", () => {
         calls: head.calls.map((call) => call.reviewId),
       }));
 
-    expect(project(calls)).toEqual(project([...calls].reverse()));
-    expect(project(calls)).toEqual([
+    const expected = [
       { head: "z", calls: ["z"] },
       { head: "b", calls: ["a", "b"] },
-    ]);
+    ];
+    for (const permutation of permutations(calls)) expect(project(permutation)).toEqual(expected);
   });
 
   it("does not mutate input rows or their ordering", () => {
