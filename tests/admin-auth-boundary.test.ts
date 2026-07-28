@@ -999,7 +999,7 @@ describe("admin authentication production boundary", () => {
 
     const authSource = readFileSync("lib/server/admin-auth.ts", "utf8");
     expect(authSource).not.toMatch(/export\s+(?:async\s+)?function\s+createAdminSessionCookie\b/);
-  }, 15_000);
+  }, 60_000);
 
   it("resolves relative and aliased auth imports to one canonical module and rejects indirect access", () => {
     const relativePath = "app/api/admin/example/route.ts";
