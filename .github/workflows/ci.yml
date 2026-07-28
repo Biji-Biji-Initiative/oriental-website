@@ -18,6 +18,10 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Record dependency audit toolchain
+        run: |
+          pnpm --version
+          pnpm config get registry
       - run: pnpm audit:prod
       - run: pnpm lint
       - run: pnpm typecheck
