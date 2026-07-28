@@ -145,8 +145,8 @@ Completed against implementation
 - GitHub `verify`: success on exact source head
   `5455169e5c3560101f2178617568c1795926a26f`
 - synthetic eight-PR integration commit
-  `1ee96d3357a1fab01490a943abc6ed89d71c023a`, tree
-  `46db3784f044be67e5292b53f72a38d23105ab7c`: frozen pnpm 10.34.5 install,
+  `ed34b5e8c1639af5b97bb834de417b5d03c1acc6`, tree
+  `861800a67e9af8b49a76480ba2cebb812680346a`: frozen pnpm 10.34.5 install,
   warning-free lint on 293 files, strict TypeScript, zero production-audit
   findings across 378 dependencies, all 89 files and 2,336 tests, and the
   Next.js 16.2.12 production build passed
