@@ -152,15 +152,21 @@ absent from the current tree and Coolify configuration, while historical
 repository exposure means the password is treated as potentially known. The
 same-origin, rate-limited login accepts that password or `ADMIN_REVIEW_TOKEN`,
 but only the high-entropy token is valid bearer auth or signs sessions. Password
-login produces a signed viewer-only session for thirty minutes; review-token
-login produces the configured interactive role for twelve hours. The cookie
+login produces a signed viewer-only session for thirty minutes that can access
+only redacted aggregate metrics and logout. Customer records, email addresses,
+transcripts, voice details, and every mutation require a fresh managed review
+token login. Review-token login produces the configured interactive role for
+twelve hours. The cookie
 signs login method, actor, role, and expiry, and successful login telemetry
 records that bounded provenance. `ADMIN_REVIEW_ROLE` and `ADMIN_REVIEW_ACTOR`
 define the strong-token interactive principal. `OPS_AUTOMATION_TOKEN` is
 bearer-only and can run only eval, SLA, and retention
 jobs; `PRIVACY_ADMIN_TOKEN` is bearer-only and can run only verified privacy
-deletion. Production preflight rejects a missing or malformed password HMAC and
-missing, short, or duplicate bearer credentials. The scheduled GitHub Actions
+deletion. Production preflight rejects a missing or malformed password HMAC,
+missing, short, or duplicate bearer credentials, and any password HMAC that
+proves the password equals the review, ops, or privacy bearer credential. The
+runtime also fails every auth plane closed on such a collision without logging
+credential material. The scheduled GitHub Actions
 workflow references only the ops credential. Whenever `ADMIN_REVIEW_TOKEN`
 rotates, derive and replace the password HMAC in both managed environments
 before release:

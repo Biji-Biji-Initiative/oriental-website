@@ -4,7 +4,7 @@ import {
   adminCookieHeader,
   adminCookieName,
   clearAdminCookieHeader,
-  createAdminSessionCookie,
+  createAdminLoginSession,
   verifyAdminLoginCredential,
   verifyAdminPermission,
   verifyAdminRequest,
@@ -18,6 +18,12 @@ const passwordHmacDomain = "oriental-admin-password:v1\0";
 
 function interactivePasswordHmac(password: string, signingKey = adminReviewToken) {
   return createHmac("sha256", signingKey).update(passwordHmacDomain).update(password).digest("hex");
+}
+
+function loginSession(credential = adminReviewToken, now = Date.now()) {
+  const auth = verifyAdminLoginCredential(credential);
+  if (!auth.ok) throw new Error(`Test login failed: ${auth.reason}`);
+  return createAdminLoginSession(auth, now);
 }
 
 describe("admin auth helpers", () => {
@@ -58,15 +64,15 @@ describe("admin auth helpers", () => {
     });
 
     const now = Date.now();
-    const reviewCookie = createAdminSessionCookie(now, reviewLogin.ok ? reviewLogin : undefined);
-    expect(verifyAdminSessionCookie(reviewCookie)).toMatchObject({
+    const reviewSession = createAdminLoginSession(reviewLogin.ok ? reviewLogin : neverLogin(), now);
+    expect(verifyAdminSessionCookie(reviewSession.cookie)).toMatchObject({
       ok: true,
       credential: "review_session",
       expiresAt: now + 12 * 60 * 60 * 1000,
       role: "operator",
     });
-    const passwordCookie = createAdminSessionCookie(now, passwordLogin.ok ? passwordLogin : undefined);
-    expect(verifyAdminSessionCookie(passwordCookie)).toMatchObject({
+    const passwordSession = createAdminLoginSession(passwordLogin.ok ? passwordLogin : neverLogin(), now);
+    expect(verifyAdminSessionCookie(passwordSession.cookie)).toMatchObject({
       ok: true,
       credential: "password_session",
       expiresAt: now + 30 * 60 * 1000,
@@ -74,7 +80,7 @@ describe("admin auth helpers", () => {
     });
 
     const request = new Request("http://localhost/api/admin/review", {
-      headers: { cookie: `${adminCookieName}=${passwordCookie}` },
+      headers: { cookie: `${adminCookieName}=${passwordSession.cookie}` },
     });
     expect(verifyAdminRequest(request)).toMatchObject({
       ok: true,
@@ -86,7 +92,7 @@ describe("admin auth helpers", () => {
         new Request("http://localhost/api/admin/leads/lead-1", {
           method: "PATCH",
           headers: {
-            cookie: `${adminCookieName}=${passwordCookie}`,
+            cookie: `${adminCookieName}=${passwordSession.cookie}`,
             "content-type": "application/json",
             origin: "http://localhost",
           },
@@ -94,6 +100,26 @@ describe("admin auth helpers", () => {
         "leads.update",
       ),
     ).toEqual({ ok: false, reason: "forbidden" });
+    expect(verifyAdminPermission(request, "dashboard.aggregate")).toMatchObject({
+      ok: true,
+      credential: "password_session",
+    });
+    for (const permission of ["dashboard.read", "leads.read", "voice.read"] as const) {
+      expect(verifyAdminPermission(request, permission)).toEqual({ ok: false, reason: "forbidden" });
+    }
+    expect(
+      verifyAdminPermission(
+        new Request("http://localhost/api/admin/logout", {
+          method: "POST",
+          headers: {
+            cookie: `${adminCookieName}=${passwordSession.cookie}`,
+            "content-type": "application/json",
+            origin: "http://localhost",
+          },
+        }),
+        "session.logout",
+      ),
+    ).toMatchObject({ ok: true, credential: "password_session" });
   });
 
   it("keeps the interactive password out of bearer authentication and fails closed on invalid HMAC configuration", () => {
@@ -125,8 +151,29 @@ describe("admin auth helpers", () => {
     expect(verifyAdminLoginCredential(interactivePassword)).toEqual({ ok: false, reason: "invalid" });
   });
 
+  it("fails every auth plane closed when the password collides with any bearer credential", () => {
+    const bearerNames = ["ADMIN_REVIEW_TOKEN", "OPS_AUTOMATION_TOKEN", "PRIVACY_ADMIN_TOKEN"] as const;
+    for (const name of bearerNames) {
+      const bearer = process.env[name];
+      if (!bearer) throw new Error(`${name} is missing from the test environment`);
+      process.env = {
+        ...process.env,
+        ADMIN_REVIEW_PASSWORD_HMAC: interactivePasswordHmac(bearer),
+      };
+      expect(verifyAdminLoginCredential(bearer), name).toEqual({ ok: false, reason: "unconfigured" });
+      expect(
+        verifyAdminRequest(
+          new Request("http://localhost/api/admin/review", {
+            headers: { authorization: `Bearer ${bearer}` },
+          }),
+        ),
+        name,
+      ).toEqual({ ok: false, reason: "unconfigured" });
+    }
+  });
+
   it("invalidates the old password HMAC and signed session after review-token rotation", () => {
-    const oldCookie = createAdminSessionCookie();
+    const oldCookie = loginSession().cookie;
     process.env = {
       ...process.env,
       ADMIN_REVIEW_TOKEN: "rotated-admin-review-token-123456789",
@@ -156,7 +203,7 @@ describe("admin auth helpers", () => {
 
   it("binds the actor and role into the signed cookie instead of re-reading mutable role configuration", () => {
     process.env = { ...process.env, ADMIN_REVIEW_ACTOR: "Read only reviewer", ADMIN_REVIEW_ROLE: "viewer" };
-    const cookie = createAdminSessionCookie();
+    const cookie = loginSession().cookie;
     process.env = { ...process.env, ADMIN_REVIEW_ACTOR: "Different administrator", ADMIN_REVIEW_ROLE: "admin" };
 
     expect(verifyAdminSessionCookie(cookie)).toMatchObject({
@@ -229,7 +276,7 @@ describe("admin auth helpers", () => {
   });
 
   it("requires same-origin JSON for cookie-authenticated mutations", () => {
-    const cookie = createAdminSessionCookie();
+    const cookie = loginSession().cookie;
     const headers = {
       cookie: `${adminCookieName}=${cookie}`,
       "content-type": "application/json",
@@ -277,3 +324,7 @@ describe("admin auth helpers", () => {
     ).toMatchObject({ ok: true, credential: "review_session" });
   });
 });
+
+function neverLogin(): never {
+  throw new Error("Expected test login to succeed");
+}

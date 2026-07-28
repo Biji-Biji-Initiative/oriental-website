@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { isValidAdminActor } from "../lib/admin-permissions";
 import { hasShellEscapedQuoteWrapper, unwrapEnvValue } from "../lib/env";
 import { isAllowedAdminEvalModel } from "../lib/eval/admin-models";
@@ -120,6 +121,16 @@ if (process.env.NODE_ENV === "production") {
   }
   if (new Set(credentials).size !== credentials.length) {
     console.error("Admin review, ops automation, and privacy admin tokens must be distinct.");
+    process.exit(1);
+  }
+  const adminSigningKey = credentials[0] ?? "";
+  const passwordMatchesBearer = credentials.some(
+    (credential) =>
+      createHmac("sha256", adminSigningKey).update("oriental-admin-password:v1\0").update(credential).digest("hex") ===
+      adminPasswordHmac,
+  );
+  if (passwordMatchesBearer) {
+    console.error("The interactive admin password must be distinct from every admin bearer credential.");
     process.exit(1);
   }
 

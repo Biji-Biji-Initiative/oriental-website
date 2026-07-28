@@ -216,9 +216,12 @@ human password whose domain-separated HMAC is stored in
 runtime configuration, but historical repository exposure means the password is
 treated as potentially known. It is never accepted as bearer auth. A password
 login receives a signed, provenance-bound, viewer-only session for thirty
-minutes; it can read the dashboard, leads, and voice evidence but cannot mutate
-leads, follow up, run evals, or invoke maintenance/privacy operations. A strong
-review-token login receives the configured interactive role for twelve hours.
+minutes; it can read only the redacted aggregate metrics dashboard and can log
+out. It cannot read customer records, email addresses, transcripts, or voice
+evidence and cannot mutate leads, follow up, run evals, or invoke
+maintenance/privacy operations. Those data surfaces require a fresh login with
+the managed review token. A strong review-token login receives the configured
+interactive role for twelve hours.
 `ADMIN_REVIEW_TOKEN` remains the high-entropy bearer credential and the only
 session-signing key; rotate the password HMAC whenever that token rotates. The
 HTTP-only cookie signs the actor, role, login method, and expiry. Its default

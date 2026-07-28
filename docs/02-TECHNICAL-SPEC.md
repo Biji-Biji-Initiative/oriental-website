@@ -255,13 +255,16 @@ Admin review and observability:
   by `ADMIN_REVIEW_TOKEN`; plaintext is absent from the current tree and runtime
   configuration, while historical repository exposure means the password is
   treated as potentially known. The password is never valid bearer auth. It
-  issues a thirty-minute, viewer-only session; the strong token issues the
-  configured interactive role for twelve hours and remains the bearer and only
-  signed-session key. The session signs actor, role, login method, and expiry, so
-  provenance survives issuance and role changes do not silently elevate an
-  existing cookie. Cookie mutations require same-origin JSON requests. Scheduled
-  maintenance uses the distinct bearer-only `OPS_AUTOMATION_TOKEN`, while
-  privacy deletion uses `PRIVACY_ADMIN_TOKEN`.
+  issues a thirty-minute, viewer-only session limited to the redacted aggregate
+  metrics dashboard and logout. Customer records, email addresses, transcripts,
+  voice details, and every mutation require a fresh login with the managed
+  review token. The strong token issues the configured interactive role for
+  twelve hours and remains the bearer and only signed-session key. The session
+  signs actor, role, login method, and expiry, so provenance survives issuance
+  and role changes do not silently elevate an existing cookie. Cookie mutations
+  require same-origin JSON requests. Scheduled maintenance uses the distinct
+  bearer-only `OPS_AUTOMATION_TOKEN`, while privacy deletion uses
+  `PRIVACY_ADMIN_TOKEN`.
 - Sentry uses `@sentry/nextjs` config files and `withSentryConfig` in
   `next.config.ts`.
 - Production ops alerts use `OPS_ALERT_SLACK_CHANNEL_ID`; the current smoke

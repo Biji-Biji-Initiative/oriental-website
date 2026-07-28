@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 const baseEnv: NodeJS.ProcessEnv = {
@@ -93,6 +94,23 @@ describe("managed secret contract", () => {
     const role = checkSecrets(productionEnv({ ADMIN_REVIEW_ROLE: "superadmin" }));
     expect(role.status).toBe(1);
     expect(role.stderr).toContain("ADMIN_REVIEW_ROLE must be explicitly viewer, operator, or admin");
+  });
+
+  it.each([
+    "ADMIN_REVIEW_TOKEN",
+    "OPS_AUTOMATION_TOKEN",
+    "PRIVACY_ADMIN_TOKEN",
+  ] as const)("rejects an interactive password that collides with %s", (name) => {
+    const signingKey = baseEnv.ADMIN_REVIEW_TOKEN ?? "";
+    const bearer = baseEnv[name] ?? "";
+    const collisionHmac = createHmac("sha256", signingKey)
+      .update("oriental-admin-password:v1\0")
+      .update(bearer)
+      .digest("hex");
+    const result = checkSecrets(productionEnv({ ADMIN_REVIEW_PASSWORD_HMAC: collisionHmac }));
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("interactive admin password must be distinct");
+    expect(result.stderr).not.toContain(bearer);
   });
 });
 

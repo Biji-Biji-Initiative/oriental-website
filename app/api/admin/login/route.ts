@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { adminLoginSchema } from "@/lib/schemas";
 import {
   adminCookieHeader,
-  createAdminSessionCookie,
+  createAdminLoginSession,
   isSameOriginJsonRequest,
   verifyAdminLoginCredential,
 } from "@/lib/server/admin-auth";
@@ -38,17 +38,17 @@ export async function POST(request: NextRequest) {
     return noStoreJson({ ok: false, error: auth.reason }, { status });
   }
 
-  const cookie = createAdminSessionCookie(Date.now(), auth);
+  const session = createAdminLoginSession(auth, Date.now());
   logInfo("admin_login.succeeded", {
     actor: auth.actor,
     credential: auth.credential,
-    expiresAt: auth.expiresAt,
+    expiresAt: session.expiresAt,
     role: auth.role,
   });
   return noStoreJson(
     { ok: true },
     {
-      headers: { "Set-Cookie": adminCookieHeader(cookie, auth.expiresAt) },
+      headers: { "Set-Cookie": adminCookieHeader(session.cookie, session.expiresAt) },
     },
   );
 }

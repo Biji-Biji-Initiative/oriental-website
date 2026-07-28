@@ -34,14 +34,20 @@ export type AdminAuthState =
       role: AdminRole;
     }
   | { ok: false; reason: "unconfigured" | "missing" | "invalid" | "forbidden" | "csrf" };
+export type AdminLoginSuccess = Extract<AdminAuthState, { ok: true }> & {
+  credential: "interactive_password" | "review_bearer";
+  principal: "interactive";
+};
+type AdminLoginState = AdminLoginSuccess | Extract<AdminAuthState, { ok: false }>;
 
-export function verifyAdminLoginCredential(credential: string | null | undefined): AdminAuthState {
-  const expected = readEnv("ADMIN_REVIEW_TOKEN");
-  if (!expected) return { ok: false, reason: "unconfigured" };
+export function verifyAdminLoginCredential(credential: string | null | undefined): AdminLoginState {
+  const configuration = adminCredentialConfiguration();
+  if (!configuration || configuration.passwordBearerCollision) return { ok: false, reason: "unconfigured" };
   if (!credential) return { ok: false, reason: "missing" };
-  const method = constantTimeEqual(credential, expected)
+  const method = constantTimeEqual(credential, configuration.signingKey)
     ? "review_bearer"
-    : verifyInteractivePassword(credential, expected)
+    : configuration.passwordHmac &&
+        verifyInteractivePassword(credential, configuration.signingKey, configuration.passwordHmac)
       ? "interactive_password"
       : null;
   if (!method) return { ok: false, reason: "invalid" };
@@ -57,22 +63,42 @@ export function verifyAdminLoginCredential(credential: string | null | undefined
   };
 }
 
-export function createAdminSessionCookie(
-  now = Date.now(),
-  identity: { actor: string; credential?: AdminCredential; role: AdminRole } = configuredAdminIdentity(),
-) {
-  const passwordSession = identity.credential === "interactive_password";
-  const expiresAt = now + (passwordSession ? passwordSessionTtlMs : sessionTtlMs);
+export function createAdminLoginSession(identity: AdminLoginSuccess, now: number) {
+  if (
+    identity.principal !== "interactive" ||
+    !isValidAdminActor(identity.actor) ||
+    !isAdminRole(identity.role) ||
+    (identity.credential === "interactive_password" && identity.role !== "viewer")
+  ) {
+    throw new Error("Invalid admin login identity");
+  }
+
+  let expiresAt: number;
+  let method: "password" | "review";
+  let role: AdminRole;
+  switch (identity.credential) {
+    case "interactive_password":
+      expiresAt = now + passwordSessionTtlMs;
+      method = "password";
+      role = "viewer";
+      break;
+    case "review_bearer":
+      expiresAt = now + sessionTtlMs;
+      method = "review";
+      role = identity.role;
+      break;
+    default:
+      return assertNever(identity.credential);
+  }
+
   const actor = Buffer.from(identity.actor, "utf8").toString("base64url");
-  const role = passwordSession ? "viewer" : identity.role;
-  const method = passwordSession ? "password" : "review";
   const payload = `v3.${expiresAt}.${role}.${actor}.${method}`;
-  return `${payload}.${sign(payload)}`;
+  return { cookie: `${payload}.${sign(payload)}`, expiresAt };
 }
 
 export function verifyAdminSessionCookie(value: string | null | undefined): AdminAuthState {
-  const secret = signingSecret();
-  if (!secret) return { ok: false, reason: "unconfigured" };
+  const configuration = adminCredentialConfiguration();
+  if (!configuration || configuration.passwordBearerCollision) return { ok: false, reason: "unconfigured" };
   if (!value) return { ok: false, reason: "missing" };
   const parts = value.split(".");
   if (parts.length !== 6 || parts[0] !== "v3") return { ok: false, reason: "invalid" };
@@ -88,7 +114,7 @@ export function verifyAdminSessionCookie(value: string | null | undefined): Admi
     actorEncoded.length === 0 ||
     actorEncoded.length > 108 ||
     (method !== "password" && method !== "review") ||
-    (method === "password" && role !== "viewer")
+    (method === "password" && (role !== "viewer" || !configuration.passwordHmac))
   ) {
     return { ok: false, reason: "invalid" };
   }
@@ -118,6 +144,13 @@ export function verifyAdminRequest(request: Request): AdminAuthState {
 export function verifyAdminPermission(request: Request, permission: AdminPermission): AdminAuthState {
   const auth = verifyAdminRequest(request);
   if (!auth.ok) return auth;
+  if (
+    auth.credential === "password_session" &&
+    permission !== "dashboard.aggregate" &&
+    permission !== "session.logout"
+  ) {
+    return { ok: false, reason: "forbidden" };
+  }
   if (!hasAdminPermission(auth.role, permission, auth.principal)) return { ok: false, reason: "forbidden" };
   if (
     isSessionCredential(auth.credential) &&
@@ -177,24 +210,45 @@ function sign(payload: string) {
 }
 
 function signingSecret() {
-  return readEnv("ADMIN_REVIEW_TOKEN");
+  const configuration = adminCredentialConfiguration();
+  return configuration && !configuration.passwordBearerCollision ? configuration.signingKey : null;
 }
 
-function verifyInteractivePassword(password: string, signingKey: string) {
-  const expectedHmac = process.env.ADMIN_REVIEW_PASSWORD_HMAC;
-  if (!expectedHmac || !/^[a-f0-9]{64}$/.test(expectedHmac)) return false;
-  const actualHmac = createHmac("sha256", signingKey).update(adminPasswordHmacDomain).update(password).digest("hex");
+function verifyInteractivePassword(password: string, signingKey: string, expectedHmac: string) {
+  const actualHmac = passwordHmacFor(password, signingKey);
   return constantTimeEqual(actualHmac, expectedHmac);
+}
+
+function adminCredentialConfiguration() {
+  const signingKey = readEnv("ADMIN_REVIEW_TOKEN");
+  const passwordHmacValue = process.env.ADMIN_REVIEW_PASSWORD_HMAC;
+  if (!signingKey) return null;
+  const passwordHmac = passwordHmacValue && /^[a-f0-9]{64}$/.test(passwordHmacValue) ? passwordHmacValue : null;
+
+  const bearerCandidates = [signingKey, readEnv("OPS_AUTOMATION_TOKEN"), readEnv("PRIVACY_ADMIN_TOKEN")].filter(
+    (candidate): candidate is string => Boolean(candidate),
+  );
+  const passwordBearerCollision = Boolean(
+    passwordHmac &&
+      bearerCandidates.some((candidate) => constantTimeEqual(passwordHmacFor(candidate, signingKey), passwordHmac)),
+  );
+  return { passwordBearerCollision, passwordHmac, signingKey };
+}
+
+function passwordHmacFor(password: string, signingKey: string) {
+  return createHmac("sha256", signingKey).update(adminPasswordHmacDomain).update(password).digest("hex");
 }
 
 function verifyAdminBearerToken(token: string): AdminAuthState {
   if (!token) return { ok: false, reason: "missing" };
+  const configuration = adminCredentialConfiguration();
+  if (!configuration || configuration.passwordBearerCollision) return { ok: false, reason: "unconfigured" };
   const interactiveIdentity = configuredAdminIdentity();
   const candidates = [
     {
       actor: interactiveIdentity.actor,
       credential: "review_bearer" as const,
-      expected: readEnv("ADMIN_REVIEW_TOKEN"),
+      expected: configuration.signingKey,
       principal: "interactive" as const,
       role: interactiveIdentity.role,
     },
@@ -227,6 +281,10 @@ function verifyAdminBearerToken(token: string): AdminAuthState {
     }
   }
   return { ok: false, reason: "invalid" };
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unhandled admin login credential: ${String(value)}`);
 }
 
 function constantTimeEqual(left: string, right: string) {
