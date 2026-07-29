@@ -296,13 +296,27 @@ this manifest and source patch, rather than digest strings alone:
 - `round_14.md` (20,130 bytes; SHA-256
   `f4b9287c1a0cc39d59026093d37419952a8c954183822d5852f96ba76bdd67eb`),
   the complete whitespace-normalized terminal round-fourteen response;
-- the final live PR object, exact final-head CI evidence, and
-  `source-to-live-head.diff`, captured after this APR-only evidence commit.
+- `final-head-github-evidence.json` (138,150 bytes; SHA-256
+  `33baa9fe704f986a4955e5a7779293082b48ed790e9984cd711dca0384c5861a`):
+  raw PR #80, live-head run, job, check-run, check-suite, and commit API
+  responses for exact APR-only head
+  `92060bad1edac337393e5cc5bae5ede4c095c043`, tree
+  `784207833079bdb1411fef9c6e8b887de9d23c98`;
+- `final-head-ci.log` (71,467 bytes; SHA-256
+  `9d183e51e865826c1d4f8c4809b4bf694d8b482c9810b0be3648fd6884b7a6ca`):
+  raw successful CI run `30414882217`, job/check `90459099573`, suite
+  `82441530945`, with the exact checkout SHA and tree above;
+- `source-to-live-head.diff` (70,089 bytes; SHA-256
+  `bcebb7a47521fd1d182d17a018d8b0de821a59c0bdc578b7b045524119f2eb36`):
+  the complete descendant diff from implementation to live PR head; its only
+  paths are the APR manifest, immutable source patch, and APR workflow.
 
 The reviewer must recompute hashes from those attached bytes, confirm the
 source CI and synthetic integration identities, and use the final PR object
 plus the attached source-to-live-head diff to prove that every descendant
-change after `0a2321f8e003fade6f6a0c28d47d73a3f7b213df` is APR-only.
+change after `0a2321f8e003fade6f6a0c28d47d73a3f7b213df` is APR-only. The exact
+APR-only live head passed 85 files and 2,222 tests, warning-free lint, strict
+TypeScript, the Next.js 16.2.10 build, and mobile performance in CI.
 
 The focused suite proves:
 
