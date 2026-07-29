@@ -3,15 +3,15 @@
 ## Immutable implementation identity
 
 The source implementation under review is the exact commit
-`1aad025aedc94c953de6b91344b093ab439e3b36` on base
+`0a2321f8e003fade6f6a0c28d47d73a3f7b213df` on base
 `e3bb6c333cbf4bf8e52456a1b5144f556f50636a`.
 
-- Implementation tree: `a953354e0cc3af5334b9f5a2ea42e623dcdcc48f`
+- Implementation tree: `861f29a18463f021e2f5c0a38255738e167c7d08`
 - Authoritative source-only patch:
   `.apr/evidence/oriental-admin-password-security.patch`
 - Patch SHA-256:
-  `92491e1f8dfdb36b19d97734fc5b578fcddc46a3c24817992b80511209876402`
-- The 6,442-line, 300,879-byte patch contains all forty-five changed non-APR
+  `3947b670c11d2100d8fdb2300197a864de245805f139b0d3fe4bd31598fa2ec6`
+- The 6,602-line, 313,649-byte patch contains all forty-five changed non-APR
   source, test, release, UI, environment-example, workflow, and documentation
   files.
 
@@ -111,10 +111,17 @@ program is built from governed production roots, then expands through
 `program.getSourceFiles()` to every reachable repository-local non-declaration
 TypeScript or JavaScript source, including imported hidden, test-named,
 generated, and vendor paths. It throws if any governed checker source is absent.
-Its shared function-return analysis uses TypeScript symbol/declaration identity,
-including assignment-backed aliases, rather than textual-name coincidence. It
-covers declarations, function expressions, arrows, object/class methods,
-getters, setters, static members, and instances. It proves:
+Its shared, program-scoped semantic index caches TypeScript symbol/declaration
+identity and function-return summaries, including assignment-backed aliases,
+class property arrows, destructured object methods, any-typed object properties,
+imported helper declarations in other checker-program source files, and
+Function.prototype bind/call/apply mediation. The same cached graph is shared by
+privileged loader identity, global Object/Reflect mutation identity, private
+authority taint, mutable-export identity, actual receiver resolution, and
+dynamic vector expansion. Local shadows of protected built-ins remain safe
+because their resolved symbols differ. It covers declarations, function
+expressions, arrows, class property arrows, object/class methods, getters,
+setters, static members, instances, and cross-file imported helpers. It proves:
 
 - effective URL matching over all App and Pages route candidates, including
   `src` roots, route groups, interception segments, flat Pages files, dynamic,
@@ -202,8 +209,8 @@ runtime state.
 ## Exact implementation verification
 
 Completed against exact implementation commit
-`1aad025aedc94c953de6b91344b093ab439e3b36`, tree
-`a953354e0cc3af5334b9f5a2ea42e623dcdcc48f`:
+`0a2321f8e003fade6f6a0c28d47d73a3f7b213df`, tree
+`861f29a18463f021e2f5c0a38255738e167c7d08`:
 
 - `pnpm lint`: pass, 284 branch files in exact CI, no warnings
 - strict application and Convex TypeScript: pass
@@ -213,39 +220,39 @@ Completed against exact implementation commit
 - `pnpm build`: pass, including all admin route handlers on Next.js 16.2.10
 - source-only `git diff --check`: pass
 - exact-head GitHub Actions workflow `CI`, event `pull_request`: success
-  - run ID: `30408868377`
-  - job/check-run ID: `90440375331`
-  - check-suite ID: `82425246372`
-  - checked-out head SHA: `1aad025aedc94c953de6b91344b093ab439e3b36`
-  - checked-out tree: `a953354e0cc3af5334b9f5a2ea42e623dcdcc48f`
-  - run URL: `https://github.com/Biji-Biji-Initiative/oriental-website/actions/runs/30408868377`
+  - run ID: `30413916916`
+  - job/check-run ID: `90456091869`
+  - check-suite ID: `82438933127`
+  - checked-out head SHA: `0a2321f8e003fade6f6a0c28d47d73a3f7b213df`
+  - checked-out tree: `861f29a18463f021e2f5c0a38255738e167c7d08`
+  - run URL: `https://github.com/Biji-Biji-Initiative/oriental-website/actions/runs/30413916916`
 - synthetic eight-PR integration commit
-  `e78e2e9aa5cc468fa7ed8d88913bc34b2748cc05`, tree
-  `af7948abcb35ad9b18cbdb19a456c467245e6f32`, based on
+  `5839ef6ccd1214b1d5a90e6627e8e097236a4dd4`, tree
+  `e637916cea01aa1e0540aed47ebd6144fcb672c6`, based on
   `e3bb6c333cbf4bf8e52456a1b5144f556f50636a`, composed from exact heads:
   - #78 `7657afae19433f276c89967ca9f6c2a94a509fd9`
   - #79 `aaeba89264b34a902d4d1595bf4d31907a91b2d4`
-  - #80 `1aad025aedc94c953de6b91344b093ab439e3b36` (exact PR head)
+  - #80 `0a2321f8e003fade6f6a0c28d47d73a3f7b213df` (exact PR head)
   - #81 `297e0b1a47d7d8cf3a005c606146b7de8dd7ff96`
   - #82 `d81140cb87ff36a6e4196f230a9b4d7bf9a69806`
   - #83 `f9467a918708c9385163516e01f34f4d9bb58d3f`
   - #84 `413fdf0eaf758394c68d817aaf588558ead80a57`
   - #85 `42bd5f078754ae925d71f7f9cc1e5eb8778a5f20`
 - the integration passed exact-head GitHub Actions `CI`, run
-  `30408993940`, job/check `90440734343`, suite `82425570064`, event
+  `30414193707`, job/check `90456956044`, suite `82439679922`, event
   `pull_request`, with checked-out SHA
-  `e78e2e9aa5cc468fa7ed8d88913bc34b2748cc05` and tree
-  `af7948abcb35ad9b18cbdb19a456c467245e6f32`
+  `5839ef6ccd1214b1d5a90e6627e8e097236a4dd4` and tree
+  `e637916cea01aa1e0540aed47ebd6144fcb672c6`
 - the integration passed frozen pnpm 10.34.5 install, warning-free lint on
   294 files in exact CI, strict TypeScript, production audit with zero findings
   across 378 dependencies, all 89 test files and 2,337 tests with zero failed or
   pending, the Next.js 16.2.12 production build, and the mobile performance gate
-  with LCP 1,292 ms, CLS 0, 444,011 transferred JavaScript bytes, 1,530,943
+  with LCP 1,400 ms, CLS 0, 444,008 transferred JavaScript bytes, 1,530,943
   decoded JavaScript bytes, 15 initial JavaScript requests, and zero serious or
   critical accessibility violations
 - machine-readable Vitest JSON SHA-256:
-  `f78ac0705b3cd9bd9b1ca322ee2e334b5bce95449b33e8aa0fbffc35e1acc8b0`
-  (865,255 bytes; 216 suites; 2,337 passed; 0 failed)
+  `2fa9f9512039a9cefebe959da1a39c271b059af6cd3faf51f826ba7972a2f0d5`
+  (865,284 bytes; 216 suites; 2,337 passed; 0 failed)
 - machine-readable production audit JSON SHA-256:
   `e6b1e426bee90fc309ed49cf51fff66f7d2218cca7fcb42e88b1b312521a615c`
   (310 bytes; 378 dependencies; 0 info/low/moderate/high/critical findings)
@@ -253,47 +260,63 @@ Completed against exact implementation commit
 Machine summary:
 
 ```json
-{"audit":{"critical":0,"high":0,"info":0,"low":0,"moderate":0,"totalDependencies":378},"github":{"checkRunId":90440375331,"checkSuiteId":82425246372,"event":"pull_request","headSha":"1aad025aedc94c953de6b91344b093ab439e3b36","runId":30408868377},"integration":{"checkRunId":90440734343,"checkSuiteId":82425570064,"commit":"e78e2e9aa5cc468fa7ed8d88913bc34b2748cc05","runId":30408993940,"tree":"af7948abcb35ad9b18cbdb19a456c467245e6f32"},"tests":{"failed":0,"files":89,"passed":2337,"pending":0}}
+{"audit":{"critical":0,"high":0,"info":0,"low":0,"moderate":0,"totalDependencies":378},"github":{"checkRunId":90456091869,"checkSuiteId":82438933127,"event":"pull_request","headSha":"0a2321f8e003fade6f6a0c28d47d73a3f7b213df","runId":30413916916},"integration":{"checkRunId":90456956044,"checkSuiteId":82439679922,"commit":"5839ef6ccd1214b1d5a90e6627e8e097236a4dd4","runId":30414193707,"tree":"e637916cea01aa1e0540aed47ebd6144fcb672c6"},"tests":{"failed":0,"files":89,"passed":2337,"pending":0}}
 ```
 
-The round-fourteen reviewer receives the actual immutable support bytes alongside
+The round-fifteen reviewer receives the actual immutable support bytes alongside
 this manifest and source patch, rather than digest strings alone:
 
-- `github-evidence.json` (105,523 bytes; SHA-256
-  `a5a22552df45ea9222e4b131a938945a81cff3bbc63ac69e33ba48b8c030eb31`):
+- `github-evidence.json` (68,904 bytes; SHA-256
+  `3a70e3353f0e9b0b8f62848dd7d6d94372ea8a51a4365035f9c0184af01f6b55`):
   raw PR #80, source run, job, check-run, check-suite, and commit API responses;
-- `integration-github-evidence.json` (221,969 bytes; SHA-256
-  `b0f335652a1e53e8733bb8ce63e5874b74c45e33cf3de4201b89644f0eba371a`):
+- `integration-github-evidence.json` (217,105 bytes; SHA-256
+  `144464e9b4810e3e72244acef45b073a0425c7a9f96ffcd7aa80efb21794a54e`):
   raw closed evidence-only PR #86, integration run, job, check-run, check-suite,
   and commit API responses;
-- `source-ci.log` (71,109 bytes; SHA-256
-  `92b22018b1aeb305637543686600c8188ff44b8236aa031feaf4516a5a931b00`)
-  and `integration-ci.log` (76,693 bytes; SHA-256
-  `0da530f7323670039f6d9db295de78a56b0d312bc61e3a075f798f122468dcc6`):
-  exact GitHub logs containing the checkout SHA/tree attestations and all CI
+- `source-ci.log` (71,514 bytes; SHA-256
+  `ff5f592e43a04865d822d72a0cc798a9d3b098b3d2c07c0c887bbde7f1c75a9c`)
+  and `integration-ci.log` (76,974 bytes; SHA-256
+  `c6a27429badab7f772c581ff1c543d0ec07790f74b43bee719b7dcaa2e07487a`):
+  exact GitHub logs containing checkout SHA/tree attestations and all CI
   command output;
-- `integration-merge-dag.txt` (21,091 bytes; SHA-256
-  `b2899e2cb8a3cb8952aba6fa05a778937363d4749f16474cb4907f17c11da377`):
-  raw commit/tree graph, first-parent merge identities, exact PR ancestors, and
-  integration path ledger;
-- `source-to-integration-overlap.diff` (33,778 bytes; SHA-256
-  `9588042fb0e8da5abec737526158cb10c4413614ce67d7051a560997051bb59f`):
+- `integration-merge-dag.txt` (47,648 bytes; SHA-256
+  `9debe9f8d9c324c9246b4307189db75bb0c21f92aa8b641d159e75fb10dedab5`):
+  whitespace-normalized raw commit/tree graph, first-parent merge identities,
+  exact PR ancestors, and integration path ledger;
+- `source-to-integration-overlap.diff` (33,276 bytes; SHA-256
+  `b530dcb6ad0cb4c39ba20c0f9c6cae6d1595d1f7be0de8343fc203bbd45a5813`):
   the source-to-integration overlapping-path diff for conflict-resolution
   review;
-- `integration-vitest.json` (865,255 bytes; SHA-256
-  `f78ac0705b3cd9bd9b1ca322ee2e334b5bce95449b33e8aa0fbffc35e1acc8b0`);
+- `integration-vitest.json` (865,284 bytes; SHA-256
+  `2fa9f9512039a9cefebe959da1a39c271b059af6cd3faf51f826ba7972a2f0d5`);
 - `integration-audit.json` (310 bytes; SHA-256
   `e6b1e426bee90fc309ed49cf51fff66f7d2218cca7fcb42e88b1b312521a615c`);
 - `round_13.md` (17,593 bytes; SHA-256
-  `71d8e05782d059a3c18f8681f08f6a328c8f153b08ff15fb1aebeacead30d43c`),
-  the complete recovered terminal round-thirteen response;
-- the final live PR object, exact final-head CI evidence, and
-  `source-to-live-head.diff`, captured after this APR-only evidence commit.
+  `71d8e05782d059a3c18f8681f08f6a328c8f153b08ff15fb1aebeacead30d43c`);
+- `round_14.md` (20,130 bytes; SHA-256
+  `f4b9287c1a0cc39d59026093d37419952a8c954183822d5852f96ba76bdd67eb`),
+  the complete whitespace-normalized terminal round-fourteen response;
+- `final-head-github-evidence.json` (138,150 bytes; SHA-256
+  `33baa9fe704f986a4955e5a7779293082b48ed790e9984cd711dca0384c5861a`):
+  raw PR #80, live-head run, job, check-run, check-suite, and commit API
+  responses for exact APR-only head
+  `92060bad1edac337393e5cc5bae5ede4c095c043`, tree
+  `784207833079bdb1411fef9c6e8b887de9d23c98`;
+- `final-head-ci.log` (71,467 bytes; SHA-256
+  `9d183e51e865826c1d4f8c4809b4bf694d8b482c9810b0be3648fd6884b7a6ca`):
+  raw successful CI run `30414882217`, job/check `90459099573`, suite
+  `82441530945`, with the exact checkout SHA and tree above;
+- `source-to-live-head.diff` (70,089 bytes; SHA-256
+  `bcebb7a47521fd1d182d17a018d8b0de821a59c0bdc578b7b045524119f2eb36`):
+  the complete descendant diff from implementation to live PR head; its only
+  paths are the APR manifest, immutable source patch, and APR workflow.
 
 The reviewer must recompute hashes from those attached bytes, confirm the
 source CI and synthetic integration identities, and use the final PR object
 plus the attached source-to-live-head diff to prove that every descendant
-change after `1aad025aedc94c953de6b91344b093ab439e3b36` is APR-only.
+change after `0a2321f8e003fade6f6a0c28d47d73a3f7b213df` is APR-only. The exact
+APR-only live head passed 85 files and 2,222 tests, warning-free lint, strict
+TypeScript, the Next.js 16.2.10 build, and mobile performance in CI.
 
 The focused suite proves:
 
@@ -404,12 +427,25 @@ safe reflected, safe shadowing, safe receiver, and safe vector twins remain
 admitted. Exact-origin enforcement, exact-source checkout attestation, Linux
 CI, a rebuilt eight-PR integration, and the attached raw GitHub, git, Vitest,
 audit, and overlap evidence bind those controls to the reviewed bytes. Round 14
-must review this regenerated exact patch and attached support bundle. The
-release verifier is designed to prove cookie metadata and TTLs, password
-bearer rejection, review-token role and twelve-hour TTL, Redis store identity,
-shared remaining counts, and 429 exhaustion after merge; none of those
-live-runtime results is claimed by this pre-merge evidence. Live secret and
-deployment checks remain mandatory post-merge gates and are not waived.
+independently reproduced the remaining semantic gaps: class-property arrows,
+destructured object methods, bind/call/apply mediation, privileged functions
+stored through any-typed properties, and imported helpers whose return summaries
+live in another checker-program source file. It also found safe local built-in
+shadows falsely rejected. The repair makes the semantic assignment index
+program-scoped and cached, resolves imported declarations in their owning source
+files, extends return and receiver analysis through all reproduced
+invocation/property shapes, and keys protected built-in, mutation, and module
+identities by resolved symbols rather than names. Exact hostile and safe
+differential fixtures cover each reproduced class, the focused suite is 11/11
+green, the full branch is 85 files and 2,222 tests green, exact source CI is
+green within its time budget, and the rebuilt eight-head integration is 89
+files and 2,337 tests green. Round 15 must review this regenerated exact patch
+and attached support bundle. The release verifier is designed to prove cookie
+metadata and TTLs, password bearer rejection, review-token role and twelve-hour
+TTL, Redis store identity, shared remaining counts, and 429 exhaustion after
+merge; none of those live-runtime results is claimed by this pre-merge
+evidence. Live secret and deployment checks remain mandatory post-merge gates
+and are not waived.
 
 ## Mandatory post-merge gates
 
