@@ -25,13 +25,24 @@
    reconcile by their Realtime item identity rather than completion order. The
    edit MUST also invalidate any already-active response for email mutation or
    routing.
+9. A delayed approximate candidate MUST have positive edit distance and MUST
+   reject unambiguous correction or replacement language in its own turn. An
+   exact address rejected by the exact path MUST NOT reopen through the
+   approximate path.
+10. Spoken digit words MUST retain literal-word and numeric interpretations.
+    When both form valid mailboxes, adaptive mode MAY keep a medium-confidence
+    visible draft but MUST NOT route it; strict mode MUST require confirmation.
+    High confidence requires explicit digit/number context in the same decision
+    clause. `to`, `too`, and `for` MUST NOT map to digits.
 
 ## Acceptance
 
 - Focused reducer tests cover stale duplicate, direct-route, pending known
   contradiction, fresh pending relaxation, literal/spoken ordering, explicit
-  replacements, alternatives, and selected-contact controls.
+  replacements, alternatives, selected-contact controls, candidate-turn
+  corrections, exact-path reopening, typed supersession, the six-turn bound,
+  word/numeric mailbox pairs, and homophone rejection.
 - Lint, typecheck, all unit tests, secret contract, and production build pass.
-- APR ends with `VERDICT: SHIP SAFE DEFAULTS`.
+- APR ends with `VERDICT: MERGE`.
 - The merged exact SHA passes both canonical staging voice smokes before any
   production deployment.

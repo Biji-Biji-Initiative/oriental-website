@@ -10,7 +10,7 @@
     "lint": "biome check .",
     "format": "biome format --write .",
     "typecheck": "next typegen && tsc --noEmit",
-    "test": "vitest run",
+    "test": "env NODE_OPTIONS=--no-experimental-webstorage vitest run",
     "test:e2e": "playwright test",
     "test:e2e:admin": "playwright test tests/e2e/admin-session-review.spec.ts",
     "test:performance": "tsx scripts/run-page-performance.ts",
