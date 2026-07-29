@@ -2,9 +2,9 @@
 
 **Do not merge this tree.**
 
-I verified the reviewed source identity as commit `0a2321f8e003fade6f6a0c28d47d73a3f7b213df`, tree `861f29a18463f021e2f5c0a38255738e167c7d08`, based on `e3bb6c333cbf4bf8e52456a1b5144f556f50636a`. The authoritative source-only patch is 313,649 bytes, 6,602 lines, covers 45 non-APR files, and recomputes to SHA-256 `3947b670c11d2100d8fdb2300197a864de245805f139b0d3fe4bd31598fa2ec6`. 
+I verified the reviewed source identity as commit `0a2321f8e003fade6f6a0c28d47d73a3f7b213df`, tree `861f29a18463f021e2f5c0a38255738e167c7d08`, based on `e3bb6c333cbf4bf8e52456a1b5144f556f50636a`. The authoritative source-only patch is 313,649 bytes, 6,602 lines, covers 45 non-APR files, and recomputes to SHA-256 `3947b670c11d2100d8fdb2300197a864de245805f139b0d3fe4bd31598fa2ec6`.
 
-The password design **materially contains the potentially known-password risk**. It does not restore password secrecy, but it reduces the password principal to a signed `method=password`, role `viewer`, thirty-minute session that can access only the fixed aggregate DTO and logout. Raw customer records, email addresses, transcripts, voice detail, events, analytics/queues, mutations, evals, maintenance, and privacy operations require managed-token step-up. The residual risk is repeatable access to the permitted aggregate values and bounded aggregate computation after reauthentication, which the owner has explicitly accepted. 
+The password design **materially contains the potentially known-password risk**. It does not restore password secrecy, but it reduces the password principal to a signed `method=password`, role `viewer`, thirty-minute session that can access only the fixed aggregate DTO and logout. Raw customer records, email addresses, transcripts, voice detail, events, analytics/queues, mutations, evals, maintenance, and privacy operations require managed-token step-up. The residual risk is repeatable access to the permitted aggregate values and bounded aggregate computation after reauthentication, which the owner has explicitly accepted.
 
 However, the mandatory whole-program authority-admission proof remains unsound. The exact round-fourteen snippets now fail, and the exact safe-shadow fixtures now pass, but broader semantically equivalent forms still produce false greens.
 
@@ -12,9 +12,9 @@ However, the mandatory whole-program authority-admission proof remains unsound. 
 
 ### Improvements that are real
 
-The candidate now has a `WeakMap<ts.Program, SemanticAssignmentIndex>` cache containing symbol-keyed assigned values, property values, and indexed source files. When a governed program is supplied, it scans all non-declaration, repository-local program sources and caches their assignment information.  
+The candidate now has a `WeakMap<ts.Program, SemanticAssignmentIndex>` cache containing symbol-keyed assigned values, property values, and indexed source files. When a governed program is supplied, it scans all non-declaration, repository-local program sources and caches their assignment information.
 
-The submitted regressions cover the exact reported class-property arrow, direct object-method destructuring, direct `.bind()`, `.call()`, `.apply()`, direct any-object property, and direct imported-helper cases.   The exact local shadows of `module`, `require`, `process`, and `Reflect`, plus a local `Object.assign` lookalike, are also admitted as intended.  
+The submitted regressions cover the exact reported class-property arrow, direct object-method destructuring, direct `.bind()`, `.call()`, `.apply()`, direct any-object property, and direct imported-helper cases.   The exact local shadows of `module`, `require`, `process`, and `Reflect`, plus a local `Object.assign` lookalike, are also admitted as intended.
 
 Those improvements do not establish the requested semantic closure.
 
@@ -89,16 +89,16 @@ Equivalent JavaScript executed successfully on Node 22: it recovered `module.req
 
 ### The source explains the false greens
 
-Property writes are indexed under the symbol of the **immediate syntactic receiver**. `alias.get = value` is stored under the symbol for `alias`, while `box.get()` is looked up under the distinct symbol for `box`; the property-slot lookup does not canonicalize the receiver through `assignedValues`.  
+Property writes are indexed under the symbol of the **immediate syntactic receiver**. `alias.get = value` is stored under the symbol for `alias`, while `box.get()` is looked up under the distinct symbol for `box`; the property-slot lookup does not canonicalize the receiver through `assignedValues`.
 
-The `BindingElement` branch only recovers an initializer when the binding pattern’s immediate parent is a `VariableDeclaration`. That handles direct `const { get } = bridge`, but not nested destructuring—where the immediate parent is another binding element—or assignment destructuring—where no variable declaration supplies the initializer. 
+The `BindingElement` branch only recovers an initializer when the binding pattern’s immediate parent is a `VariableDeclaration`. That handles direct `const { get } = bridge`, but not nested destructuring—where the immediate parent is another binding element—or assignment destructuring—where no variable declaration supplies the initializer.
 
-Invocation handling recognizes only direct `.bind`, `.call`, and `.apply` member shapes. The special `Reflect.apply` handling additionally requires the receiver to be a literal identifier whose text is exactly `Reflect`. It does not normalize `Function.prototype.call.call`, `Function.prototype.apply.call`, `Function.prototype.bind.call`, an alias of `Reflect`, or destructured `Reflect.apply`.  
+Invocation handling recognizes only direct `.bind`, `.call`, and `.apply` member shapes. The special `Reflect.apply` handling additionally requires the receiver to be a literal identifier whose text is exactly `Reflect`. It does not normalize `Function.prototype.call.call`, `Function.prototype.apply.call`, `Function.prototype.bind.call`, an alias of `Reflect`, or destructured `Reflect.apply`.
 
 Most importantly, the implementation does not literally use one cached, program-scoped graph across all six claimed authority analyses:
 
-* `protectedSymbolAuthority` supplies the governed production program to `semanticFunctionReturns`; 
-* `authRuntimeExportViolations` creates a standalone source file and calls `semanticFunctionReturns` **without** the governed program, so private taint, mutable-export identity, receiver resolution, vector expansion, and Object/Reflect mutation analysis do not use the program cache. 
+* `protectedSymbolAuthority` supplies the governed production program to `semanticFunctionReturns`;
+* `authRuntimeExportViolations` creates a standalone source file and calls `semanticFunctionReturns` **without** the governed program, so private taint, mutable-export identity, receiver resolution, vector expansion, and Object/Reflect mutation analysis do not use the program cache.
 
 Thus the manifest’s statement that “the same cached graph is shared” by privileged loader identity, global receiver identity, private taint, mutable exports, actual receiver resolution, and dynamic vectors is not true of this implementation.
 
@@ -180,7 +180,7 @@ The complete attachment itself is 2,152,457 bytes with SHA-256:
 033c0b70a3c587ccc89492f92e7cf5bd0bb07cf92ae580d9393b3a8700681647
 ```
 
-I reconstructed each embedded raw artifact and recomputed its digest independently. Every declared byte count and SHA-256 now matches, including the DAG artifact that failed in the previous round. The manifest’s declared artifact inventory and expected digests are reproduced at lines 269–312. 
+I reconstructed each embedded raw artifact and recomputed its digest independently. Every declared byte count and SHA-256 now matches, including the DAG artifact that failed in the previous round. The manifest’s declared artifact inventory and expected digests are reproduced at lines 269–312.
 
 ```text
 Artifact                                      Bytes    Recomputed SHA-256                                               Result
@@ -215,7 +215,7 @@ SHA:       0a2321f8e003fade6f6a0c28d47d73a3f7b213df
 tree:      861f29a18463f021e2f5c0a38255738e167c7d08
 ```
 
-The raw checkout attestation records the exact requested SHA and tree. 
+The raw checkout attestation records the exact requested SHA and tree.
 
 The source run passed:
 
@@ -256,7 +256,7 @@ The normalized DAG records all eight requested heads as ancestors:
 #85  42bd5f078754ae925d71f7f9cc1e5eb8778a5f20
 ```
 
- 
+
 
 The integration head’s first-parent entry is a merge of the prior integration chain and the exact reviewed source head:
 
@@ -269,13 +269,13 @@ Merge: e78e2e9 0a2321f
 
 The raw integration gates confirm:
 
-* pnpm `10.34.5` and `https://registry.npmjs.org/`, followed by frozen-lockfile installation; 
-* warning-free Biome lint over exactly 294 files; 
+* pnpm `10.34.5` and `https://registry.npmjs.org/`, followed by frozen-lockfile installation;
+* warning-free Biome lint over exactly 294 files;
 * strict TypeScript;
-* zero audit findings at every severity across 378 production dependencies; 
-* 89 test files and 2,337 tests passed with no pending tests; 
-* Next.js 16.2.12 compiled successfully; 
-* mobile performance passed with LCP 1,400 ms, CLS 0, 444,008 transferred JavaScript bytes, 1,530,943 decoded bytes, 15 initial JavaScript requests, and zero serious or critical accessibility violations. 
+* zero audit findings at every severity across 378 production dependencies;
+* 89 test files and 2,337 tests passed with no pending tests;
+* Next.js 16.2.12 compiled successfully;
+* mobile performance passed with LCP 1,400 ms, CLS 0, 444,008 transferred JavaScript bytes, 1,530,943 decoded bytes, 15 initial JavaScript requests, and zero serious or critical accessibility violations.
 
 The integration semantic boundary test completed in 60.429 seconds, and the overall 89-file test run completed in 84.60 seconds.  The runtime remains bounded, but the integration runs the same false-green checker and therefore does not cure the release blocker.
 
@@ -320,7 +320,7 @@ None of the following is proved complete by this pre-merge bundle:
 6. Prove Redis store identity, shared remaining counts under parallel requests/instances, spoofed-earlier-XFF stability, and actual exhaustion to `429`.
 7. Promote the identical SHA to production only after staging passes, then repeat managed-environment readback, authentication, health, exact-running-SHA, and rollback proof.
 
-The manifest correctly describes these as mandatory post-merge gates rather than current live results. 
+The manifest correctly describes these as mandatory post-merge gates rather than current live results.
 
 ## Required correction
 
