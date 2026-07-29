@@ -3,15 +3,15 @@
 ## Immutable implementation identity
 
 The source implementation under review is the exact commit
-`5f47c982b1b26a4d3966d6337ff74cf7e88307b4` on base
+`4e61d8de8caf00520d72a0bcbf14c015b4e40a85` on base
 `e3bb6c333cbf4bf8e52456a1b5144f556f50636a`.
 
-- Implementation tree: `206423b67ccb4446a8f6956851348eba9e2feddb`
+- Implementation tree: `8c8c5571f5753c032735dff1d78b3e28417e45d0`
 - Authoritative source-only patch:
   `.apr/evidence/oriental-admin-password-security.patch`
 - Patch SHA-256:
-  `49e6f1e4be2e4a3f37a91693af1f81aff711cdbf370e45c16b13071ff95080ee`
-- The 6,943-line, 335,865-byte patch contains all forty-five changed non-APR
+  `33e18c3401f210aef0501f58b818d5c2396ef9ac7a9b1241379844e7e95c5042`
+- The 7,164-line, 352,960-byte patch contains all forty-five changed non-APR
   source, test, release, UI, environment-example, workflow, and documentation
   files.
 
@@ -115,20 +115,25 @@ Its shared semantic index caches TypeScript symbol/declaration identity and
 function-return summaries, including assignment-backed receiver equivalence,
 nested and assignment destructuring, class property arrows, any-typed object
 properties, imported helper declarations in other checker-program source files,
-and arbitrary Function.prototype bind/call/apply mediation. Production authority
-admission uses the complete governed production program. Auth-module override
-differentials use a cached TypeScript language service rooted at the real
-`admin-auth.ts` module with the production compiler configuration and transitive
-imports; each override yields one governed program and one auth-source assignment
-index shared by private-authority taint, mutable-export identity, actual receiver
-resolution, Object/Reflect mutation identity, and dynamic vector expansion.
-This avoids rebuilding and rescanning unrelated production roots for every
-hostile/safe differential without using the former standalone no-resolve source
-program or weakening the configured timeout. Local shadows of protected built-ins
-remain safe because their resolved symbols differ. It covers declarations,
-function expressions, arrows, class property arrows, object/class methods,
-getters, setters, static members, instances, and cross-file imported helpers. It
-proves:
+and arbitrary Function.prototype bind/call/apply mediation. Destructured receiver
+aliases are now canonicalized through `assignedMemberPaths`: object-literal
+shorthand values and numeric array elements project directly into the same
+receiver-symbol graph before property writes are indexed. The same canonical
+result is consumed by privileged-loader admission, allowed-export mutation,
+private-authority taint, actual-receiver resolution, and dynamic-vector expansion.
+Production authority admission uses the complete governed production program.
+Auth-module override differentials use a cached TypeScript language service
+rooted at the real `admin-auth.ts` module with the production compiler
+configuration and transitive imports; each override yields one governed program
+and one auth-source assignment index shared by private-authority taint,
+mutable-export identity, actual receiver resolution, Object/Reflect mutation
+identity, and dynamic vector expansion. This avoids rebuilding and rescanning
+unrelated production roots for every hostile/safe differential without using
+the former standalone no-resolve source program or weakening the configured
+timeout. Local shadows of protected built-ins remain safe because their
+resolved symbols differ. It covers declarations, function expressions, arrows,
+class property arrows, object/class methods, getters, setters, static members,
+instances, and cross-file imported helpers. It proves:
 
 - effective URL matching over all App and Pages route candidates, including
   `src` roots, route groups, interception segments, flat Pages files, dynamic,
@@ -216,8 +221,8 @@ runtime state.
 ## Exact implementation verification
 
 Completed against exact implementation commit
-`5f47c982b1b26a4d3966d6337ff74cf7e88307b4`, tree
-`206423b67ccb4446a8f6956851348eba9e2feddb`:
+`4e61d8de8caf00520d72a0bcbf14c015b4e40a85`, tree
+`8c8c5571f5753c032735dff1d78b3e28417e45d0`:
 
 - `pnpm lint`: pass, 284 branch files in exact CI, no warnings
 - strict application and Convex TypeScript: pass
@@ -227,39 +232,39 @@ Completed against exact implementation commit
 - `pnpm build`: pass, including all admin route handlers on Next.js 16.2.10
 - source-only `git diff --check`: pass
 - exact-head GitHub Actions workflow `CI`, event `pull_request`: success
-  - run ID: `30419184268`
-  - job/check-run ID: `90472191528`
-  - check-suite ID: `82453420863`
-  - checked-out head SHA: `5f47c982b1b26a4d3966d6337ff74cf7e88307b4`
-  - checked-out tree: `206423b67ccb4446a8f6956851348eba9e2feddb`
-  - run URL: `https://github.com/Biji-Biji-Initiative/oriental-website/actions/runs/30419184268`
+  - run ID: `30424510554`
+  - job/check-run ID: `90487908020`
+  - check-suite ID: `82467831487`
+  - checked-out head SHA: `4e61d8de8caf00520d72a0bcbf14c015b4e40a85`
+  - checked-out tree: `8c8c5571f5753c032735dff1d78b3e28417e45d0`
+  - run URL: `https://github.com/Biji-Biji-Initiative/oriental-website/actions/runs/30424510554`
 - synthetic eight-PR integration commit
-  `20cfb03cbca5735379322306a80e2304b6504554`, tree
-  `4cb6f387cf6cd714f3df5d51cc6a3c1944636131`, based on
+  `f32e396c08dd909534cbf08894308e4672ee070b`, tree
+  `93e6a4e898865ace935b596405260471d7690ea8`, based on
   `e3bb6c333cbf4bf8e52456a1b5144f556f50636a`, composed from exact heads:
   - #78 `7657afae19433f276c89967ca9f6c2a94a509fd9`
   - #79 `aaeba89264b34a902d4d1595bf4d31907a91b2d4`
-  - #80 `5f47c982b1b26a4d3966d6337ff74cf7e88307b4` (exact PR head)
+  - #80 `4e61d8de8caf00520d72a0bcbf14c015b4e40a85` (exact PR head)
   - #81 `297e0b1a47d7d8cf3a005c606146b7de8dd7ff96`
   - #82 `d81140cb87ff36a6e4196f230a9b4d7bf9a69806`
   - #83 `f9467a918708c9385163516e01f34f4d9bb58d3f`
   - #84 `413fdf0eaf758394c68d817aaf588558ead80a57`
   - #85 `42bd5f078754ae925d71f7f9cc1e5eb8778a5f20`
 - the integration passed exact-head GitHub Actions `CI`, run
-  `30419337986`, job/check `90472658723`, suite `82453851243`, event
+  `30424542369`, job/check `90488000700`, suite `82467915381`, event
   `pull_request`, with checked-out SHA
-  `20cfb03cbca5735379322306a80e2304b6504554` and tree
-  `4cb6f387cf6cd714f3df5d51cc6a3c1944636131`
+  `f32e396c08dd909534cbf08894308e4672ee070b` and tree
+  `93e6a4e898865ace935b596405260471d7690ea8`
 - the integration passed frozen pnpm 10.34.5 install, warning-free lint on
   294 files in exact CI, strict TypeScript, production audit with zero findings
   across 378 dependencies, all 89 test files and 2,337 tests with zero failed or
   pending, the Next.js 16.2.12 production build, and the mobile performance gate
-  with LCP 1,392 ms, CLS 0, 444,009 transferred JavaScript bytes, 1,530,943
+  with LCP 1,344 ms, CLS 0, 444,011 transferred JavaScript bytes, 1,530,943
   decoded JavaScript bytes, 15 initial JavaScript requests, and zero serious or
   critical accessibility violations
 - machine-readable Vitest JSON SHA-256:
-  `88dd1fc957985b95814153b6ae416870f34bbbedd174780cda275b944f421bf9`
-  (865,270 bytes; 216 suites; 2,337 passed; 0 failed)
+  `79de8713efc71652bfbf12bbf011acbfd77d293b1860f2214efdf826d93598c0`
+  (865,335 bytes; 216 suites; 2,337 passed; 0 failed)
 - machine-readable production audit JSON SHA-256:
   `e6b1e426bee90fc309ed49cf51fff66f7d2218cca7fcb42e88b1b312521a615c`
   (310 bytes; 378 dependencies; 0 info/low/moderate/high/critical findings)
@@ -267,35 +272,35 @@ Completed against exact implementation commit
 Machine summary:
 
 ```json
-{"audit":{"critical":0,"high":0,"info":0,"low":0,"moderate":0,"totalDependencies":378},"github":{"checkRunId":90472191528,"checkSuiteId":82453420863,"event":"pull_request","headSha":"5f47c982b1b26a4d3966d6337ff74cf7e88307b4","runId":30419184268},"integration":{"checkRunId":90472658723,"checkSuiteId":82453851243,"commit":"20cfb03cbca5735379322306a80e2304b6504554","runId":30419337986,"tree":"4cb6f387cf6cd714f3df5d51cc6a3c1944636131"},"tests":{"failed":0,"files":89,"passed":2337,"pending":0}}
+{"audit":{"critical":0,"high":0,"info":0,"low":0,"moderate":0,"totalDependencies":378},"github":{"checkRunId":90487908020,"checkSuiteId":82467831487,"event":"pull_request","headSha":"4e61d8de8caf00520d72a0bcbf14c015b4e40a85","runId":30424510554},"integration":{"checkRunId":90488000700,"checkSuiteId":82467915381,"commit":"f32e396c08dd909534cbf08894308e4672ee070b","runId":30424542369,"tree":"93e6a4e898865ace935b596405260471d7690ea8"},"tests":{"failed":0,"files":89,"passed":2337,"pending":0}}
 ```
 
-The round-sixteen reviewer receives the actual immutable support bytes alongside
-this manifest and source patch, rather than digest strings alone:
+The round-seventeen reviewer receives the actual immutable support bytes
+alongside this manifest and source patch, rather than digest strings alone:
 
-- `github-evidence.json` (70,747 bytes; SHA-256
-  `b39dfe32381ee86132e2fea05db7bb82f347b30c68fc6b5945e8ce0e4a3e6701`):
+- `github-evidence.json` (92,323 bytes; SHA-256
+  `d7ec26cd24401449de92ba6c9a517c7853daa7c3099b56c8bfd21abfc2d18dba`):
   raw PR #80, source run, job, check-run, check-suite, and commit API responses;
-- `integration-github-evidence.json` (68,757 bytes; SHA-256
-  `6401b5594ed40968f32c7043212aaa5ce8b8338f7da3207c83ef072e7543c318`):
+- `integration-github-evidence.json` (186,434 bytes; SHA-256
+  `b037c3efc192017d9988a63637ff478f5cea7ed218febe12fc4c4e4281851576`):
   raw closed evidence-only PR #86, integration run, job, check-run, check-suite,
   and commit API responses;
-- `source-ci.log` (71,533 bytes; SHA-256
-  `2ea74ab9b3c3df172896d4664074d42c8049da4830076b4cdc5d687b2491f8ac`)
-  and `integration-ci.log` (77,075 bytes; SHA-256
-  `8b441d122f8e7bc98c79c79c24fc0bd05c142fbe2d484d411e9929a4603f5230`):
+- `source-ci.log` (71,534 bytes; SHA-256
+  `9df33d595f3f90e5df0439d379f2d24386665b4091442f0e45f782a2dd3a49e2`)
+  and `integration-ci.log` (76,886 bytes; SHA-256
+  `be26c201246426f34719d3b2bf99b867f88d916c868959e21919f340b000fac9`):
   exact GitHub logs containing checkout SHA/tree attestations and all CI
   command output;
-- `integration-merge-dag.txt` (50,852 bytes; SHA-256
-  `4e44e2b60471cf57ebb7ba0ccb850d50b73a5a1ef4cbc163cc3af165f7cb8433`):
+- `integration-merge-dag.txt` (48,146 bytes; SHA-256
+  `fd9aef01a2cf765577e0dc2b2c2804d7860b2c1eb5056ac85c02c0daaf6bcc00`):
   raw commit/tree graph, first-parent merge identities,
   exact PR ancestors, and integration path ledger;
 - `source-to-integration-overlap.diff` (33,276 bytes; SHA-256
   `b530dcb6ad0cb4c39ba20c0f9c6cae6d1595d1f7be0de8343fc203bbd45a5813`):
   the source-to-integration overlapping-path diff for conflict-resolution
   review;
-- `integration-vitest.json` (865,270 bytes; SHA-256
-  `88dd1fc957985b95814153b6ae416870f34bbbedd174780cda275b944f421bf9`);
+- `integration-vitest.json` (865,335 bytes; SHA-256
+  `79de8713efc71652bfbf12bbf011acbfd77d293b1860f2214efdf826d93598c0`);
 - `integration-audit.json` (310 bytes; SHA-256
   `e6b1e426bee90fc309ed49cf51fff66f7d2218cca7fcb42e88b1b312521a615c`);
 - `round_13.md` (17,593 bytes; SHA-256
@@ -306,6 +311,9 @@ this manifest and source patch, rather than digest strings alone:
 - `round_15.md` (22,528 bytes; SHA-256
   `c05dc3242c67eed9e6e97b71ba88d2f8deaed4fd38ab0b9ebd49e238e59a3d3c`),
   the complete whitespace-normalized terminal round-fifteen response;
+- `round_16.md` (19,684 bytes; SHA-256
+  `e14414002d6d9b0421ee925a37d0ded41277ae99ab0ac390b64bc4ea30c43a45`),
+  the complete whitespace-normalized terminal round-sixteen response;
 - `final-head-github-evidence.json`, `final-head-ci.log`, and
   `source-to-live-head.diff`, captured after the evidence-only descendant is
   pushed and its exact GitHub CI succeeds. These attached bytes, not a
@@ -315,7 +323,7 @@ this manifest and source patch, rather than digest strings alone:
 The reviewer must recompute hashes from those attached bytes, confirm the
 source CI and synthetic integration identities, and use the final PR object
 plus the attached source-to-live-head diff to prove that every descendant
-change after `5f47c982b1b26a4d3966d6337ff74cf7e88307b4` is APR-only. The exact
+change after `4e61d8de8caf00520d72a0bcbf14c015b4e40a85` is APR-only. The exact
 APR-only live head passed 85 files and 2,222 tests, warning-free lint, strict
 TypeScript, the Next.js 16.2.10 build, and mobile performance in CI.
 
@@ -440,26 +448,41 @@ identities by resolved symbols rather than names. Exact hostile and safe
 differential fixtures cover each reproduced class, the focused suite is 11/11
 green, the full branch is 85 files and 2,222 tests green, exact source CI is
 green within its time budget, and the rebuilt eight-head integration is 89
-files and 2,337 tests green. Round 15 then reproduced the last broader
-equivalents: receiver aliases whose properties are written through one alias
-and read through another; nested and assignment destructuring; arbitrary
+files and 2,337 tests green. Round 15 then reproduced the broader receiver and
+invocation equivalents: property writes through one receiver alias and reads
+through another; nested and assignment destructuring; arbitrary
 `Function.prototype.call.call`, `apply.call`, and `bind.call` mediation; aliased
 or destructured `Reflect.apply`; and cross-file imported-helper paths followed
 by those forms. It also proved that auth-module override analysis still used a
-separate standalone source program.
+separate standalone source program. The repair canonicalized ordinary receiver
+aliases, followed Function and Reflect symbols semantically, and moved auth
+overrides to the cached production-configured language service without
+weakening timeouts or coverage.
 
-The repair canonicalizes property receivers through the symbol assignment
-graph, records nested binding and assignment member paths, resolves shorthand
-assignment symbols, and follows invocation identity through Function and
-Reflect symbols instead of literal spelling. Exact hostile and safe
-differentials cover every reproduced form for loader admission, allowed-export
-mutation, private-authority escape, and dynamic vectors. Auth override analysis
-now uses the cached production-configured language service described above, and
-its assignment scan is deliberately scoped to the auth module governed by that
-guard. No timeout or coverage gate was weakened. The exact source run passed all
-85 files and 2,222 tests; the auth boundary file completed all 11 tests in
-70.079 seconds. The exact eight-head integration passed 89 files and 2,337
-tests; the same boundary file completed in 77.811 seconds. Round 16 must review
+Round 16 independently confirmed those repairs and all immutable artifact
+hashes, then reproduced the remaining P0: receiver aliases created by object,
+nested object, assignment, array, nested-array, and array-assignment
+destructuring were recorded in `assignedMemberPaths` but not consumed by
+`equivalentValueSymbols`. A property could therefore be written through the
+destructured alias and read through the original receiver (or the reverse)
+without joining the two receiver identities; extracting the assigned function
+through an array member and cross-file imported holders produced the same false
+green.
+
+The round-16 repair introduces one recursive member-path projection shared by
+receiver equivalence and return summaries. It follows declaration initializers,
+assigned values, object-literal shorthand values, numeric array elements,
+checker properties, later property writes, nested member paths, and imported
+symbols. Binding paths are indexed before property writes so both write/read
+directions converge on the same canonical receivers. Exact hostile and safe
+twins cover object, nested-object, assignment, array, nested-array,
+array-assignment, array-extracted function, reverse-direction, same-file, and
+cross-file forms in privileged-loader admission, allowed-export mutation, and
+private-authority return analysis. No timeout, route inventory, production
+program, test, or release gate was weakened. The exact source run passed all 85
+files and 2,222 tests; the auth boundary file completed all 11 tests in
+79.631 seconds. The exact eight-head integration passed 89 files and 2,337
+tests; the same boundary file completed in 78.060 seconds. Round 17 must review
 this regenerated exact patch and attached support bundle.
 
 The release verifier is designed to prove cookie metadata and TTLs, password
