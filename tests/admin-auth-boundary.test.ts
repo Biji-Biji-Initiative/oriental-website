@@ -561,6 +561,17 @@ function semanticFunctionReturns(
     return null;
   };
   type SemanticMemberReference = { expression?: ts.Expression; symbol?: ts.Symbol };
+  const semanticPropertyNameText = (name: ts.PropertyName | undefined) => {
+    const direct = propertyNameText(name);
+    if (direct !== null || !name || !ts.isComputedPropertyName(name)) return direct;
+    const propertySource = name.getSourceFile();
+    let propertyBindings = propertySource === source ? bindings : semanticConstantBindings.get(propertySource);
+    if (!propertyBindings) {
+      propertyBindings = constantStringBindings(propertySource);
+      semanticConstantBindings.set(propertySource, propertyBindings);
+    }
+    return constantStringExpression(name.expression, propertyBindings);
+  };
   const symbolValueReferences = (symbol: ts.Symbol): SemanticMemberReference[] => {
     const resolved = unalias(symbol);
     const references: SemanticMemberReference[] = (assignedValues.get(resolved) ?? []).map((expression) => ({
@@ -581,6 +592,43 @@ function semanticFunctionReturns(
     }
     return references;
   };
+  const staticArrayLength = (
+    array: ts.ArrayLiteralExpression,
+    visited = new Set<ts.ArrayLiteralExpression>(),
+  ): number | null => {
+    if (visited.has(array)) return null;
+    const nextVisited = new Set(visited).add(array);
+    let length = 0;
+    for (const element of array.elements) {
+      if (!ts.isSpreadElement(element)) {
+        length += 1;
+        continue;
+      }
+      const spread = unwrapExpression(element.expression);
+      if (!ts.isArrayLiteralExpression(spread)) return null;
+      const spreadLength = staticArrayLength(spread, nextVisited);
+      if (spreadLength === null) return null;
+      length += spreadLength;
+    }
+    return length;
+  };
+  const directArrayMemberReferences = (array: ts.ArrayLiteralExpression, index: number): SemanticMemberReference[] => {
+    let offset = 0;
+    for (const element of array.elements) {
+      if (ts.isSpreadElement(element)) {
+        const spread = unwrapExpression(element.expression);
+        if (!ts.isArrayLiteralExpression(spread)) return [];
+        const spreadLength = staticArrayLength(spread);
+        if (spreadLength === null) return [];
+        if (index < offset + spreadLength) return directArrayMemberReferences(spread, index - offset);
+        offset += spreadLength;
+        continue;
+      }
+      if (offset === index) return ts.isExpression(element) ? [{ expression: element }] : [];
+      offset += 1;
+    }
+    return [];
+  };
   const directMemberReferences = (expression: ts.Expression, member: string): SemanticMemberReference[] => {
     const unwrapped = unwrapExpression(expression);
     const references: SemanticMemberReference[] = [];
@@ -592,7 +640,7 @@ function semanticFunctionReturns(
             ts.isMethodDeclaration(property) ||
             ts.isGetAccessorDeclaration(property) ||
             ts.isSetAccessorDeclaration(property)) &&
-          propertyNameText(property.name) === member
+          semanticPropertyNameText(property.name) === member
         ) {
           if (ts.isPropertyAssignment(property)) {
             references.push({ expression: property.initializer });
@@ -607,37 +655,63 @@ function semanticFunctionReturns(
       }
     }
     if (ts.isArrayLiteralExpression(unwrapped) && /^\d+$/u.test(member)) {
-      const element = unwrapped.elements[Number(member)];
-      if (element && ts.isExpression(element)) references.push({ expression: element });
+      references.push(...directArrayMemberReferences(unwrapped, Number(member)));
     }
     return references;
   };
-  let equivalentValueSymbols: (expression: ts.Expression, visited?: ReadonlySet<ts.Symbol>) => ReadonlySet<ts.Symbol>;
+  let equivalentValueSymbols: (
+    expression: ts.Expression,
+    visitedSymbols?: ReadonlySet<ts.Symbol>,
+    visitedExpressions?: ReadonlySet<ts.Expression>,
+  ) => ReadonlySet<ts.Symbol>;
   let memberPathValueSymbols: (
     expression: ts.Expression,
     members: readonly string[],
-    visited: ReadonlySet<ts.Symbol>,
+    visitedSymbols: ReadonlySet<ts.Symbol>,
+    visitedExpressions: ReadonlySet<ts.Expression>,
   ) => ReadonlySet<ts.Symbol>;
+  let semanticReturnedValuesFor: (expression: ts.Expression) => readonly ts.Expression[] = () => [];
+  const activeReturnProjections = new Set<ts.Expression>();
+  const semanticReturnedValueExpressions = (expression: ts.Expression) => {
+    const unwrapped = unwrapExpression(expression);
+    if (activeReturnProjections.has(unwrapped)) return [];
+    activeReturnProjections.add(unwrapped);
+    try {
+      return semanticReturnedValuesFor(unwrapped);
+    } finally {
+      activeReturnProjections.delete(unwrapped);
+    }
+  };
   const memberPathSymbolValues = (
     symbol: ts.Symbol,
     members: readonly string[],
-    visited: ReadonlySet<ts.Symbol>,
+    visitedSymbols: ReadonlySet<ts.Symbol>,
+    visitedExpressions: ReadonlySet<ts.Expression>,
   ): ReadonlySet<ts.Symbol> => {
     const resolved = unalias(symbol);
-    if (members.length === 0) return equivalentSymbolsForSymbol(resolved, visited);
-    if (visited.has(resolved)) return new Set();
-    const nextVisited = new Set(visited).add(resolved);
+    if (members.length === 0) {
+      return equivalentSymbolsForSymbol(resolved, visitedSymbols, visitedExpressions);
+    }
+    if (visitedSymbols.has(resolved)) return new Set();
+    const nextVisitedSymbols = new Set(visitedSymbols).add(resolved);
     const values = new Set<ts.Symbol>();
     for (const reference of symbolValueReferences(resolved)) {
       const symbols = reference.symbol
-        ? memberPathSymbolValues(reference.symbol, members, nextVisited)
+        ? memberPathSymbolValues(reference.symbol, members, nextVisitedSymbols, visitedExpressions)
         : reference.expression
-          ? memberPathValueSymbols(reference.expression, members, nextVisited)
+          ? memberPathValueSymbols(reference.expression, members, nextVisitedSymbols, visitedExpressions)
           : [];
       for (const value of symbols) values.add(value);
     }
     for (const { members: prefix, root } of assignedMemberPaths.get(resolved) ?? []) {
-      for (const value of memberPathValueSymbols(root, [...prefix, ...members], nextVisited)) values.add(value);
+      for (const value of memberPathValueSymbols(
+        root,
+        [...prefix, ...members],
+        nextVisitedSymbols,
+        visitedExpressions,
+      )) {
+        values.add(value);
+      }
     }
     const member = members[0];
     if (member === undefined) return values;
@@ -645,61 +719,97 @@ function semanticFunctionReturns(
     const declaration = resolved.valueDeclaration ?? resolved.declarations?.[0] ?? source;
     const property = checker.getTypeOfSymbolAtLocation(resolved, declaration).getProperty(member);
     if (property) {
-      for (const value of memberPathSymbolValues(property, remaining, nextVisited)) values.add(value);
+      for (const value of memberPathSymbolValues(property, remaining, nextVisitedSymbols, visitedExpressions)) {
+        values.add(value);
+      }
     }
     for (const propertyValue of assignedPropertyValues.get(resolved)?.get(member) ?? []) {
-      for (const value of memberPathValueSymbols(propertyValue, remaining, nextVisited)) values.add(value);
+      for (const value of memberPathValueSymbols(propertyValue, remaining, nextVisitedSymbols, visitedExpressions)) {
+        values.add(value);
+      }
     }
     return values;
   };
-  function equivalentSymbolsForSymbol(symbol: ts.Symbol, visited: ReadonlySet<ts.Symbol>): ReadonlySet<ts.Symbol> {
+  function equivalentSymbolsForSymbol(
+    symbol: ts.Symbol,
+    visitedSymbols: ReadonlySet<ts.Symbol>,
+    visitedExpressions: ReadonlySet<ts.Expression>,
+  ): ReadonlySet<ts.Symbol> {
     const resolved = unalias(symbol);
-    if (visited.has(resolved)) return new Set();
-    const nextVisited = new Set(visited).add(resolved);
+    if (visitedSymbols.has(resolved)) return new Set();
+    const nextVisitedSymbols = new Set(visitedSymbols).add(resolved);
     const values = new Set<ts.Symbol>([resolved]);
     for (const reference of symbolValueReferences(resolved)) {
       const symbols = reference.symbol
-        ? equivalentSymbolsForSymbol(reference.symbol, nextVisited)
+        ? equivalentSymbolsForSymbol(reference.symbol, nextVisitedSymbols, visitedExpressions)
         : reference.expression
-          ? equivalentValueSymbols(reference.expression, nextVisited)
+          ? equivalentValueSymbols(reference.expression, nextVisitedSymbols, visitedExpressions)
           : [];
       for (const value of symbols) values.add(value);
     }
     for (const { members, root } of assignedMemberPaths.get(resolved) ?? []) {
-      for (const value of memberPathValueSymbols(root, members, nextVisited)) values.add(value);
+      for (const value of memberPathValueSymbols(root, members, nextVisitedSymbols, visitedExpressions)) {
+        values.add(value);
+      }
     }
     return values;
   }
   memberPathValueSymbols = (
     expression: ts.Expression,
     members: readonly string[],
-    visited: ReadonlySet<ts.Symbol>,
+    visitedSymbols: ReadonlySet<ts.Symbol>,
+    visitedExpressions: ReadonlySet<ts.Expression>,
   ): ReadonlySet<ts.Symbol> => {
-    if (members.length === 0) return equivalentValueSymbols(expression, visited);
+    if (members.length === 0) {
+      return equivalentValueSymbols(expression, visitedSymbols, visitedExpressions);
+    }
+    const unwrapped = unwrapExpression(expression);
+    if (visitedExpressions.has(unwrapped)) return new Set();
+    const nextVisitedExpressions = new Set(visitedExpressions).add(unwrapped);
     const member = members[0];
     if (member === undefined) return new Set();
     const remaining = members.slice(1);
     const values = new Set<ts.Symbol>();
-    for (const reference of directMemberReferences(expression, member)) {
+    for (const reference of directMemberReferences(unwrapped, member)) {
       const symbols = reference.symbol
-        ? memberPathSymbolValues(reference.symbol, remaining, visited)
+        ? memberPathSymbolValues(reference.symbol, remaining, visitedSymbols, nextVisitedExpressions)
         : reference.expression
-          ? memberPathValueSymbols(reference.expression, remaining, visited)
+          ? memberPathValueSymbols(reference.expression, remaining, visitedSymbols, nextVisitedExpressions)
           : [];
       for (const value of symbols) values.add(value);
     }
-    const symbol = symbolAt(expression);
+    for (const returned of semanticReturnedValueExpressions(unwrapped)) {
+      for (const value of memberPathValueSymbols(returned, members, visitedSymbols, nextVisitedExpressions)) {
+        values.add(value);
+      }
+    }
+    const symbol = symbolAt(unwrapped);
     if (symbol) {
-      for (const value of memberPathSymbolValues(symbol, members, visited)) values.add(value);
+      for (const value of memberPathSymbolValues(symbol, members, visitedSymbols, nextVisitedExpressions)) {
+        values.add(value);
+      }
     }
     return values;
   };
   equivalentValueSymbols = (
     expression: ts.Expression,
-    visited: ReadonlySet<ts.Symbol> = new Set(),
+    visitedSymbols: ReadonlySet<ts.Symbol> = new Set(),
+    visitedExpressions: ReadonlySet<ts.Expression> = new Set(),
   ): ReadonlySet<ts.Symbol> => {
-    const symbol = symbolAt(expression);
-    return symbol ? equivalentSymbolsForSymbol(symbol, visited) : new Set();
+    const unwrapped = unwrapExpression(expression);
+    if (visitedExpressions.has(unwrapped)) return new Set();
+    const nextVisitedExpressions = new Set(visitedExpressions).add(unwrapped);
+    const values = new Set<ts.Symbol>();
+    const symbol = symbolAt(unwrapped);
+    if (symbol) {
+      for (const value of equivalentSymbolsForSymbol(symbol, visitedSymbols, nextVisitedExpressions)) {
+        values.add(value);
+      }
+    }
+    for (const returned of semanticReturnedValueExpressions(unwrapped)) {
+      for (const value of equivalentValueSymbols(returned, visitedSymbols, nextVisitedExpressions)) values.add(value);
+    }
+    return values;
   };
   const propertySlot = (expression: ts.Expression): { member: string; receivers: ReadonlySet<ts.Symbol> } | null => {
     const unwrapped = unwrapExpression(expression);
@@ -788,7 +898,7 @@ function semanticFunctionReturns(
     }
     if (ts.isObjectBindingPattern(unwrapped)) {
       for (const element of unwrapped.elements) {
-        const member = propertyNameText(
+        const member = semanticPropertyNameText(
           element.propertyName ?? (ts.isIdentifier(element.name) ? element.name : undefined),
         );
         if (member) recordBindingPattern(element.name, root, [...members, member]);
@@ -806,7 +916,7 @@ function semanticFunctionReturns(
         if (ts.isShorthandPropertyAssignment(property)) {
           recordBindingPattern(property.name, root, [...members, property.name.text]);
         } else if (ts.isPropertyAssignment(property)) {
-          const member = propertyNameText(property.name);
+          const member = semanticPropertyNameText(property.name);
           if (member) recordBindingPattern(property.initializer, root, [...members, member]);
         }
       }
@@ -834,28 +944,6 @@ function semanticFunctionReturns(
     }
     ts.forEachChild(node, visitBindingAssignments);
   };
-  for (const analysisSource of analysisSources) {
-    if (indexedSources.has(analysisSource)) continue;
-    visitValueAssignments(analysisSource);
-  }
-  for (const analysisSource of analysisSources) {
-    if (indexedSources.has(analysisSource)) continue;
-    visitBindingAssignments(analysisSource);
-  }
-  for (const analysisSource of analysisSources) {
-    if (indexedSources.has(analysisSource)) continue;
-    visitPropertyAssignments(analysisSource);
-    indexedSources.add(analysisSource);
-  }
-  if (governedProgram && !cachedAssignmentIndex) {
-    semanticAssignmentIndexes.set(program, {
-      assignedMemberPaths,
-      assignedPropertyValues,
-      assignedValues,
-      indexedSources,
-    });
-  }
-
   const memberReferences = (
     references: readonly SemanticMemberReference[],
     member: string,
@@ -901,7 +989,7 @@ function semanticFunctionReturns(
         const pattern = candidate.parent;
         const declaration = pattern.parent;
         const initializer = ts.isVariableDeclaration(declaration) ? declaration.initializer : undefined;
-        const member = propertyNameText(
+        const member = semanticPropertyNameText(
           candidate.propertyName ?? (ts.isIdentifier(candidate.name) ? candidate.name : undefined),
         );
         if (initializer && member) {
@@ -1061,6 +1149,28 @@ function semanticFunctionReturns(
         .flatMap((declaration) => functionLikeReturnExpressions(declaration)),
     );
   };
+  semanticReturnedValuesFor = fromValue;
+  for (const analysisSource of analysisSources) {
+    if (indexedSources.has(analysisSource)) continue;
+    visitValueAssignments(analysisSource);
+  }
+  for (const analysisSource of analysisSources) {
+    if (indexedSources.has(analysisSource)) continue;
+    visitBindingAssignments(analysisSource);
+  }
+  for (const analysisSource of analysisSources) {
+    if (indexedSources.has(analysisSource)) continue;
+    visitPropertyAssignments(analysisSource);
+    indexedSources.add(analysisSource);
+  }
+  if (governedProgram && !cachedAssignmentIndex) {
+    semanticAssignmentIndexes.set(program, {
+      assignedMemberPaths,
+      assignedPropertyValues,
+      assignedValues,
+      indexedSources,
+    });
+  }
   const isLocallyDeclared = (expression: ts.Expression) => {
     const symbol = symbolAt(expression);
     return Boolean(symbol?.declarations?.some((declaration) => analysisSourceSet.has(declaration.getSourceFile())));
@@ -3359,6 +3469,28 @@ describe("admin authentication production boundary", () => {
       'const box: any = {}; const holder = [[box]]; const [[alias]] = holder; alias.get = () => module; const M = box.get(); const req = Reflect.get(M, "require").bind(M) as NodeRequire; void req("./safe-module");',
       'const box: any = {}; const holder = [box]; let alias: any; [alias] = holder; alias.get = () => module; const M = box.get(); const req = Reflect.get(M, "require").bind(M) as NodeRequire; void req("./safe-module");',
       'const box: any = {}; const holder = [box]; const [alias] = holder; alias.get = () => module; const [get] = [box.get]; const M = get(); const req = Reflect.get(M, "require").bind(M) as NodeRequire; void req("./safe-module");',
+      'const box: any = {}; const getHolder = () => ({ box }); const { box: alias } = getHolder(); alias.get = () => module; const M = box.get(); const req = Reflect.get(M, "require").bind(M) as NodeRequire; void req("./safe-module");',
+      'const box: any = {}; const getHolder = () => ({ box }); const { box: alias } = getHolder(); box.get = () => module; const M = alias.get(); const req = Reflect.get(M, "require").bind(M) as NodeRequire; void req("./safe-module");',
+      'const box: any = {}; const getHolder = () => ({ nested: { box } }); const { nested: { box: alias } } = getHolder(); alias.get = () => module; const M = box.get(); const req = Reflect.get(M, "require").bind(M) as NodeRequire; void req("./safe-module");',
+      'const box: any = {}; const getHolder = () => ({ box }); let alias: any; ({ box: alias } = getHolder()); alias.get = () => module; const M = box.get(); const req = Reflect.get(M, "require").bind(M) as NodeRequire; void req("./safe-module");',
+      'const box: any = {}; const getHolder = () => [box]; const [alias] = getHolder(); alias.get = () => module; const M = box.get(); const req = Reflect.get(M, "require").bind(M) as NodeRequire; void req("./safe-module");',
+      'const box: any = {}; const getHolder = () => [[box]]; const [[alias]] = getHolder(); alias.get = () => module; const M = box.get(); const req = Reflect.get(M, "require").bind(M) as NodeRequire; void req("./safe-module");',
+      'const box: any = {}; const getHolder = () => [box]; let alias: any; [alias] = getHolder(); alias.get = () => module; const M = box.get(); const req = Reflect.get(M, "require").bind(M) as NodeRequire; void req("./safe-module");',
+      'const box: any = {}; const getHolder = () => ({ box }); const { box: alias } = Function.prototype.call.call(getHolder, null); alias.get = () => module; const M = box.get(); const req = Reflect.get(M, "require").bind(M) as NodeRequire; void req("./safe-module");',
+      'const box: any = {}; const getHolder = () => ({ box }); const { box: alias } = Function.prototype.call.call(getHolder, null); box.get = () => module; const M = alias.get(); const req = Reflect.get(M, "require").bind(M) as NodeRequire; void req("./safe-module");',
+      'const box: any = {}; const getHolder = () => ({ box }); const { box: alias } = Function.prototype.apply.call(getHolder, null, []); alias.get = () => module; const M = box.get(); const req = Reflect.get(M, "require").bind(M) as NodeRequire; void req("./safe-module");',
+      'const box: any = {}; const getHolder = () => ({ box }); const { box: alias } = Function.prototype.apply.call(getHolder, null, []); box.get = () => module; const M = alias.get(); const req = Reflect.get(M, "require").bind(M) as NodeRequire; void req("./safe-module");',
+      'const box: any = {}; const getHolder = () => ({ box }); const { box: alias } = Function.prototype.bind.call(getHolder, null)(); alias.get = () => module; const M = box.get(); const req = Reflect.get(M, "require").bind(M) as NodeRequire; void req("./safe-module");',
+      'const box: any = {}; const getHolder = () => ({ box }); const { box: alias } = Function.prototype.bind.call(getHolder, null)(); box.get = () => module; const M = alias.get(); const req = Reflect.get(M, "require").bind(M) as NodeRequire; void req("./safe-module");',
+      'const box: any = {}; const getHolder = () => ({ box }); const R = Reflect; const { box: alias } = R.apply(getHolder, null, []); alias.get = () => module; const M = box.get(); const req = R.get(M, "require").bind(M) as NodeRequire; void req("./safe-module");',
+      'const box: any = {}; const getHolder = () => ({ box }); const R = Reflect; const { box: alias } = R.apply(getHolder, null, []); box.get = () => module; const M = alias.get(); const req = R.get(M, "require").bind(M) as NodeRequire; void req("./safe-module");',
+      'const box: any = {}; const getHolder = () => ({ box }); const { apply } = Reflect; const { box: alias } = apply(getHolder, null, []); alias.get = () => module; const M = box.get(); const req = Reflect.get(M, "require").bind(M) as NodeRequire; void req("./safe-module");',
+      'const box: any = {}; const getHolder = () => ({ box }); const { apply } = Reflect; const { box: alias } = apply(getHolder, null, []); box.get = () => module; const M = alias.get(); const req = Reflect.get(M, "require").bind(M) as NodeRequire; void req("./safe-module");',
+      'const box: any = {}; const getHolder = () => [box]; const [alias] = getHolder(); alias.get = () => module; const [get] = [box.get]; const M = get(); const req = Reflect.get(M, "require").bind(M) as NodeRequire; void req("./safe-module");',
+      'const box: any = {}; const getHolder = () => [box]; const [alias] = getHolder(); box.get = () => module; const [get] = [alias.get]; const M = get(); const req = Reflect.get(M, "require").bind(M) as NodeRequire; void req("./safe-module");',
+      'const box: any = {}; const factory = { getHolder() { return { box }; } }; const { box: alias } = factory.getHolder(); alias.get = () => module; const M = box.get(); const req = Reflect.get(M, "require").bind(M) as NodeRequire; void req("./safe-module");',
+      'const box: any = {}; const getHolder = () => [...[box]]; const [alias] = getHolder(); alias.get = () => module; const M = box.get(); const req = Reflect.get(M, "require").bind(M) as NodeRequire; void req("./safe-module");',
+      'const box: any = {}; const key = "box" as const; const getHolder = () => ({ box }); const { [key]: alias } = getHolder(); alias.get = () => module; const M = box.get(); const req = Reflect.get(M, "require").bind(M) as NodeRequire; void req("./safe-module");',
       'const moduleBridge = { nested: { get() { return module; } } }; const { nested: { get } } = moduleBridge; const M = get(); const req = Reflect.get(M, "require").bind(M) as NodeRequire; const auth = req("../../../../lib/server/admin-auth"); auth.createAdminLoginSession({} as never, 0);',
       'const moduleBridge = { get() { return module; } }; let get: () => NodeModule; ({ get } = moduleBridge); const M = get(); const req = Reflect.get(M, "require").bind(M) as NodeRequire; const auth = req("../../../../lib/server/admin-auth"); auth.createAdminLoginSession({} as never, 0);',
       'const moduleBridge = () => module; const M = Function.prototype.call.call(moduleBridge, null); const req = Reflect.get(M, "require").bind(M) as NodeRequire; const auth = req("../../../../lib/server/admin-auth"); auth.createAdminLoginSession({} as never, 0);',
@@ -3412,6 +3544,28 @@ describe("admin authentication production boundary", () => {
       'const box: any = {}; const holder = [[box]]; const [[alias]] = holder; alias.get = () => ({ require: () => ({ safe: true }) }); const M = box.get(); void Reflect.get(M, "require")();',
       'const box: any = {}; const holder = [box]; let alias: any; [alias] = holder; alias.get = () => ({ require: () => ({ safe: true }) }); const M = box.get(); void Reflect.get(M, "require")();',
       'const box: any = {}; const holder = [box]; const [alias] = holder; alias.get = () => ({ require: () => ({ safe: true }) }); const [get] = [box.get]; const M = get(); void Reflect.get(M, "require")();',
+      'const box: any = {}; const getHolder = () => ({ box }); const { box: alias } = getHolder(); alias.get = () => ({ require: () => ({ safe: true }) }); const M = box.get(); void Reflect.get(M, "require")();',
+      'const box: any = {}; const getHolder = () => ({ box }); const { box: alias } = getHolder(); box.get = () => ({ require: () => ({ safe: true }) }); const M = alias.get(); void Reflect.get(M, "require")();',
+      'const box: any = {}; const getHolder = () => ({ nested: { box } }); const { nested: { box: alias } } = getHolder(); alias.get = () => ({ require: () => ({ safe: true }) }); const M = box.get(); void Reflect.get(M, "require")();',
+      'const box: any = {}; const getHolder = () => ({ box }); let alias: any; ({ box: alias } = getHolder()); alias.get = () => ({ require: () => ({ safe: true }) }); const M = box.get(); void Reflect.get(M, "require")();',
+      'const box: any = {}; const getHolder = () => [box]; const [alias] = getHolder(); alias.get = () => ({ require: () => ({ safe: true }) }); const M = box.get(); void Reflect.get(M, "require")();',
+      'const box: any = {}; const getHolder = () => [[box]]; const [[alias]] = getHolder(); alias.get = () => ({ require: () => ({ safe: true }) }); const M = box.get(); void Reflect.get(M, "require")();',
+      'const box: any = {}; const getHolder = () => [box]; let alias: any; [alias] = getHolder(); alias.get = () => ({ require: () => ({ safe: true }) }); const M = box.get(); void Reflect.get(M, "require")();',
+      'const box: any = {}; const getHolder = () => ({ box }); const { box: alias } = Function.prototype.call.call(getHolder, null); alias.get = () => ({ require: () => ({ safe: true }) }); const M = box.get(); void Reflect.get(M, "require")();',
+      'const box: any = {}; const getHolder = () => ({ box }); const { box: alias } = Function.prototype.call.call(getHolder, null); box.get = () => ({ require: () => ({ safe: true }) }); const M = alias.get(); void Reflect.get(M, "require")();',
+      'const box: any = {}; const getHolder = () => ({ box }); const { box: alias } = Function.prototype.apply.call(getHolder, null, []); alias.get = () => ({ require: () => ({ safe: true }) }); const M = box.get(); void Reflect.get(M, "require")();',
+      'const box: any = {}; const getHolder = () => ({ box }); const { box: alias } = Function.prototype.apply.call(getHolder, null, []); box.get = () => ({ require: () => ({ safe: true }) }); const M = alias.get(); void Reflect.get(M, "require")();',
+      'const box: any = {}; const getHolder = () => ({ box }); const { box: alias } = Function.prototype.bind.call(getHolder, null)(); alias.get = () => ({ require: () => ({ safe: true }) }); const M = box.get(); void Reflect.get(M, "require")();',
+      'const box: any = {}; const getHolder = () => ({ box }); const { box: alias } = Function.prototype.bind.call(getHolder, null)(); box.get = () => ({ require: () => ({ safe: true }) }); const M = alias.get(); void Reflect.get(M, "require")();',
+      'const box: any = {}; const getHolder = () => ({ box }); const R = Reflect; const { box: alias } = R.apply(getHolder, null, []); alias.get = () => ({ require: () => ({ safe: true }) }); const M = box.get(); void R.get(M, "require")();',
+      'const box: any = {}; const getHolder = () => ({ box }); const R = Reflect; const { box: alias } = R.apply(getHolder, null, []); box.get = () => ({ require: () => ({ safe: true }) }); const M = alias.get(); void R.get(M, "require")();',
+      'const box: any = {}; const getHolder = () => ({ box }); const { apply } = Reflect; const { box: alias } = apply(getHolder, null, []); alias.get = () => ({ require: () => ({ safe: true }) }); const M = box.get(); void Reflect.get(M, "require")();',
+      'const box: any = {}; const getHolder = () => ({ box }); const { apply } = Reflect; const { box: alias } = apply(getHolder, null, []); box.get = () => ({ require: () => ({ safe: true }) }); const M = alias.get(); void Reflect.get(M, "require")();',
+      'const box: any = {}; const getHolder = () => [box]; const [alias] = getHolder(); alias.get = () => ({ require: () => ({ safe: true }) }); const [get] = [box.get]; const M = get(); void Reflect.get(M, "require")();',
+      'const box: any = {}; const getHolder = () => [box]; const [alias] = getHolder(); box.get = () => ({ require: () => ({ safe: true }) }); const [get] = [alias.get]; const M = get(); void Reflect.get(M, "require")();',
+      'const box: any = {}; const factory = { getHolder() { return { box }; } }; const { box: alias } = factory.getHolder(); alias.get = () => ({ require: () => ({ safe: true }) }); const M = box.get(); void Reflect.get(M, "require")();',
+      'const box: any = {}; const getHolder = () => [...[box]]; const [alias] = getHolder(); alias.get = () => ({ require: () => ({ safe: true }) }); const M = box.get(); void Reflect.get(M, "require")();',
+      'const box: any = {}; const key = "box" as const; const getHolder = () => ({ box }); const { [key]: alias } = getHolder(); alias.get = () => ({ require: () => ({ safe: true }) }); const M = box.get(); void Reflect.get(M, "require")();',
       'const bridge = { nested: { get() { return { require: () => ({ safe: true }) }; } } }; const { nested: { get } } = bridge; const M = get(); void Reflect.get(M, "require")();',
       'const bridge = { get() { return { require: () => ({ safe: true }) }; } }; let get: () => { require: () => unknown }; ({ get } = bridge); const M = get(); void Reflect.get(M, "require")();',
       'const bridge = () => ({ require: () => ({ safe: true }) }); const M = Function.prototype.call.call(bridge, null); void Reflect.get(M, "require")();',
@@ -3740,6 +3894,97 @@ describe("admin authentication production boundary", () => {
     }
   });
 
+  it("canonicalizes receivers returned by mediated imported helpers before indexing property writes", () => {
+    const root = mkdtempSync(join(tmpdir(), "oriental-admin-returned-receivers-"));
+    const invocationForms = [
+      { expression: "getHolder()", label: "direct", prelude: "" },
+      {
+        expression: "Function.prototype.call.call(getHolder, null)",
+        label: "call-call",
+        prelude: "",
+      },
+      {
+        expression: "Function.prototype.apply.call(getHolder, null, [])",
+        label: "apply-call",
+        prelude: "",
+      },
+      {
+        expression: "Function.prototype.bind.call(getHolder, null)()",
+        label: "bind-call",
+        prelude: "",
+      },
+      { expression: "R.apply(getHolder, null, [])", label: "reflect-alias", prelude: "const R = Reflect;" },
+      {
+        expression: "apply(getHolder, null, [])",
+        label: "reflect-destructured",
+        prelude: "const { apply } = Reflect;",
+      },
+      { expression: "getHolder()", label: "array", prelude: "", shape: "array" as const },
+      { expression: "getHolder()", label: "spread-array", prelude: "", shape: "spread-array" as const },
+    ];
+    const routeFixtures: Array<{ hostile: boolean; path: string; sourceText: string }> = [];
+    try {
+      for (const invocation of invocationForms) {
+        for (const direction of ["alias-write", "receiver-write"] as const) {
+          for (const hostile of [true, false]) {
+            const fixtureName = `${invocation.label}-${direction}-${hostile ? "hostile" : "safe"}`;
+            const helperPath = join(root, `runtime/${fixtureName}.ts`);
+            const routePath = join(root, `app/api/public/${fixtureName}/route.ts`);
+            const arrayShape = invocation.shape === "array" || invocation.shape === "spread-array";
+            const holderInitializer =
+              invocation.shape === "spread-array" ? "[...[receiver]]" : arrayShape ? "[receiver]" : "{ receiver }";
+            mkdirSync(dirname(helperPath), { recursive: true });
+            mkdirSync(dirname(routePath), { recursive: true });
+            writeFileSync(
+              helperPath,
+              `export const receiver: any = {};\nexport const holder = ${holderInitializer};\nexport function getHolder() { return holder; }\n`,
+              "utf8",
+            );
+            const specifier = relative(dirname(routePath), helperPath)
+              .replaceAll("\\", "/")
+              .replace(/^(?!\.)/u, "./")
+              .replace(/\.ts$/u, "");
+            const binding = arrayShape
+              ? `const [alias] = ${invocation.expression};`
+              : `const { receiver: alias } = ${invocation.expression};`;
+            const returned = hostile ? "module" : "({ require: () => ({ safe: true }) })";
+            const write =
+              direction === "alias-write" ? `alias.get = () => ${returned};` : `receiver.get = () => ${returned};`;
+            const readReceiver = direction === "alias-write" ? "receiver" : "alias";
+            const read = arrayShape
+              ? `const [get] = [${readReceiver}.get];\nconst M = get();`
+              : `const M = ${readReceiver}.get();`;
+            const load = hostile
+              ? 'const req = Reflect.get(M, "require").bind(M) as NodeRequire;\nvoid req("./safe-module");'
+              : 'void Reflect.get(M, "require")();';
+            const sourceText = `import { getHolder, receiver } from ${JSON.stringify(specifier)};\n${invocation.prelude}\n${binding}\n${write}\n${read}\n${load}`;
+            writeFileSync(routePath, sourceText, "utf8");
+            routeFixtures.push({ hostile, path: routePath, sourceText });
+          }
+        }
+      }
+      const program = ts.createProgram(
+        routeFixtures.map(({ path }) => path),
+        {
+          allowJs: true,
+          module: ts.ModuleKind.ESNext,
+          moduleResolution: ts.ModuleResolutionKind.Bundler,
+          target: ts.ScriptTarget.ESNext,
+        },
+      );
+      for (const fixture of routeFixtures) {
+        const forbidden = protectedSymbolAuthority(fixture.path, undefined, program).forbiddenAccesses;
+        if (fixture.hostile) {
+          expect(forbidden, fixture.sourceText).not.toEqual([]);
+        } else {
+          expect(forbidden, fixture.sourceText).toEqual([]);
+        }
+      }
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+
   it("allows only the login function POST and rejects every additional export form", () => {
     const loginPost = "export async function POST() { return new Response(); }\n";
     const hostileForms = [
@@ -3847,6 +4092,10 @@ describe("admin authentication production boundary", () => {
       "const box: any = {}; const holder = [[box]]; const [[alias]] = holder; alias.get = () => adminCookieHeader; Object.assign(box.get(), { signer: sign });",
       "const box: any = {}; const holder = [box]; let alias: any; [alias] = holder; alias.get = () => adminCookieHeader; Object.assign(box.get(), { signer: sign });",
       "const box: any = {}; const holder = [box]; const [alias] = holder; alias.get = () => adminCookieHeader; const [get] = [box.get]; Object.assign(get(), { signer: sign });",
+      "const box: any = {}; const getHolder = () => ({ box }); const { box: alias } = getHolder(); alias.get = () => adminCookieHeader; Object.assign(box.get(), { signer: sign });",
+      "const box: any = {}; const getHolder = () => ({ box }); const { box: alias } = getHolder(); box.get = () => adminCookieHeader; Object.assign(alias.get(), { signer: sign });",
+      "const box: any = {}; const getHolder = () => ({ box }); const { box: alias } = Function.prototype.call.call(getHolder, null); alias.get = () => adminCookieHeader; Object.assign(box.get(), { signer: sign });",
+      "const box: any = {}; const getHolder = () => ({ box }); const { box: alias } = getHolder(); alias.get = () => [adminCookieHeader, { signer: sign }]; const args = box.get(); Reflect.apply(Object.assign, null, args);",
       "const bridge = { nested: { get() { return adminCookieHeader; } } }; const { nested: { get } } = bridge; Object.assign(get(), { signer: sign });",
       "const bridge = { get() { return adminCookieHeader; } }; let get: () => typeof adminCookieHeader; ({ get } = bridge); Object.assign(get(), { signer: sign });",
       "const bridge = () => adminCookieHeader; Object.assign(Function.prototype.call.call(bridge, null), { signer: sign });",
@@ -3887,6 +4136,10 @@ describe("admin authentication production boundary", () => {
       "const box: any = {}; const holder = [[box]]; const [[alias]] = holder; alias.get = () => ({ safe: true }); Object.assign(box.get(), { harmless: true });",
       "const box: any = {}; const holder = [box]; let alias: any; [alias] = holder; alias.get = () => ({ safe: true }); Object.assign(box.get(), { harmless: true });",
       "const box: any = {}; const holder = [box]; const [alias] = holder; alias.get = () => ({ safe: true }); const [get] = [box.get]; Object.assign(get(), { harmless: true });",
+      "const box: any = {}; const getHolder = () => ({ box }); const { box: alias } = getHolder(); alias.get = () => ({ safe: true }); Object.assign(box.get(), { harmless: true });",
+      "const box: any = {}; const getHolder = () => ({ box }); const { box: alias } = getHolder(); box.get = () => ({ safe: true }); Object.assign(alias.get(), { harmless: true });",
+      "const box: any = {}; const getHolder = () => ({ box }); const { box: alias } = Function.prototype.call.call(getHolder, null); alias.get = () => ({ safe: true }); Object.assign(box.get(), { harmless: true });",
+      "const box: any = {}; const getHolder = () => ({ box }); const { box: alias } = getHolder(); alias.get = () => [{}, { harmless: true }]; const args = box.get(); Reflect.apply(Object.assign, null, args);",
       "const bridge = { nested: { get() { return { safe: true }; } } }; const { nested: { get } } = bridge; Object.assign(get(), { harmless: true });",
       "const bridge = { get() { return { safe: true }; } }; let get: () => { safe: boolean }; ({ get } = bridge); Object.assign(get(), { harmless: true });",
       "const bridge = () => ({ safe: true }); Object.assign(Function.prototype.call.call(bridge, null), { harmless: true });",
@@ -3964,6 +4217,9 @@ describe("admin authentication production boundary", () => {
       "const result: Record<string, unknown> = {}; const box: any = {}; const holder = { box }; const { box: alias } = holder; box.get = () => result; Object.assign(alias.get(), { signer: sign }); return result as unknown as string;",
       "const result: Record<string, unknown> = {}; const box: any = {}; const holder = [[box]]; const [[alias]] = holder; alias.get = () => result; Object.assign(box.get(), { signer: sign }); return result as unknown as string;",
       "const result: Record<string, unknown> = {}; const box: any = {}; const holder = [box]; let alias: any; [alias] = holder; alias.get = () => result; Object.assign(box.get(), { signer: sign }); return result as unknown as string;",
+      "const result: Record<string, unknown> = {}; const box: any = {}; const getHolder = () => ({ box }); const { box: alias } = getHolder(); alias.get = () => [result, 'signer', sign]; const args = box.get(); Reflect.apply(Reflect.set, null, args); return result as unknown as string;",
+      "const result: Record<string, unknown> = {}; const box: any = {}; const getHolder = () => ({ box }); const { box: alias } = getHolder(); box.get = () => [result, 'signer', sign]; const args = alias.get(); Reflect.apply(Reflect.set, null, args); return result as unknown as string;",
+      "const result: Record<string, unknown> = {}; const box: any = {}; const getHolder = () => ({ box }); const { box: alias } = Function.prototype.apply.call(getHolder, null, []); alias.get = () => [result, 'signer', sign]; const args = box.get(); Reflect.apply(Reflect.set, null, args); return result as unknown as string;",
       "const result: Record<string, unknown> = {}; const target = () => result; Object.assign(Function.prototype.call.call(target, null), { signer: sign }); return result as unknown as string;",
       "const result: Record<string, unknown> = {}; const target = () => result; Object.assign(Function.prototype.apply.call(target, null, []), { signer: sign }); return result as unknown as string;",
       "const result: Record<string, unknown> = {}; const target = () => result; Object.assign(Function.prototype.bind.call(target, null)(), { signer: sign }); return result as unknown as string;",
@@ -3982,6 +4238,8 @@ describe("admin authentication production boundary", () => {
     for (const safeReceiverAliasBody of [
       "const result: Record<string, unknown> = {}; const box: any = {}; const holder = { box }; const { box: alias } = holder; alias.get = () => result; Object.assign(box.get(), { signer: 'safe' }); return result as unknown as string;",
       "const result: Record<string, unknown> = {}; const box: any = {}; const holder = [box]; const [alias] = holder; box.get = () => result; Object.assign(alias.get(), { signer: 'safe' }); return result as unknown as string;",
+      "const result: Record<string, unknown> = {}; const box: any = {}; const getHolder = () => ({ box }); const { box: alias } = getHolder(); alias.get = () => [result, 'signer', 'safe']; const args = box.get(); Reflect.apply(Reflect.set, null, args); return result as unknown as string;",
+      "const result: Record<string, unknown> = {}; const box: any = {}; const getHolder = () => ({ box }); const { box: alias } = getHolder(); box.get = () => [result, 'signer', 'safe']; const args = alias.get(); Reflect.apply(Reflect.set, null, args); return result as unknown as string;",
     ]) {
       const safeReceiverAlias = authSourceText.replace(
         "export function clearAdminCookieHeader() {",
