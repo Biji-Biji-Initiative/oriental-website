@@ -65,7 +65,9 @@ describe("release governance", () => {
     expect(packageScripts.scripts["release:verify:admin"]).toBe("tsx scripts/verify-admin-release-proof.ts");
     expect(adminReleaseVerifier).toContain('E2E_ADMIN_RELEASE_PROOF: "1"');
     expect(adminReleaseVerifier).toContain('"--project=chromium"');
+    expect(adminReleaseVerifier).toContain('"--grep=@release"');
     expect(adminReleaseVerifier).toContain('"--reporter=json"');
+    expect(adminReleaseVerifier).toContain("expected !== requiredAdminReleaseProofs");
     expect(adminReleaseVerifier).toContain("skipped !== 0");
     expect(adminReleaseVerifier).toContain("unexpected !== 0");
     expect(adminReleaseVerifier).toContain("flaky !== 0");
@@ -73,6 +75,7 @@ describe("release governance", () => {
     expect(adminReviewE2e).toContain('process.env.E2E_ADMIN_RELEASE_PROOF === "1"');
     expect(adminReviewE2e).toContain('reviewLogin.credential !== "review_bearer"');
     expect(adminReviewE2e).toContain('passwordLogin.credential !== "interactive_password"');
+    expect(adminReviewE2e.match(/ @release"/gu)).toHaveLength(3);
     expect(releaseRunbook.match(/pnpm release:verify:admin/gu)).toHaveLength(2);
     expect(releaseRunbook).toContain("`skipped=0`");
   });

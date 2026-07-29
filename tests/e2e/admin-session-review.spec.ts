@@ -74,7 +74,7 @@ test.describe("admin session review console", () => {
     await expect(page.getByRole("heading", { name: "Enquiry CRM" })).toBeVisible();
   });
 
-  test("uses the real root-scoped login cookie for protected admin mutations", async ({ context, page }) => {
+  test("uses the real root-scoped login cookie for protected admin mutations @release", async ({ context, page }) => {
     await context.clearCookies();
     const loginStartedAt = Date.now();
     const login = await context.request.post("/api/admin/login", {
@@ -119,7 +119,7 @@ test.describe("admin session review console", () => {
     await expect(page.getByRole("heading", { name: "Enquiry CRM" })).toBeVisible();
   });
 
-  test("keeps password login on aggregate metrics and requires token step-up for customer data", async ({
+  test("keeps password login on aggregate metrics and requires token step-up for customer data @release", async ({
     context,
     page,
   }) => {
@@ -169,7 +169,7 @@ test.describe("admin session review console", () => {
     expect(mutation.status()).toBe(403);
   });
 
-  test("keeps the live login limiter Redis-backed and stable across spoofed earlier hops", async () => {
+  test("keeps the live login limiter Redis-backed and stable across spoofed earlier hops @release", async () => {
     test.skip(!adminReleaseProof, "The distributed login limiter proof runs only against a canonical release target.");
     const loginUrl = new URL("/api/admin/login", adminOrigin);
     const invalidLogin = (spoofedEarlierHop: string) =>
