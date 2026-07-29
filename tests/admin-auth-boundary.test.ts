@@ -3833,62 +3833,65 @@ describe("admin authentication production boundary", () => {
         "function-declaration bridge body",
       ).toBe(true);
       expect(protectedSymbolAuthority(publicRoute, undefined, program).forbiddenAccesses).not.toEqual([]);
-      for (const mediatedCall of [
+      const authorityFixtures: Array<{
+        expectedForbidden: boolean;
+        label: string;
+        path: string;
+      }> = [];
+      for (const [index, mediatedCall] of [
         "Function.prototype.apply.call(getModule, null, [])",
         "Function.prototype.bind.call(getModule, null)()",
         "R.apply(getModule, null, [])",
         "apply(getModule, null, [])",
-      ]) {
+      ].entries()) {
         const reflectPrelude = mediatedCall.startsWith("R.")
           ? "const R = Reflect;\n"
           : mediatedCall.startsWith("apply(")
             ? "const { apply } = Reflect;\n"
             : "";
-        writeFileSync(
-          publicRoute,
-          `import { getModule } from "../../../runtime/module-bridge";\n${reflectPrelude}const M = ${mediatedCall};\nconst req = Reflect.get(M, "require") as (specifier: string) => unknown;\nvoid req("./safe-module");`,
-          "utf8",
-        );
-        const mediatedProgram = ts.createProgram([publicRoute], {
-          allowJs: true,
-          module: ts.ModuleKind.ESNext,
-          moduleResolution: ts.ModuleResolutionKind.Bundler,
-          target: ts.ScriptTarget.ESNext,
-        });
-        expect(
-          protectedSymbolAuthority(publicRoute, undefined, mediatedProgram).forbiddenAccesses,
-          mediatedCall,
-        ).not.toEqual([]);
+        const fixturePath = join(dirname(publicRoute), `mediated-${index}.ts`);
+        const sourceText = `import { getModule } from "../../../runtime/module-bridge";\n${reflectPrelude}const M = ${mediatedCall};\nconst req = Reflect.get(M, "require") as (specifier: string) => unknown;\nvoid req("./safe-module");`;
+        writeFileSync(fixturePath, sourceText, "utf8");
+        authorityFixtures.push({ expectedForbidden: true, label: mediatedCall, path: fixturePath });
       }
-      for (const crossFileHostile of [
+      for (const [index, sourceText] of [
         'import { receiver, receiverHolder } from "../../../runtime/module-bridge";\nconst { receiver: alias } = receiverHolder;\nalias.get = () => module;\nconst M = receiver.get();\nconst req = Reflect.get(M, "require").bind(M) as NodeRequire;\nvoid req("./safe-module");',
         'import { receiver, receiverHolder } from "../../../runtime/module-bridge";\nconst { receiver: alias } = receiverHolder;\nreceiver.get = () => module;\nconst M = alias.get();\nconst req = Reflect.get(M, "require").bind(M) as NodeRequire;\nvoid req("./safe-module");',
-      ]) {
-        writeFileSync(publicRoute, crossFileHostile, "utf8");
-        const crossFileProgram = ts.createProgram([publicRoute], {
-          allowJs: true,
-          module: ts.ModuleKind.ESNext,
-          moduleResolution: ts.ModuleResolutionKind.Bundler,
-          target: ts.ScriptTarget.ESNext,
+      ].entries()) {
+        const fixturePath = join(dirname(publicRoute), `cross-file-hostile-${index}.ts`);
+        writeFileSync(fixturePath, sourceText, "utf8");
+        authorityFixtures.push({
+          expectedForbidden: true,
+          label: sourceText,
+          path: fixturePath,
         });
-        expect(
-          protectedSymbolAuthority(publicRoute, undefined, crossFileProgram).forbiddenAccesses,
-          crossFileHostile,
-        ).not.toEqual([]);
       }
       const crossFileSafe =
         'import { safeReceiver, safeReceiverHolder } from "../../../runtime/module-bridge";\nconst { receiver: alias } = safeReceiverHolder;\nalias.get = () => ({ require: () => ({ safe: true }) });\nconst M = safeReceiver.get();\nvoid Reflect.get(M, "require")();';
-      writeFileSync(publicRoute, crossFileSafe, "utf8");
-      const crossFileSafeProgram = ts.createProgram([publicRoute], {
-        allowJs: true,
-        module: ts.ModuleKind.ESNext,
-        moduleResolution: ts.ModuleResolutionKind.Bundler,
-        target: ts.ScriptTarget.ESNext,
+      const crossFileSafePath = join(dirname(publicRoute), "cross-file-safe.ts");
+      writeFileSync(crossFileSafePath, crossFileSafe, "utf8");
+      authorityFixtures.push({
+        expectedForbidden: false,
+        label: crossFileSafe,
+        path: crossFileSafePath,
       });
-      expect(
-        protectedSymbolAuthority(publicRoute, undefined, crossFileSafeProgram).forbiddenAccesses,
-        crossFileSafe,
-      ).toEqual([]);
+      const fixtureProgram = ts.createProgram(
+        authorityFixtures.map((fixture) => fixture.path),
+        {
+          allowJs: true,
+          module: ts.ModuleKind.ESNext,
+          moduleResolution: ts.ModuleResolutionKind.Bundler,
+          target: ts.ScriptTarget.ESNext,
+        },
+      );
+      for (const fixture of authorityFixtures) {
+        const forbiddenAccesses = protectedSymbolAuthority(fixture.path, undefined, fixtureProgram).forbiddenAccesses;
+        if (fixture.expectedForbidden) {
+          expect(forbiddenAccesses, fixture.label).not.toEqual([]);
+        } else {
+          expect(forbiddenAccesses, fixture.label).toEqual([]);
+        }
+      }
     } finally {
       rmSync(root, { force: true, recursive: true });
     }
