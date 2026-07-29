@@ -431,6 +431,15 @@ type SemanticReturnSummaries = {
   symbolFor(expression: ts.Expression): ts.Symbol | null;
 };
 
+type SemanticAssignmentIndex = {
+  assignedPropertyValues: Map<ts.Symbol, Map<string, ts.Expression[]>>;
+  assignedValues: Map<ts.Symbol, ts.Expression[]>;
+  indexedSources: Set<ts.SourceFile>;
+};
+
+const semanticAssignmentIndexes = new WeakMap<ts.Program, SemanticAssignmentIndex>();
+const semanticConstantBindings = new WeakMap<ts.SourceFile, ReadonlyMap<string, ts.Expression>>();
+
 function isReturnBearingFunctionLike(node: ts.Node): node is ReturnBearingFunctionLike {
   return (
     ts.isArrowFunction(node) ||
@@ -485,8 +494,11 @@ function semanticFunctionReturns(
         )
     : [source];
   const analysisSourceSet = new Set(analysisSources);
-  const assignedValues = new Map<ts.Symbol, ts.Expression[]>();
-  const assignedPropertyValues = new Map<ts.Symbol, Map<string, ts.Expression[]>>();
+  const cachedAssignmentIndex = governedProgram ? semanticAssignmentIndexes.get(program) : undefined;
+  const assignedValues = cachedAssignmentIndex?.assignedValues ?? new Map<ts.Symbol, ts.Expression[]>();
+  const assignedPropertyValues =
+    cachedAssignmentIndex?.assignedPropertyValues ?? new Map<ts.Symbol, Map<string, ts.Expression[]>>();
+  const indexedSources = cachedAssignmentIndex?.indexedSources ?? new Set<ts.SourceFile>();
   const unalias = (symbol: ts.Symbol) =>
     (symbol.flags & ts.SymbolFlags.Alias) !== 0 ? checker.getAliasedSymbol(symbol) : symbol;
   const symbolAt = (expression: ts.Expression): ts.Symbol | null => {
@@ -509,10 +521,16 @@ function semanticFunctionReturns(
   const propertySlot = (expression: ts.Expression): { member: string; receiver: ts.Symbol } | null => {
     const unwrapped = unwrapExpression(expression);
     if (!ts.isPropertyAccessExpression(unwrapped) && !ts.isElementAccessExpression(unwrapped)) return null;
+    const memberSource = unwrapped.getSourceFile();
+    let memberBindings = memberSource === source ? bindings : semanticConstantBindings.get(memberSource);
+    if (!memberBindings) {
+      memberBindings = constantStringBindings(memberSource);
+      semanticConstantBindings.set(memberSource, memberBindings);
+    }
     const member = ts.isPropertyAccessExpression(unwrapped)
       ? unwrapped.name.text
       : unwrapped.argumentExpression
-        ? constantStringExpression(unwrapped.argumentExpression, bindings)
+        ? constantStringExpression(unwrapped.argumentExpression, memberBindings)
         : null;
     const receiver = symbolAt(unwrapped.expression);
     return member && receiver ? { member, receiver } : null;
@@ -544,7 +562,14 @@ function semanticFunctionReturns(
     }
     ts.forEachChild(node, visitAssignments);
   };
-  for (const analysisSource of analysisSources) visitAssignments(analysisSource);
+  for (const analysisSource of analysisSources) {
+    if (indexedSources.has(analysisSource)) continue;
+    visitAssignments(analysisSource);
+    indexedSources.add(analysisSource);
+  }
+  if (governedProgram && !cachedAssignmentIndex) {
+    semanticAssignmentIndexes.set(program, { assignedPropertyValues, assignedValues, indexedSources });
+  }
 
   const functionLikesForSymbol = (
     symbol: ts.Symbol,
