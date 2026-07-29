@@ -1,5 +1,5 @@
 import { adminVoiceFollowUpSchema } from "@/lib/schemas";
-import { adminAuthFailureStatus, verifyAdminPermission } from "@/lib/server/admin-auth";
+import { withAdminPermission } from "@/lib/server/admin-route";
 import { getAdminVoiceSession, setAdminVoiceFollowUp } from "@/lib/server/convex";
 import { logInfo, logWarn } from "@/lib/server/logger";
 import { noStoreJson } from "@/lib/server/security";
@@ -7,51 +7,47 @@ import { noStoreJson } from "@/lib/server/security";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request, context: RouteContext<"/api/admin/voice-sessions/[reviewId]">) {
-  const auth = verifyAdminPermission(request, "voice.read");
-  if (!auth.ok) {
-    return noStoreJson({ ok: false, error: auth.reason }, { status: adminAuthFailureStatus(auth) });
-  }
+export const GET = withAdminPermission(
+  "voice.read",
+  async (_request, _auth, context: RouteContext<"/api/admin/voice-sessions/[reviewId]">) => {
+    const { reviewId } = await context.params;
+    const result = await getAdminVoiceSession(decodeURIComponent(reviewId)).catch((error) => {
+      logWarn("admin_voice.detail_load_failed", { error: error instanceof Error ? error.message : "unknown" });
+      return { ok: false as const, reason: "convex_failed" };
+    });
 
-  const { reviewId } = await context.params;
-  const result = await getAdminVoiceSession(decodeURIComponent(reviewId)).catch((error) => {
-    logWarn("admin_voice.detail_load_failed", { error: error instanceof Error ? error.message : "unknown" });
-    return { ok: false as const, reason: "convex_failed" };
-  });
+    if (!result.ok) {
+      const status = result.reason === "not_found" ? 404 : 503;
+      return noStoreJson({ ok: false, error: result.reason }, { status });
+    }
 
-  if (!result.ok) {
-    const status = result.reason === "not_found" ? 404 : 503;
-    return noStoreJson({ ok: false, error: result.reason }, { status });
-  }
+    return noStoreJson({ ok: true, session: result.session });
+  },
+);
 
-  return noStoreJson({ ok: true, session: result.session });
-}
+export const PATCH = withAdminPermission(
+  "voice.follow_up",
+  async (request, _auth, context: RouteContext<"/api/admin/voice-sessions/[reviewId]">) => {
+    const raw = await request.json().catch(() => null);
+    const parsed = adminVoiceFollowUpSchema.safeParse(raw);
+    if (!parsed.success) return noStoreJson({ ok: false, error: "invalid_payload" }, { status: 400 });
 
-export async function PATCH(request: Request, context: RouteContext<"/api/admin/voice-sessions/[reviewId]">) {
-  const auth = verifyAdminPermission(request, "voice.follow_up");
-  if (!auth.ok) {
-    return noStoreJson({ ok: false, error: auth.reason }, { status: adminAuthFailureStatus(auth) });
-  }
+    const { reviewId } = await context.params;
+    const result = await setAdminVoiceFollowUp(decodeURIComponent(reviewId), parsed.data.followedUp).catch((error) => {
+      logWarn("admin_voice.follow_up_update_failed", { error: error instanceof Error ? error.message : "unknown" });
+      return { ok: false as const, reason: "convex_failed" };
+    });
 
-  const raw = await request.json().catch(() => null);
-  const parsed = adminVoiceFollowUpSchema.safeParse(raw);
-  if (!parsed.success) return noStoreJson({ ok: false, error: "invalid_payload" }, { status: 400 });
+    if (!result.ok) {
+      const status = result.reason === "not_found" ? 404 : 503;
+      return noStoreJson({ ok: false, error: result.reason }, { status });
+    }
 
-  const { reviewId } = await context.params;
-  const result = await setAdminVoiceFollowUp(decodeURIComponent(reviewId), parsed.data.followedUp).catch((error) => {
-    logWarn("admin_voice.follow_up_update_failed", { error: error instanceof Error ? error.message : "unknown" });
-    return { ok: false as const, reason: "convex_failed" };
-  });
+    logInfo("admin_voice.follow_up_updated", {
+      reviewId: decodeURIComponent(reviewId),
+      followedUp: parsed.data.followedUp,
+    });
 
-  if (!result.ok) {
-    const status = result.reason === "not_found" ? 404 : 503;
-    return noStoreJson({ ok: false, error: result.reason }, { status });
-  }
-
-  logInfo("admin_voice.follow_up_updated", {
-    reviewId: decodeURIComponent(reviewId),
-    followedUp: parsed.data.followedUp,
-  });
-
-  return noStoreJson({ ok: true });
-}
+    return noStoreJson({ ok: true });
+  },
+);

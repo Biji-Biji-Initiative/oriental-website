@@ -6,6 +6,7 @@ import {
   backfillVoiceSessionLifecycle,
   bulkAssignAdminLeads,
   deletePersonalData,
+  getAdminAggregateMetrics,
   getAdminLeadSlaSnapshot,
   getAdminLeadTable,
   getAdminOrphanedVoiceSessions,
@@ -39,6 +40,7 @@ vi.mock("convex/browser", () => ({
 vi.mock("@/convex/_generated/api", () => ({
   api: {
     leads: {
+      adminAggregateMetrics: "adminAggregateMetrics",
       adminLeadCounts: "adminLeadCounts",
       adminLeadSlaSnapshot: "adminLeadSlaSnapshot",
       adminLeadTable: "adminLeadTable",
@@ -613,6 +615,120 @@ describe("getAdminLeadSlaSnapshot", () => {
       maxUnownedMs: 4 * 60 * 60 * 1000,
     });
     expect(mocks.query).not.toHaveBeenCalledWith("reviewDashboard", expect.anything());
+  });
+});
+
+describe("getAdminAggregateMetrics", () => {
+  beforeEach(() => {
+    process.env = {
+      ...originalEnv,
+      CONVEX_URL: "https://convex.example",
+      CONVEX_INGEST_SECRET: "ingest-secret",
+    };
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+    vi.clearAllMocks();
+  });
+
+  const metrics = {
+    activeLeads: 4,
+    connectedSessions: 7,
+    engagedSessions: 6,
+    notificationDeliveryRate: 92,
+    notificationFailures: 1,
+    prewarmedSessions: 8,
+    qualifiedLeads: 3,
+    recentLeads: 12,
+    reviewedSessions: 8,
+    sessionsWithErrors: 2,
+    submittedSessions: 5,
+    urgentLeads: 1,
+    voiceLeads: 6,
+    voiceSubmitRate: 83,
+  };
+  const aggregateCountKeys = [
+    "activeLeads",
+    "connectedSessions",
+    "engagedSessions",
+    "notificationFailures",
+    "prewarmedSessions",
+    "qualifiedLeads",
+    "recentLeads",
+    "reviewedSessions",
+    "sessionsWithErrors",
+    "submittedSessions",
+    "urgentLeads",
+    "voiceLeads",
+  ] as const;
+
+  it("returns the exact validated aggregate DTO", async () => {
+    mocks.query.mockResolvedValue({ generatedAt: 1_800_000_000_000, metrics });
+
+    await expect(getAdminAggregateMetrics(10_000)).resolves.toEqual({
+      ok: true,
+      data: { generatedAt: 1_800_000_000_000, metrics },
+    });
+    expect(mocks.query).toHaveBeenCalledWith("adminAggregateMetrics", {
+      ingestSecret: "ingest-secret",
+      limit: 100,
+    });
+    expect(mocks.query).not.toHaveBeenCalledWith("reviewDashboard", expect.anything());
+    expect(mocks.query).not.toHaveBeenCalledWith("adminLeadTable", expect.anything());
+  });
+
+  it("rejects raw fields and invalid values in every allowed DTO key", async () => {
+    for (const invalid of [
+      { generatedAt: 1_800_000_000_000, metrics, leads: [{ email: "must-not-cross@example.com" }] },
+      { generatedAt: 1_800_000_000_000, metrics: { ...metrics, rawMetric: "must-not-cross" } },
+      { generatedAt: { email: "must-not-cross@example.com" }, metrics },
+      { generatedAt: Number.POSITIVE_INFINITY, metrics },
+      { generatedAt: -1, metrics },
+    ]) {
+      mocks.query.mockResolvedValueOnce(invalid);
+      await expect(getAdminAggregateMetrics()).rejects.toThrow("invalid admin aggregate metrics DTO");
+    }
+
+    for (const key of Object.keys(metrics) as Array<keyof typeof metrics>) {
+      for (const value of [{ email: "must-not-cross@example.com" }, "invalid", Number.NaN, Number.POSITIVE_INFINITY]) {
+        mocks.query.mockResolvedValueOnce({
+          generatedAt: 1_800_000_000_000,
+          metrics: { ...metrics, [key]: value },
+        });
+        await expect(getAdminAggregateMetrics()).rejects.toThrow("invalid admin aggregate metrics DTO");
+      }
+      const missing = { ...metrics } as Partial<typeof metrics>;
+      delete missing[key];
+      mocks.query.mockResolvedValueOnce({ generatedAt: 1_800_000_000_000, metrics: missing });
+      await expect(getAdminAggregateMetrics()).rejects.toThrow("invalid admin aggregate metrics DTO");
+    }
+
+    for (const key of ["notificationDeliveryRate", "voiceSubmitRate"] as const) {
+      mocks.query.mockResolvedValueOnce({ generatedAt: 1_800_000_000_000, metrics: { ...metrics, [key]: 101 } });
+      await expect(getAdminAggregateMetrics()).rejects.toThrow("invalid admin aggregate metrics DTO");
+    }
+    for (const key of ["activeLeads", "recentLeads"] as const) {
+      mocks.query.mockResolvedValueOnce({ generatedAt: 1_800_000_000_000, metrics: { ...metrics, [key]: 1.5 } });
+      await expect(getAdminAggregateMetrics()).rejects.toThrow("invalid admin aggregate metrics DTO");
+    }
+
+    for (const key of aggregateCountKeys) {
+      mocks.query.mockResolvedValueOnce({ generatedAt: 1_800_000_000_000, metrics: { ...metrics, [key]: 76 } });
+      await expect(getAdminAggregateMetrics(75), `${key} cannot exceed the bounded take`).rejects.toThrow(
+        "invalid admin aggregate metrics DTO",
+      );
+    }
+
+    for (const [key, value] of [
+      ["activeLeads", metrics.recentLeads + 1],
+      ["connectedSessions", metrics.reviewedSessions + 1],
+    ] as const) {
+      mocks.query.mockResolvedValueOnce({ generatedAt: 1_800_000_000_000, metrics: { ...metrics, [key]: value } });
+      await expect(getAdminAggregateMetrics(), `${key} cannot exceed its parent population`).rejects.toThrow(
+        "invalid admin aggregate metrics DTO",
+      );
+    }
   });
 });
 

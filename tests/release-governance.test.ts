@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { validatedAdminReleaseOrigin } from "../scripts/lib/admin-release-proof";
 import {
   MANAGED_APPLICATION_ENVIRONMENT_KEYS,
   type ManagedApplicationEnvironmentKey,
@@ -26,6 +27,8 @@ import { releaseTestEnv } from "../scripts/lib/release-test-env";
 const sha = "bb8e2673e5f129f342fba78f3eb653a54de8763b";
 const releasePreflight = readFileSync("scripts/release-preflight.ts", "utf8");
 const releaseVerifier = readFileSync("scripts/release-verify.ts", "utf8");
+const adminReleaseVerifier = readFileSync("scripts/verify-admin-release-proof.ts", "utf8");
+const adminReviewE2e = readFileSync("tests/e2e/admin-session-review.spec.ts", "utf8");
 const productionDeployer = readFileSync("scripts/deploy-coolify-production.ts", "utf8");
 const hostDeployer = readFileSync("scripts/deploy-coolify-host.sh", "utf8");
 const deadlineRunner = readFileSync("scripts/run-command-with-deadline.ts", "utf8");
@@ -49,6 +52,7 @@ describe("release governance", () => {
         "ADMIN_REVIEW_ACTOR",
         "ADMIN_REVIEW_ROLE",
         "ADMIN_REVIEW_TOKEN",
+        "ADMIN_REVIEW_PASSWORD_HMAC",
         "OPS_AUTOMATION_TOKEN",
         "PRIVACY_ADMIN_TOKEN",
       ]),
@@ -56,6 +60,42 @@ describe("release governance", () => {
     expect(analyticsOpsWorkflow).toContain("secrets.OPS_AUTOMATION_TOKEN");
     expect(analyticsOpsWorkflow).not.toContain("secrets.ADMIN_REVIEW_TOKEN");
   });
+
+  it("makes the aggregate-only password lane mandatory and machine checked for releases", () => {
+    expect(packageScripts.scripts["release:verify:admin"]).toBe("tsx scripts/verify-admin-release-proof.ts");
+    expect(adminReleaseVerifier).toContain('E2E_ADMIN_RELEASE_PROOF: "1"');
+    expect(adminReleaseVerifier).toContain('"--project=chromium"');
+    expect(adminReleaseVerifier).toContain('"--reporter=json"');
+    expect(adminReleaseVerifier).toContain("skipped !== 0");
+    expect(adminReleaseVerifier).toContain("unexpected !== 0");
+    expect(adminReleaseVerifier).toContain("flaky !== 0");
+    expect(adminReleaseVerifier).toContain("target: targetOrigin");
+    expect(adminReviewE2e).toContain('process.env.E2E_ADMIN_RELEASE_PROOF === "1"');
+    expect(adminReviewE2e).toContain('reviewLogin.credential !== "review_bearer"');
+    expect(adminReviewE2e).toContain('passwordLogin.credential !== "interactive_password"');
+    expect(releaseRunbook.match(/pnpm release:verify:admin/gu)).toHaveLength(2);
+    expect(releaseRunbook).toContain("`skipped=0`");
+  });
+
+  it("accepts only exact canonical root origins for the live admin proof", () => {
+    expect(validatedAdminReleaseOrigin("https://staging.oriental.mereka.io")).toBe(
+      "https://staging.oriental.mereka.io",
+    );
+    expect(validatedAdminReleaseOrigin("https://oriental.mereka.io/")).toBe("https://oriental.mereka.io");
+    for (const target of [
+      "http://staging.oriental.mereka.io",
+      "https://staging.oriental.mereka.io:8443",
+      "https://oriental.mereka.io:9443",
+      "https://user@oriental.mereka.io",
+      "https://oriental.mereka.io/admin",
+      "https://oriental.mereka.io/?shadow=true",
+      "https://oriental.mereka.io/#shadow",
+      "https://oriental.deploy.mereka.io",
+    ]) {
+      expect(() => validatedAdminReleaseOrigin(target), target).toThrow("exact canonical HTTPS Oriental origin");
+    }
+  });
+
   it("pins canonical and compatibility-only hostnames", () => {
     expect(RELEASE_TARGETS.production).toEqual({
       origin: "https://oriental.mereka.io",
@@ -320,6 +360,29 @@ describe("release governance", () => {
     );
     expect(finalCurrentAssertion).toBeLessThan(
       productionDeployer.indexOf("body: JSON.stringify({ git_commit_sha: args.sha })"),
+    );
+  });
+
+  it("reconciles and reads back the password HMAC as a governed runtime secret", () => {
+    const value = "a".repeat(64);
+    const env = { ADMIN_REVIEW_PASSWORD_HMAC: value };
+    const row = {
+      key: "ADMIN_REVIEW_PASSWORD_HMAC",
+      value,
+      real_value: value,
+      is_preview: false,
+      is_runtime: true,
+      is_buildtime: false,
+      is_literal: true,
+      is_multiline: false,
+    };
+
+    expect(managedEnvironmentReconciliationPlan(env, []).mutations).toEqual([
+      { key: "ADMIN_REVIEW_PASSWORD_HMAC", value },
+    ]);
+    expect(managedEnvironmentParityFailures(env, [row])).toEqual([]);
+    expect(managedEnvironmentParityFailures(env, [{ ...row, real_value: "b".repeat(64) }])).toContain(
+      "ADMIN_REVIEW_PASSWORD_HMAC Coolify value or runtime/build scope does not match Infisical",
     );
   });
 

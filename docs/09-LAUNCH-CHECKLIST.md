@@ -33,17 +33,22 @@ MUST NOT be reported as complete.
 
 ## Secrets
 
-- [x] Infisical project `6bfac905-9bb1-449e-8be8-f25f9634802b` has the production runtime keys from
-      [`02-TECHNICAL-SPEC.md`](./02-TECHNICAL-SPEC.md) §5 populated in `/deploy/oriental-website` for `prod`
+- [x] Infisical project `6bfac905-9bb1-449e-8be8-f25f9634802b` has the pre-existing production runtime keys from
+      [`02-TECHNICAL-SPEC.md`](./02-TECHNICAL-SPEC.md) §5 populated in `/deploy/oriental-website` for `prod`; the new
+      password-HMAC addition remains governed by the explicit post-merge item below
 - [ ] Coolify machine identity has read-only access to `/deploy/oriental-website`
 - [ ] CI/check machine identity has read-only access where used
 - [ ] Rotation calendar reminder set for OPENAI / AWS keys (90 days)
 - [ ] Populate an isolated `dev` scope and dedicated staging upstream services; the staging Infisical contract exists, but its Convex/notification accounts are still shared
 - [x] `REDIS_URL` is present in production and API logs show `rateLimitStore: "redis"`
 - [x] `COOLIFY_ORIENTAL_APPLICATION_UUID` is set to `mtrl2z6a7zvoyevxvufpntij` for deploy scripts
-- [x] Distinct `ADMIN_REVIEW_TOKEN`, `OPS_AUTOMATION_TOKEN`, and
-      `PRIVACY_ADMIN_TOKEN` credentials plus explicit `ADMIN_REVIEW_ROLE` /
-      `ADMIN_REVIEW_ACTOR` are present in `/deploy/oriental-website`
+- [ ] Post-merge: materialize distinct `ADMIN_REVIEW_TOKEN`,
+      `OPS_AUTOMATION_TOKEN`, and `PRIVACY_ADMIN_TOKEN` bearer credentials plus
+      the domain-separated `ADMIN_REVIEW_PASSWORD_HMAC`, explicit
+      `ADMIN_REVIEW_ROLE`, and `ADMIN_REVIEW_ACTOR` in both governed
+      `/deploy/oriental-website` scopes; reconcile and read back Coolify; prove
+      that password login yields only a thirty-minute viewer session and is
+      rejected as bearer auth.
 - [x] Sentry `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_ORG`, and
       `SENTRY_PROJECT=oriental-website` are present
 - [x] `OPS_ALERT_SLACK_CHANNEL_ID=C01AVSGACFN` targets `#tech-team-test`

@@ -10,8 +10,10 @@ import {
   voiceRetentionExpiresAt,
 } from "../lib/data-retention";
 import { summarizeIntakeAttribution } from "../lib/intake-attribution-analytics";
+import { isVoiceAvailabilityFailure } from "../lib/voice/realtime-call-failure";
 import { MIN_ORPHAN_STALE_MS } from "../lib/voice/session-policy";
 import { isEngagedVoiceCaptureSession, summarizeVoiceCaptureFunnel } from "../lib/voice-capture-analytics";
+import type { Doc } from "./_generated/dataModel";
 import { mutation, query } from "./_generated/server";
 
 function requireIngestSecret(ingestSecret: string) {
@@ -1488,6 +1490,47 @@ export const adminLeadCounts = queryGeneric({
   },
 });
 
+export const adminAggregateMetrics = queryGeneric({
+  args: { ingestSecret: v.string(), limit: v.optional(v.number()) },
+  returns: v.object({
+    generatedAt: v.number(),
+    metrics: v.object({
+      activeLeads: v.number(),
+      connectedSessions: v.number(),
+      engagedSessions: v.number(),
+      notificationDeliveryRate: v.number(),
+      notificationFailures: v.number(),
+      prewarmedSessions: v.number(),
+      qualifiedLeads: v.number(),
+      recentLeads: v.number(),
+      reviewedSessions: v.number(),
+      sessionsWithErrors: v.number(),
+      submittedSessions: v.number(),
+      urgentLeads: v.number(),
+      voiceLeads: v.number(),
+      voiceSubmitRate: v.number(),
+    }),
+  }),
+  handler: async (ctx, { ingestSecret, limit }) => {
+    requireIngestSecret(ingestSecret);
+    const take = Math.min(Math.max(Math.floor(limit ?? 100), 1), 100);
+    const generatedAt = Date.now();
+    const [leads, voiceSessions] = await Promise.all([
+      ctx.db
+        .query("leads")
+        .withIndex("by_payload_safe_created_at", (query) => query.eq("payloadSafe", true))
+        .order("desc")
+        .take(take),
+      ctx.db
+        .query("voiceSessions")
+        .withIndex("by_payload_safe_updated_at", (query) => query.eq("payloadSafe", true))
+        .order("desc")
+        .take(take),
+    ]);
+    return { generatedAt, metrics: calculateAdminAggregateMetrics(leads, voiceSessions) };
+  },
+});
+
 const SLA_QUERY_BUCKET_LIMIT = 75;
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -1640,15 +1683,12 @@ export const reviewDashboard = queryGeneric({
     ]);
     const notificationDelivered = leads.filter((lead) => lead.notificationDelivered === true).length;
     const notificationFailures = leads.filter((lead) => lead.notificationDelivered === false).length;
-    const voiceLeads = leads.filter((lead) => lead.source === "voice").length;
     const intakeAttribution = summarizeIntakeAttribution(leads);
-    const activeLeads = leads.filter((lead) => !["qualified", "archived"].includes(lead.status)).length;
-    const urgentLeads = leads.filter((lead) => lead.priority === "urgent" || lead.priority === "high").length;
-    const sessionsWithErrors = voiceSessions.filter((session) => session.errors.length > 0).length;
-    const prewarmedSessions = voiceSessions.filter((session) => typeof session.prewarmedAt === "number").length;
-    const connectedSessions = voiceSessions.filter((session) => typeof session.connectedAt === "number").length;
+    const metrics = calculateAdminAggregateMetrics(leads, voiceSessions);
+    const prewarmedSessions = metrics.prewarmedSessions;
+    const connectedSessions = metrics.connectedSessions;
     const engagedSessions = voiceSessions.filter(isEngagedVoiceCaptureSession);
-    const submittedSessions = voiceSessions.filter((session) => Boolean(session.leadId)).length;
+    const submittedSessions = metrics.submittedSessions;
     const totalResponseTokens = voiceSessions.reduce((sum, session) => sum + (session.usage?.responseTokens ?? 0), 0);
     const voiceLatency = summarizeVoiceLatency(voiceSessions);
     const evaluatedSessions = voiceSessions.filter((session) => session.eval);
@@ -1659,22 +1699,7 @@ export const reviewDashboard = queryGeneric({
       leads,
       voiceSessions: voiceSessions.map(toVoiceSessionSummary),
       leadEvents,
-      metrics: {
-        recentLeads: leads.length,
-        activeLeads,
-        voiceLeads,
-        notificationFailures,
-        urgentLeads,
-        qualifiedLeads: leads.filter((lead) => lead.status === "qualified").length,
-        reviewedSessions: voiceSessions.length,
-        prewarmedSessions,
-        engagedSessions: engagedSessions.length,
-        connectedSessions,
-        sessionsWithErrors,
-        submittedSessions,
-        notificationDeliveryRate: percent(notificationDelivered, leads.length),
-        voiceSubmitRate: percent(submittedSessions, engagedSessions.length || voiceSessions.length),
-      },
+      metrics,
       analytics: {
         sourceCounts: countBy(leads, (lead) => lead.source),
         ...intakeAttribution,
@@ -1693,7 +1718,9 @@ export const reviewDashboard = queryGeneric({
           engaged: engagedSessions.length,
           connected: connectedSessions,
           submitted: submittedSessions,
-          withErrors: sessionsWithErrors,
+          withErrors: voiceSessions.filter(
+            (session) => session.errors.length > 0 || isVoiceAvailabilityFailure(session.closeReason),
+          ).length,
           routeRequested: voiceSessions.filter((session) => session.routeRequested).length,
           totalResponseTokens,
           latency: voiceLatency,
@@ -1722,6 +1749,31 @@ export const reviewDashboard = queryGeneric({
     };
   },
 });
+
+function calculateAdminAggregateMetrics(leads: Doc<"leads">[], voiceSessions: Doc<"voiceSessions">[]) {
+  const notificationDelivered = leads.filter((lead) => lead.notificationDelivered === true).length;
+  const notificationFailures = leads.filter((lead) => lead.notificationDelivered === false).length;
+  const engagedSessions = voiceSessions.filter(isEngagedVoiceCaptureSession).length;
+  const submittedSessions = voiceSessions.filter((session) => Boolean(session.leadId)).length;
+  return {
+    recentLeads: leads.length,
+    activeLeads: leads.filter((lead) => !["qualified", "archived"].includes(lead.status)).length,
+    voiceLeads: leads.filter((lead) => lead.source === "voice").length,
+    notificationFailures,
+    urgentLeads: leads.filter((lead) => lead.priority === "urgent" || lead.priority === "high").length,
+    qualifiedLeads: leads.filter((lead) => lead.status === "qualified").length,
+    reviewedSessions: voiceSessions.length,
+    prewarmedSessions: voiceSessions.filter((session) => typeof session.prewarmedAt === "number").length,
+    engagedSessions,
+    connectedSessions: voiceSessions.filter((session) => typeof session.connectedAt === "number").length,
+    sessionsWithErrors: voiceSessions.filter(
+      (session) => session.errors.length > 0 || isVoiceAvailabilityFailure(session.closeReason),
+    ).length,
+    submittedSessions,
+    notificationDeliveryRate: percent(notificationDelivered, leads.length),
+    voiceSubmitRate: percent(submittedSessions, engagedSessions || voiceSessions.length),
+  };
+}
 
 function toVoiceSessionSummary<T extends { transcript: Array<{ role: string; text: string }> }>(session: T) {
   return {
