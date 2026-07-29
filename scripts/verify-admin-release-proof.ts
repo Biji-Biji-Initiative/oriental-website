@@ -2,6 +2,8 @@ import { spawnSync } from "node:child_process";
 import chromium from "@sparticuz/chromium";
 import { validatedAdminReleaseOrigin } from "./lib/admin-release-proof";
 
+const requiredAdminReleaseProofs = 3;
+
 type PlaywrightJsonReport = {
   stats?: {
     duration?: number;
@@ -27,7 +29,15 @@ async function main() {
   const executablePath = process.env.PLAYWRIGHT_CHROMIUM_PATH ?? (await chromium.executablePath());
   const result = spawnSync(
     "pnpm",
-    ["exec", "playwright", "test", "tests/e2e/admin-session-review.spec.ts", "--project=chromium", "--reporter=json"],
+    [
+      "exec",
+      "playwright",
+      "test",
+      "tests/e2e/admin-session-review.spec.ts",
+      "--project=chromium",
+      "--grep=@release",
+      "--reporter=json",
+    ],
     {
       encoding: "utf8",
       env: {
@@ -53,8 +63,7 @@ async function main() {
   const flaky = stats?.flaky;
   if (
     result.status !== 0 ||
-    !Number.isInteger(expected) ||
-    (expected ?? 0) <= 0 ||
+    expected !== requiredAdminReleaseProofs ||
     skipped !== 0 ||
     unexpected !== 0 ||
     flaky !== 0
