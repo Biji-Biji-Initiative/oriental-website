@@ -1,0 +1,1515 @@
+diff --git a/app/api/admin/sla-check/route.ts b/app/api/admin/sla-check/route.ts
+index 7d38ae6..84c975f 100644
+--- a/app/api/admin/sla-check/route.ts
++++ b/app/api/admin/sla-check/route.ts
+@@ -1,15 +1,22 @@
+ import { z } from "zod";
+ import { adminAuthFailureStatus, verifyAdminPermission } from "@/lib/server/admin-auth";
+-import { getAdminLeadSlaSnapshot } from "@/lib/server/convex";
++import { getAdminLeadSlaSnapshot, getAdminOrphanedVoiceSessions } from "@/lib/server/convex";
+ import { logInfo, logWarn } from "@/lib/server/logger";
+ import { sendOpsAlert } from "@/lib/server/ops-alerts";
+ import { noStoreJson } from "@/lib/server/security";
++import { DEFAULT_ORPHAN_STALE_MINUTES, MIN_ORPHAN_STALE_MINUTES } from "@/lib/voice/session-policy";
+ 
+ export const runtime = "nodejs";
+ export const dynamic = "force-dynamic";
+ 
++const ORPHAN_SWEEP_TIMEOUT_MS = 5_000;
++
+ const requestSchema = z.object({
+   maxUnownedHours: z.number().min(1).max(72).optional(),
++  // A voice session that connected but never recorded a close is either still
++  // live or lost its final snapshot to a network death. The schema floor is
++  // derived from the longest valid call, goodbye grace, and two heartbeats.
++  maxVoiceStaleMinutes: z.number().min(MIN_ORPHAN_STALE_MINUTES).max(1440).optional(),
+ });
+ 
+ /**
+@@ -28,6 +35,7 @@ export async function POST(request: Request) {
+   const parsed = requestSchema.safeParse(body ?? {});
+   if (!parsed.success) return noStoreJson({ ok: false, error: "invalid_request" }, { status: 400 });
+   const maxUnownedMs = (parsed.data.maxUnownedHours ?? 4) * 60 * 60 * 1000;
++  const maxVoiceStaleMs = (parsed.data.maxVoiceStaleMinutes ?? DEFAULT_ORPHAN_STALE_MINUTES) * 60 * 1000;
+ 
+   const snapshot = await getAdminLeadSlaSnapshot(maxUnownedMs).catch((error) => {
+     logWarn("admin_sla.convex_failed", { error: error instanceof Error ? error.message : "unknown" });
+@@ -37,27 +45,59 @@ export async function POST(request: Request) {
+ 
+   const { generatedAt: now, activeLeads, unownedBreaches, failedNotifications } = snapshot.data;
+ 
++  // Orphaned voice sessions (connected, never closed) are the signature of a
++  // dropped call whose final snapshot never reached us. Surface them here so
++  // the invisible failures become visible, but never let their lookup fail the
++  // core lead SLA sweep.
++  const orphanSweep = await orphanSweepWithDeadline(maxVoiceStaleMs);
++  let orphanedVoiceSessions: Extract<typeof orphanSweep, { ok: true }>["data"]["orphaned"] | null = null;
++  let orphanSweepUnavailableReason: string | null = null;
++  if (!orphanSweep.ok) {
++    orphanSweepUnavailableReason = orphanSweep.reason;
++  } else if (orphanSweep.data.migrationPending) {
++    orphanSweepUnavailableReason = "migration_pending";
++  } else {
++    orphanedVoiceSessions = orphanSweep.data.orphaned;
++  }
++  const orphanSweepAvailable = orphanSweepUnavailableReason === null;
++  if (!orphanSweepAvailable) {
++    logWarn("admin_sla.orphan_sweep_failed", { reason: orphanSweepUnavailableReason });
++  }
++
+   let alerted = false;
+-  if (unownedBreaches.count > 0 || failedNotifications.count > 0) {
++  const orphanCount = orphanedVoiceSessions?.count ?? null;
++  if (unownedBreaches.count > 0 || failedNotifications.count > 0 || (orphanCount ?? 0) > 0) {
+     const worstAgeH = unownedBreaches.oldestCreatedAt ? (now - unownedBreaches.oldestCreatedAt) / 3_600_000 : 0;
++    const summaryParts: string[] = [];
++    if (unownedBreaches.count > 0) {
++      summaryParts.push(
++        `${formatSlaCount(unownedBreaches)} lead(s) unowned beyond ${Math.round(maxUnownedMs / 3_600_000)}h`,
++      );
++    }
++    if (failedNotifications.count > 0) {
++      summaryParts.push(`${formatSlaCount(failedNotifications)} failed notification(s)`);
++    }
++    if (orphanedVoiceSessions && orphanedVoiceSessions.count > 0) {
++      summaryParts.push(`${formatSlaCount(orphanedVoiceSessions)} voice session(s) dropped without a close snapshot`);
++    }
+     const result = await sendOpsAlert({
+       event: "lead_sla_breach",
+       severity: failedNotifications.count > 0 ? "error" : "warning",
+-      summary:
+-        `${formatSlaCount(unownedBreaches)} lead(s) unowned beyond ${Math.round(maxUnownedMs / 3_600_000)}h` +
+-        `${
+-          failedNotifications.count > 0 ? ` · ${formatSlaCount(failedNotifications)} failed notification(s)` : ""
+-        } — ` +
+-        "assign owners in the admin console.",
++      summary: `${summaryParts.join(" · ")} — review in the admin console.`,
+       meta: {
+         unowned: unownedBreaches.count,
+         unownedCountIsLowerBound: unownedBreaches.truncated,
+         failedNotifications: failedNotifications.count,
+         failedNotificationCountIsLowerBound: failedNotifications.truncated,
++        orphanedVoiceSessions: orphanCount,
++        orphanedVoiceSessionsIsLowerBound: orphanedVoiceSessions?.truncated ?? null,
+         oldestUnownedHours: Math.round(worstAgeH * 10) / 10,
+         console: "https://oriental.mereka.io/admin/session-review?view=leads&sort=attention",
+       },
+-      fingerprint: `unowned=${formatSlaCount(unownedBreaches)}:` + `failed=${formatSlaCount(failedNotifications)}`,
++      fingerprint:
++        `unowned=${formatSlaCount(unownedBreaches)}:` +
++        `failed=${formatSlaCount(failedNotifications)}:` +
++        `orphaned=${orphanedVoiceSessions ? formatSlaCount(orphanedVoiceSessions) : "na"}`,
+     });
+     alerted = result.ok === true;
+   }
+@@ -68,6 +108,9 @@ export async function POST(request: Request) {
+     unownedCountIsLowerBound: unownedBreaches.truncated,
+     failedNotifications: failedNotifications.count,
+     failedNotificationCountIsLowerBound: failedNotifications.truncated,
++    orphanedVoiceSessions: orphanCount,
++    orphanSweepAvailable,
++    orphanSweepUnavailableReason,
+     alerted,
+   });
+   return noStoreJson({
+@@ -75,15 +118,36 @@ export async function POST(request: Request) {
+     unownedBreaches: unownedBreaches.count,
+     failedNotifications: failedNotifications.count,
+     activeLeads: activeLeads.count,
++    orphanedVoiceSessions: orphanCount,
++    orphanSweepAvailable,
++    orphanSweepUnavailableReason,
+     truncated: {
+       unownedBreaches: unownedBreaches.truncated,
+       failedNotifications: failedNotifications.truncated,
+       activeLeads: activeLeads.truncated,
++      orphanedVoiceSessions: orphanedVoiceSessions?.truncated ?? null,
+     },
+     alerted,
+   });
+ }
+ 
++async function orphanSweepWithDeadline(maxVoiceStaleMs: number) {
++  let timeout: ReturnType<typeof setTimeout> | undefined;
++  try {
++    return await Promise.race([
++      getAdminOrphanedVoiceSessions(maxVoiceStaleMs).catch((error) => ({
++        ok: false as const,
++        reason: error instanceof Error ? "query_failed" : "unexpected_failure",
++      })),
++      new Promise<{ ok: false; reason: "timeout" }>((resolve) => {
++        timeout = setTimeout(() => resolve({ ok: false, reason: "timeout" }), ORPHAN_SWEEP_TIMEOUT_MS);
++      }),
++    ]);
++  } finally {
++    if (timeout) clearTimeout(timeout);
++  }
++}
++
+ function formatSlaCount(metric: { count: number; truncated: boolean }) {
+   return `${metric.count}${metric.truncated ? "+" : ""}`;
+ }
+diff --git a/components/voice-agent/VoiceAgentDialog.tsx b/components/voice-agent/VoiceAgentDialog.tsx
+index 8f548d5..81cab3e 100644
+--- a/components/voice-agent/VoiceAgentDialog.tsx
++++ b/components/voice-agent/VoiceAgentDialog.tsx
+@@ -1,6 +1,7 @@
+ "use client";
+ 
+ import { zodResolver } from "@hookform/resolvers/zod";
++import * as Sentry from "@sentry/nextjs";
+ import { useCallback, useEffect, useRef, useState } from "react";
+ import { preconnect } from "react-dom";
+ import { type UseFormReturn, useForm } from "react-hook-form";
+@@ -50,6 +51,7 @@ import {
+   postVoiceReviewSnapshot,
+   type VoiceReviewCredentials,
+ } from "@/lib/voice/review-snapshot";
++import { VOICE_HEARTBEAT_INTERVAL_MS } from "@/lib/voice/session-policy";
+ import { DEFAULT_VOICE_VARIANT_ID, VOICE_VARIANTS, type VoiceVariantId } from "@/lib/voice/variants";
+ import { HandoffPanel } from "./HandoffPanel";
+ import { playArmCue, playLiveCue } from "./live-chime";
+@@ -72,10 +74,6 @@ import {
+ import { useVoice } from "./voice-state";
+ import { readTunerFlag } from "./voice-tuner";
+ 
+-// How often a live call persists a full review snapshot, so state survives even
+-// when the final close snapshot is lost to a tab close or network drop.
+-const VOICE_HEARTBEAT_INTERVAL_MS = 12_000;
+-
+ type VoiceAgentDialogProps = {
+   open: boolean;
+   onOpenChange: (open: boolean) => void;
+@@ -719,7 +717,16 @@ export function VoiceAgentDialog({
+           ...(leadId ? { leadId } : {}),
+         }),
+         { keepalive: Boolean(overrides.closedAt) },
+-      ).catch(() => null);
++      ).catch((error) => {
++        // A missed heartbeat self-heals on the next beat, but a close snapshot
++        // that fails to persist is the session's final state gone for good —
++        // nothing else will ever record why or how it ended. beforeSend already
++        // scrubs the event to type + stacktrace; no PII is at risk here.
++        if (overrides.closedAt) {
++          Sentry.captureException(error instanceof Error ? error : new Error("voice_review_close_snapshot_failed"));
++        }
++        return null;
++      });
+     },
+     [captured, currentReviewCredentials, nextSnapshotSequence, segment, stateRef, transcript],
+   );
+diff --git a/convex/leads.ts b/convex/leads.ts
+index d0e996d..ad60fbf 100644
+--- a/convex/leads.ts
++++ b/convex/leads.ts
+@@ -10,6 +10,7 @@ import {
+   voiceRetentionExpiresAt,
+ } from "../lib/data-retention";
+ import { summarizeIntakeAttribution } from "../lib/intake-attribution-analytics";
++import { MIN_ORPHAN_STALE_MS } from "../lib/voice/session-policy";
+ import { isEngagedVoiceCaptureSession, summarizeVoiceCaptureFunnel } from "../lib/voice-capture-analytics";
+ import { mutation, query } from "./_generated/server";
+ 
+@@ -822,7 +823,9 @@ export const recordVoiceSession = mutationGeneric({
+           : (existing?.leadId ?? snapshot.leadId);
+     const submitted = existing?.status === "submitted" || snapshot.status === "submitted" || Boolean(linkedLeadId);
+     const submittedAt = existing?.submittedAt ?? snapshot.submittedAt;
++    const connectedAt = existing?.connectedAt ?? snapshot.connectedAt;
+     const closedAt = Math.max(existing?.closedAt ?? 0, snapshot.closedAt ?? 0) || undefined;
++    const sessionState = closedAt ? "closed" : connectedAt ? "connected_open" : "preconnected";
+     const shouldQueueAutoEval = Boolean(!existing?.autoEvalQueuedAt && snapshot.closeReason && transcript.length > 0);
+     const createdAt = existing?.createdAt ?? now;
+     const patch = {
+@@ -835,6 +838,7 @@ export const recordVoiceSession = mutationGeneric({
+       segment: snapshot.segment,
+       status: submitted ? "submitted" : snapshot.status,
+       connectionStatus: snapshot.connectionStatus,
++      sessionState,
+       ...(snapshot.closeReason ? { closeReason: snapshot.closeReason } : {}),
+       ...(snapshot.deviceProfile ? { deviceProfile: snapshot.deviceProfile } : {}),
+       ...(snapshot.deploymentEnvironment ? { deploymentEnvironment: snapshot.deploymentEnvironment } : {}),
+@@ -847,7 +851,7 @@ export const recordVoiceSession = mutationGeneric({
+       ...(snapshot.fieldProvenance ? { fieldProvenance: snapshot.fieldProvenance } : {}),
+       ...(typeof snapshot.prewarmedAt === "number" ? { prewarmedAt: snapshot.prewarmedAt } : {}),
+       ...(typeof snapshot.connectStartedAt === "number" ? { connectStartedAt: snapshot.connectStartedAt } : {}),
+-      ...(typeof snapshot.connectedAt === "number" ? { connectedAt: snapshot.connectedAt } : {}),
++      ...(typeof connectedAt === "number" ? { connectedAt } : {}),
+       ...(typeof snapshot.firstEventAt === "number" ? { firstEventAt: snapshot.firstEventAt } : {}),
+       ...(typeof closedAt === "number" ? { closedAt } : {}),
+       captured,
+@@ -924,6 +928,27 @@ export const applyDataRetention = mutation({
+         capturedEmailNormalized,
+         transcript: boundTranscript(session.transcript),
+         payloadSafe: true,
++        sessionState: session.closedAt ? "closed" : session.connectedAt ? "connected_open" : "preconnected",
++        retentionExpiresAt: voiceRetentionExpiresAt({
++          createdAt: session.createdAt,
++          ...(typeof session.submittedAt === "number" ? { submittedAt: session.submittedAt } : {}),
++          ...(typeof session.closedAt === "number" ? { closedAt: session.closedAt } : {}),
++          linked: session.status === "submitted" || Boolean(session.leadId),
++        }),
++      });
++    }
++
++    const legacyVoiceState = await ctx.db
++      .query("voiceSessions")
++      .withIndex("by_safe_session_state_updated_at", (query) =>
++        query.eq("payloadSafe", true).eq("sessionState", undefined),
++      )
++      .order("asc")
++      .take(RETENTION_BATCH_LIMITS.legacyVoiceSessions + 1);
++    if (legacyVoiceState.length > RETENTION_BATCH_LIMITS.legacyVoiceSessions) hasMore = true;
++    for (const session of legacyVoiceState.slice(0, RETENTION_BATCH_LIMITS.legacyVoiceSessions)) {
++      await ctx.db.patch(session._id, {
++        sessionState: session.closedAt ? "closed" : session.connectedAt ? "connected_open" : "preconnected",
+         retentionExpiresAt: voiceRetentionExpiresAt({
+           createdAt: session.createdAt,
+           ...(typeof session.submittedAt === "number" ? { submittedAt: session.submittedAt } : {}),
+@@ -1034,6 +1059,41 @@ export const applyDataRetention = mutation({
+   },
+ });
+ 
++/**
++ * Release migration for the materialized voice-session lifecycle index.
++ * It changes only sessionState on already payload-safe rows. Unsafe legacy
++ * payload normalization and retention scheduling remain separately governed by
++ * applyDataRetention; the release verifier blocks while any such row exists.
++ */
++export const backfillVoiceSessionLifecycle = mutation({
++  args: { ingestSecret: v.string(), limit: v.number() },
++  returns: v.object({ updated: v.number(), hasMore: v.boolean() }),
++  handler: async (ctx, { ingestSecret, limit }) => {
++    requireIngestSecret(ingestSecret);
++    const take = Math.min(Math.max(Math.floor(limit), 1), RETENTION_BATCH_LIMITS.legacyVoiceSessions);
++    const legacyStates = await ctx.db
++      .query("voiceSessions")
++      .withIndex("by_safe_session_state_updated_at", (query) =>
++        query.eq("payloadSafe", true).eq("sessionState", undefined),
++      )
++      .order("asc")
++      .take(take + 1);
++
++    let updated = 0;
++    for (const session of legacyStates.slice(0, take)) {
++      await ctx.db.patch(session._id, {
++        sessionState: session.closedAt ? "closed" : session.connectedAt ? "connected_open" : "preconnected",
++      });
++      updated += 1;
++    }
++
++    return {
++      updated,
++      hasMore: legacyStates.length > take,
++    };
++  },
++});
++
+ export const normalizeLegacyPrivacyEmails = mutationGeneric({
+   args: { ingestSecret: v.string() },
+   returns: v.object({ complete: v.boolean() }),
+@@ -1486,6 +1546,58 @@ export const adminLeadSlaSnapshot = query({
+   },
+ });
+ 
++/**
++ * An indexed connected-open session becomes orphan-eligible only after the
++ * canonical maximum live duration, goodbye grace, and two heartbeat intervals.
++ * It remains visible until a close snapshot changes sessionState or retention
++ * removes the row; there is no narrow lower lookback window to miss.
++ */
++export const adminOrphanedVoiceSessionsSweep = query({
++  args: { ingestSecret: v.string(), maxStaleMs: v.number() },
++  handler: async (ctx, { ingestSecret, maxStaleMs }) => {
++    requireIngestSecret(ingestSecret);
++    const generatedAt = Date.now();
++    const boundedStaleMs = Math.min(Math.max(Math.floor(maxStaleMs), MIN_ORPHAN_STALE_MS), 24 * HOUR_MS);
++    const staleCutoff = generatedAt - boundedStaleMs;
++
++    const candidates = await ctx.db
++      .query("voiceSessions")
++      .withIndex("by_safe_session_state_updated_at", (q) =>
++        q.eq("payloadSafe", true).eq("sessionState", "connected_open").lt("updatedAt", staleCutoff),
++      )
++      .order("asc")
++      .take(SLA_QUERY_BUCKET_LIMIT + 1);
++    const legacyStates = await ctx.db
++      .query("voiceSessions")
++      .withIndex("by_safe_session_state_updated_at", (q) => q.eq("payloadSafe", true).eq("sessionState", undefined))
++      .take(1);
++
++    const legacyPayloads = await ctx.db
++      .query("voiceSessions")
++      .withIndex("by_payload_safe_updated_at", (q) => q.eq("payloadSafe", undefined))
++      .take(1);
++
++    const orphaned = candidates.slice(0, SLA_QUERY_BUCKET_LIMIT).map((row) => ({
++      reviewId: row.reviewId,
++      conversationId: row.conversationId,
++      segment: row.segment,
++      connectedAt: row.connectedAt,
++      updatedAt: row.updatedAt,
++      deploymentEnvironment: row.deploymentEnvironment,
++    }));
++
++    return {
++      generatedAt,
++      migrationPending: legacyPayloads.length > 0 || legacyStates.length > 0,
++      orphaned: {
++        count: orphaned.length,
++        truncated: candidates.length > SLA_QUERY_BUCKET_LIMIT,
++        rows: orphaned,
++      },
++    };
++  },
++});
++
+ function summarizeSlaBuckets(
+   buckets: Array<Array<{ createdAt: number }>>,
+   includeOldest = false,
+diff --git a/convex/schema.ts b/convex/schema.ts
+index 813f4da..e4cb91f 100644
+--- a/convex/schema.ts
++++ b/convex/schema.ts
+@@ -141,6 +141,7 @@ export default defineSchema({
+     segment: v.string(),
+     status: v.string(),
+     connectionStatus: v.string(),
++    sessionState: v.optional(v.union(v.literal("preconnected"), v.literal("connected_open"), v.literal("closed"))),
+     closeReason: v.optional(v.string()),
+     deviceProfile: v.optional(v.union(v.literal("mobile"), v.literal("desktop"))),
+     deploymentEnvironment: v.optional(v.union(v.literal("local"), v.literal("staging"), v.literal("production"))),
+@@ -322,6 +323,7 @@ export default defineSchema({
+     .index("by_lead_updated_at", ["leadId", "updatedAt"])
+     .index("by_captured_email_normalized", ["capturedEmailNormalized"])
+     .index("by_safe_retention_expires_at", ["payloadSafe", "retentionExpiresAt"])
++    .index("by_safe_session_state_updated_at", ["payloadSafe", "sessionState", "updatedAt"])
+     .index("by_payload_safe_updated_at", ["payloadSafe", "updatedAt"])
+     .index("by_updated_at", ["updatedAt"]),
+ });
+diff --git a/docs/12-CHAT-RELEASE-RUNBOOK.md b/docs/12-CHAT-RELEASE-RUNBOOK.md
+index e7c3dff..72f7fca 100644
+--- a/docs/12-CHAT-RELEASE-RUNBOOK.md
++++ b/docs/12-CHAT-RELEASE-RUNBOOK.md
+@@ -245,6 +245,48 @@ include release docs before the first deployment.
+    data plane. Aggregate-only evaluation remains read-only and cannot perform a
+    deploy. Do not add a lossy `clear_fields` → `clear_field` application
+    fallback.
++
++   A release containing the indexed orphan-session sweep must deploy the frozen
++   Convex functions, complete the bounded non-destructive lifecycle migration,
++   and prove the secondary sweep is available before any web deployment:
++
++   ```bash
++   infisical run \
++     --domain https://secrets.mereka.io \
++     --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
++     --env prod \
++     --path /deploy/oriental-website \
++     -- pnpm convex:deploy
++   infisical run \
++     --domain https://secrets.mereka.io \
++     --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
++     --env prod \
++     --path /deploy/oriental-website \
++     -- pnpm convex:backfill:voice-session-lifecycle
++   infisical run \
++     --domain https://secrets.mereka.io \
++     --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
++     --env prod \
++     --path /deploy/oriental-website \
++     -- pnpm release:verify:orphan-sweep
++   ```
++
++   The lifecycle migration changes only `sessionState` on rows already marked
++   payload-safe; it preserves every customer, transcript, email, retention, and
++   non-lifecycle field exactly. Unsafe legacy payload normalization and retention
++   scheduling remain separately governed by `applyDataRetention` and are never
++   run implicitly by release. The read-only verifier checks both unsafe legacy
++   rows and safe rows missing `sessionState`; either population blocks release
++   as migration-pending rather than appearing as zero dropped sessions.
++
++   The migration command has a ten-minute process deadline with a thirty-second
++   per-RPC deadline. The verifier has a fifteen-second process deadline with a
++   five-second query deadline. The supervisor kills the whole child process
++   group on expiry. Both staging and production deploy entrypoints rerun the
++   bounded verifier before their first external mutation, so a missing function,
++   incomplete migration, unsafe legacy row, timeout, or unavailable query cannot
++   be represented as zero dropped sessions and cannot be bypassed by runbook
++   drift.
+ 2. Build the distinct `staging-<sha>` image and recreate host-managed staging:
+ 
+    ```bash
+@@ -311,8 +353,18 @@ include release docs before the first deployment.
+      --env staging \
+      --path /deploy/oriental-website \
+      -- pnpm smoke:staging:intake
++   infisical run \
++     --domain https://secrets.mereka.io \
++     --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
++     --env staging \
++     --path /deploy/oriental-website \
++     -- pnpm release:verify:orphan-sweep
+    ```
+ 
++   The final command is the staging secondary-observability smoke: it must
++   return `ok: true` with migration complete. A query failure or timeout is
++   unknown telemetry, never a zero count.
++
+    For a separately approved staging picker audition, rerun the first command
+    with `-- env VOICE_SMOKE_MODE=audition pnpm smoke:staging:voice`. Audition
+    evidence validates the picker and selected voice, but is not a clean model
+diff --git a/lib/server/convex.ts b/lib/server/convex.ts
+index e161cf7..4a64dc7 100644
+--- a/lib/server/convex.ts
++++ b/lib/server/convex.ts
+@@ -223,6 +223,26 @@ export async function getAdminLeadSlaSnapshot(maxUnownedMs: number) {
+   return { ok: true as const, data };
+ }
+ 
++export async function getAdminOrphanedVoiceSessions(maxStaleMs: number) {
++  const client = createConvexClient();
++  if (!client) return { ok: false as const, reason: "convex_unconfigured" };
++  const data = await client.client.query(api.leads.adminOrphanedVoiceSessionsSweep, {
++    ingestSecret: client.ingestSecret,
++    maxStaleMs,
++  });
++  return { ok: true as const, data };
++}
++
++export async function backfillVoiceSessionLifecycle(limit = 25) {
++  const client = createConvexClient();
++  if (!client) return { ok: false as const, reason: "convex_unconfigured" as const };
++  const result = await client.client.mutation(api.leads.backfillVoiceSessionLifecycle, {
++    ingestSecret: client.ingestSecret,
++    limit,
++  });
++  return { ok: true as const, ...result };
++}
++
+ export async function applyDataRetention(now: number) {
+   const client = createConvexClient();
+   if (!client) return { ok: false as const, reason: "convex_unconfigured" as const };
+diff --git a/lib/voice/session-policy.ts b/lib/voice/session-policy.ts
+index 129863b..28f7129 100644
+--- a/lib/voice/session-policy.ts
++++ b/lib/voice/session-policy.ts
+@@ -4,6 +4,17 @@ export type VoiceDurationPolicy = {
+   idleGoodbyeGraceMs: number;
+ };
+ 
++export const VOICE_DURATION_LIMITS = {
++  maxDurationMs: 1_800_000,
++  maxIdleGoodbyeGraceMs: 30_000,
++} as const;
++
++export const VOICE_HEARTBEAT_INTERVAL_MS = 12_000;
++export const MIN_ORPHAN_STALE_MS =
++  VOICE_DURATION_LIMITS.maxDurationMs + VOICE_DURATION_LIMITS.maxIdleGoodbyeGraceMs + 2 * VOICE_HEARTBEAT_INTERVAL_MS;
++export const MIN_ORPHAN_STALE_MINUTES = Math.ceil(MIN_ORPHAN_STALE_MS / 60_000);
++export const DEFAULT_ORPHAN_STALE_MINUTES = 35;
++
+ export const VOICE_DURATION_DEFAULTS: VoiceDurationPolicy = {
+   maxDurationMs: 600_000,
+   idleTimeoutMs: 20_000,
+@@ -15,10 +26,20 @@ export function resolveVoiceDurationPolicy(input: {
+   idleTimeoutMs?: string | number | null;
+   idleGoodbyeGraceMs?: string | number | null;
+ }): VoiceDurationPolicy {
+-  const maxDurationMs = boundedDuration(input.maxDurationMs, VOICE_DURATION_DEFAULTS.maxDurationMs, 60_000, 1_800_000);
++  const maxDurationMs = boundedDuration(
++    input.maxDurationMs,
++    VOICE_DURATION_DEFAULTS.maxDurationMs,
++    60_000,
++    VOICE_DURATION_LIMITS.maxDurationMs,
++  );
+   const idleTimeoutMs = boundedDuration(input.idleTimeoutMs, VOICE_DURATION_DEFAULTS.idleTimeoutMs, 5_000, 120_000);
+   const idleGoodbyeGraceMs = Math.min(
+-    boundedDuration(input.idleGoodbyeGraceMs, VOICE_DURATION_DEFAULTS.idleGoodbyeGraceMs, 1_000, 30_000),
++    boundedDuration(
++      input.idleGoodbyeGraceMs,
++      VOICE_DURATION_DEFAULTS.idleGoodbyeGraceMs,
++      1_000,
++      VOICE_DURATION_LIMITS.maxIdleGoodbyeGraceMs,
++    ),
+     Math.max(1_000, idleTimeoutMs - 1_000),
+   );
+   return { maxDurationMs, idleTimeoutMs, idleGoodbyeGraceMs };
+diff --git a/package.json b/package.json
+index 3a65ad3..cabfd23 100644
+--- a/package.json
++++ b/package.json
+@@ -16,6 +16,7 @@
+     "test:performance": "tsx scripts/run-page-performance.ts",
+     "convex:codegen": "convex codegen",
+     "convex:deploy": "convex deploy",
++    "convex:backfill:voice-session-lifecycle": "tsx scripts/run-command-with-deadline.ts --timeout-ms 600000 -- pnpm exec tsx scripts/backfill-voice-session-lifecycle.ts",
+     "check-secrets": "tsx scripts/check-secrets.ts",
+     "backfill:clickup": "tsx scripts/backfill-clickup-leads.ts",
+     "eval:voice": "tsx scripts/eval-voice.ts",
+@@ -23,6 +24,7 @@
+     "smoke:staging:voice": "tsx scripts/smoke-staging-voice.ts",
+     "release:preflight": "pnpm lint && pnpm typecheck && tsx scripts/run-release-tests.ts && env NODE_ENV=production pnpm check-secrets && pnpm build && tsx scripts/release-preflight.ts",
+     "release:verify:voice-cell": "tsx scripts/release-preflight.ts --voice-cell-only",
++    "release:verify:orphan-sweep": "tsx scripts/run-command-with-deadline.ts --timeout-ms 15000 -- pnpm exec tsx scripts/verify-orphan-sweep.ts",
+     "release:deploy:production": "tsx scripts/deploy-coolify-production.ts",
+     "release:verify": "tsx scripts/release-verify.ts",
+     "ops:status": "tsx scripts/ops-status.ts",
+diff --git a/scripts/backfill-voice-session-lifecycle.ts b/scripts/backfill-voice-session-lifecycle.ts
+new file mode 100644
+index 0000000..1d33ef8
+--- /dev/null
++++ b/scripts/backfill-voice-session-lifecycle.ts
+@@ -0,0 +1,43 @@
++import { backfillVoiceSessionLifecycle } from "@/lib/server/convex";
++
++const BATCH_SIZE = 25;
++const MAX_ROUNDS = 10_000;
++const RPC_DEADLINE_MS = 30_000;
++
++async function main() {
++  let updated = 0;
++  for (let round = 1; round <= MAX_ROUNDS; round += 1) {
++    const result = await withDeadline(
++      backfillVoiceSessionLifecycle(BATCH_SIZE),
++      RPC_DEADLINE_MS,
++      "voice-session lifecycle backfill RPC exceeded its deadline",
++    );
++    if (!result.ok) throw new Error(`voice-session lifecycle backfill unavailable: ${result.reason}`);
++    updated += result.updated;
++    if (!result.hasMore) {
++      process.stdout.write(`${JSON.stringify({ ok: true, rounds: round, updated })}\n`);
++      return;
++    }
++    if (result.updated === 0) throw new Error("voice-session lifecycle backfill made no progress");
++  }
++  throw new Error(`voice-session lifecycle backfill exceeded ${MAX_ROUNDS} rounds`);
++}
++
++async function withDeadline<T>(promise: Promise<T>, timeoutMs: number, message: string) {
++  let timer: ReturnType<typeof setTimeout> | undefined;
++  try {
++    return await Promise.race([
++      promise,
++      new Promise<never>((_resolve, reject) => {
++        timer = setTimeout(() => reject(new Error(message)), timeoutMs);
++      }),
++    ]);
++  } finally {
++    if (timer) clearTimeout(timer);
++  }
++}
++
++main().catch((error) => {
++  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
++  process.exitCode = 1;
++});
+diff --git a/scripts/deploy-coolify-host.sh b/scripts/deploy-coolify-host.sh
+index 4baa060..dd4a1d3 100755
+--- a/scripts/deploy-coolify-host.sh
++++ b/scripts/deploy-coolify-host.sh
+@@ -106,11 +106,21 @@ if [[ ! "$ga_measurement_id" =~ ^G-[A-Z0-9]+$ ]]; then
+   echo "NEXT_PUBLIC_GA_MEASUREMENT_ID must be supplied by the managed application environment." >&2
+   exit 1
+ fi
+-if [[ ! "$google_site_verification" =~ ^[A-Za-z0-9_-]{20,256}$ ]]; then
++if (( ${#google_site_verification} < 20 || ${#google_site_verification} > 256 )) ||
++  [[ ! "$google_site_verification" =~ ^[A-Za-z0-9_-]+$ ]]; then
+   echo "NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION must be supplied by the managed application environment." >&2
+   exit 1
+ fi
+ 
++# The shared Convex schema/functions must already be live and every legacy
++# voice row must have its materialized lifecycle before any web mutation.
++local_head="$(git rev-parse HEAD)"
++if [[ "$local_head" != "$sha" ]]; then
++  echo "Host deploy source $local_head does not match reviewed SHA $sha." >&2
++  exit 1
++fi
++pnpm release:verify:orphan-sweep
++
+ declare -a ssh_command
+ if [[ -n "${COOLIFY_SSH_COMMAND:-}" ]]; then
+   # Preserve the established override for conventional command names/flags.
+@@ -327,7 +337,8 @@ if [[ ! "$ga_measurement_id" =~ ^G-[A-Z0-9]+$ ]]; then
+   echo "NEXT_PUBLIC_GA_MEASUREMENT_ID from the managed environment is malformed." >&2
+   exit 1
+ fi
+-if [[ ! "$google_site_verification" =~ ^[A-Za-z0-9_-]{20,256}$ ]]; then
++if (( ${#google_site_verification} < 20 || ${#google_site_verification} > 256 )) ||
++  [[ ! "$google_site_verification" =~ ^[A-Za-z0-9_-]+$ ]]; then
+   echo "NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION from the managed environment is malformed." >&2
+   exit 1
+ fi
+diff --git a/scripts/deploy-coolify-production.ts b/scripts/deploy-coolify-production.ts
+index 501be1b..1cf99c9 100644
+--- a/scripts/deploy-coolify-production.ts
++++ b/scripts/deploy-coolify-production.ts
+@@ -306,6 +306,11 @@ async function main() {
+   if (voiceCellFailures.length > 0) {
+     throw new Error(`production voice cell: ${voiceCellFailures.join("; ")}`);
+   }
++  execFileSync("pnpm", ["release:verify:orphan-sweep"], {
++    stdio: "inherit",
++    timeout: 20_000,
++    killSignal: "SIGKILL",
++  });
+   const token = requireEnv("COOLIFY_API_TOKEN");
+   const baseUrl = process.env.COOLIFY_API_URL?.trim() || DEFAULT_API_URL;
+   const applicationUuid = process.env.COOLIFY_ORIENTAL_APPLICATION_UUID?.trim() || DEFAULT_APPLICATION_UUID;
+diff --git a/scripts/run-command-with-deadline.ts b/scripts/run-command-with-deadline.ts
+new file mode 100644
+index 0000000..043a987
+--- /dev/null
++++ b/scripts/run-command-with-deadline.ts
+@@ -0,0 +1,152 @@
++import { spawn } from "node:child_process";
++
++const args = process.argv.slice(2);
++const separator = args.indexOf("--");
++const timeoutFlag = args.indexOf("--timeout-ms");
++const timeoutValue = timeoutFlag >= 0 ? args[timeoutFlag + 1] : undefined;
++const timeoutMs = Number(timeoutValue);
++const command = separator >= 0 ? args[separator + 1] : undefined;
++const commandArgs = separator >= 0 ? args.slice(separator + 2) : [];
++
++if (
++  timeoutFlag < 0 ||
++  separator < 0 ||
++  timeoutFlag >= separator ||
++  !Number.isInteger(timeoutMs) ||
++  timeoutMs < 50 ||
++  timeoutMs > 10 * 60_000 ||
++  !command
++) {
++  process.stderr.write("Usage: run-command-with-deadline --timeout-ms <50..600000> -- <command> [args...]\n");
++  process.exit(2);
++}
++
++const detached = process.platform !== "win32";
++type CancellationSignal = "SIGHUP" | "SIGINT" | "SIGTERM";
++type TerminationReason = "deadline" | CancellationSignal;
++
++const cancellationExitCodes: Record<CancellationSignal, number> = {
++  SIGHUP: 129,
++  SIGINT: 130,
++  SIGTERM: 143,
++};
++const processGroupSettleMs = 1_000;
++let child: ReturnType<typeof spawn> | null = null;
++let childGroupPid: number | null = null;
++let leaderExited = false;
++let finished = false;
++let terminationIssued = false;
++let terminationReason: TerminationReason | null = null;
++let deadline: ReturnType<typeof setTimeout> | null = null;
++
++function processGroupExists() {
++  if (!detached || childGroupPid === null) return false;
++  try {
++    process.kill(-childGroupPid, 0);
++    return true;
++  } catch (error) {
++    return (error as NodeJS.ErrnoException).code !== "ESRCH";
++  }
++}
++
++function terminateChildGroup() {
++  if (terminationIssued || (!child && childGroupPid === null)) return;
++  terminationIssued = true;
++  if (childGroupPid !== null) {
++    try {
++      process.kill(-childGroupPid, "SIGKILL");
++      return;
++    } catch {
++      // Fall through to the direct-child kill when no process group exists.
++    }
++  }
++  if (child && !leaderExited) child.kill("SIGKILL");
++}
++
++const cancellationHandlers = new Map<CancellationSignal, () => void>();
++for (const signal of Object.keys(cancellationExitCodes) as CancellationSignal[]) {
++  const handler = () => {
++    if (finished || terminationReason) return;
++    terminationReason = signal;
++    process.stderr.write(`Release command cancelled by ${signal}; terminating its process group.\n`);
++    terminateChildGroup();
++  };
++  cancellationHandlers.set(signal, handler);
++  process.on(signal, handler);
++}
++
++const supervisorExitHandler = () => terminateChildGroup();
++process.once("exit", supervisorExitHandler);
++
++function finish(exitCode: number) {
++  if (finished) return;
++  finished = true;
++  if (deadline) clearTimeout(deadline);
++  process.removeListener("exit", supervisorExitHandler);
++  for (const [signal, handler] of cancellationHandlers) process.removeListener(signal, handler);
++  process.exitCode = exitCode;
++}
++
++function delay(milliseconds: number) {
++  return new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
++}
++
++async function settleProcessGroupAfterLeaderExit() {
++  if (!processGroupExists()) return false;
++  process.stderr.write("Release command leader exited while descendants remained; terminating its process group.\n");
++  terminateChildGroup();
++  const settleDeadline = Date.now() + processGroupSettleMs;
++  while (processGroupExists() && Date.now() < settleDeadline) await delay(20);
++  if (processGroupExists()) {
++    process.stderr.write(
++      `Release command process group remained after ${processGroupSettleMs} ms kill-settle interval.\n`,
++    );
++  }
++  return true;
++}
++
++child = spawn(command, commandArgs, {
++  detached,
++  env: process.env,
++  stdio: "inherit",
++});
++childGroupPid = detached && child.pid ? child.pid : null;
++if (terminationReason) terminateChildGroup();
++
++deadline = setTimeout(() => {
++  if (finished || terminationReason) return;
++  terminationReason = "deadline";
++  process.stderr.write(`Command exceeded the ${timeoutMs} ms release deadline.\n`);
++  terminateChildGroup();
++}, timeoutMs);
++deadline.unref();
++
++child.once("error", (error) => {
++  process.stderr.write(`Failed to start release command: ${error.message}\n`);
++  finish(1);
++});
++
++child.once("exit", (code, signal) => {
++  leaderExited = true;
++  void (async () => {
++    const descendantsSurvivedLeader = await settleProcessGroupAfterLeaderExit();
++    if (terminationReason === "deadline") {
++      finish(124);
++      return;
++    }
++    if (terminationReason) {
++      finish(cancellationExitCodes[terminationReason]);
++      return;
++    }
++    if (descendantsSurvivedLeader) {
++      finish(1);
++      return;
++    }
++    if (signal) {
++      process.stderr.write(`Release command ended from signal ${signal}.\n`);
++      finish(1);
++      return;
++    }
++    finish(code ?? 1);
++  })();
++});
+diff --git a/scripts/verify-orphan-sweep.ts b/scripts/verify-orphan-sweep.ts
+new file mode 100644
+index 0000000..d2fc2c6
+--- /dev/null
++++ b/scripts/verify-orphan-sweep.ts
+@@ -0,0 +1,42 @@
++import { getAdminOrphanedVoiceSessions } from "@/lib/server/convex";
++import { DEFAULT_ORPHAN_STALE_MINUTES } from "@/lib/voice/session-policy";
++
++const QUERY_DEADLINE_MS = 5_000;
++
++async function main() {
++  const result = await withDeadline(
++    getAdminOrphanedVoiceSessions(DEFAULT_ORPHAN_STALE_MINUTES * 60_000),
++    QUERY_DEADLINE_MS,
++    "orphan sweep query exceeded its deadline",
++  );
++  if (!result.ok) throw new Error(`orphan sweep unavailable: ${result.reason}`);
++  if (result.data.migrationPending) throw new Error("orphan sweep unavailable: lifecycle migration is incomplete");
++
++  process.stdout.write(
++    `${JSON.stringify({
++      ok: true,
++      generatedAt: result.data.generatedAt,
++      orphanedVoiceSessions: result.data.orphaned.count,
++      countIsLowerBound: result.data.orphaned.truncated,
++    })}\n`,
++  );
++}
++
++async function withDeadline<T>(promise: Promise<T>, timeoutMs: number, message: string) {
++  let timer: ReturnType<typeof setTimeout> | undefined;
++  try {
++    return await Promise.race([
++      promise,
++      new Promise<never>((_resolve, reject) => {
++        timer = setTimeout(() => reject(new Error(message)), timeoutMs);
++      }),
++    ]);
++  } finally {
++    if (timer) clearTimeout(timer);
++  }
++}
++
++main().catch((error) => {
++  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
++  process.exitCode = 1;
++});
+diff --git a/tests/admin-data-integrity.test.ts b/tests/admin-data-integrity.test.ts
+index 6048c10..0a9904c 100644
+--- a/tests/admin-data-integrity.test.ts
++++ b/tests/admin-data-integrity.test.ts
+@@ -69,6 +69,68 @@ describe("admin CRM data integrity contract", () => {
+     expect(slaQuery).not.toContain(".collect()");
+   });
+ 
++  it("uses a materialized lifecycle index before applying the bounded orphan alert cap", () => {
++    const recordMutation = convexSource.slice(
++      convexSource.indexOf("export const recordVoiceSession"),
++      convexSource.indexOf("export const applyDataRetention"),
++    );
++    const retentionMutation = convexSource.slice(
++      convexSource.indexOf("export const applyDataRetention"),
++      convexSource.indexOf("export const normalizeLegacyPrivacyEmails"),
++    );
++    const lifecycleBackfill = convexSource.slice(
++      convexSource.indexOf("export const backfillVoiceSessionLifecycle"),
++      convexSource.indexOf("export const normalizeLegacyPrivacyEmails"),
++    );
++    const orphanQuery = convexSource.slice(
++      convexSource.indexOf("export const adminOrphanedVoiceSessionsSweep"),
++      convexSource.indexOf("function summarizeSlaBuckets"),
++    );
++    const indexedLifecycle = orphanQuery.indexOf('.withIndex("by_safe_session_state_updated_at"');
++    const boundedTake = orphanQuery.indexOf(".take(SLA_QUERY_BUCKET_LIMIT + 1)");
++
++    expect(schemaSource).toContain(
++      '.index("by_safe_session_state_updated_at", ["payloadSafe", "sessionState", "updatedAt"])',
++    );
++    expect(recordMutation).toContain(
++      'const sessionState = closedAt ? "closed" : connectedAt ? "connected_open" : "preconnected"',
++    );
++    expect(recordMutation).toContain("sessionState,");
++    expect(retentionMutation).toContain('.eq("sessionState", undefined)');
++    expect(retentionMutation).toContain(
++      'sessionState: session.closedAt ? "closed" : session.connectedAt ? "connected_open" : "preconnected"',
++    );
++    expect(lifecycleBackfill).not.toContain('.withIndex("by_payload_safe_updated_at"');
++    expect(lifecycleBackfill).toContain('.withIndex("by_safe_session_state_updated_at"');
++    expect(lifecycleBackfill).toContain(".take(take + 1)");
++    expect(lifecycleBackfill.match(/ctx\.db\.patch/g)).toHaveLength(1);
++    expect(lifecycleBackfill).toMatch(
++      /ctx\.db\.patch\(session\._id,\s*\{\s*sessionState: session\.closedAt \? "closed" : session\.connectedAt \? "connected_open" : "preconnected",\s*\}\);/,
++    );
++    expect(lifecycleBackfill).not.toContain("captured:");
++    expect(lifecycleBackfill).not.toContain("capturedEmailNormalized:");
++    expect(lifecycleBackfill).not.toContain("transcript:");
++    expect(lifecycleBackfill).not.toContain("payloadSafe:");
++    expect(lifecycleBackfill).not.toContain("retentionExpiresAt:");
++    expect(lifecycleBackfill).not.toContain("ctx.db.delete");
++    expect(indexedLifecycle).toBeGreaterThan(-1);
++    expect(orphanQuery).toContain('.eq("sessionState", "connected_open").lt("updatedAt", staleCutoff)');
++    expect(boundedTake).toBeGreaterThan(indexedLifecycle);
++    expect(orphanQuery).toContain('.eq("sessionState", undefined)');
++    expect(orphanQuery).toContain('.withIndex("by_payload_safe_updated_at"');
++    expect(orphanQuery).toContain('.eq("payloadSafe", undefined)');
++    expect(orphanQuery).toContain('.eq("sessionState", undefined)');
++    expect(orphanQuery).toContain("migrationPending: legacyPayloads.length > 0 || legacyStates.length > 0");
++    const migrationPending = (legacyPayloads: unknown[], legacyStates: unknown[]) =>
++      legacyPayloads.length > 0 || legacyStates.length > 0;
++    expect(migrationPending([{}], [])).toBe(true);
++    expect(migrationPending([], [{}])).toBe(true);
++    expect(migrationPending([], [])).toBe(false);
++    expect(orphanQuery).not.toContain("lookbackCutoff");
++    expect(orphanQuery).not.toContain(".filter(");
++    expect(orphanQuery).not.toContain(".collect()");
++  });
++
+   it("excludes unmigrated oversized payloads from dashboard, eval, and count scans", () => {
+     const evalQuery = convexSource.slice(
+       convexSource.indexOf("export const voiceSessionsForEval"),
+diff --git a/tests/admin-sla-route.test.ts b/tests/admin-sla-route.test.ts
+index 5265b1b..6e3f7f3 100644
+--- a/tests/admin-sla-route.test.ts
++++ b/tests/admin-sla-route.test.ts
+@@ -1,15 +1,24 @@
+ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+ import { POST } from "@/app/api/admin/sla-check/route";
+-import { getAdminLeadSlaSnapshot } from "@/lib/server/convex";
++import { getAdminLeadSlaSnapshot, getAdminOrphanedVoiceSessions } from "@/lib/server/convex";
+ import { sendOpsAlert } from "@/lib/server/ops-alerts";
++import { DEFAULT_ORPHAN_STALE_MINUTES, MIN_ORPHAN_STALE_MINUTES } from "@/lib/voice/session-policy";
+ 
+-vi.mock("@/lib/server/convex", () => ({ getAdminLeadSlaSnapshot: vi.fn() }));
++vi.mock("@/lib/server/convex", () => ({ getAdminLeadSlaSnapshot: vi.fn(), getAdminOrphanedVoiceSessions: vi.fn() }));
+ vi.mock("@/lib/server/ops-alerts", () => ({ sendOpsAlert: vi.fn() }));
+ 
+ const originalEnv = process.env;
+ const snapshotMock = vi.mocked(getAdminLeadSlaSnapshot);
++const orphanMock = vi.mocked(getAdminOrphanedVoiceSessions);
+ const alertMock = vi.mocked(sendOpsAlert);
+ 
++function orphanSweep(count = 0, truncated = false, migrationPending = false) {
++  return {
++    ok: true as const,
++    data: { generatedAt: now, migrationPending, orphaned: { count, truncated, rows: [] } },
++  } as Awaited<ReturnType<typeof getAdminOrphanedVoiceSessions>>;
++}
++
+ const HOUR = 60 * 60 * 1000;
+ const now = 1_800_000_000_000;
+ 
+@@ -47,9 +56,11 @@ describe("admin SLA check route", () => {
+       OPS_AUTOMATION_TOKEN: "ops-automation-token-123456789",
+     };
+     alertMock.mockResolvedValue({ ok: true, transport: "slack_bot" });
++    orphanMock.mockResolvedValue(orphanSweep(0));
+   });
+ 
+   afterEach(() => {
++    vi.useRealTimers();
+     process.env = originalEnv;
+     vi.clearAllMocks();
+   });
+@@ -102,6 +113,81 @@ describe("admin SLA check route", () => {
+     );
+   });
+ 
++  it("alerts on orphaned voice sessions even when leads are all healthy", async () => {
++    snapshotMock.mockResolvedValue(snapshot({ active: 3 }));
++    orphanMock.mockResolvedValue(orphanSweep(2));
++
++    const response = await POST(slaRequest({}));
++
++    await expect(response.json()).resolves.toMatchObject({
++      ok: true,
++      unownedBreaches: 0,
++      orphanedVoiceSessions: 2,
++      orphanSweepAvailable: true,
++      alerted: true,
++    });
++    expect(orphanMock).toHaveBeenCalledWith(DEFAULT_ORPHAN_STALE_MINUTES * 60 * 1000);
++    expect(alertMock).toHaveBeenCalledWith(
++      expect.objectContaining({
++        summary: expect.stringContaining("2 voice session(s) dropped without a close snapshot"),
++        meta: expect.objectContaining({ orphanedVoiceSessions: 2 }),
++      }),
++    );
++  });
++
++  it.each([
++    ["rejected", () => orphanMock.mockRejectedValue(new Error("convex down")), "query_failed"],
++    [
++      "unconfigured",
++      () => orphanMock.mockResolvedValue({ ok: false as const, reason: "convex_unconfigured" }),
++      "convex_unconfigured",
++    ],
++    ["migration pending", () => orphanMock.mockResolvedValue(orphanSweep(4, false, true)), "migration_pending"],
++  ])("still reports lead SLA with an explicit unknown orphan result when the sweep is %s", async (_case, arrange, reason) => {
++    snapshotMock.mockResolvedValue(snapshot({ active: 1 }));
++    arrange();
++
++    const response = await POST(slaRequest({}));
++
++    expect(response.status).toBe(200);
++    await expect(response.json()).resolves.toMatchObject({
++      ok: true,
++      activeLeads: 1,
++      orphanedVoiceSessions: null,
++      orphanSweepAvailable: false,
++      orphanSweepUnavailableReason: reason,
++      truncated: { orphanedVoiceSessions: null },
++      alerted: false,
++    });
++    expect(alertMock).not.toHaveBeenCalled();
++  });
++
++  it("returns the primary SLA result when the orphan sweep exceeds its deadline", async () => {
++    vi.useFakeTimers();
++    snapshotMock.mockResolvedValue(snapshot({ active: 1 }));
++    orphanMock.mockImplementation(() => new Promise(() => undefined));
++
++    const responsePromise = POST(slaRequest({}));
++    await vi.advanceTimersByTimeAsync(5_000);
++    const response = await responsePromise;
++
++    expect(response.status).toBe(200);
++    await expect(response.json()).resolves.toMatchObject({
++      ok: true,
++      activeLeads: 1,
++      orphanedVoiceSessions: null,
++      orphanSweepAvailable: false,
++      orphanSweepUnavailableReason: "timeout",
++    });
++  });
++
++  it("rejects a stale threshold below the canonical maximum-live-call boundary", async () => {
++    const response = await POST(slaRequest({ maxVoiceStaleMinutes: MIN_ORPHAN_STALE_MINUTES - 1 }));
++
++    expect(response.status).toBe(400);
++    expect(orphanMock).not.toHaveBeenCalled();
++  });
++
+   it("rejects interactive review credentials because the sweep can post to Slack", async () => {
+     const response = await POST(slaRequest({}, "admin-review-token-123456789"));
+ 
+diff --git a/tests/convex.test.ts b/tests/convex.test.ts
+index c8810a5..2724f0f 100644
+--- a/tests/convex.test.ts
++++ b/tests/convex.test.ts
+@@ -3,10 +3,12 @@ import { createLead, recordVoiceSession } from "@/convex/leads";
+ import { summarizeIntakeAttribution } from "@/lib/intake-attribution-analytics";
+ import {
+   archiveAdminLeads,
++  backfillVoiceSessionLifecycle,
+   bulkAssignAdminLeads,
+   deletePersonalData,
+   getAdminLeadSlaSnapshot,
+   getAdminLeadTable,
++  getAdminOrphanedVoiceSessions,
+   getAdminReviewDashboard,
+   getAdminVoiceSession,
+   getPrivacyDeletionPlan,
+@@ -40,7 +42,9 @@ vi.mock("@/convex/_generated/api", () => ({
+       adminLeadCounts: "adminLeadCounts",
+       adminLeadSlaSnapshot: "adminLeadSlaSnapshot",
+       adminLeadTable: "adminLeadTable",
++      adminOrphanedVoiceSessionsSweep: "adminOrphanedVoiceSessionsSweep",
+       archiveLeads: "archiveLeads",
++      backfillVoiceSessionLifecycle: "backfillVoiceSessionLifecycle",
+       createLead: "createLead",
+       deletePersonalData: "deletePersonalData",
+       bulkAssignLeads: "bulkAssignLeads",
+@@ -612,6 +616,46 @@ describe("getAdminLeadSlaSnapshot", () => {
+   });
+ });
+ 
++describe("orphan-session lifecycle operations", () => {
++  beforeEach(() => {
++    process.env = {
++      ...originalEnv,
++      CONVEX_URL: "https://convex.example",
++      CONVEX_INGEST_SECRET: "ingest-secret",
++    };
++  });
++
++  afterEach(() => {
++    process.env = originalEnv;
++    vi.clearAllMocks();
++  });
++
++  it("queries the dedicated orphan aggregate with the requested stale boundary", async () => {
++    const data = {
++      generatedAt: 1_800_000_000_000,
++      migrationPending: false,
++      orphaned: { count: 2, truncated: false, rows: [] },
++    };
++    mocks.query.mockResolvedValue(data);
++
++    await expect(getAdminOrphanedVoiceSessions(35 * 60_000)).resolves.toEqual({ ok: true, data });
++    expect(mocks.query).toHaveBeenCalledWith("adminOrphanedVoiceSessionsSweep", {
++      ingestSecret: "ingest-secret",
++      maxStaleMs: 35 * 60_000,
++    });
++  });
++
++  it("runs the bounded non-destructive lifecycle migration through the secret-owning adapter", async () => {
++    mocks.mutation.mockResolvedValue({ updated: 25, hasMore: true });
++
++    await expect(backfillVoiceSessionLifecycle(25)).resolves.toEqual({ ok: true, updated: 25, hasMore: true });
++    expect(mocks.mutation).toHaveBeenCalledWith("backfillVoiceSessionLifecycle", {
++      ingestSecret: "ingest-secret",
++      limit: 25,
++    });
++  });
++});
++
+ describe("getAdminVoiceSession", () => {
+   beforeEach(() => {
+     process.env = {
+diff --git a/tests/deploy-coolify-host.test.ts b/tests/deploy-coolify-host.test.ts
+index 7fe7eb2..d57a714 100644
+--- a/tests/deploy-coolify-host.test.ts
++++ b/tests/deploy-coolify-host.test.ts
+@@ -56,6 +56,15 @@ describe("Coolify host deploy image cells", () => {
+     expect(deployScript).toContain('if [[ "$current_sha" != "$expected_current_sha" ]]');
+   });
+ 
++  it("blocks every host deploy until the indexed orphan sweep is available", () => {
++    expect(deployScript).toContain('local_head="$(git rev-parse HEAD)"');
++    expect(deployScript).toContain('if [[ "$local_head" != "$sha" ]]');
++    expect(deployScript).toContain("pnpm release:verify:orphan-sweep");
++    expect(deployScript.indexOf("pnpm release:verify:orphan-sweep")).toBeLessThan(
++      deployScript.indexOf("declare -a ssh_command"),
++    );
++  });
++
+   it("restores host ownership and recreates the previous service after any post-mutation failure", () => {
+     expect(deployScript).toContain("deployment_mutated=true");
+     expect(deployScript).toContain("trap on_exit EXIT");
+@@ -165,7 +174,7 @@ printf '{"ok":true,"version":"%s"}\n' "$TEST_PREVIOUS_SHA"
+     } finally {
+       rmSync(root, { recursive: true, force: true });
+     }
+-  });
++  }, 15_000);
+ 
+   it("atomically materializes the selected governed non-secret voice cell for staging", () => {
+     expect(deployScript).toContain('if target == "staging":');
+diff --git a/tests/release-command-deadline.test.ts b/tests/release-command-deadline.test.ts
+new file mode 100644
+index 0000000..5fcf7da
+--- /dev/null
++++ b/tests/release-command-deadline.test.ts
+@@ -0,0 +1,260 @@
++import { spawn, spawnSync } from "node:child_process";
++import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
++import { tmpdir } from "node:os";
++import { join } from "node:path";
++import { afterEach, describe, expect, it } from "vitest";
++
++const temporaryDirectories: string[] = [];
++const supervisorScript = join(process.cwd(), "scripts/run-command-with-deadline.ts");
++const grandchildProgram =
++  'const fs=require("node:fs");setTimeout(()=>fs.writeFileSync(process.argv[1],"mutated"),1000);setInterval(()=>{},1000)';
++const childProgram =
++  'const {spawn}=require("node:child_process");const fs=require("node:fs");const child=spawn(process.execPath,["-e",process.argv[3],process.argv[1]],{stdio:"ignore"});child.unref();fs.writeFileSync(process.argv[2],String(process.pid));setInterval(()=>{},1000)';
++const startupSignalProgram =
++  'const {spawn}=require("node:child_process");const fs=require("node:fs");const child=spawn(process.execPath,["-e",process.argv[3],process.argv[1]],{stdio:"ignore"});child.unref();process.kill(process.ppid,process.argv[4]);fs.writeFileSync(process.argv[2],String(process.pid));setInterval(()=>{},1000)';
++const exitingLeaderProgram =
++  'const {spawn}=require("node:child_process");const fs=require("node:fs");const child=spawn(process.execPath,["-e",process.argv[3],process.argv[1]],{stdio:"ignore"});child.unref();fs.writeFileSync(process.argv[2],String(process.pid))';
++
++function waitForPath(path: string, timeoutMs: number) {
++  return new Promise<void>((resolve, reject) => {
++    const startedAt = Date.now();
++    const poll = () => {
++      if (existsSync(path)) {
++        resolve();
++        return;
++      }
++      if (Date.now() - startedAt >= timeoutMs) {
++        reject(new Error(`Timed out waiting for ${path}`));
++        return;
++      }
++      setTimeout(poll, 20);
++    };
++    poll();
++  });
++}
++
++function waitForExit(child: ReturnType<typeof spawn>, timeoutMs: number) {
++  return new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
++    const timeout = setTimeout(
++      () => reject(new Error("Timed out waiting for the deadline supervisor to exit")),
++      timeoutMs,
++    );
++    child.once("error", (error) => {
++      clearTimeout(timeout);
++      reject(error);
++    });
++    child.once("exit", (code, signal) => {
++      clearTimeout(timeout);
++      resolve({ code, signal });
++    });
++  });
++}
++
++afterEach(() => {
++  for (const directory of temporaryDirectories.splice(0)) {
++    rmSync(directory, { force: true, recursive: true });
++  }
++});
++
++describe("release command process deadline", () => {
++  it("kills a non-resolving process group before its grandchild's delayed mutation", async () => {
++    const directory = mkdtempSync(join(tmpdir(), "oriental-release-deadline-"));
++    temporaryDirectories.push(directory);
++    const marker = join(directory, "external-mutation");
++    const ready = join(directory, "grandchild-started");
++    const startedAt = Date.now();
++    const result = spawnSync(
++      process.execPath,
++      [
++        "--import",
++        "tsx",
++        supervisorScript,
++        "--timeout-ms",
++        "300",
++        "--",
++        process.execPath,
++        "-e",
++        childProgram,
++        marker,
++        ready,
++        grandchildProgram,
++      ],
++      {
++        encoding: "utf8",
++        timeout: 5_000,
++      },
++    );
++
++    expect(result.status, result.stderr).toBe(124);
++    expect(result.stderr).toContain("Command exceeded the 300 ms release deadline");
++    expect(Date.now() - startedAt).toBeLessThan(3_000);
++    expect(existsSync(ready)).toBe(true);
++    await new Promise((resolve) => setTimeout(resolve, 1_100));
++    expect(existsSync(marker)).toBe(false);
++  });
++
++  it.skipIf(process.platform === "win32")(
++    "kills the detached descendant group and exits nonzero when its supervisor group is cancelled",
++    async () => {
++      const directory = mkdtempSync(join(tmpdir(), "oriental-release-cancellation-"));
++      temporaryDirectories.push(directory);
++      const marker = join(directory, "external-mutation");
++      const ready = join(directory, "grandchild-started");
++      const supervisor = spawn(
++        process.execPath,
++        [
++          "--import",
++          "tsx",
++          supervisorScript,
++          "--timeout-ms",
++          "5000",
++          "--",
++          process.execPath,
++          "-e",
++          childProgram,
++          marker,
++          ready,
++          grandchildProgram,
++        ],
++        { detached: true, stdio: ["ignore", "ignore", "pipe"] },
++      );
++      let stderr = "";
++      supervisor.stderr?.setEncoding("utf8");
++      supervisor.stderr?.on("data", (chunk: string) => {
++        stderr += chunk;
++      });
++
++      const supervisorPid = supervisor.pid;
++      if (!supervisorPid) throw new Error("Deadline supervisor did not expose a process id");
++      let completed = false;
++      try {
++        await waitForPath(ready, 2_000);
++        const exit = waitForExit(supervisor, 3_000);
++        process.kill(-supervisorPid, "SIGTERM");
++        await expect(exit).resolves.toEqual({ code: 143, signal: null });
++        expect(stderr).toContain("Release command cancelled by SIGTERM");
++        await new Promise((resolve) => setTimeout(resolve, 1_100));
++        expect(existsSync(marker)).toBe(false);
++        completed = true;
++      } finally {
++        if (!completed) {
++          try {
++            process.kill(-supervisorPid, "SIGTERM");
++          } catch {
++            // The supervisor group already exited.
++          }
++          if (existsSync(ready)) {
++            const childGroupPid = Number(readFileSync(ready, "utf8"));
++            if (Number.isInteger(childGroupPid) && childGroupPid > 1) {
++              try {
++                process.kill(-childGroupPid, "SIGKILL");
++              } catch {
++                // The detached child group already exited.
++              }
++            }
++          }
++        }
++      }
++    },
++  );
++
++  it.each([
++    ["SIGHUP", 129],
++    ["SIGINT", 130],
++    ["SIGTERM", 143],
++  ] as const)("arms %s cancellation before spawning the detached command", async (signal, expectedCode) => {
++    if (process.platform === "win32") return;
++    const directory = mkdtempSync(join(tmpdir(), `oriental-release-startup-${signal.toLowerCase()}-`));
++    temporaryDirectories.push(directory);
++    const marker = join(directory, "external-mutation");
++    const ready = join(directory, "leader-started");
++    const supervisor = spawn(
++      process.execPath,
++      [
++        "--import",
++        "tsx",
++        supervisorScript,
++        "--timeout-ms",
++        "5000",
++        "--",
++        process.execPath,
++        "-e",
++        startupSignalProgram,
++        marker,
++        ready,
++        grandchildProgram,
++        signal,
++      ],
++      { stdio: ["ignore", "ignore", "pipe"] },
++    );
++    let stderr = "";
++    supervisor.stderr?.setEncoding("utf8");
++    supervisor.stderr?.on("data", (chunk: string) => {
++      stderr += chunk;
++    });
++
++    try {
++      await expect(waitForExit(supervisor, 3_000)).resolves.toEqual({ code: expectedCode, signal: null });
++      expect(stderr).toContain(`Release command cancelled by ${signal}`);
++      await new Promise((resolve) => setTimeout(resolve, 1_100));
++      expect(existsSync(marker)).toBe(false);
++    } finally {
++      if (existsSync(ready)) {
++        const childGroupPid = Number(readFileSync(ready, "utf8"));
++        if (Number.isInteger(childGroupPid) && childGroupPid > 1) {
++          try {
++            process.kill(-childGroupPid, "SIGKILL");
++          } catch {
++            // The detached child group already exited.
++          }
++        }
++      }
++    }
++  });
++
++  it.skipIf(process.platform === "win32")(
++    "rejects a zero-exiting leader and kills its surviving same-group grandchild",
++    async () => {
++      const directory = mkdtempSync(join(tmpdir(), "oriental-release-leader-exit-"));
++      temporaryDirectories.push(directory);
++      const marker = join(directory, "external-mutation");
++      const ready = join(directory, "leader-started");
++      try {
++        const result = spawnSync(
++          process.execPath,
++          [
++            "--import",
++            "tsx",
++            supervisorScript,
++            "--timeout-ms",
++            "5000",
++            "--",
++            process.execPath,
++            "-e",
++            exitingLeaderProgram,
++            marker,
++            ready,
++            grandchildProgram,
++          ],
++          { encoding: "utf8", timeout: 5_000 },
++        );
++
++        expect(result.status, result.stderr).toBe(1);
++        expect(result.stderr).toContain("Release command leader exited while descendants remained");
++        await new Promise((resolve) => setTimeout(resolve, 1_100));
++        expect(existsSync(marker)).toBe(false);
++      } finally {
++        if (existsSync(ready)) {
++          const childGroupPid = Number(readFileSync(ready, "utf8"));
++          if (Number.isInteger(childGroupPid) && childGroupPid > 1) {
++            try {
++              process.kill(-childGroupPid, "SIGKILL");
++            } catch {
++              // The detached child group already exited.
++            }
++          }
++        }
++      }
++    },
++  );
++});
+diff --git a/tests/release-governance.test.ts b/tests/release-governance.test.ts
+index fb0d892..3526e0f 100644
+--- a/tests/release-governance.test.ts
++++ b/tests/release-governance.test.ts
+@@ -27,6 +27,10 @@ const sha = "bb8e2673e5f129f342fba78f3eb653a54de8763b";
+ const releasePreflight = readFileSync("scripts/release-preflight.ts", "utf8");
+ const releaseVerifier = readFileSync("scripts/release-verify.ts", "utf8");
+ const productionDeployer = readFileSync("scripts/deploy-coolify-production.ts", "utf8");
++const hostDeployer = readFileSync("scripts/deploy-coolify-host.sh", "utf8");
++const deadlineRunner = readFileSync("scripts/run-command-with-deadline.ts", "utf8");
++const lifecycleBackfill = readFileSync("scripts/backfill-voice-session-lifecycle.ts", "utf8");
++const orphanVerifier = readFileSync("scripts/verify-orphan-sweep.ts", "utf8");
+ const stagingVoiceSmoke = readFileSync("scripts/smoke-staging-voice.ts", "utf8");
+ const stagingIntakeSmoke = readFileSync("scripts/smoke-staging-intake.ts", "utf8");
+ const leadsRoute = readFileSync("app/api/leads/route.ts", "utf8");
+@@ -224,6 +228,32 @@ describe("release governance", () => {
+     );
+   });
+ 
++  it("requires lifecycle migration and a live secondary sweep before web release mutation", () => {
++    expect(packageScripts.scripts["convex:backfill:voice-session-lifecycle"]).toBe(
++      "tsx scripts/run-command-with-deadline.ts --timeout-ms 600000 -- pnpm exec tsx scripts/backfill-voice-session-lifecycle.ts",
++    );
++    expect(packageScripts.scripts["release:verify:orphan-sweep"]).toBe(
++      "tsx scripts/run-command-with-deadline.ts --timeout-ms 15000 -- pnpm exec tsx scripts/verify-orphan-sweep.ts",
++    );
++    expect(releaseRunbook).toContain("-- pnpm convex:deploy");
++    expect(releaseRunbook).toContain("-- pnpm convex:backfill:voice-session-lifecycle");
++    expect(releaseRunbook).toContain("-- pnpm release:verify:orphan-sweep");
++    expect(productionDeployer).toContain('execFileSync("pnpm", ["release:verify:orphan-sweep"], {');
++    expect(productionDeployer).toContain("timeout: 20_000");
++    expect(productionDeployer).toContain('killSignal: "SIGKILL"');
++    expect(deadlineRunner).toContain('process.kill(-childGroupPid, "SIGKILL")');
++    expect(deadlineRunner).toContain("process.kill(-childGroupPid, 0)");
++    expect(deadlineRunner).toContain("Release command leader exited while descendants remained");
++    expect(deadlineRunner.indexOf("process.on(signal, handler)")).toBeLessThan(
++      deadlineRunner.indexOf("child = spawn(command, commandArgs"),
++    );
++    expect(lifecycleBackfill).toContain("RPC_DEADLINE_MS = 30_000");
++    expect(orphanVerifier).toContain("QUERY_DEADLINE_MS = 5_000");
++    expect(hostDeployer.indexOf("pnpm release:verify:orphan-sweep")).toBeLessThan(
++      hostDeployer.indexOf("declare -a ssh_command"),
++    );
++  });
++
+   it("rejects a candidate production scope before credentials, Git, health, or Coolify access", () => {
+     const candidate = spawnSync(
+       "pnpm",
+diff --git a/tests/voice-session-policy.test.ts b/tests/voice-session-policy.test.ts
+index df236ab..6e3099c 100644
+--- a/tests/voice-session-policy.test.ts
++++ b/tests/voice-session-policy.test.ts
+@@ -1,11 +1,30 @@
+ import { describe, expect, it } from "vitest";
+-import { resolveVoiceDurationPolicy, VOICE_DURATION_DEFAULTS } from "@/lib/voice/session-policy";
++import {
++  DEFAULT_ORPHAN_STALE_MINUTES,
++  MIN_ORPHAN_STALE_MINUTES,
++  MIN_ORPHAN_STALE_MS,
++  resolveVoiceDurationPolicy,
++  VOICE_DURATION_DEFAULTS,
++  VOICE_DURATION_LIMITS,
++  VOICE_HEARTBEAT_INTERVAL_MS,
++} from "@/lib/voice/session-policy";
+ 
+ describe("voice duration policy", () => {
+   it("has one typed rollback-safe default", () => {
+     expect(resolveVoiceDurationPolicy({})).toEqual(VOICE_DURATION_DEFAULTS);
+   });
+ 
++  it("derives orphan eligibility beyond every valid live-call deadline", () => {
++    expect(MIN_ORPHAN_STALE_MS).toBe(
++      VOICE_DURATION_LIMITS.maxDurationMs +
++        VOICE_DURATION_LIMITS.maxIdleGoodbyeGraceMs +
++        2 * VOICE_HEARTBEAT_INTERVAL_MS,
++    );
++    expect(MIN_ORPHAN_STALE_MS).toBe(1_854_000);
++    expect(MIN_ORPHAN_STALE_MINUTES).toBe(31);
++    expect(DEFAULT_ORPHAN_STALE_MINUTES).toBeGreaterThanOrEqual(MIN_ORPHAN_STALE_MINUTES);
++  });
++
+   it("accepts bounded operator overrides", () => {
+     expect(
+       resolveVoiceDurationPolicy({ maxDurationMs: "300000", idleTimeoutMs: "30000", idleGoodbyeGraceMs: "8000" }),

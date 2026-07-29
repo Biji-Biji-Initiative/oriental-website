@@ -257,6 +257,48 @@ include release docs before the first deployment.
    data plane. Aggregate-only evaluation remains read-only and cannot perform a
    deploy. Do not add a lossy `clear_fields` → `clear_field` application
    fallback.
+
+   A release containing the indexed orphan-session sweep must deploy the frozen
+   Convex functions, complete the bounded non-destructive lifecycle migration,
+   and prove the secondary sweep is available before any web deployment:
+
+   ```bash
+   infisical run \
+     --domain https://secrets.mereka.io \
+     --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
+     --env prod \
+     --path /deploy/oriental-website \
+     -- pnpm convex:deploy
+   infisical run \
+     --domain https://secrets.mereka.io \
+     --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
+     --env prod \
+     --path /deploy/oriental-website \
+     -- pnpm convex:backfill:voice-session-lifecycle
+   infisical run \
+     --domain https://secrets.mereka.io \
+     --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
+     --env prod \
+     --path /deploy/oriental-website \
+     -- pnpm release:verify:orphan-sweep
+   ```
+
+   The lifecycle migration changes only `sessionState` on rows already marked
+   payload-safe; it preserves every customer, transcript, email, retention, and
+   non-lifecycle field exactly. Unsafe legacy payload normalization and retention
+   scheduling remain separately governed by `applyDataRetention` and are never
+   run implicitly by release. The read-only verifier checks both unsafe legacy
+   rows and safe rows missing `sessionState`; either population blocks release
+   as migration-pending rather than appearing as zero dropped sessions.
+
+   The migration command has a ten-minute process deadline with a thirty-second
+   per-RPC deadline. The verifier has a fifteen-second process deadline with a
+   five-second query deadline. The supervisor kills the whole child process
+   group on expiry. Both staging and production deploy entrypoints rerun the
+   bounded verifier before their first external mutation, so a missing function,
+   incomplete migration, unsafe legacy row, timeout, or unavailable query cannot
+   be represented as zero dropped sessions and cannot be bypassed by runbook
+   drift.
 2. Build the distinct `staging-<sha>` image and recreate host-managed staging:
 
    ```bash
@@ -323,7 +365,17 @@ include release docs before the first deployment.
      --env staging \
      --path /deploy/oriental-website \
      -- pnpm smoke:staging:intake
+   infisical run \
+     --domain https://secrets.mereka.io \
+     --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
+     --env staging \
+     --path /deploy/oriental-website \
+     -- pnpm release:verify:orphan-sweep
    ```
+
+   The final command is the staging secondary-observability smoke: it must
+   return `ok: true` with migration complete. A query failure or timeout is
+   unknown telemetry, never a zero count.
 
    For a separately approved staging picker audition, rerun the first command
    with `-- env VOICE_SMOKE_MODE=audition pnpm smoke:staging:voice`. Audition

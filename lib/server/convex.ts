@@ -292,6 +292,26 @@ export async function getAdminLeadSlaSnapshot(maxUnownedMs: number) {
   return { ok: true as const, data };
 }
 
+export async function getAdminOrphanedVoiceSessions(maxStaleMs: number) {
+  const client = createConvexClient();
+  if (!client) return { ok: false as const, reason: "convex_unconfigured" };
+  const data = await client.client.query(api.leads.adminOrphanedVoiceSessionsSweep, {
+    ingestSecret: client.ingestSecret,
+    maxStaleMs,
+  });
+  return { ok: true as const, data };
+}
+
+export async function backfillVoiceSessionLifecycle(limit = 25) {
+  const client = createConvexClient();
+  if (!client) return { ok: false as const, reason: "convex_unconfigured" as const };
+  const result = await client.client.mutation(api.leads.backfillVoiceSessionLifecycle, {
+    ingestSecret: client.ingestSecret,
+    limit,
+  });
+  return { ok: true as const, ...result };
+}
+
 export async function applyDataRetention(now: number) {
   const client = createConvexClient();
   if (!client) return { ok: false as const, reason: "convex_unconfigured" as const };
