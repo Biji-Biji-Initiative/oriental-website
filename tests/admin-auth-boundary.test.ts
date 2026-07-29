@@ -204,31 +204,37 @@ function sourceFile(path: string, sourceText = readFileSync(path, "utf8")) {
   return ts.createSourceFile(path, sourceText, ts.ScriptTarget.Latest, true, scriptKind);
 }
 
+let authSourceLanguageService: ts.LanguageService | null = null;
+let authSourceOverrideText = "";
+let authSourceOverrideVersion = 0;
+
 function productionProgramWithAuthSource(sourceText: string) {
-  const override = sourceFile(adminAuthPath, sourceText);
-  const defaultHost = ts.createCompilerHost({ ...parsedTsConfig.options, allowJs: true }, true);
-  const host: ts.CompilerHost = {
-    ...defaultHost,
-    fileExists: (fileName) =>
-      resolve(fileName) === adminAuthPath ||
-      Boolean(productionProgram.getSourceFile(resolve(fileName))) ||
-      defaultHost.fileExists(fileName),
-    getSourceFile: (fileName, languageVersion, onError, shouldCreateNewSourceFile) => {
-      const absolute = resolve(fileName);
-      if (absolute === adminAuthPath) return override;
-      return (
-        productionProgram.getSourceFile(absolute) ??
-        defaultHost.getSourceFile(fileName, languageVersion, onError, shouldCreateNewSourceFile)
-      );
-    },
-    readFile: (fileName) => (resolve(fileName) === adminAuthPath ? sourceText : defaultHost.readFile(fileName)),
-  };
-  return ts.createProgram({
-    host,
-    oldProgram: productionProgram,
-    options: { ...parsedTsConfig.options, allowJs: true },
-    rootNames: productionRootPaths.map((path) => resolve(path)),
-  });
+  authSourceOverrideText = sourceText;
+  authSourceOverrideVersion += 1;
+  if (!authSourceLanguageService) {
+    const rootNames = [adminAuthPath];
+    const host: ts.LanguageServiceHost = {
+      fileExists: ts.sys.fileExists,
+      getCompilationSettings: () => ({ ...parsedTsConfig.options, allowJs: true }),
+      getCurrentDirectory: () => process.cwd(),
+      getDefaultLibFileName: (options) => ts.getDefaultLibFilePath(options),
+      getScriptFileNames: () => rootNames,
+      getScriptSnapshot: (fileName) => {
+        const absolute = resolve(fileName);
+        if (absolute === adminAuthPath) return ts.ScriptSnapshot.fromString(authSourceOverrideText);
+        const existing = productionProgram.getSourceFile(absolute);
+        const text = existing?.text ?? ts.sys.readFile(fileName);
+        return text === undefined ? undefined : ts.ScriptSnapshot.fromString(text);
+      },
+      getScriptVersion: (fileName) => (resolve(fileName) === adminAuthPath ? String(authSourceOverrideVersion) : "0"),
+      readDirectory: ts.sys.readDirectory,
+      readFile: ts.sys.readFile,
+    };
+    authSourceLanguageService = ts.createLanguageService(host, ts.createDocumentRegistry());
+  }
+  const program = authSourceLanguageService.getProgram();
+  if (!program) throw new Error("TypeScript language service omitted the governed production program");
+  return program;
 }
 
 function resolvesToModule(moduleName: string, containingPath: string, targetPath: string) {
@@ -491,6 +497,7 @@ function semanticFunctionReturns(
   source: ts.SourceFile,
   bindings: ReadonlyMap<string, ts.Expression>,
   governedProgram?: ts.Program,
+  governedAnalysisSources?: readonly ts.SourceFile[],
 ): SemanticReturnSummaries {
   const options: ts.CompilerOptions = {
     allowJs: true,
@@ -515,15 +522,16 @@ function semanticFunctionReturns(
   };
   const program = governedProgram ?? ts.createProgram({ host, options, rootNames: [rootName] });
   const checker = program.getTypeChecker();
-  const analysisSources = governedProgram
-    ? program
-        .getSourceFiles()
-        .filter(
-          (candidate) =>
-            !candidate.isDeclarationFile &&
-            !resolve(candidate.fileName).replaceAll("\\", "/").includes("/node_modules/"),
-        )
-    : [source];
+  const analysisSources =
+    governedProgram && !governedAnalysisSources
+      ? program
+          .getSourceFiles()
+          .filter(
+            (candidate) =>
+              !candidate.isDeclarationFile &&
+              !resolve(candidate.fileName).replaceAll("\\", "/").includes("/node_modules/"),
+          )
+      : (governedAnalysisSources ?? [source]);
   const analysisSourceSet = new Set(analysisSources);
   const cachedAssignmentIndex = governedProgram ? semanticAssignmentIndexes.get(program) : undefined;
   const assignedValues = cachedAssignmentIndex?.assignedValues ?? new Map<ts.Symbol, ts.Expression[]>();
@@ -1774,7 +1782,7 @@ function authRuntimeExportViolations(sourceOverride?: string) {
   }
 
   const constantBindings = constantStringBindings(source);
-  const semanticReturns = semanticFunctionReturns(source, constantBindings, governedProgram);
+  const semanticReturns = semanticFunctionReturns(source, constantBindings, governedProgram, [source]);
   const mutationAnalysis = mutationPrimitiveAliases(source, constantBindings, semanticReturns);
   const privateAliases = new Map<string, PrivateAuthTaint>(
     [...protectedAuthEscapeNames].map((name) => [name, "authority"] as const),
