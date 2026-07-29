@@ -204,6 +204,33 @@ function sourceFile(path: string, sourceText = readFileSync(path, "utf8")) {
   return ts.createSourceFile(path, sourceText, ts.ScriptTarget.Latest, true, scriptKind);
 }
 
+function productionProgramWithAuthSource(sourceText: string) {
+  const override = sourceFile(adminAuthPath, sourceText);
+  const defaultHost = ts.createCompilerHost({ ...parsedTsConfig.options, allowJs: true }, true);
+  const host: ts.CompilerHost = {
+    ...defaultHost,
+    fileExists: (fileName) =>
+      resolve(fileName) === adminAuthPath ||
+      Boolean(productionProgram.getSourceFile(resolve(fileName))) ||
+      defaultHost.fileExists(fileName),
+    getSourceFile: (fileName, languageVersion, onError, shouldCreateNewSourceFile) => {
+      const absolute = resolve(fileName);
+      if (absolute === adminAuthPath) return override;
+      return (
+        productionProgram.getSourceFile(absolute) ??
+        defaultHost.getSourceFile(fileName, languageVersion, onError, shouldCreateNewSourceFile)
+      );
+    },
+    readFile: (fileName) => (resolve(fileName) === adminAuthPath ? sourceText : defaultHost.readFile(fileName)),
+  };
+  return ts.createProgram({
+    host,
+    oldProgram: productionProgram,
+    options: { ...parsedTsConfig.options, allowJs: true },
+    rootNames: productionRootPaths.map((path) => resolve(path)),
+  });
+}
+
 function resolvesToModule(moduleName: string, containingPath: string, targetPath: string) {
   const resolved = ts.resolveModuleName(
     moduleName,
@@ -367,7 +394,10 @@ function constantStringBindings(source: ts.SourceFile) {
   };
   const visit = (node: ts.Node) => {
     if (ts.isVariableDeclaration(node)) {
-      const isConst = ts.isVariableDeclarationList(node.parent) && (node.parent.flags & ts.NodeFlags.Const) !== 0;
+      const isConst =
+        Boolean(node.parent) &&
+        ts.isVariableDeclarationList(node.parent) &&
+        (node.parent.flags & ts.NodeFlags.Const) !== 0;
       recordBindingName(node.name, isConst && node.initializer ? node.initializer : null);
     } else if (ts.isParameter(node)) {
       recordBindingName(node.name, null);
@@ -432,6 +462,7 @@ type SemanticReturnSummaries = {
 };
 
 type SemanticAssignmentIndex = {
+  assignedMemberPaths: Map<ts.Symbol, Array<{ members: string[]; root: ts.Expression }>>;
   assignedPropertyValues: Map<ts.Symbol, Map<string, ts.Expression[]>>;
   assignedValues: Map<ts.Symbol, ts.Expression[]>;
   indexedSources: Set<ts.SourceFile>;
@@ -496,6 +527,9 @@ function semanticFunctionReturns(
   const analysisSourceSet = new Set(analysisSources);
   const cachedAssignmentIndex = governedProgram ? semanticAssignmentIndexes.get(program) : undefined;
   const assignedValues = cachedAssignmentIndex?.assignedValues ?? new Map<ts.Symbol, ts.Expression[]>();
+  const assignedMemberPaths =
+    cachedAssignmentIndex?.assignedMemberPaths ??
+    new Map<ts.Symbol, Array<{ members: string[]; root: ts.Expression }>>();
   const assignedPropertyValues =
     cachedAssignmentIndex?.assignedPropertyValues ?? new Map<ts.Symbol, Map<string, ts.Expression[]>>();
   const indexedSources = cachedAssignmentIndex?.indexedSources ?? new Set<ts.SourceFile>();
@@ -518,7 +552,19 @@ function semanticFunctionReturns(
     }
     return null;
   };
-  const propertySlot = (expression: ts.Expression): { member: string; receiver: ts.Symbol } | null => {
+  const equivalentValueSymbols = (
+    expression: ts.Expression,
+    visited = new Set<ts.Symbol>(),
+  ): ReadonlySet<ts.Symbol> => {
+    const symbol = symbolAt(expression);
+    if (!symbol || visited.has(symbol)) return new Set();
+    const nextVisited = new Set(visited).add(symbol);
+    return new Set([
+      symbol,
+      ...(assignedValues.get(symbol) ?? []).flatMap((value) => [...equivalentValueSymbols(value, nextVisited)]),
+    ]);
+  };
+  const propertySlot = (expression: ts.Expression): { member: string; receivers: ReadonlySet<ts.Symbol> } | null => {
     const unwrapped = unwrapExpression(expression);
     if (!ts.isPropertyAccessExpression(unwrapped) && !ts.isElementAccessExpression(unwrapped)) return null;
     const memberSource = unwrapped.getSourceFile();
@@ -532,45 +578,171 @@ function semanticFunctionReturns(
       : unwrapped.argumentExpression
         ? constantStringExpression(unwrapped.argumentExpression, memberBindings)
         : null;
-    const receiver = symbolAt(unwrapped.expression);
-    return member && receiver ? { member, receiver } : null;
+    const receivers = equivalentValueSymbols(unwrapped.expression);
+    return member && receivers.size > 0 ? { member, receivers } : null;
   };
+  const valuesForReceiverMember = (receiver: ts.Expression, member: string) =>
+    [...equivalentValueSymbols(receiver)].flatMap((symbol) => assignedPropertyValues.get(symbol)?.get(member) ?? []);
   const valuesForPropertySlot = (expression: ts.Expression) => {
     const slot = propertySlot(expression);
-    return slot ? (assignedPropertyValues.get(slot.receiver)?.get(slot.member) ?? []) : [];
+    return slot
+      ? [...slot.receivers].flatMap((receiver) => assignedPropertyValues.get(receiver)?.get(slot.member) ?? [])
+      : [];
   };
   const recordAssignedValue = (expression: ts.Expression, value: ts.Expression) => {
     const symbol = symbolAt(expression);
     if (symbol) assignedValues.set(symbol, [...(assignedValues.get(symbol) ?? []), value]);
     const slot = propertySlot(expression);
     if (slot) {
-      const members = assignedPropertyValues.get(slot.receiver) ?? new Map<string, ts.Expression[]>();
-      members.set(slot.member, [...(members.get(slot.member) ?? []), value]);
-      assignedPropertyValues.set(slot.receiver, members);
+      for (const receiver of slot.receivers) {
+        const members = assignedPropertyValues.get(receiver) ?? new Map<string, ts.Expression[]>();
+        members.set(slot.member, [...(members.get(slot.member) ?? []), value]);
+        assignedPropertyValues.set(receiver, members);
+      }
     }
   };
-  const visitAssignments = (node: ts.Node) => {
+  const visitValueAssignments = (node: ts.Node) => {
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
-      recordAssignedValue(node.name, node.initializer);
+      const symbol = symbolAt(node.name);
+      if (symbol) assignedValues.set(symbol, [...(assignedValues.get(symbol) ?? []), node.initializer]);
+    }
+    if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+      node.operatorToken.kind <= ts.SyntaxKind.LastAssignment &&
+      ts.isIdentifier(unwrapExpression(node.left))
+    ) {
+      const symbol = symbolAt(unwrapExpression(node.left));
+      if (symbol) assignedValues.set(symbol, [...(assignedValues.get(symbol) ?? []), node.right]);
+    }
+    ts.forEachChild(node, visitValueAssignments);
+  };
+  const visitPropertyAssignments = (node: ts.Node) => {
+    if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+      node.operatorToken.kind <= ts.SyntaxKind.LastAssignment
+    ) {
+      const left = unwrapExpression(node.left);
+      if (ts.isPropertyAccessExpression(left) || ts.isElementAccessExpression(left)) {
+        recordAssignedValue(left, node.right);
+      }
+    }
+    ts.forEachChild(node, visitPropertyAssignments);
+  };
+  const recordMemberPath = (target: ts.Identifier, root: ts.Expression, members: string[]) => {
+    const shorthandSymbol =
+      target.parent && ts.isShorthandPropertyAssignment(target.parent)
+        ? checker.getShorthandAssignmentValueSymbol(target.parent)
+        : undefined;
+    const symbol = shorthandSymbol ? unalias(shorthandSymbol) : symbolAt(target);
+    if (!symbol || members.length === 0) return;
+    assignedMemberPaths.set(symbol, [...(assignedMemberPaths.get(symbol) ?? []), { members, root }]);
+  };
+  const recordBindingPattern = (
+    target: ts.BindingName | ts.Expression,
+    root: ts.Expression,
+    members: string[] = [],
+  ) => {
+    const unwrapped = ts.isExpression(target) ? unwrapExpression(target) : target;
+    if (ts.isIdentifier(unwrapped)) {
+      recordMemberPath(unwrapped, root, members);
+      return;
+    }
+    if (ts.isObjectBindingPattern(unwrapped)) {
+      for (const element of unwrapped.elements) {
+        const member = propertyNameText(
+          element.propertyName ?? (ts.isIdentifier(element.name) ? element.name : undefined),
+        );
+        if (member) recordBindingPattern(element.name, root, [...members, member]);
+      }
+      return;
+    }
+    if (ts.isArrayBindingPattern(unwrapped)) {
+      unwrapped.elements.forEach((element, index) => {
+        if (!ts.isOmittedExpression(element)) recordBindingPattern(element.name, root, [...members, String(index)]);
+      });
+      return;
+    }
+    if (ts.isObjectLiteralExpression(unwrapped)) {
+      for (const property of unwrapped.properties) {
+        if (ts.isShorthandPropertyAssignment(property)) {
+          recordBindingPattern(property.name, root, [...members, property.name.text]);
+        } else if (ts.isPropertyAssignment(property)) {
+          const member = propertyNameText(property.name);
+          if (member) recordBindingPattern(property.initializer, root, [...members, member]);
+        }
+      }
+      return;
+    }
+    if (ts.isArrayLiteralExpression(unwrapped)) {
+      unwrapped.elements.forEach((element, index) => {
+        if (ts.isExpression(element)) recordBindingPattern(element, root, [...members, String(index)]);
+      });
+    }
+  };
+  const visitBindingAssignments = (node: ts.Node) => {
+    if (ts.isVariableDeclaration(node) && node.initializer && !ts.isIdentifier(node.name)) {
+      recordBindingPattern(node.name, node.initializer);
     }
     if (
       ts.isBinaryExpression(node) &&
       node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
       node.operatorToken.kind <= ts.SyntaxKind.LastAssignment
     ) {
-      recordAssignedValue(node.left, node.right);
+      const left = unwrapExpression(node.left);
+      if (ts.isObjectLiteralExpression(left) || ts.isArrayLiteralExpression(left)) {
+        recordBindingPattern(left, node.right);
+      }
     }
-    ts.forEachChild(node, visitAssignments);
+    ts.forEachChild(node, visitBindingAssignments);
   };
   for (const analysisSource of analysisSources) {
     if (indexedSources.has(analysisSource)) continue;
-    visitAssignments(analysisSource);
+    visitValueAssignments(analysisSource);
+  }
+  for (const analysisSource of analysisSources) {
+    if (indexedSources.has(analysisSource)) continue;
+    visitPropertyAssignments(analysisSource);
+  }
+  for (const analysisSource of analysisSources) {
+    if (indexedSources.has(analysisSource)) continue;
+    visitBindingAssignments(analysisSource);
     indexedSources.add(analysisSource);
   }
   if (governedProgram && !cachedAssignmentIndex) {
-    semanticAssignmentIndexes.set(program, { assignedPropertyValues, assignedValues, indexedSources });
+    semanticAssignmentIndexes.set(program, {
+      assignedMemberPaths,
+      assignedPropertyValues,
+      assignedValues,
+      indexedSources,
+    });
   }
 
+  type SemanticMemberReference = { expression?: ts.Expression; symbol?: ts.Symbol };
+  const memberReferences = (
+    references: readonly SemanticMemberReference[],
+    member: string,
+  ): SemanticMemberReference[] => {
+    const next: SemanticMemberReference[] = [];
+    for (const reference of references) {
+      if (reference.expression) {
+        const property = checker.getTypeAtLocation(reference.expression).getProperty(member);
+        if (property) next.push({ symbol: unalias(property) });
+        next.push(...valuesForReceiverMember(reference.expression, member).map((expression) => ({ expression })));
+      }
+      if (reference.symbol) {
+        const declaration = reference.symbol.valueDeclaration ?? reference.symbol.declarations?.[0] ?? source;
+        const property = checker.getTypeOfSymbolAtLocation(reference.symbol, declaration).getProperty(member);
+        if (property) next.push({ symbol: unalias(property) });
+      }
+    }
+    return next;
+  };
+  let functionLikesForValue: (
+    expression: ts.Expression,
+    visitedSymbols?: Set<ts.Symbol>,
+  ) => ReturnBearingFunctionLike[];
   const functionLikesForSymbol = (
     symbol: ts.Symbol,
     visitedSymbols: ReadonlySet<ts.Symbol>,
@@ -579,7 +751,7 @@ function semanticFunctionReturns(
     if (visitedSymbols.has(resolved)) return [];
     const nextVisited = new Set(visitedSymbols).add(resolved);
     const candidates: ts.Node[] = [...(resolved.declarations ?? []), ...(assignedValues.get(resolved) ?? [])];
-    return candidates.flatMap((candidate) => {
+    const direct = candidates.flatMap((candidate) => {
       if (isReturnBearingFunctionLike(candidate)) return [candidate];
       if (ts.isVariableDeclaration(candidate) && candidate.initializer) {
         return functionLikesForValue(candidate.initializer, nextVisited);
@@ -612,22 +784,113 @@ function semanticFunctionReturns(
       if (ts.isExpression(candidate)) return functionLikesForValue(candidate, nextVisited);
       return [];
     });
+    const destructured = (assignedMemberPaths.get(resolved) ?? []).flatMap(({ members, root }) => {
+      let references: SemanticMemberReference[] = [{ expression: root }];
+      for (const member of members) references = memberReferences(references, member);
+      return references.flatMap((reference) => {
+        if (reference.symbol) return functionLikesForSymbol(reference.symbol, nextVisited);
+        return reference.expression ? functionLikesForValue(reference.expression, nextVisited) : [];
+      });
+    });
+    return [...direct, ...destructured];
   };
-  const functionLikesForValue = (
+  const appendSemanticMemberIdentity = (identity: string, member: string) => {
+    if (identity === "globalThis" && (member === "Function" || member === "Reflect")) return member;
+    return `${identity}.${member}`;
+  };
+  const semanticValueIdentities = (
+    expression: ts.Expression,
+    visitedSymbols = new Set<ts.Symbol>(),
+  ): ReadonlySet<string> => {
+    const unwrapped = unwrapExpression(expression);
+    if (ts.isIdentifier(unwrapped)) {
+      const symbol = symbolAt(unwrapped);
+      const locallyDeclared = Boolean(
+        symbol?.declarations?.some((declaration) => analysisSourceSet.has(declaration.getSourceFile())),
+      );
+      const identities = new Set<string>();
+      if (!locallyDeclared && ["Function", "Reflect", "globalThis"].includes(unwrapped.text)) {
+        identities.add(unwrapped.text);
+      }
+      if (!symbol || visitedSymbols.has(symbol)) return identities;
+      const nextVisited = new Set(visitedSymbols).add(symbol);
+      for (const value of assignedValues.get(symbol) ?? []) {
+        for (const identity of semanticValueIdentities(value, nextVisited)) identities.add(identity);
+      }
+      for (const { members, root } of assignedMemberPaths.get(symbol) ?? []) {
+        let pathIdentities = semanticValueIdentities(root, nextVisited);
+        for (const member of members) {
+          pathIdentities = new Set(
+            [...pathIdentities].map((identity) => appendSemanticMemberIdentity(identity, member)),
+          );
+        }
+        for (const identity of pathIdentities) identities.add(identity);
+      }
+      return identities;
+    }
+    if (ts.isPropertyAccessExpression(unwrapped) || ts.isElementAccessExpression(unwrapped)) {
+      const member = ts.isPropertyAccessExpression(unwrapped)
+        ? unwrapped.name.text
+        : unwrapped.argumentExpression
+          ? constantStringExpression(unwrapped.argumentExpression, bindings)
+          : null;
+      if (!member) return new Set();
+      return new Set(
+        [...semanticValueIdentities(unwrapped.expression, visitedSymbols)].map((identity) =>
+          appendSemanticMemberIdentity(identity, member),
+        ),
+      );
+    }
+    return new Set();
+  };
+  const accessMember = (expression: ts.Expression) => {
+    const unwrapped = unwrapExpression(expression);
+    if (ts.isPropertyAccessExpression(unwrapped)) return unwrapped.name.text;
+    if (ts.isElementAccessExpression(unwrapped) && unwrapped.argumentExpression) {
+      return constantStringExpression(unwrapped.argumentExpression, bindings);
+    }
+    return null;
+  };
+  const boundFunctionTargets = (call: ts.CallExpression): ts.Expression[] => {
+    const identities = semanticValueIdentities(call.expression);
+    if (identities.has("Function.prototype.bind.call") && call.arguments[0]) return [call.arguments[0]];
+    const callee = unwrapExpression(call.expression);
+    if (
+      (ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee)) &&
+      accessMember(callee) === "bind"
+    ) {
+      return [callee.expression];
+    }
+    return [];
+  };
+  const invokedFunctionTargets = (call: ts.CallExpression): ts.Expression[] => {
+    const identities = semanticValueIdentities(call.expression);
+    if (identities.has("Reflect.apply") && call.arguments[0]) return [call.arguments[0]];
+    if (
+      [...identities].some(
+        (identity) => identity === "Function.prototype.call.call" || identity === "Function.prototype.apply.call",
+      ) &&
+      call.arguments[0]
+    ) {
+      return [call.arguments[0]];
+    }
+    const callee = unwrapExpression(call.expression);
+    if (ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee)) {
+      const member = accessMember(callee);
+      if (member === "call" || member === "apply") return [callee.expression];
+    }
+    return [call.expression];
+  };
+  functionLikesForValue = (
     expression: ts.Expression,
     visitedSymbols = new Set<ts.Symbol>(),
   ): ReturnBearingFunctionLike[] => {
     const unwrapped = unwrapExpression(expression);
     if (isReturnBearingFunctionLike(unwrapped)) return [unwrapped];
     if (ts.isCallExpression(unwrapped)) {
-      const callee = unwrapExpression(unwrapped.expression);
-      if (ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee)) {
-        const member = ts.isPropertyAccessExpression(callee)
-          ? callee.name.text
-          : callee.argumentExpression
-            ? constantStringExpression(callee.argumentExpression, bindings)
-            : null;
-        if (member === "bind") return functionLikesForValue(callee.expression, visitedSymbols);
+      const boundTargets = boundFunctionTargets(unwrapped);
+      if (boundTargets.length > 0) {
+        return boundTargets.flatMap((target) => functionLikesForValue(target, visitedSymbols));
       }
     }
     const symbol = symbolAt(unwrapped);
@@ -642,23 +905,7 @@ function semanticFunctionReturns(
     if (visited.has(call)) return [];
     const nextVisited = new Set(visited).add(call);
     const callee = unwrapExpression(call.expression);
-    const functionLikes = functionLikesForValue(callee);
-    if (ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee)) {
-      const member = ts.isPropertyAccessExpression(callee)
-        ? callee.name.text
-        : callee.argumentExpression
-          ? constantStringExpression(callee.argumentExpression, bindings)
-          : null;
-      if (member === "call" || member === "apply") functionLikes.push(...functionLikesForValue(callee.expression));
-      if (
-        member === "apply" &&
-        ts.isIdentifier(callee.expression) &&
-        callee.expression.text === "Reflect" &&
-        call.arguments[0]
-      ) {
-        functionLikes.push(...functionLikesForValue(call.arguments[0]));
-      }
-    }
+    const functionLikes = invokedFunctionTargets(call).flatMap((target) => functionLikesForValue(target));
     if (ts.isCallExpression(callee)) {
       for (const returned of fromCall(callee, nextVisited)) {
         functionLikes.push(...functionLikesForValue(returned));
@@ -1509,8 +1756,11 @@ function returnedExpressions(node: ts.Node) {
   return expressions;
 }
 
-function authRuntimeExportViolations(sourceText = readFileSync("lib/server/admin-auth.ts", "utf8")) {
-  const source = sourceFile("lib/server/admin-auth.ts", sourceText);
+function authRuntimeExportViolations(sourceOverride?: string) {
+  const governedProgram =
+    sourceOverride === undefined ? productionProgram : productionProgramWithAuthSource(sourceOverride);
+  const source = governedProgram.getSourceFile(adminAuthPath);
+  if (!source) throw new Error("TypeScript program omitted governed production source lib/server/admin-auth.ts");
   const entries = declaredRuntimeExports(source);
   const violations: string[] = [];
   for (const [name, kind] of allowedAdminAuthRuntimeExports) {
@@ -1524,7 +1774,7 @@ function authRuntimeExportViolations(sourceText = readFileSync("lib/server/admin
   }
 
   const constantBindings = constantStringBindings(source);
-  const semanticReturns = semanticFunctionReturns(source, constantBindings);
+  const semanticReturns = semanticFunctionReturns(source, constantBindings, governedProgram);
   const mutationAnalysis = mutationPrimitiveAliases(source, constantBindings, semanticReturns);
   const privateAliases = new Map<string, PrivateAuthTaint>(
     [...protectedAuthEscapeNames].map((name) => [name, "authority"] as const),
@@ -2962,6 +3212,14 @@ describe("admin authentication production boundary", () => {
       'const moduleBridge = () => module; const M = moduleBridge.call(null); const req = Reflect.get(M, "require") as NodeRequire; const auth = req("../../../../lib/server/admin-auth"); auth.createAdminLoginSession({} as never, 0);',
       'const moduleBridge = () => module; const M = moduleBridge.apply(null, []); const req = Reflect.get(M, "require") as NodeRequire; const auth = req("../../../../lib/server/admin-auth"); auth.createAdminLoginSession({} as never, 0);',
       'const moduleBridge: any = {}; moduleBridge.get = () => module; const M = moduleBridge.get(); const req = Reflect.get(M, "require") as NodeRequire; const auth = req("../../../../lib/server/admin-auth"); auth.createAdminLoginSession({} as never, 0);',
+      'const box: any = {}; const alias = box; alias.get = () => module; const M = box.get(); const req = Reflect.get(M, "require").bind(M) as NodeRequire; const auth = req("../../../../lib/server/admin-auth"); auth.createAdminLoginSession({} as never, 0);',
+      'const moduleBridge = { nested: { get() { return module; } } }; const { nested: { get } } = moduleBridge; const M = get(); const req = Reflect.get(M, "require").bind(M) as NodeRequire; const auth = req("../../../../lib/server/admin-auth"); auth.createAdminLoginSession({} as never, 0);',
+      'const moduleBridge = { get() { return module; } }; let get: () => NodeModule; ({ get } = moduleBridge); const M = get(); const req = Reflect.get(M, "require").bind(M) as NodeRequire; const auth = req("../../../../lib/server/admin-auth"); auth.createAdminLoginSession({} as never, 0);',
+      'const moduleBridge = () => module; const M = Function.prototype.call.call(moduleBridge, null); const req = Reflect.get(M, "require").bind(M) as NodeRequire; const auth = req("../../../../lib/server/admin-auth"); auth.createAdminLoginSession({} as never, 0);',
+      'const moduleBridge = () => module; const M = Function.prototype.apply.call(moduleBridge, null, []); const req = Reflect.get(M, "require").bind(M) as NodeRequire; const auth = req("../../../../lib/server/admin-auth"); auth.createAdminLoginSession({} as never, 0);',
+      'const moduleBridge = () => module; const M = Function.prototype.bind.call(moduleBridge, null)(); const req = Reflect.get(M, "require").bind(M) as NodeRequire; const auth = req("../../../../lib/server/admin-auth"); auth.createAdminLoginSession({} as never, 0);',
+      'const moduleBridge = () => module; const R = Reflect; const M = R.apply(moduleBridge, null, []); const req = R.get(M, "require").bind(M) as NodeRequire; const auth = req("../../../../lib/server/admin-auth"); auth.createAdminLoginSession({} as never, 0);',
+      'const moduleBridge = () => module; const { apply } = Reflect; const M = apply(moduleBridge, null, []); const req = Reflect.get(M, "require").bind(M) as NodeRequire; const auth = req("../../../../lib/server/admin-auth"); auth.createAdminLoginSession({} as never, 0);',
       'const outerBridge = () => () => module; const M = outerBridge()(); const req = Reflect.get(M, "require") as NodeRequire; const auth = req("../../../../lib/server/admin-auth"); auth.createAdminLoginSession({} as never, 0);',
     ]) {
       expect(protectedSymbolAuthority(relativePath, sourceText).forbiddenAccesses, sourceText).not.toEqual([]);
@@ -2997,6 +3255,18 @@ describe("admin authentication production boundary", () => {
         'function moduleBridge() { return module; } function safeScope() { function moduleBridge() { return { require: () => ({ safe: true }) }; } const M = moduleBridge(); void Reflect.get(M, "require")(); } safeScope();',
       ).forbiddenAccesses,
     ).toEqual([]);
+    for (const safeBridge of [
+      'const box: any = {}; const alias = box; alias.get = () => ({ require: () => ({ safe: true }) }); const M = box.get(); void Reflect.get(M, "require")();',
+      'const bridge = { nested: { get() { return { require: () => ({ safe: true }) }; } } }; const { nested: { get } } = bridge; const M = get(); void Reflect.get(M, "require")();',
+      'const bridge = { get() { return { require: () => ({ safe: true }) }; } }; let get: () => { require: () => unknown }; ({ get } = bridge); const M = get(); void Reflect.get(M, "require")();',
+      'const bridge = () => ({ require: () => ({ safe: true }) }); const M = Function.prototype.call.call(bridge, null); void Reflect.get(M, "require")();',
+      'const bridge = () => ({ require: () => ({ safe: true }) }); const M = Function.prototype.apply.call(bridge, null, []); void Reflect.get(M, "require")();',
+      'const bridge = () => ({ require: () => ({ safe: true }) }); const M = Function.prototype.bind.call(bridge, null)(); void Reflect.get(M, "require")();',
+      'const bridge = () => ({ require: () => ({ safe: true }) }); const R = Reflect; const M = R.apply(bridge, null, []); void R.get(M, "require")();',
+      'const bridge = () => ({ require: () => ({ safe: true }) }); const { apply } = Reflect; const M = apply(bridge, null, []); void Reflect.get(M, "require")();',
+    ]) {
+      expect(protectedSymbolAuthority(relativePath, safeBridge).forbiddenAccesses, safeBridge).toEqual([]);
+    }
     for (const safeShadow of [
       'const module = { require: () => ({ safe: true }) }; void module.require("./safe-module");',
       'const require = () => ({ safe: true }); void require("./safe-module");',
@@ -3209,7 +3479,7 @@ describe("admin authentication production boundary", () => {
           })
           .join(
             "\n",
-          )}\nimport { getModule } from "../../../runtime/module-bridge";\nconst M = getModule();\nconst req = Reflect.get(M, "require") as (specifier: string) => unknown;\nvoid req("./safe-module");`,
+          )}\nimport { getModule } from "../../../runtime/module-bridge";\nconst M = Function.prototype.call.call(getModule, null);\nconst req = Reflect.get(M, "require") as (specifier: string) => unknown;\nvoid req("./safe-module");`,
         "utf8",
       );
       const program = ts.createProgram([publicRoute], {
@@ -3243,6 +3513,33 @@ describe("admin authentication production boundary", () => {
         "function-declaration bridge body",
       ).toBe(true);
       expect(protectedSymbolAuthority(publicRoute, undefined, program).forbiddenAccesses).not.toEqual([]);
+      for (const mediatedCall of [
+        "Function.prototype.apply.call(getModule, null, [])",
+        "Function.prototype.bind.call(getModule, null)()",
+        "R.apply(getModule, null, [])",
+        "apply(getModule, null, [])",
+      ]) {
+        const reflectPrelude = mediatedCall.startsWith("R.")
+          ? "const R = Reflect;\n"
+          : mediatedCall.startsWith("apply(")
+            ? "const { apply } = Reflect;\n"
+            : "";
+        writeFileSync(
+          publicRoute,
+          `import { getModule } from "../../../runtime/module-bridge";\n${reflectPrelude}const M = ${mediatedCall};\nconst req = Reflect.get(M, "require") as (specifier: string) => unknown;\nvoid req("./safe-module");`,
+          "utf8",
+        );
+        const mediatedProgram = ts.createProgram([publicRoute], {
+          allowJs: true,
+          module: ts.ModuleKind.ESNext,
+          moduleResolution: ts.ModuleResolutionKind.Bundler,
+          target: ts.ScriptTarget.ESNext,
+        });
+        expect(
+          protectedSymbolAuthority(publicRoute, undefined, mediatedProgram).forbiddenAccesses,
+          mediatedCall,
+        ).not.toEqual([]);
+      }
     } finally {
       rmSync(root, { force: true, recursive: true });
     }
@@ -3345,6 +3642,16 @@ describe("admin authentication production boundary", () => {
       "class CookieBridge { getCookie() { return adminCookieHeader; } } const bridge = new CookieBridge(); Object.assign(bridge.getCookie(), { signer: sign });",
       "class ObjectBridge { get = () => globalThis.Object; } const bridge = new ObjectBridge(); bridge.get().assign(adminCookieHeader, { signer: sign });",
       "class CookieBridge { getCookie = () => adminCookieHeader; } const bridge = new CookieBridge(); Object.assign(bridge.getCookie(), { signer: sign });",
+      "const box: any = {}; const alias = box; alias.get = () => adminCookieHeader; Object.assign(box.get(), { signer: sign });",
+      "const bridge = { nested: { get() { return adminCookieHeader; } } }; const { nested: { get } } = bridge; Object.assign(get(), { signer: sign });",
+      "const bridge = { get() { return adminCookieHeader; } }; let get: () => typeof adminCookieHeader; ({ get } = bridge); Object.assign(get(), { signer: sign });",
+      "const bridge = () => adminCookieHeader; Object.assign(Function.prototype.call.call(bridge, null), { signer: sign });",
+      "const bridge = () => adminCookieHeader; Object.assign(Function.prototype.apply.call(bridge, null, []), { signer: sign });",
+      "const bridge = () => adminCookieHeader; Object.assign(Function.prototype.bind.call(bridge, null)(), { signer: sign });",
+      "const bridge = () => adminCookieHeader; const R = Reflect; Object.assign(R.apply(bridge, null, []), { signer: sign });",
+      "const bridge = () => adminCookieHeader; const { apply } = Reflect; Object.assign(apply(bridge, null, []), { signer: sign });",
+      "const R = Reflect; R.apply(Object.assign, null, [adminCookieHeader, { signer: sign }]);",
+      "const { apply } = Reflect; apply(Object.assign, null, [adminCookieHeader, { signer: sign }]);",
     ]) {
       expect(authRuntimeExportViolations(`${authSourceText}\n${hostileSuffix}`), hostileSuffix).not.toEqual([]);
     }
@@ -3365,6 +3672,18 @@ describe("admin authentication production boundary", () => {
         `${authSourceText}\n{ const Object = { assign: (_target: unknown, _source: unknown) => ({ safe: true }) }; Object.assign(adminCookieHeader, { signer: sign }); }`,
       ),
     ).toEqual([]);
+    for (const safeSuffix of [
+      "const box: any = {}; const alias = box; alias.get = () => ({ safe: true }); Object.assign(box.get(), { harmless: true });",
+      "const bridge = { nested: { get() { return { safe: true }; } } }; const { nested: { get } } = bridge; Object.assign(get(), { harmless: true });",
+      "const bridge = { get() { return { safe: true }; } }; let get: () => { safe: boolean }; ({ get } = bridge); Object.assign(get(), { harmless: true });",
+      "const bridge = () => ({ safe: true }); Object.assign(Function.prototype.call.call(bridge, null), { harmless: true });",
+      "const bridge = () => ({ safe: true }); Object.assign(Function.prototype.apply.call(bridge, null, []), { harmless: true });",
+      "const bridge = () => ({ safe: true }); Object.assign(Function.prototype.bind.call(bridge, null)(), { harmless: true });",
+      "const bridge = () => ({ safe: true }); const R = Reflect; Object.assign(R.apply(bridge, null, []), { harmless: true });",
+      "const bridge = () => ({ safe: true }); const { apply } = Reflect; Object.assign(apply(bridge, null, []), { harmless: true });",
+    ]) {
+      expect(authRuntimeExportViolations(`${authSourceText}\n${safeSuffix}`), safeSuffix).toEqual([]);
+    }
     const escapedCookieName = authSourceText.replace(
       'export const adminCookieName = "oriental_admin";',
       "export const adminCookieName = ({ claims: verifiedAdminLoginClaims } as unknown) as string;",
@@ -3427,6 +3746,13 @@ describe("admin authentication production boundary", () => {
       "const result: Record<string, unknown> = {}; const args = () => [result, 'signer', sign]; Reflect.apply(Reflect.set, null, args.bind(null)()); return result as unknown as string;",
       "const result: Record<string, unknown> = {}; const args = () => [result, 'signer', sign]; Reflect.apply(Reflect.set, null, args.call(null)); return result as unknown as string;",
       "const result: Record<string, unknown> = {}; const args = () => [result, 'signer', sign]; Reflect.apply(Reflect.set, null, args.apply(null, [])); return result as unknown as string;",
+      "const result: Record<string, unknown> = {}; const bridge = { get() { return result; } }; let get: () => typeof result; ({ get } = bridge); Object.assign(get(), { signer: sign }); return result as unknown as string;",
+      "const result: Record<string, unknown> = {}; const target = () => result; Object.assign(Function.prototype.call.call(target, null), { signer: sign }); return result as unknown as string;",
+      "const result: Record<string, unknown> = {}; const target = () => result; Object.assign(Function.prototype.apply.call(target, null, []), { signer: sign }); return result as unknown as string;",
+      "const result: Record<string, unknown> = {}; const target = () => result; Object.assign(Function.prototype.bind.call(target, null)(), { signer: sign }); return result as unknown as string;",
+      "const result: Record<string, unknown> = {}; const args = () => [result, 'signer', sign]; Reflect.apply(Reflect.set, null, Function.prototype.call.call(args, null)); return result as unknown as string;",
+      "const result: Record<string, unknown> = {}; const args = () => [result, 'signer', sign]; const R = Reflect; R.apply(Reflect.set, null, R.apply(args, null, [])); return result as unknown as string;",
+      "const result: Record<string, unknown> = {}; const args = () => [result, 'signer', sign]; const { apply } = Reflect; apply(Reflect.set, null, apply(args, null, [])); return result as unknown as string;",
     ]) {
       const escapedLocalAlias = authSourceText.replace(
         "export function clearAdminCookieHeader() {",
@@ -3466,6 +3792,13 @@ describe("admin authentication production boundary", () => {
       "const result: Record<string, unknown> = {}; const args = () => [result, 'value', 'safe']; Reflect.apply(Reflect.set, null, args.bind(null)()); return result as unknown as string;",
       "const result: Record<string, unknown> = {}; const args = () => [result, 'value', 'safe']; Reflect.apply(Reflect.set, null, args.call(null)); return result as unknown as string;",
       "const result: Record<string, unknown> = {}; const args = () => [result, 'value', 'safe']; Reflect.apply(Reflect.set, null, args.apply(null, [])); return result as unknown as string;",
+      "const result: Record<string, unknown> = {}; const bridge = { get() { return result; } }; let get: () => typeof result; ({ get } = bridge); Object.assign(get(), { value: 'safe' }); return result as unknown as string;",
+      "const result: Record<string, unknown> = {}; const target = () => result; Object.assign(Function.prototype.call.call(target, null), { value: 'safe' }); return result as unknown as string;",
+      "const result: Record<string, unknown> = {}; const target = () => result; Object.assign(Function.prototype.apply.call(target, null, []), { value: 'safe' }); return result as unknown as string;",
+      "const result: Record<string, unknown> = {}; const target = () => result; Object.assign(Function.prototype.bind.call(target, null)(), { value: 'safe' }); return result as unknown as string;",
+      "const result: Record<string, unknown> = {}; const args = () => [result, 'value', 'safe']; Reflect.apply(Reflect.set, null, Function.prototype.call.call(args, null)); return result as unknown as string;",
+      "const result: Record<string, unknown> = {}; const args = () => [result, 'value', 'safe']; const R = Reflect; R.apply(Reflect.set, null, R.apply(args, null, [])); return result as unknown as string;",
+      "const result: Record<string, unknown> = {}; const args = () => [result, 'value', 'safe']; const { apply } = Reflect; apply(Reflect.set, null, apply(args, null, [])); return result as unknown as string;",
     ]) {
       const safeMutationBody = authSourceText.replace(
         "export function clearAdminCookieHeader() {",
