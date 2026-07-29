@@ -1,0 +1,61 @@
+name: oriental-conversation-stitching-pr83
+description: Exact-tree privacy and grouping review for resumed voice calls
+
+documents:
+  readme: .apr/evidence/oriental-conversation-stitching-pr83.md
+  spec: .apr/specs/oriental-conversation-stitching.md
+  implementation: .apr/evidence/oriental-conversation-stitching-pr83.patch
+
+oracle:
+  model: "gpt-5.6-sol"
+
+rounds:
+  output_dir: .apr/rounds/oriental-conversation-stitching-pr83
+  impl_every_n: 1
+
+template: |
+  Perform an adversarial exact-source privacy and data-integrity review of
+  conversation-grouping implementation commit
+  acbf066104d6b603d092fdc02554c6dd5a67089d. Recheck every prior blocker:
+  explicit IDs must be trimmed, nonempty, and namespaced away from review IDs;
+  inferred edges must require one consistent conservative canonical normalized
+  email on every call; stored identity must be byte-canonical and reject raw,
+  missing, case-foldable, trim-recoverable, malformed, whitespace/control-bearing,
+  or conflicting values; the sixty-minute rule must compare actual calls. Prove
+  nearest selection with already-separated compatible clusters where the
+  later-created, lexicographically larger-key cluster must win solely because
+  its actual-call gap is smaller. Prove equal-gap selection and every equal-time
+  ordering use exact code-unit opaque-ID comparisons, never locale collation,
+  including all 24 Unicode equal-gap permutations and all six arrangements of
+  three canonically distinct Unicode IDs across membership, call order, head,
+  and output order. Every original row reference must occur exactly once across
+  all grouping branches, and inputs and persistence must not mutate. Confirm
+  exact-source-head CI and combined commit
+  94c4457a37820d5cfbac220ac4881c19cc296005, tree
+  2236e4bf2c93545431c38484ab2326b48cb9dec3, with 89 files and 2,337 tests.
+  Do not waive canonical staging verification. End with `VERDICT: MERGE` or
+  `VERDICT: DO NOT MERGE` on its own final line.
+
+template_with_impl: |
+  Perform an adversarial exact-source privacy and data-integrity review of
+  conversation-grouping implementation commit
+  acbf066104d6b603d092fdc02554c6dd5a67089d against the attached complete
+  source-only patch. Recheck every prior blocker: explicit IDs must be trimmed,
+  nonempty, and namespaced away from review IDs; inferred edges must require one
+  consistent conservative canonical normalized email on every call; stored
+  identity must be byte-canonical and reject raw, missing, case-foldable,
+  trim-recoverable, malformed, whitespace/control-bearing, or conflicting
+  values; the sixty-minute rule must compare actual calls. Prove nearest
+  selection with already-separated compatible clusters where the later-created,
+  lexicographically larger-key cluster must win solely because its actual-call
+  gap is smaller. Prove equal-gap selection and every equal-time ordering use
+  exact code-unit opaque-ID comparisons, never locale collation, including all
+  24 Unicode equal-gap permutations and all six arrangements of three
+  canonically distinct Unicode IDs across membership, call order, head, and
+  output order. Every original row reference must occur exactly once across all
+  grouping branches, and inputs and persistence must not mutate. Confirm
+  exact-source-head CI and combined commit
+  94c4457a37820d5cfbac220ac4881c19cc296005, tree
+  2236e4bf2c93545431c38484ab2326b48cb9dec3, with 89 files and 2,337 tests.
+  Do not waive canonical staging verification. End with `VERDICT: MERGE` or
+  `VERDICT: DO NOT MERGE` on its own final line.
