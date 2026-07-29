@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { isValidAdminActor } from "../lib/admin-permissions";
 import { hasShellEscapedQuoteWrapper, unwrapEnvValue } from "../lib/env";
 import { isAllowedAdminEvalModel } from "../lib/eval/admin-models";
@@ -31,6 +32,7 @@ const adminRequired = [
   "ADMIN_REVIEW_ACTOR",
   "ADMIN_REVIEW_ROLE",
   "ADMIN_REVIEW_TOKEN",
+  "ADMIN_REVIEW_PASSWORD_HMAC",
   "OPS_AUTOMATION_TOKEN",
   "PRIVACY_ADMIN_TOKEN",
 ];
@@ -105,6 +107,12 @@ if (process.env.NODE_ENV === "production") {
     process.exit(1);
   }
 
+  const adminPasswordHmac = process.env.ADMIN_REVIEW_PASSWORD_HMAC;
+  if (!adminPasswordHmac || !/^[a-f0-9]{64}$/.test(adminPasswordHmac)) {
+    console.error("ADMIN_REVIEW_PASSWORD_HMAC must be a lowercase SHA-256 HMAC.");
+    process.exit(1);
+  }
+
   const credentialNames = ["ADMIN_REVIEW_TOKEN", "OPS_AUTOMATION_TOKEN", "PRIVACY_ADMIN_TOKEN"];
   const credentials = credentialNames.map((name) => envValue(name) ?? "");
   if (credentials.some((credential) => credential.length < 32)) {
@@ -113,6 +121,16 @@ if (process.env.NODE_ENV === "production") {
   }
   if (new Set(credentials).size !== credentials.length) {
     console.error("Admin review, ops automation, and privacy admin tokens must be distinct.");
+    process.exit(1);
+  }
+  const adminSigningKey = credentials[0] ?? "";
+  const passwordMatchesBearer = credentials.some(
+    (credential) =>
+      createHmac("sha256", adminSigningKey).update("oriental-admin-password:v1\0").update(credential).digest("hex") ===
+      adminPasswordHmac,
+  );
+  if (passwordMatchesBearer) {
+    console.error("The interactive admin password must be distinct from every admin bearer credential.");
     process.exit(1);
   }
 

@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 const baseEnv: NodeJS.ProcessEnv = {
@@ -25,6 +26,7 @@ const baseEnv: NodeJS.ProcessEnv = {
   ADMIN_REVIEW_ACTOR: "Test operator",
   ADMIN_REVIEW_ROLE: "operator",
   ADMIN_REVIEW_TOKEN: "admin-review-token-123456789-abcdef",
+  ADMIN_REVIEW_PASSWORD_HMAC: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   OPS_AUTOMATION_TOKEN: "ops-automation-token-123456789-abcdef",
   PRIVACY_ADMIN_TOKEN: "privacy-admin-token-123456789-abcdef",
   SMTP_HOST: "smtp.example.test",
@@ -66,6 +68,24 @@ describe("managed secret contract", () => {
     expect(result.status, result.stderr).toBe(0);
   });
 
+  it("rejects a missing password HMAC", () => {
+    const result = checkSecrets(productionEnv({ ADMIN_REVIEW_PASSWORD_HMAC: "" }));
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("Missing admin review variables: ADMIN_REVIEW_PASSWORD_HMAC");
+  });
+
+  it.each([
+    "a".repeat(63),
+    "a".repeat(65),
+    "A".repeat(64),
+    ` ${"a".repeat(64)}`,
+    "g".repeat(64),
+  ])("rejects malformed password HMAC %j", (passwordHmac) => {
+    const result = checkSecrets(productionEnv({ ADMIN_REVIEW_PASSWORD_HMAC: passwordHmac }));
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("ADMIN_REVIEW_PASSWORD_HMAC must be a lowercase SHA-256 HMAC");
+  });
+
   it("rejects shared machine/admin credentials and implicit roles", () => {
     const duplicate = checkSecrets(productionEnv({ OPS_AUTOMATION_TOKEN: baseEnv.ADMIN_REVIEW_TOKEN }));
     expect(duplicate.status).toBe(1);
@@ -74,6 +94,23 @@ describe("managed secret contract", () => {
     const role = checkSecrets(productionEnv({ ADMIN_REVIEW_ROLE: "superadmin" }));
     expect(role.status).toBe(1);
     expect(role.stderr).toContain("ADMIN_REVIEW_ROLE must be explicitly viewer, operator, or admin");
+  });
+
+  it.each([
+    "ADMIN_REVIEW_TOKEN",
+    "OPS_AUTOMATION_TOKEN",
+    "PRIVACY_ADMIN_TOKEN",
+  ] as const)("rejects an interactive password that collides with %s", (name) => {
+    const signingKey = baseEnv.ADMIN_REVIEW_TOKEN ?? "";
+    const bearer = baseEnv[name] ?? "";
+    const collisionHmac = createHmac("sha256", signingKey)
+      .update("oriental-admin-password:v1\0")
+      .update(bearer)
+      .digest("hex");
+    const result = checkSecrets(productionEnv({ ADMIN_REVIEW_PASSWORD_HMAC: collisionHmac }));
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("interactive admin password must be distinct");
+    expect(result.stderr).not.toContain(bearer);
   });
 });
 
