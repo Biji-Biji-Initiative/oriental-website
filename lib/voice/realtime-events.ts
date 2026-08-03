@@ -7,7 +7,11 @@ import {
 import type { FieldProvenance } from "@/lib/voice/interaction-attribution";
 import { lookupOrientalKnowledge } from "@/lib/voice/knowledge";
 import type { VoiceToolName } from "@/lib/voice/latency";
-import { extractExplicitSpelledVisitorName, extractExplicitVisitorEmail } from "@/lib/voice/tentative-extraction";
+import {
+  extractExplicitSpelledVisitorName,
+  extractExplicitVisitorBrief,
+  extractExplicitVisitorEmail,
+} from "@/lib/voice/tentative-extraction";
 
 export type CapturedLead = {
   name: string;
@@ -248,8 +252,8 @@ export function isVoiceCaptureIntegrityIssue(error: VoiceRuntimeError): boolean 
 
 /** Record a message the visitor typed into the live chat as a user transcript turn. */
 export function appendTypedUserMessage(state: VoiceRuntimeState, text: string): VoiceRuntimeState {
-  const next = applyExplicitSpelledNameUpdate(
-    applyUserEmailUpdate(appendTranscript(state, "user", text), text, "typed"),
+  const next = applyExplicitVisitorBriefUpdate(
+    applyExplicitSpelledNameUpdate(applyUserEmailUpdate(appendTranscript(state, "user", text), text, "typed"), text),
     text,
   );
   return {
@@ -2649,7 +2653,10 @@ function drainSettledUserTranscriptions(state: VoiceRuntimeState): VoiceRuntimeS
             ),
           }
         : reconcileCompletedEmailTranscription(next, buffered.transcript, itemId);
-      next = applyExplicitSpelledNameUpdate(next, buffered.transcript);
+      next = applyExplicitVisitorBriefUpdate(
+        applyExplicitSpelledNameUpdate(next, buffered.transcript),
+        buffered.transcript,
+      );
       next = accumulateUsage(next, "transcription", buffered.usage);
     } else if (buffered.status === "completed") {
       next = accumulateUsage(next, "transcription", buffered.usage);
@@ -2667,6 +2674,18 @@ function applyExplicitSpelledNameUpdate(state: VoiceRuntimeState, text: string):
   const name = extractExplicitSpelledVisitorName(text);
   if (!name || state.captured.name === name) return state;
   return { ...state, captured: { ...state.captured, name } };
+}
+
+/**
+ * The handoff note is optional, but a visitor's direct project statement must
+ * not disappear merely because the model answered before making its tool call.
+ * This fallback only fills an empty note; later edits remain model-mediated so
+ * an existing story is never silently overwritten.
+ */
+function applyExplicitVisitorBriefUpdate(state: VoiceRuntimeState, text: string): VoiceRuntimeState {
+  const brief = extractExplicitVisitorBrief(text);
+  if (!brief || state.captured.message.trim()) return state;
+  return { ...state, captured: { ...state.captured, message: brief } };
 }
 
 function applyUserEmailUpdate(state: VoiceRuntimeState, text: string, source: "speech" | "typed"): VoiceRuntimeState {

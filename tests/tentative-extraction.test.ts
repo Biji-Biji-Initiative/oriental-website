@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { extractExplicitSpelledVisitorName, extractExplicitVisitorEmail } from "@/lib/voice/tentative-extraction";
+import {
+  extractExplicitSpelledVisitorName,
+  extractExplicitVisitorBrief,
+  extractExplicitVisitorEmail,
+} from "@/lib/voice/tentative-extraction";
 
 describe("explicit voice corrections", () => {
   it("accepts a first-person request to provide an email by voice", () => {
@@ -15,5 +19,14 @@ describe("explicit voice corrections", () => {
   it("joins a directly spelled name without guessing from normal prose", () => {
     expect(extractExplicitSpelledVisitorName("Guruprit is G-U-R-P-R-E-E-T.")).toBe("Gurpreet");
     expect(extractExplicitSpelledVisitorName("We are building a community lab.")).toBeNull();
+  });
+
+  it("keeps a directly offered collaboration idea when the model misses its tool call", () => {
+    expect(extractExplicitVisitorBrief("We want to run a croissant-making workshop at Oriental.")).toBe(
+      "We want to run a croissant-making workshop at Oriental",
+    );
+    expect(extractExplicitVisitorBrief("I want to use my voice to do the email hello@example.com.")).toBeNull();
+    expect(extractExplicitVisitorBrief("We want to host a workshop; call 60123456789.")).toBeNull();
+    expect(extractExplicitVisitorBrief("Can I just chat with Reka?")).toBeNull();
   });
 });
