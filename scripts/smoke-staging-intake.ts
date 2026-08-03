@@ -98,10 +98,13 @@ async function run() {
 
     const assistantTurnsBefore = await assistantTurnCount(page);
     await sendTyped(page, "My email is q a dot nebula at example dot test. Please capture it, but do not send.");
-    const emailInput = page.locator('input[name="email"]');
+    const emailInput = page.locator('input[name="email"]:visible');
     await emailInput.waitFor({ state: "visible" });
     await page.waitForFunction(
-      (email) => (document.querySelector<HTMLInputElement>('input[name="email"]')?.value ?? "") === email,
+      (email) =>
+        [...document.querySelectorAll<HTMLInputElement>('input[name="email"]')].some(
+          (input) => input.getClientRects().length > 0 && input.value === email,
+        ),
       expectedEmail,
       { timeout: 45_000 },
     );
