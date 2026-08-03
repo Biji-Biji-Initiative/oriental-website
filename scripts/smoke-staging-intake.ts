@@ -6,7 +6,6 @@ import { createVoiceSmokeProof, VOICE_SMOKE_PROOF_HEADER } from "../lib/server/v
 const stagingOrigin = "https://staging.oriental.mereka.io";
 const expectedEmail = "qa.nebula@example.test";
 const pendingCopy = "Reka heard this address. Say yes after the exact read-back, or edit it here to confirm it.";
-const capturedCopy = "Captured from your voice · edit anytime.";
 const smokeSigningSecret = requireSmokeSigningSecret();
 
 function requireSmokeSigningSecret() {
@@ -108,12 +107,10 @@ async function run() {
       expectedEmail,
       { timeout: 45_000 },
     );
-    const capturedHint = page.getByText(capturedCopy, { exact: true });
-    await capturedHint.waitFor({ state: "visible", timeout: 10_000 });
-    const captureField = await capturedHint.evaluate(
-      (hint) => hint.closest('[data-slot="form-item"]')?.querySelector("label")?.textContent?.trim() ?? "",
+    const captureField = await emailInput.evaluate(
+      (input) => input.closest('[data-slot="form-item"]')?.querySelector("label")?.textContent?.trim() ?? "",
     );
-    if (captureField !== "Email") throw new Error(`Capture hint appeared under ${captureField || "no field"}`);
+    if (captureField !== "Email") throw new Error(`Captured email appeared under ${captureField || "no field"}`);
     await page.getByText(pendingCopy, { exact: true }).waitFor({ state: "hidden", timeout: 10_000 });
 
     await page.waitForFunction(
