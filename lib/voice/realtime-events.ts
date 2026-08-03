@@ -729,10 +729,7 @@ function applyFunctionCall(
         createResponse = false;
         break;
       }
-      if (
-        toCapturedKey(args.key) === "email" &&
-        (staleForEmail || captureWouldReplaceAuthoritativeEmail(next, args.value))
-      ) {
+      if (toCapturedKey(args.key) === "email" && (staleForEmail || captureWouldReplaceAuthoritativeEmail(next, args))) {
         next = { ...next, activeResponseStaleForEmail: true };
         output = { ok: false, error: "stale_response", key: "email" };
         createResponse = false;
@@ -775,7 +772,7 @@ function applyFunctionCall(
             typeof field === "object" &&
             !Array.isArray(field) &&
             toCapturedKey((field as Record<string, unknown>).key) === "email" &&
-            (staleForEmail || captureWouldReplaceAuthoritativeEmail(next, (field as Record<string, unknown>).value)),
+            (staleForEmail || captureWouldReplaceAuthoritativeEmail(next, field as Record<string, unknown>)),
         )
       ) {
         next = { ...next, activeResponseStaleForEmail: true };
@@ -3609,16 +3606,22 @@ function responsePredatesEmailVerification(state: VoiceRuntimeState) {
   );
 }
 
-function captureWouldReplaceAuthoritativeEmail(state: VoiceRuntimeState, value: unknown) {
+function captureWouldReplaceAuthoritativeEmail(state: VoiceRuntimeState, args: Record<string, unknown>) {
   const verification = state.emailVerification;
-  if (
-    verification?.status !== "confirmed" ||
-    (verification.source !== "typed" && verification.source !== "prefill") ||
-    typeof value !== "string"
-  ) {
+  const value = typeof args.value === "string" ? args.value.trim().toLowerCase() : "";
+  if (verification?.status !== "confirmed" || !value) return false;
+  const current = verification.value.trim().toLowerCase();
+  if (value === current) return false;
+  if (verification.source === "typed" || verification.source === "prefill") return true;
+  // A completed transcription is primary speech evidence. Keep it when the
+  // model proposes only a one- or two-character near miss (for example,
+  // "frans" after the visitor said "franz"). A genuine spoken correction
+  // arrives as a new transcription first, so its exact value replaces this
+  // state before a model tool call is considered.
+  if (verification.source !== "speech" || verification.confidence !== "high" || value.length !== current.length)
     return false;
-  }
-  return value.trim().toLowerCase() !== verification.value.trim().toLowerCase();
+  const maxEdits = value.length >= 10 ? Math.min(3, Math.max(1, Math.floor(value.length * 0.18))) : 0;
+  return maxEdits > 0 && fullEditDistance(value, current) > 0 && fullEditDistance(value, current) <= maxEdits;
 }
 
 function emailConfirmationInstructions(

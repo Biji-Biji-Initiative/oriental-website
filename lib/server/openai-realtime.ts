@@ -5,7 +5,7 @@ import { readEnv } from "@/lib/env";
 import type { SegmentId } from "@/lib/segments";
 import { resolveVoiceEmailCaptureMode } from "@/lib/voice/email-capture-policy";
 import { resolveVoiceExperimentConfig } from "@/lib/voice/experiments";
-import { buildVoiceInstructions, VOICE_SESSION_DEFAULTS, VOICE_TOOLS } from "@/lib/voice/profile";
+import { buildVoiceInstructions, VOICE_SESSION_DEFAULTS, voiceToolsForEmailCaptureMode } from "@/lib/voice/profile";
 import { resolveVoiceRuntimeProfile } from "@/lib/voice/runtime-profile";
 import { resolveVoiceDurationPolicy } from "@/lib/voice/session-policy";
 import { getVoiceVariant } from "@/lib/voice/variants";
@@ -71,7 +71,7 @@ export async function createRealtimeClientSecret(
         },
         output: { voice, speed },
       },
-      tools: VOICE_TOOLS as unknown as RealtimeSessionCreateRequest["tools"],
+      tools: voiceToolsForEmailCaptureMode(emailCaptureMode) as unknown as RealtimeSessionCreateRequest["tools"],
       tool_choice: "auto",
       parallel_tool_calls: false,
     },
