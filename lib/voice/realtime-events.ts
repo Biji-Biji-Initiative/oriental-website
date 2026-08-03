@@ -7,7 +7,7 @@ import {
 import type { FieldProvenance } from "@/lib/voice/interaction-attribution";
 import { lookupOrientalKnowledge } from "@/lib/voice/knowledge";
 import type { VoiceToolName } from "@/lib/voice/latency";
-import { extractExplicitVisitorEmail } from "@/lib/voice/tentative-extraction";
+import { extractExplicitSpelledVisitorName, extractExplicitVisitorEmail } from "@/lib/voice/tentative-extraction";
 
 export type CapturedLead = {
   name: string;
@@ -248,7 +248,10 @@ export function isVoiceCaptureIntegrityIssue(error: VoiceRuntimeError): boolean 
 
 /** Record a message the visitor typed into the live chat as a user transcript turn. */
 export function appendTypedUserMessage(state: VoiceRuntimeState, text: string): VoiceRuntimeState {
-  const next = applyUserEmailUpdate(appendTranscript(state, "user", text), text, "typed");
+  const next = applyExplicitSpelledNameUpdate(
+    applyUserEmailUpdate(appendTranscript(state, "user", text), text, "typed"),
+    text,
+  );
   return {
     ...next,
     userAuthoritySequence: (state.userAuthoritySequence ?? 0) + 1,
@@ -883,12 +886,12 @@ function applyFunctionCall(
               detail: rejected[0]?.output,
               captured,
               retry: rejected.some((entry) => entry.output.key === "email")
-                ? "Keep accepted fields. Highlight the visible email field now; do not request another spoken spelling."
+                ? "Keep accepted fields. Ask once for the full email address naturally, including the domain, and keep listening."
                 : "Keep the accepted fields. Retry or clarify only the rejected fields.",
               ...(rejected.some((entry) => entry.output.key === "email")
                 ? {
                     nextAction:
-                      "Tell the visitor the email field is ready for typing, then continue their idea without focusing on email.",
+                      "Tell the visitor you did not catch the address, then ask once for the full email naturally, including the domain. Do not direct them to type or repeat this after a correction.",
                     previousEmailInvalidated: emailInvalidated,
                   }
                 : {}),
@@ -2646,6 +2649,7 @@ function drainSettledUserTranscriptions(state: VoiceRuntimeState): VoiceRuntimeS
             ),
           }
         : reconcileCompletedEmailTranscription(next, buffered.transcript, itemId);
+      next = applyExplicitSpelledNameUpdate(next, buffered.transcript);
       next = accumulateUsage(next, "transcription", buffered.usage);
     } else if (buffered.status === "completed") {
       next = accumulateUsage(next, "transcription", buffered.usage);
@@ -2657,6 +2661,12 @@ function drainSettledUserTranscriptions(state: VoiceRuntimeState): VoiceRuntimeS
       next = { ...next, emailGroundingAwaitingTranscript: undefined };
     }
   }
+}
+
+function applyExplicitSpelledNameUpdate(state: VoiceRuntimeState, text: string): VoiceRuntimeState {
+  const name = extractExplicitSpelledVisitorName(text);
+  if (!name || state.captured.name === name) return state;
+  return { ...state, captured: { ...state.captured, name } };
 }
 
 function applyUserEmailUpdate(state: VoiceRuntimeState, text: string, source: "speech" | "typed"): VoiceRuntimeState {
@@ -3613,7 +3623,7 @@ function emailConfirmationInstructions(
       emailCaptureMode: "adaptive",
       emailConfidence: state.emailVerification?.confidence ?? "medium",
       nextAction:
-        "The address is highlighted in the visible editor. Ask the visitor to check or edit it there once, then continue their idea. Do not read it back or start a spelling loop.",
+        "Ask the visitor once for the full address naturally, including the domain, then continue their idea. Do not read it back, direct them to type, or start a spelling loop.",
     };
   }
   return {
@@ -4124,7 +4134,7 @@ function emailCaptureRecovery(
     ...output,
     previousEmailInvalidated,
     nextAction:
-      "Tell the visitor the visible email field is ready for typing, then continue their idea. Do not ask for another spoken spelling.",
+      "Tell the visitor you did not catch the replacement address, then ask once for the full email naturally, including the domain. Keep listening and do not direct them to type.",
   };
 }
 

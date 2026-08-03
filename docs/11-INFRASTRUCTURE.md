@@ -322,7 +322,12 @@ only.
 
 Current production floor:
 
-- Structured JSON logs from route handlers, visible in Coolify logs.
+- Structured JSON logs from route handlers, visible in Coolify logs. Every
+  event is also retained as a PII-free structured event in Sentry, so its
+  operational history survives a Coolify container replacement. Free-form
+  visitor data, transcripts, contact details, and identifiers remain out of
+  that retained log copy; use the access-controlled session review record when
+  transcript evidence is needed.
 - Sentry Next.js SDK (`sentry.server.config.ts`, `sentry.edge.config.ts`,
   `instrumentation.ts`, `instrumentation-client.ts`) with project
   `oriental-website`.

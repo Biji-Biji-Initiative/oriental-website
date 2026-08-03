@@ -200,8 +200,11 @@ Voice rendering is controlled by environment as well as prompt. `OPENAI_REALTIME
 Server route handlers emit structured JSON logs with `service`, `version`,
 `event`, `requestId`, hashed IP metadata, durations, rate-limit store, and
 notification results. `/api/voice/session` also emits `Server-Timing` for parse,
-rate-limit, OpenAI mint, and total duration. Use Coolify logs plus
-`pnpm voice:debug` locally when reviewing failed voice conversations.
+rate-limit, OpenAI mint, and total duration. Coolify remains the live-tail
+plane; the configured Sentry project retains a PII-free structured copy across
+container replacements. Use the access-controlled voice-session review record
+for transcript evidence and `pnpm voice:debug` locally when reviewing failed
+voice conversations.
 
 Segment-specific routing and opener copy live in `lib/segments.ts`. Realtime event handling is isolated in `lib/voice/realtime-events.ts`, outbound client event serialization is in `lib/voice/client-events.ts`, and browser microphone/WebRTC lifetime is in `components/voice-agent/useRealtimeVoiceSession.ts`. Behavior changes should get focused tests in `tests/realtime-events.test.ts`, `tests/realtime-client-events.test.ts`, or `tests/openai-realtime.test.ts` before deployment.
 

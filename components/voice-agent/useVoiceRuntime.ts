@@ -297,22 +297,24 @@ export function useVoiceRuntime({
           ) {
             ungroundedRejectionsRef.current += 1;
             if (rejectedKey === "email" || ungroundedRejectionsRef.current >= 2) {
-              toast.warning(rejectedKey === "email" ? "Please type the email once." : "Reka didn't catch one detail.", {
-                description:
-                  rejectedKey === "email"
-                    ? "The email field is highlighted. Reka can keep discussing your idea while you edit it."
-                    : "Say it once more, or type it straight into the handoff panel.",
-                id: voiceToastIds.captureWarning,
-              });
-              callbacksRef.current.onCaptureNeedsAttention?.(rejectedKey);
+              toast.warning(
+                rejectedKey === "email" ? "Reka didn't catch that email yet." : "Reka didn't catch one detail.",
+                {
+                  description:
+                    rejectedKey === "email"
+                      ? "Say the full address once more, including the domain. Reka will keep listening."
+                      : "Say it once more, or type it straight into the handoff panel.",
+                  id: voiceToastIds.captureWarning,
+                },
+              );
+              if (rejectedKey !== "email") callbacksRef.current.onCaptureNeedsAttention?.(rejectedKey);
             }
           }
           if (command.output.error === "unconfirmed_required_fields") {
-            toast.message("Please confirm the email Reka read back.", {
-              description: "Say yes if it is exact, or edit the highlighted email field.",
+            toast.message("Reka needs one spoken email correction.", {
+              description: "Say the full address naturally, including the domain. Reka will keep listening.",
               id: voiceToastIds.captureWarning,
             });
-            callbacksRef.current.onCaptureNeedsAttention?.("email");
           }
           if (toolName === "clear_fields" && command.output.cleared === true) {
             callbacksRef.current.onClearFields?.();

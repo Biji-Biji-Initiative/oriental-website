@@ -208,3 +208,49 @@ describe("golden voice session", () => {
     expect(runtime.transcript.filter((entry) => entry.role === "user")).toHaveLength(1);
   });
 });
+
+describe("voice recovery regressions", () => {
+  it("accepts a clear spoken email correction instead of redirecting the visitor to the form", () => {
+    let state: VoiceRuntimeState = {
+      segment: "technology",
+      captured: emptyCapturedLead,
+      transcript: [],
+      emailCaptureMode: "adaptive",
+    };
+    const step = (event: RealtimeServerEvent) => {
+      const result = reduceRealtimeServerEvent(event, state);
+      state = result.state;
+    };
+
+    step({ type: "input_audio_buffer.committed", item_id: "voice_email_correction" });
+    step({
+      type: "conversation.item.input_audio_transcription.completed",
+      item_id: "voice_email_correction",
+      transcript: "I want to use my voice to do the email gurpreet@singapore.com.",
+    });
+
+    expect(state.captured.email).toBe("gurpreet@singapore.com");
+    expect(state.emailVerification).toMatchObject({ source: "speech", status: "confirmed", confidence: "high" });
+  });
+
+  it("treats a visitor spelling their name as an exact correction", () => {
+    let state: VoiceRuntimeState = {
+      segment: "technology",
+      captured: { ...emptyCapturedLead, name: "Guruprit" },
+      transcript: [],
+    };
+    const step = (event: RealtimeServerEvent) => {
+      const result = reduceRealtimeServerEvent(event, state);
+      state = result.state;
+    };
+
+    step({ type: "input_audio_buffer.committed", item_id: "voice_name_correction" });
+    step({
+      type: "conversation.item.input_audio_transcription.completed",
+      item_id: "voice_name_correction",
+      transcript: "Guruprit is G-U-R-P-R-E-E-T.",
+    });
+
+    expect(state.captured.name).toBe("Gurpreet");
+  });
+});
