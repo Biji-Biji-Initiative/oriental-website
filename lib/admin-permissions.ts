@@ -53,7 +53,7 @@ const interactiveRolePermissions: Record<AdminRole, readonly AdminPermission[]> 
 };
 
 const principalPermissions: Record<Exclude<AdminPrincipal, "interactive">, readonly AdminPermission[]> = {
-  password: ["dashboard.aggregate", "session.logout"],
+  password: ADMIN_PERMISSIONS,
   automation: ["evals.run", "ops.sla_check", "ops.retention"],
   privacy: ["privacy.delete"],
 };

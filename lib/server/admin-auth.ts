@@ -42,7 +42,7 @@ export type AdminLoginSuccess = {
   | {
       credential: "interactive_password";
       principal: "password";
-      role: "viewer";
+      role: "admin";
     }
   | {
       credential: "review_bearer";
@@ -74,7 +74,7 @@ export function verifyAdminLoginCredential(credential: string | null | undefined
           credential: "interactive_password",
           expiresAt: Date.now() + passwordSessionTtlMs,
           principal: "password",
-          role: "viewer",
+          role: "admin",
         }
       : {
           ok: true,
@@ -100,7 +100,7 @@ export function createAdminLoginSession(identity: AdminLoginSuccess, now: number
     !claims ||
     !isValidAdminActor(claims.actor) ||
     !isAdminRole(claims.role) ||
-    (claims.credential === "interactive_password" && (claims.principal !== "password" || claims.role !== "viewer")) ||
+    (claims.credential === "interactive_password" && (claims.principal !== "password" || claims.role !== "admin")) ||
     (claims.credential === "review_bearer" && claims.principal !== "interactive")
   ) {
     throw new Error("Invalid admin login identity");
@@ -113,7 +113,7 @@ export function createAdminLoginSession(identity: AdminLoginSuccess, now: number
     case "interactive_password":
       expiresAt = now + passwordSessionTtlMs;
       method = "password";
-      role = "viewer";
+      role = "admin";
       break;
     case "review_bearer":
       expiresAt = now + sessionTtlMs;
@@ -147,7 +147,7 @@ export function verifyAdminSessionCookie(value: string | null | undefined): Admi
     actorEncoded.length === 0 ||
     actorEncoded.length > 108 ||
     (method !== "password" && method !== "review") ||
-    (method === "password" && (role !== "viewer" || !configuration.passwordHmac))
+    (method === "password" && (role !== "admin" || !configuration.passwordHmac))
   ) {
     return { ok: false, reason: "invalid" };
   }
@@ -177,13 +177,6 @@ export function verifyAdminRequest(request: Request): AdminAuthState {
 export function verifyAdminPermission(request: Request, permission: AdminPermission): AdminAuthState {
   const auth = verifyAdminRequest(request);
   if (!auth.ok) return auth;
-  if (
-    auth.credential === "password_session" &&
-    permission !== "dashboard.aggregate" &&
-    permission !== "session.logout"
-  ) {
-    return { ok: false, reason: "forbidden" };
-  }
   if (!hasAdminPermission(auth.role, permission, auth.principal)) return { ok: false, reason: "forbidden" };
   if (
     isSessionCredential(auth.credential) &&

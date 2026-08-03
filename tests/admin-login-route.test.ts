@@ -69,7 +69,7 @@ describe("admin login route", () => {
       ok: true,
       credential: "password_session",
       principal: "password",
-      role: "viewer",
+      role: "admin",
     });
     expect(passwordSession.ok && passwordSession.expiresAt).toBeGreaterThanOrEqual(passwordStartedAt + 30 * 60 * 1000);
     expect(passwordSession.ok && passwordSession.expiresAt).toBeLessThanOrEqual(Date.now() + 30 * 60 * 1000);

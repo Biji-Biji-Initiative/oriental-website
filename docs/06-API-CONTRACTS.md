@@ -448,24 +448,24 @@ Accepts only a same-origin JSON request and rate-limits attempts by trusted
 proxy identity. It validates either `ADMIN_REVIEW_TOKEN` or the human password
 represented by the domain-separated `ADMIN_REVIEW_PASSWORD_HMAC`, then sets a
 principal-bound signed `oriental_admin` HTTP-only, SameSite=Lax cookie with
-`Path=/`. A password login signs `method=password`, forces role `viewer`, and
-expires after thirty minutes. It can access only the redacted aggregate metrics
-dashboard and logout. Customer records, email addresses, transcripts, voice
-details, and every mutation return `403 forbidden` until a fresh managed review
-token login. A strong review-token login signs `method=review`, retains
-the configured interactive role, and expires after twelve hours. The human
-password is never accepted as bearer auth and never signs sessions; historical
-repository exposure means it is treated as potentially known. Production
-cookies also set `Secure`. Successful login telemetry records only bounded
-actor, method, role, and expiry metadata, never the supplied credential.
+`Path=/`. A password login signs `method=password`, forces role `admin`, and
+expires after thirty minutes. It can access and operate the complete CRM,
+including workflow, voice follow-up, evaluation, maintenance, and privacy
+actions. A strong review-token login signs
+`method=review`, retains the configured interactive role, and expires after
+twelve hours. The human password is never accepted as bearer auth and never
+signs sessions; historical repository exposure means it is treated as
+potentially known. Production cookies also set `Secure`. Successful login
+telemetry records only bounded actor, method, role, and expiry metadata, never
+the supplied credential.
 
 ### `GET /api/admin/review`
 
-Strong review-token bearer or review-session-cookie protected JSON endpoint
-returning recent `leads`, `voiceSessions`, `leadEvents`, aggregate metrics,
-analytics buckets, and queue slices for the internal operations console.
-Password-issued sessions receive `403 forbidden`; they use
-`GET /api/admin/metrics`, which returns only the PII-free `metrics` object.
+Review-token bearer, review-session cookie, or password-session cookie protected
+JSON endpoint returning recent `leads`, `voiceSessions`, `leadEvents`,
+aggregate metrics, analytics buckets, and queue slices for the internal
+operations console. Password-issued admin sessions can also call the
+state-changing routes when cookie requests satisfy same-origin JSON checks.
 
 ### `PATCH /api/admin/leads/[leadId]`
 
@@ -552,11 +552,13 @@ Errors:
 | 409 | `conflict` | At least one revision is stale; none were changed. |
 | 503 | `convex_unconfigured` / `convex_failed` | Convex env is missing or the mutation failed. |
 
-### `PATCH /api/admin/voice-sessions/[reviewId]`
+### `GET|PATCH /api/admin/voice-sessions/[reviewId]`
 
-Interactive bearer-token or same-origin JSON admin-cookie protected mutation
-that marks a recoverable voice
-session as followed up (or moves it back to the queue). Sets or clears
+`GET` requires `voice.read` and is available to password admin sessions for
+transcript and voice-session detail. `PATCH` requires `voice.follow_up`; a
+same-origin password-session or review-session cookie, or interactive
+review-token bearer, can mark a recoverable voice session
+as followed up (or moves it back to the queue), setting or clearing
 `followedUpAt` on the Convex `voiceSessions` row.
 
 ```ts
@@ -637,8 +639,9 @@ Errors:
 
 Bearer-only sweep using the distinct `OPS_AUTOMATION_TOKEN` permission
 `ops.sla_check`, meant for an hourly cron (`.github/workflows/analytics-ops.yml`).
-The route can post to the ops Slack channel, so the read-only viewer role cannot
-run it. A dedicated Convex query reads oldest-first through active-status,
+The route can post to the ops Slack channel. The password admin session can run
+it through a same-origin JSON request; scheduled execution still uses the
+dedicated bearer. A Convex query reads oldest-first through active-status,
 unowned-owner, and failed-notification indexes rather than reusing the recent
 dashboard window. It returns aggregate counts only—no lead IDs, contact fields,
 or transcript content—and posts one throttled ops Slack alert when breached.

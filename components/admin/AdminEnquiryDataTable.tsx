@@ -102,6 +102,7 @@ type ArchiveIntent = {
 type AdminEnquiryDataTableProps = {
   generatedAt: number;
   initialStatusScope?: string;
+  readOnly?: boolean;
   rows: AdminEnquiryRow[];
   totalRows: number;
   totalRowsLowerBound?: boolean;
@@ -110,6 +111,7 @@ type AdminEnquiryDataTableProps = {
 export function AdminEnquiryDataTable({
   generatedAt,
   initialStatusScope = "active",
+  readOnly = false,
   rows,
   totalRows,
   totalRowsLowerBound = false,
@@ -118,7 +120,10 @@ export function AdminEnquiryDataTable({
   const [globalFilter, setGlobalFilter] = useState("");
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([{ id: "status", value: initialStatusScope }]);
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({ source: false });
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({
+    source: false,
+    ...(readOnly ? { actions: false, select: false } : {}),
+  });
   const [columnMenuOpen, setColumnMenuOpen] = useState(false);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [editing, setEditing] = useState<AdminEnquiryRow | null>(null);
@@ -142,21 +147,23 @@ export function AdminEnquiryDataTable({
         id: "select",
         enableHiding: false,
         enableSorting: false,
-        header: ({ table }) => (
-          <Checkbox
-            aria-label="Select all visible enquiries"
-            checked={table.getIsAllPageRowsSelected()}
-            indeterminate={table.getIsSomePageRowsSelected()}
-            onCheckedChange={(checked) => table.toggleAllPageRowsSelected(Boolean(checked))}
-          />
-        ),
-        cell: ({ row }) => (
-          <Checkbox
-            aria-label={`Select ${row.original.name || row.original.email}`}
-            checked={row.getIsSelected()}
-            onCheckedChange={(checked) => row.toggleSelected(Boolean(checked))}
-          />
-        ),
+        header: ({ table }) =>
+          readOnly ? null : (
+            <Checkbox
+              aria-label="Select all visible enquiries"
+              checked={table.getIsAllPageRowsSelected()}
+              indeterminate={table.getIsSomePageRowsSelected()}
+              onCheckedChange={(checked) => table.toggleAllPageRowsSelected(Boolean(checked))}
+            />
+          ),
+        cell: ({ row }) =>
+          readOnly ? null : (
+            <Checkbox
+              aria-label={`Select ${row.original.name || row.original.email}`}
+              checked={row.getIsSelected()}
+              onCheckedChange={(checked) => row.toggleSelected(Boolean(checked))}
+            />
+          ),
       },
       {
         id: "contact",
@@ -293,23 +300,24 @@ export function AdminEnquiryDataTable({
         enableHiding: false,
         enableSorting: false,
         header: () => <span className="sr-only">Actions</span>,
-        cell: ({ row }) => (
-          <RowActions
-            lead={row.original}
-            onArchive={(action) => beginArchive(action, [row.original])}
-            onEdit={() => setEditing(row.original)}
-          />
-        ),
+        cell: ({ row }) =>
+          readOnly ? null : (
+            <RowActions
+              lead={row.original}
+              onArchive={(action) => beginArchive(action, [row.original])}
+              onEdit={() => setEditing(row.original)}
+            />
+          ),
       },
     ],
-    [beginArchive, generatedAt],
+    [beginArchive, generatedAt, readOnly],
   );
 
   const table = useReactTable({
     data: rows,
     columns,
     state: { columnFilters, columnVisibility, globalFilter, rowSelection, sorting },
-    enableRowSelection: true,
+    enableRowSelection: !readOnly,
     getRowId: (row) => row.leadId,
     globalFilterFn: globalLeadFilter,
     onColumnFiltersChange: setColumnFilters,
@@ -646,6 +654,7 @@ export function AdminEnquiryDataTable({
                 onArchive={(action) => beginArchive(action, [row.original])}
                 onEdit={() => setEditing(row.original)}
                 onSelect={(checked) => row.toggleSelected(checked)}
+                readOnly={readOnly}
                 selected={row.getIsSelected()}
               />
             ))}
@@ -956,6 +965,7 @@ function MobileEnquiryCard({
   onArchive,
   onEdit,
   onSelect,
+  readOnly,
   selected,
 }: {
   generatedAt: number;
@@ -963,6 +973,7 @@ function MobileEnquiryCard({
   onArchive: (action: "archive" | "restore") => void;
   onEdit: () => void;
   onSelect: (checked: boolean) => void;
+  readOnly: boolean;
   selected: boolean;
 }) {
   const status = normalizeAdminLeadStatus(lead.status);
@@ -974,18 +985,20 @@ function MobileEnquiryCard({
       data-lead-id={lead.leadId}
     >
       <div className="flex items-start gap-3">
-        <Checkbox
-          aria-label={`Select ${lead.name || lead.email}`}
-          checked={selected}
-          onCheckedChange={(checked) => onSelect(Boolean(checked))}
-        />
+        {readOnly ? null : (
+          <Checkbox
+            aria-label={`Select ${lead.name || lead.email}`}
+            checked={selected}
+            onCheckedChange={(checked) => onSelect(Boolean(checked))}
+          />
+        )}
         <div className="min-w-0 flex-1">
           <a className="block truncate font-semibold text-sky-300 transition hover:text-sky-200" href={lead.recordHref}>
             {lead.name.trim() || "Unnamed visitor"}
           </a>
           <p className="mt-1 truncate text-xs text-slate-400">{lead.org.trim() || lead.email}</p>
         </div>
-        <RowActions lead={lead} onArchive={onArchive} onEdit={onEdit} />
+        {readOnly ? null : <RowActions lead={lead} onArchive={onArchive} onEdit={onEdit} />}
       </div>
       <p className="mt-3 line-clamp-3 text-sm leading-6">{lead.message.trim() || "No request brief captured."}</p>
       <div className="mt-3 flex flex-wrap gap-1.5">

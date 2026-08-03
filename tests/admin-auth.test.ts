@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { hasAdminPermission } from "@/lib/admin-permissions";
+import { ADMIN_PERMISSIONS, hasAdminPermission } from "@/lib/admin-permissions";
 import {
   adminCookieHeader,
   adminCookieName,
@@ -61,7 +61,7 @@ describe("admin auth helpers", () => {
       actor: "Interactive operator",
       credential: "interactive_password",
       principal: "password",
-      role: "viewer",
+      role: "admin",
     });
 
     const now = Date.now();
@@ -78,7 +78,7 @@ describe("admin auth helpers", () => {
       credential: "password_session",
       expiresAt: now + 30 * 60 * 1000,
       principal: "password",
-      role: "viewer",
+      role: "admin",
     });
 
     const request = new Request("http://localhost/api/admin/review", {
@@ -88,7 +88,7 @@ describe("admin auth helpers", () => {
       ok: true,
       credential: "password_session",
       principal: "password",
-      role: "viewer",
+      role: "admin",
     });
     expect(
       verifyAdminPermission(
@@ -102,17 +102,14 @@ describe("admin auth helpers", () => {
         }),
         "leads.update",
       ),
-    ).toEqual({ ok: false, reason: "forbidden" });
-    expect(verifyAdminPermission(request, "dashboard.aggregate")).toMatchObject({
-      ok: true,
-      credential: "password_session",
-    });
-    for (const permission of ["dashboard.read", "leads.read", "voice.read"] as const) {
-      expect(verifyAdminPermission(request, permission)).toEqual({ ok: false, reason: "forbidden" });
-      expect(hasAdminPermission("viewer", permission, "password")).toBe(false);
+    ).toMatchObject({ ok: true, credential: "password_session", role: "admin" });
+    for (const permission of ADMIN_PERMISSIONS) {
+      expect(verifyAdminPermission(request, permission)).toMatchObject({
+        ok: true,
+        credential: "password_session",
+      });
+      expect(hasAdminPermission("admin", permission, "password")).toBe(true);
     }
-    expect(hasAdminPermission("viewer", "dashboard.aggregate", "password")).toBe(true);
-    expect(hasAdminPermission("viewer", "session.logout", "password")).toBe(true);
     expect(
       verifyAdminPermission(
         new Request("http://localhost/api/admin/logout", {
@@ -159,7 +156,7 @@ describe("admin auth helpers", () => {
       credential: "password_session",
       expiresAt: now + 30 * 60 * 1000,
       principal: "password",
-      role: "viewer",
+      role: "admin",
     });
     expect(() => createAdminLoginSession(verified, now)).toThrow("Invalid admin login identity");
   });

@@ -154,11 +154,11 @@ configuration release. Historical repository exposure means the password is
 treated as potentially known. The
 same-origin, rate-limited login accepts that password or `ADMIN_REVIEW_TOKEN`,
 but only the high-entropy token is valid bearer auth or signs sessions. Password
-login produces a signed viewer-only session for thirty minutes that can access
-only redacted aggregate metrics and logout. Customer records, email addresses,
-transcripts, voice details, and every mutation require a fresh managed review
-token login. Review-token login produces the configured interactive role for
-twelve hours. The cookie
+login produces a signed full-access admin session for thirty minutes that can
+read and operate the complete CRM, including workflow mutations, voice
+follow-up, evaluations, maintenance, and privacy actions. Review-token login
+remains available for managed bearer/API access and produces the configured
+interactive role for twelve hours. The cookie
 signs login method, actor, role, and expiry, and successful login telemetry
 records that bounded provenance. `ADMIN_REVIEW_ROLE` and `ADMIN_REVIEW_ACTOR`
 define the strong-token interactive principal. `OPS_AUTOMATION_TOKEN` is
