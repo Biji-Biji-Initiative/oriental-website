@@ -45,6 +45,13 @@ describe("reduceRealtimeServerEvent", () => {
     expect(example.captured.email).toBe("");
   });
 
+  it("preserves an explicitly spelled name when the visitor continues speaking", () => {
+    const result = appendTypedUserMessage(state(), "My name is G U R P R E E T I am from Mereka.");
+
+    expect(result.captured.name).toBe("Gurpreet");
+    expect(result.captured.email).toBe("");
+  });
+
   it("replaces an existing email when the visitor explicitly supplies a new one", () => {
     const result = appendTypedUserMessage(
       state({
