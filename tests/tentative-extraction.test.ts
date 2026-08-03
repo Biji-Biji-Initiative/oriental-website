@@ -12,8 +12,17 @@ describe("explicit voice corrections", () => {
     );
   });
 
+  it("accepts an explicitly owned spoken email without relying on a model tool call", () => {
+    expect(
+      extractExplicitVisitorEmail(
+        "My email is q a dot nebula at example dot test. Please capture it, but do not send.",
+      ),
+    ).toBe("qa.nebula@example.test");
+  });
+
   it("does not claim a third-party email from nearby prose", () => {
     expect(extractExplicitVisitorEmail("I saw their email person@example.com in the brochure.")).toBeNull();
+    expect(extractExplicitVisitorEmail("My colleague's email is q a dot nebula at example dot test.")).toBeNull();
   });
 
   it("joins a directly spelled name without guessing from normal prose", () => {

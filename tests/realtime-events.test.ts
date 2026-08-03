@@ -33,6 +33,14 @@ describe("reduceRealtimeServerEvent", () => {
     expect(typed.captured.email).toBe("asha@example.com");
     expect(typed.emailVerification).toEqual({ value: "asha@example.com", source: "typed", status: "confirmed" });
 
+    const spelled = appendTypedUserMessage(state(), "My email is q a dot nebula at example dot test.");
+    expect(spelled.captured.email).toBe("qa.nebula@example.test");
+    expect(spelled.emailVerification).toEqual({
+      value: "qa.nebula@example.test",
+      source: "typed",
+      status: "confirmed",
+    });
+
     const example = appendTypedUserMessage(state(), "The website uses team@example.com as an example.");
     expect(example.captured.email).toBe("");
   });
