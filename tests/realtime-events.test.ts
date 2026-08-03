@@ -956,6 +956,58 @@ describe("reduceRealtimeServerEvent", () => {
     expect(routed.commands).toEqual([{ type: "submit_voice", callId: "call_adaptive_route", segment: "technology" }]);
   });
 
+  it("keeps an exact adaptive speech email when a later model tool call only approximates it", () => {
+    const committed = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.committed", item_id: "audio_exact_franz", email_capture_mode: "adaptive" },
+      state(),
+    );
+    const spoken = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        email_capture_mode: "adaptive",
+        item_id: "audio_exact_franz",
+        transcript: "My email is franz at germany dot my.",
+      },
+      committed.state,
+    );
+
+    expect(spoken.state.emailVerification).toMatchObject({
+      value: "franz@germany.my",
+      source: "speech",
+      status: "confirmed",
+      confidence: "high",
+    });
+
+    const modelCapture = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_model_email_typo",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "frans@germany.my",
+                evidence: "frans at germany dot my",
+              }),
+            },
+          ],
+        },
+      },
+      spoken.state,
+    );
+
+    expect(modelCapture.state.captured.email).toBe("franz@germany.my");
+    expect(modelCapture.state.emailVerification).toMatchObject({ status: "confirmed", confidence: "high" });
+    expect(modelCapture.commands[0]).toMatchObject({
+      createResponse: false,
+      output: { ok: false, error: "stale_response", key: "email" },
+    });
+  });
+
   it("keeps an address with spoken number words pending until digit intent is explicit", () => {
     // "one nine nine at gmail dot com" must ground against 199@gmail.com, not
     // collapse to oneninenine@gmail.com and get rejected as ungrounded.

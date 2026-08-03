@@ -1,0 +1,38 @@
+name: voice-r100
+description: Focused remote adjudication for PR 100 adaptive voice recovery
+
+documents:
+  readme: .apr/evidence/oriental-adaptive-conversation-recovery.md
+  spec: .apr/specs/oriental-adaptive-conversation-recovery.md
+  implementation: .apr/evidence/oriental-adaptive-conversation-recovery.md
+
+oracle:
+  model: "gemini-3.1-pro"
+
+rounds:
+  output_dir: .apr/rounds/voice-r100
+  impl_every_n: 1
+
+template: |
+  Adversarially review the redacted implementation trace and release contract
+  for PR 100. The review must decide whether adaptive email capture can still
+  become a conversation gate, overwrite clear direct speech with a model typo,
+  demand typing or a separate confirmation before hearing the visitor's idea,
+  or loop because the assistant receives its own field update as synthetic user
+  context. Preserve strict-mode behaviour, voice-submission validation,
+  privacy, and production cell isolation. Treat missing evidence, an unpatched
+  production dependency advisory, PII in the record, model/cell promotion, or
+  production mutation as blockers. End with exactly
+  `VERDICT: SHIP SAFE DEFAULTS` or `VERDICT: DO NOT SHIP`.
+
+template_with_impl: |
+  Adversarially review the redacted implementation trace and release contract
+  for PR 100. The review must decide whether adaptive email capture can still
+  become a conversation gate, overwrite clear direct speech with a model typo,
+  demand typing or a separate confirmation before hearing the visitor's idea,
+  or loop because the assistant receives its own field update as synthetic user
+  context. Preserve strict-mode behaviour, voice-submission validation,
+  privacy, and production cell isolation. Treat missing evidence, an unpatched
+  production dependency advisory, PII in the record, model/cell promotion, or
+  production mutation as blockers. End with exactly
+  `VERDICT: SHIP SAFE DEFAULTS` or `VERDICT: DO NOT SHIP`.

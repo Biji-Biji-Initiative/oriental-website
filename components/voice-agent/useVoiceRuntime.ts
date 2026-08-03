@@ -55,6 +55,10 @@ export function useVoiceRuntime({
   const [emailVerification, setEmailVerification] = useState<VoiceEmailVerification | undefined>(
     confirmedEmailVerification(prefillEmail ?? "", "prefill"),
   );
+  // Only deliberate form edits need a context refresh. Re-sending model-owned
+  // tool captures as synthetic user messages creates duplicate replies and
+  // makes Reka react to the form instead of the person speaking.
+  const [localHandoffContextVersion, setLocalHandoffContextVersion] = useState(0);
   const [transcript, setTranscript] = useState<VoiceTranscriptEntry[]>([]);
   const [assistantDraft, setAssistantDraft] = useState("");
   const initialCaptured = { ...emptyCapturedLead, email: prefillEmail ?? "" };
@@ -155,6 +159,7 @@ export function useVoiceRuntime({
     };
     setCaptured(nextCaptured);
     if (key === "email") setEmailVerification(nextEmailVerification);
+    setLocalHandoffContextVersion((version) => version + 1);
   }, []);
 
   const beginCapturedEdit = useCallback((key: keyof CapturedLead) => {
@@ -181,6 +186,7 @@ export function useVoiceRuntime({
         : stateRef.current.activeResponseSupersededByUserInput,
     };
     setSegment(nextSegment);
+    setLocalHandoffContextVersion((version) => version + 1);
   }, []);
 
   const appendUserText = useCallback((text: string) => {
@@ -342,6 +348,7 @@ export function useVoiceRuntime({
     emailVerification,
     endCapturedEdit,
     handleRealtimeEvent,
+    localHandoffContextVersion,
     reset,
     segment,
     setSegment: updateSegment,

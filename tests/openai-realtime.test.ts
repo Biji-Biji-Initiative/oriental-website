@@ -114,6 +114,7 @@ describe("createRealtimeClientSecret", () => {
     expect(body.session.instructions).not.toContain(
       "After a speech email is captured, read it back and use confirm_email",
     );
+    expect(body.session.tools.map((tool: { name: string }) => tool.name)).not.toContain("confirm_email");
   });
 
   it("keeps the latency profile independent from the selected voice variant", async () => {

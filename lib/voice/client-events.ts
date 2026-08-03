@@ -117,13 +117,13 @@ export function serializeHandoffContext(
       state.emailVerification.value.trim().toLowerCase() === state.captured.email.trim().toLowerCase()
       ? `confirmed (${state.emailVerification.source})`
       : state.emailCaptureMode === "adaptive"
-        ? "needs one spoken email correction"
+        ? "pending optional spoken recheck"
         : "awaiting exact spoken confirmation"
     : "missing";
   const resumed = options.resumedTranscript ?? [];
   const emailPolicy =
     state.emailCaptureMode === "adaptive"
-      ? "A grounded speech email marked confirmed is immediately usable. It is visible and editable; continue without asking for a separate yes. Clarify only a rejected or corrected address."
+      ? "A grounded speech email marked confirmed is immediately usable. It is visible and editable; continue without asking for a separate yes. A pending adaptive email is not a conversation blocker: do not ask for confirmation, do not mention a gate, and do not direct the visitor to type. If they move to their idea or question, answer that first. Ask for one natural spoken correction only when they ask to send and the address is still pending."
       : state.emailCaptureMode === "strict"
         ? "A speech-captured email marked awaiting confirmation is a draft. Read it back exactly, ask if it is correct, then call confirm_email only after a clear yes. Never route an unconfirmed email."
         : null;

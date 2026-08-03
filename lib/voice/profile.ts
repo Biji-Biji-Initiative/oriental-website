@@ -318,6 +318,12 @@ export function buildVoiceInstructions(
       "For name, email, and organisation include exact evidence from the visitor's latest transcript. Never infer identity from examples or background audio.",
       "Email characters are exact, never approximate.",
       ...adaptiveEmailToolInstructions(emailCaptureMode),
+      ...(emailCaptureMode === "adaptive"
+        ? [
+            "Adaptive mode has no confirm_email tool. Never ask for, accept, or debate a separate yes/no confirmation.",
+            "If an address is uncertain, ask for it once in natural speech and then return to the visitor's question or idea. If they move on, follow their agenda; only revisit the address when they ask to send.",
+          ]
+        : []),
       "If an email capture is rejected, keep listening and ask once for the full address naturally, including the domain. Do not direct the visitor to type, request repeated separators, or keep focusing on email after it is corrected.",
       "For a request to clear all details, forget everything, or start over, call clear_fields once without a recap. Use clear_field only for one named field.",
       "Use lookup_oriental for factual questions about spaces, pricing, partners, programmes, timelines, or process. If it has no match, say briefly that you do not have that detail yet; do not turn the question into a handoff unless the visitor asks for follow-up.",
@@ -483,6 +489,15 @@ export const VOICE_TOOLS = [
     },
   },
 ] as const;
+
+/**
+ * Strict sessions retain the read-back confirmation tool. Adaptive sessions
+ * do not expose it at all: a model cannot fall back to the legacy interview
+ * when a visitor is trying to have an ordinary voice conversation.
+ */
+export function voiceToolsForEmailCaptureMode(emailCaptureMode: VoiceEmailCaptureMode) {
+  return emailCaptureMode === "adaptive" ? VOICE_TOOLS.filter((tool) => tool.name !== "confirm_email") : VOICE_TOOLS;
+}
 
 function section(title: string, lines: string[]) {
   return [`# ${title}`, ...lines.map((line) => `- ${line}`)].join("\n");
