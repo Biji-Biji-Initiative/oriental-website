@@ -2,6 +2,7 @@ name: oriental-spelled-name-continuation
 description: Exact-source review for explicitly spelled visitor names followed by ordinary speech
 
 documents:
+  readme: .apr/evidence/oriental-spelled-name-continuation.md
   spec: .apr/specs/oriental-spelled-name-continuation.md
   implementation: lib/voice/tentative-extraction.ts
 
