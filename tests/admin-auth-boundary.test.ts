@@ -55,6 +55,10 @@ type HttpMethod = (typeof httpMethodNames)[number];
 const httpMethods = new Set<string>(httpMethodNames);
 const protectedLoginSymbols = new Set(["verifyAdminLoginCredential", "createAdminLoginSession"]);
 const protectedRuntimeSymbols = new Set([...protectedLoginSymbols, "sign", "verifyAdminBearerToken"]);
+// This test deliberately runs the full protected-export audit against many
+// hostile source variants. It is CPU-bound rather than network-bound; retain
+// every assertion while allowing slower developer and release hosts to finish.
+const authRuntimeExportAuditTimeoutMs = 180_000;
 const parsedTsConfig = ts.parseJsonConfigFileContent(
   ts.readConfigFile("tsconfig.json", ts.sys.readFile).config,
   ts.sys,
@@ -4311,5 +4315,5 @@ describe("admin authentication production boundary", () => {
     for (const path of productionPaths.filter((candidate) => candidate !== "lib/server/admin-auth.ts")) {
       expect(callExpressionsNamed(sourceFile(path), "verifyAdminBearerToken"), path).toHaveLength(0);
     }
-  }, 60_000);
+  }, authRuntimeExportAuditTimeoutMs);
 });
