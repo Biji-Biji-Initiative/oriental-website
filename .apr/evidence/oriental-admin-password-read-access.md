@@ -5,9 +5,16 @@
 - Base commit: `d29d28005dd8294cdcda9d8c1d7757595cff1e0f`
 - Implementation commit: `c6d48da1a8ef0dbbc1cc676b4f97d9fe8ee35351`
 - Implementation tree: `192cee4bde43bfa2f323409296255311701dab1f`
-- Source patch: `.apr/evidence/0001-fix-auth-let-password-viewers-read-CRM.patch`
-- Patch bytes: `51915`
-- Patch SHA-256: `df8ce87affd83dce99960d4a51f10c734951abf38fbe77e881b77a8893865397`
+- Full implementation mail patch:
+  `.apr/evidence/0001-fix-auth-let-password-viewers-read-CRM.patch`
+- Full patch bytes: `51915`
+- Full patch SHA-256:
+  `df8ce87affd83dce99960d4a51f10c734951abf38fbe77e881b77a8893865397`
+- Review source diff:
+  `.apr/evidence/oriental-admin-password-read-access-source.patch`
+- Review source diff bytes: `33813`
+- Review source diff SHA-256:
+  `fb487f3672619a4d8926e8cb0e6a750c8483e7c58939f5aa5089d7ee37ba063d`
 
 The implementation commit contains seventeen tracked-file changes. The APR
 packet is deliberately a descendant so review evidence cannot alter the frozen
@@ -45,7 +52,10 @@ removed after verification.
 
 ## Reviewer checks
 
-Recompute the implementation commit and tree from Git, then inspect the patch.
+Recompute the implementation commit and tree from Git, then inspect the focused
+runtime-and-test source diff. The full mail patch remains attached for an
+independent byte-level check of documentation changes without inflating the
+browser review transport.
 At minimum, verify:
 
 1. The password principal has full required read access but no write/evaluation
