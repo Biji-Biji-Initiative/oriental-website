@@ -1,76 +1,64 @@
-# Evidence manifest: Oriental admin password read access
+# Evidence manifest: Oriental admin password full access
 
 ## Frozen implementation
 
 - Base commit: `d29d28005dd8294cdcda9d8c1d7757595cff1e0f`
-- Implementation commit: `c6d48da1a8ef0dbbc1cc676b4f97d9fe8ee35351`
-- Implementation tree: `192cee4bde43bfa2f323409296255311701dab1f`
-- Full implementation mail patch:
-  `.apr/evidence/0001-fix-auth-let-password-viewers-read-CRM.patch`
-- Full patch bytes: `51915`
-- Full patch SHA-256:
-  `df8ce87affd83dce99960d4a51f10c734951abf38fbe77e881b77a8893865397`
-- Review source diff:
-  `.apr/evidence/oriental-admin-password-read-access-source.patch`
-- Review source diff bytes: `33813`
-- Review source diff SHA-256:
-  `fb487f3672619a4d8926e8cb0e6a750c8483e7c58939f5aa5089d7ee37ba063d`
+- Implementation commit: `049f130cac56fc6890b12d2317ef87da7d3082bc`
+- Implementation tree: `6e3ee4600fb26c62ed605e7e7571d4be88385ec1`
+- Full non-APR diff:
+  `.apr/evidence/oriental-admin-password-full-access.patch`
+- Full diff bytes: `55945`
+- Full diff SHA-256:
+  `1fb548daacc1e3445088f55509e9a3e7c5b82b2f4f70ae6f268bcc4134f59dfb`
+- Compact runtime-and-test review diff:
+  `.apr/evidence/oriental-admin-password-read-access-compact.patch`
+- Compact diff bytes: `29801`
+- Compact diff SHA-256:
+  `95ce7b4db8d0a2d9697c2c9634e9f56f1eb1542060f50bcafa88e5229c1bf222`
 
-The implementation commit contains seventeen tracked-file changes. The APR
-packet is deliberately a descendant so review evidence cannot alter the frozen
-implementation tree being reviewed.
+The implementation commit follows the superseded read-only review packet. The
+net diffs above are calculated from the unchanged base to the final full-admin
+implementation so the reviewer evaluates only the resulting contract.
 
-## Authorization change
+## Authorization outcome
 
-- `lib/admin-permissions.ts` grants the password principal read capabilities
-  only: aggregate dashboard, full dashboard, leads, voice, and logout.
-- `lib/server/admin-auth.ts` delegates password authorization to the canonical
-  permission registry instead of applying a second aggregate-only override.
-- No password mutation permission was added.
-- Password bearer authentication, session role, session duration, cookie
-  properties, HMAC verification, and rate limiting were not weakened.
-- UI capabilities are calculated server-side. Mutation controls are absent for
-  password viewers, while mutation endpoints remain authoritative and return
-  `403`.
+- `lib/admin-permissions.ts` grants the password principal the complete
+  canonical permission registry.
+- `lib/server/admin-auth.ts` binds verified password logins and cookies to role
+  `admin` for thirty minutes.
+- Password bearer authentication remains rejected.
+- Unsafe cookie requests still require same-origin JSON.
+- HMAC storage, collision checks, signed cookie provenance, login rate limits,
+  managed bearer credentials, and production validation remain intact.
+- Capability-derived UI controls render for the password admin session.
 
-## Local verification on the exact implementation tree
+## Local verification
 
-- Focused Vitest: 60/60 passing, then strengthened auth/dashboard/governance
-  subset 44/44 passing.
+- Focused auth/dashboard/governance Vitest: 44/44 passing.
 - `pnpm lint`: passing across 296 files.
 - `pnpm typecheck`: passing.
 - `pnpm test`: passing full suite with exit status 0.
-- `pnpm build`: passing with Next.js 16.2.12.
-- Focused Playwright release test in system Chrome: 1/1 passing against real
-  staging Convex read data using an ephemeral local password and ephemeral auth
-  settings. Password-as-bearer was rejected and mutation returned `403`.
+- `pnpm build`: production compilation and generated build artifacts passing.
 - `git diff --check`: passing.
 
-No production credential was written to the source tree, command log, test
-artifact, or APR packet. Generated Playwright traces and screenshots were
-removed after verification.
+No production credential or customer payload was written to source, command
+logs, test artifacts, or this packet.
 
 ## Reviewer checks
 
-Recompute the implementation commit and tree from Git, then inspect the focused
-runtime-and-test source diff. The full mail patch remains attached for an
-independent byte-level check of documentation changes without inflating the
-browser review transport.
-At minimum, verify:
+1. Recompute the implementation commit/tree and both attached diff hashes.
+2. Confirm password login is role `admin` with exactly thirty-minute expiry.
+3. Confirm the password principal receives every canonical admin permission.
+4. Confirm password-as-bearer remains impossible.
+5. Confirm same-origin JSON is enforced for password-cookie mutations.
+6. Confirm UI controls render because of server-derived capabilities, while
+   route authorization remains authoritative.
+7. Confirm tests prove mutation admission by reaching `400 invalid_payload`
+   without mutating a real record.
+8. Confirm review/ops/privacy bearer scopes and HMAC collision protections are
+   not weakened.
+9. Confirm docs and release governance describe the same full-admin contract.
 
-1. The password principal has full required read access but no write/evaluation
-   capability.
-2. Every mutation is rejected server-side independently of UI visibility.
-3. Password-as-bearer remains impossible and the session remains viewer-only
-   and thirty minutes.
-4. The full dashboard and voice-detail reads are permission gated.
-5. Read-only component paths cannot render actionable mutation controls.
-6. Review-token functionality is preserved.
-7. Tests prove real record visibility and a real `403` mutation denial rather
-   than checking copy alone.
-8. Documentation and release governance agree with the implementation.
-9. No secret or customer data was added to the repository or logs.
-
-Live staging and production proof, managed-secret readback, Redis shared-limit
-proof, exact-SHA promotion, and post-deploy health are intentionally post-merge
-gates and are not claimed by this pre-merge packet.
+Live password-to-HMAC proof, exact-SHA staging/production deployment, nonempty
+runtime reads, shared Redis limiting, and post-deploy health remain mandatory
+post-merge gates and are not claimed by this pre-merge packet.

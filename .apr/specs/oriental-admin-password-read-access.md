@@ -1,58 +1,53 @@
-# Oriental admin password read-access contract
+# Oriental admin password full-access contract
 
 ## Objective
 
-The existing interactive admin password must open the complete Enquiry CRM in
-read-only mode. Password viewers may inspect customer records, email addresses,
-conversation transcripts, and voice-session details, but must not mutate any
-lead, voice session, evaluation, archive state, workflow state, or bulk state.
+The managed interactive password is the human administrator credential for the
+Oriental Enquiry CRM. A successful password login must expose the complete
+admin console and every governed admin action.
 
 ## Required security boundary
 
 1. Password login remains limited to `POST /api/admin/login` and never
    authenticates an `Authorization: Bearer` request.
 2. Password login mints a signed, HTTP-only, SameSite session with
-   `method=password`, role `viewer`, and a maximum lifetime of thirty minutes.
-3. The canonical permission registry grants the password principal only
-   `dashboard.aggregate`, `dashboard.read`, `leads.read`, `voice.read`, and
-   `session.logout`.
-4. The password principal has no permission whose name ends in `.write` and no
-   `evals.run` permission. Every mutation route must continue to reject it
-   server-side with `403`.
-5. Full CRM rendering must be gated by `dashboard.read`. Voice-detail reads
-   must remain gated by `voice.read`.
-6. The server must derive authorization from the same canonical permission
-   registry used for capability rendering. The UI may hide unavailable controls
-   for clarity, but hidden controls are never the security boundary.
-7. Read-only UI must retain useful inspection features: overview, customer
-   records, emails, transcripts, voice details, search, filtering, sorting,
-   pagination, and record navigation.
-8. Read-only UI must not render row selection, bulk actions, workflow mutation
-   forms, lead action menus, evaluation triggers, archive controls, or voice
-   follow-up state controls.
-9. Review-token sessions retain their existing read and mutation capabilities.
-10. Existing same-origin enforcement, rate limiting, password HMAC validation,
-    cookie signing, token separation, and production secret validation remain
-    unchanged.
+   `method=password`, role `admin`, and a maximum lifetime of thirty minutes.
+3. The password principal receives every permission in the canonical
+   `ADMIN_PERMISSIONS` registry, including CRM reads and writes, bulk actions,
+   archive/export, voice follow-up, evaluations, SLA/retention, and privacy
+   deletion.
+4. Cookie-authenticated mutations continue to require same-origin JSON. Full
+   authorization must not weaken CSRF checks, password rate limiting, HMAC
+   validation, session signing, token separation, or collision detection.
+5. The complete admin UI must render after password login, including selection,
+   row actions, workflow forms, bulk controls, evaluation triggers, and voice
+   follow-up controls.
+6. Mutation admission is proven without changing a real customer record by
+   sending an authenticated same-origin request with a deliberately invalid
+   payload and requiring application validation `400`, not auth `401/403`.
+7. Review, ops, and privacy bearer credentials retain their existing scoped
+   behavior for API and scheduled automation. The human password itself remains
+   invalid as bearer auth.
+8. Plaintext password material must remain absent from source, managed
+   environments, runtime configuration, logs, tests, and review artifacts.
 
 ## Acceptance evidence
 
-- Unit tests prove all required password read permissions and deny every
-  mutation permission.
-- Component tests prove actual fixture customer names and email addresses render
-  for password viewers while mutation controls do not.
-- Browser tests prove password-as-bearer is rejected, raw CRM and voice-detail
-  reads return `200`, and a real mutation request returns `403`.
-- Lint, strict TypeScript, the full Vitest suite, production build, and focused
-  Chrome browser proof pass.
-- A hermetic APR run on a designated remote host returns an explicit merge
-  verdict for the exact implementation commit and tree.
-- GitHub CI passes on the exact pull-request head before merge.
+- Unit tests prove the password login and cookie are role `admin`, all canonical
+  permissions are granted, bearer use is rejected, and same-origin JSON remains
+  mandatory for mutations.
+- Component tests prove fixture customer data and mutation controls render for
+  a password session.
+- Browser tests prove nonempty CRM and voice reads, password bearer rejection,
+  full admin UI controls, and protected mutation admission reaching payload
+  validation without mutating a real record.
+- Lint, strict TypeScript, full Vitest, production build, exact-head GitHub CI,
+  and hermetic exact-tree review pass.
 
 ## Release gates
 
-Deploy the exact merge SHA to staging first and then production. On each target,
-run the governed admin release proof with the managed password without logging
-the credential. The proof must confirm the password session can read nonempty
-CRM and voice data, cannot act as a bearer, and receives `403` for mutation.
-Production must run the identical SHA proven on staging.
+Deploy the exact merge SHA to staging first and production second. On each
+target, enter the password only through hidden input and require the governed
+admin release proof to show role `admin`, nonempty reads, bearer rejection,
+protected mutation admission, shared Redis limiting, and zero skipped/flaky/
+unexpected tests. Production must run the identical SHA proven on staging.
