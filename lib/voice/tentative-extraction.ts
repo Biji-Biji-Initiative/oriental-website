@@ -1,26 +1,90 @@
 const EMAIL_PATTERN =
   /[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+/i;
+const OWNED_SPOKEN_EMAIL_PREFIX = /\bmy\s+e-?mail(?:\s+address)?\s+(?:is|is:|:)\s*/iu;
+const SPOKEN_EMAIL_TERMINAL_SUFFIXES = new Set([
+  "academy",
+  "app",
+  "biz",
+  "co",
+  "com",
+  "dev",
+  "edu",
+  "gov",
+  "info",
+  "io",
+  "me",
+  "my",
+  "net",
+  "org",
+  "sg",
+  "test",
+  "uk",
+]);
 
 /**
- * Extract only an unmistakable literal address. This intentionally does not
- * interpret spoken "at"/"dot" forms or infer ownership from nearby examples.
+ * Extract an unmistakable literal address, or an explicitly owned, bounded
+ * spoken form. Never infer ownership from examples or nearby prose.
  */
 export function extractExplicitVisitorEmail(text: string): string | null {
   const match = EMAIL_PATTERN.exec(text);
-  if (!match) return null;
-  const email = match[0];
-  const trimmed = text.trim().replace(/[.,;!?]+$/, "");
-  if (trimmed.toLowerCase() === email.toLowerCase()) return email;
+  if (match) {
+    const email = match[0];
+    const trimmed = text.trim().replace(/[.,;!?]+$/, "");
+    if (trimmed.toLowerCase() === email.toLowerCase()) return email;
 
-  const prefix = text.slice(Math.max(0, match.index - 80), match.index);
-  if (
-    /(?:(?:my\s+)?e-?mail(?:\s+address)?\s+(?:is|is:|:)|reach\s+me\s+at|contact\s+me\s+at|\bi\s+(?:want|need|would\s+like)\s+to\s+(?:use\s+(?:my\s+)?voice\s+to\s+)?(?:give|share|say|use|do)\s+(?:the\s+|my\s+)?e-?mail(?:\s+address)?)\s*$/i.test(
-      prefix,
-    )
-  ) {
-    return email;
+    const prefix = text.slice(Math.max(0, match.index - 80), match.index);
+    if (
+      /(?:(?:my\s+)?e-?mail(?:\s+address)?\s+(?:is|is:|:)|reach\s+me\s+at|contact\s+me\s+at|\bi\s+(?:want|need|would\s+like)\s+to\s+(?:use\s+(?:my\s+)?voice\s+to\s+)?(?:give|share|say|use|do)\s+(?:the\s+|my\s+)?e-?mail(?:\s+address)?)\s*$/i.test(
+        prefix,
+      )
+    ) {
+      return email;
+    }
+  }
+  return extractExplicitOwnedSpokenEmail(text);
+}
+
+function extractExplicitOwnedSpokenEmail(text: string): string | null {
+  const prefix = OWNED_SPOKEN_EMAIL_PREFIX.exec(text);
+  if (!prefix || prefix.index === undefined) return null;
+  const tokens = text
+    .slice(prefix.index + prefix[0].length)
+    .match(/[\p{Letter}\p{Number}]+/gu)
+    ?.map((token) => token.toLowerCase());
+  if (!tokens) return null;
+
+  const atIndex = tokens.indexOf("at");
+  if (atIndex < 1) return null;
+  const local = joinSpokenEmailTokens(tokens.slice(0, atIndex));
+  if (!local || !tokens.slice(atIndex + 1).includes("dot")) return null;
+
+  const domainTokens = tokens.slice(atIndex + 1, atIndex + 17);
+  for (let end = 2; end <= domainTokens.length; end += 1) {
+    const suffix = domainTokens[end - 1];
+    const next = domainTokens[end];
+    if (!suffix || !SPOKEN_EMAIL_TERMINAL_SUFFIXES.has(suffix) || next === "dot" || next === "point") continue;
+    const domain = joinSpokenEmailTokens(domainTokens.slice(0, end));
+    const candidate = `${local}@${domain}`;
+    if (isWholeEmail(candidate)) return candidate;
   }
   return null;
+}
+
+function joinSpokenEmailTokens(tokens: string[]) {
+  return tokens
+    .map((token) => {
+      if (token === "dot" || token === "point") return ".";
+      if (token === "underscore") return "_";
+      if (token === "dash" || token === "hyphen") return "-";
+      if (token === "plus") return "+";
+      return token;
+    })
+    .join("");
+}
+
+function isWholeEmail(value: string) {
+  const match = EMAIL_PATTERN.exec(value);
+  return match?.[0] === value;
 }
 
 /**
