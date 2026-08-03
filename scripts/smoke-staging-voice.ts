@@ -588,25 +588,19 @@ async function remoteAudioState(page: Page) {
 }
 
 async function sampleCssLevelPeak(page: Page, property: string, durationMs: number) {
-  return page.locator(".voice-orb").evaluate(
-    (orb, options) =>
-      new Promise<number>((resolve) => {
-        const startedAt = performance.now();
-        let peak = 0;
-        const sample = () => {
-          const rawValue = getComputedStyle(orb).getPropertyValue(options.property);
-          const level = Number.parseFloat(rawValue);
-          if (Number.isFinite(level)) peak = Math.max(peak, level);
-          if (performance.now() - startedAt >= options.durationMs) {
-            resolve(peak);
-            return;
-          }
-          requestAnimationFrame(sample);
-        };
-        sample();
-      }),
-    { property, durationMs },
-  );
+  const orb = page.locator(".voice-orb");
+  const startedAt = performance.now();
+  let peak = 0;
+  while (performance.now() - startedAt < durationMs) {
+    const rawValue = await orb.evaluate(
+      (node, cssProperty) => getComputedStyle(node).getPropertyValue(cssProperty),
+      property,
+    );
+    const level = Number.parseFloat(rawValue);
+    if (Number.isFinite(level)) peak = Math.max(peak, level);
+    await new Promise((resolve) => setTimeout(resolve, 16));
+  }
+  return peak;
 }
 
 function sanitizeDiagnostic(message: string) {
