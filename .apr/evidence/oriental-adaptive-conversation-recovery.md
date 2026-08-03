@@ -39,11 +39,11 @@ changes:
 - `pnpm test` — 91 test files and 2,353 tests passed.
 - `pnpm build`.
 
-Focused regressions are in `tests/realtime-events.test.ts`,
-`tests/realtime-client-events.test.ts`, `tests/openai-realtime.test.ts`, and
-`tests/voice-profile.test.ts`. They cover the adaptive no-gate message,
-adaptive tool exclusion, direct-speech near-miss preservation, and strict-mode
-retention.
+Focused regressions are in `tests/voice-runtime-attribution.test.ts`,
+`tests/realtime-events.test.ts`, `tests/realtime-client-events.test.ts`,
+`tests/openai-realtime.test.ts`, and `tests/voice-profile.test.ts`. They cover
+the local-only handoff refresh, adaptive no-gate message, adaptive tool
+exclusion, direct-speech near-miss preservation, and strict-mode retention.
 
 ## Deployment boundary
 
