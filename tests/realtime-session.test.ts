@@ -253,4 +253,25 @@ describe("voice recovery regressions", () => {
 
     expect(state.captured.name).toBe("Gurpreet");
   });
+
+  it("keeps a direct collaboration statement as the brief when no tool call arrives", () => {
+    let state: VoiceRuntimeState = {
+      segment: "other",
+      captured: emptyCapturedLead,
+      transcript: [],
+    };
+    const step = (event: RealtimeServerEvent) => {
+      const result = reduceRealtimeServerEvent(event, state);
+      state = result.state;
+    };
+
+    step({ type: "input_audio_buffer.committed", item_id: "voice_direct_brief" });
+    step({
+      type: "conversation.item.input_audio_transcription.completed",
+      item_id: "voice_direct_brief",
+      transcript: "We want to host hands-on pastry workshops at Oriental.",
+    });
+
+    expect(state.captured.message).toBe("We want to host hands-on pastry workshops at Oriental");
+  });
 });

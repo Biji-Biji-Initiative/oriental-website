@@ -17,10 +17,13 @@ describe("voice profile", () => {
     expect(prompt).not.toMatch(/\bcapture_field\b/);
     expect(prompt).toContain("lookup_oriental");
     expect(prompt).toContain("call route_to_team immediately");
+    expect(prompt).toContain("The visitor controls the agenda");
+    expect(prompt).toContain("never by itself triggers a question for more details");
+    expect(prompt).not.toContain("You are not a tour narrator or a general chatbot");
     expect(prompt).toContain("or I can send it now");
     expect(prompt).toContain("Do not wait for optional fields");
     expect(prompt).toContain("call end_call");
-    expect(prompt).toContain("A valid email is the only hard blocker");
+    expect(prompt).toContain("A valid email enables a send");
     expect(prompt).not.toContain("# Website Knowledge Base");
     expect(prompt).not.toContain("Type A: 250–300 sq ft");
     expect(prompt.length).toBeLessThan(7_000);
