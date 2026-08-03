@@ -1,0 +1,30 @@
+name: oriental-spelled-name-continuation
+description: Exact-source review for explicitly spelled visitor names followed by ordinary speech
+
+documents:
+  readme: .apr/evidence/oriental-spelled-name-continuation.md
+  spec: .apr/specs/oriental-spelled-name-continuation.md
+  implementation: lib/voice/tentative-extraction.ts
+
+oracle:
+  model: "gpt-5.6-sol"
+
+rounds:
+  output_dir: .apr/rounds/oriental-spelled-name-continuation
+  impl_every_n: 1
+
+template: |
+  Review the explicitly spelled-name continuation contract adversarially.
+  Treat accepting ordinary prose as identity, absorbing a following sentence
+  into the name, rejecting a valid spelled name, weakening the explicit-cue or
+  bounded-length rules, or changing email/routing authority as blockers. End
+  with exactly `VERDICT: SHIP SAFE DEFAULTS` or `VERDICT: DO NOT SHIP`.
+
+template_with_impl: |
+  Review the attached parser and its tests against the explicitly spelled-name
+  continuation contract. Trace cue matching, spacing and hyphen handling,
+  sentence continuation, names ending in I, ordinary prose rejection, and the
+  runtime caller. Require focused evidence that the live typed-chat state keeps
+  the corrected name and does not mutate email. Treat any broadened identity
+  capture or email/routing change as a blocker. End with exactly
+  `VERDICT: SHIP SAFE DEFAULTS` or `VERDICT: DO NOT SHIP`.

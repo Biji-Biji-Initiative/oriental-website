@@ -27,6 +27,8 @@ describe("explicit voice corrections", () => {
 
   it("joins a directly spelled name without guessing from normal prose", () => {
     expect(extractExplicitSpelledVisitorName("Guruprit is G-U-R-P-R-E-E-T.")).toBe("Gurpreet");
+    expect(extractExplicitSpelledVisitorName("My name is G U R P R E E T I am from Mereka.")).toBe("Gurpreet");
+    expect(extractExplicitSpelledVisitorName("My name is A L I I am from Mereka.")).toBe("Ali");
     expect(extractExplicitSpelledVisitorName("We are building a community lab.")).toBeNull();
   });
 

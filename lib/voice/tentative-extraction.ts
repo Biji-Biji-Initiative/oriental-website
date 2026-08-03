@@ -133,10 +133,18 @@ export function extractExplicitSpelledVisitorName(text: string): string | null {
     new RegExp(`\\b(?:my\\s+name\\s+is|name\\s+is|call\\s+me)\\s+${letterRun}`, "iu"),
     new RegExp(`\\b[A-Za-z][A-Za-z'’-]{1,59}\\s+is\\s+(?:spelled\\s+)?${letterRun}`, "iu"),
   ];
-  const spelled = cues.map((pattern) => pattern.exec(text)?.[1]).find(Boolean);
-  if (!spelled) return null;
+  const match = cues.map((pattern) => pattern.exec(text)).find((candidate) => candidate?.[1]);
+  const spelled = match?.[1];
+  if (!match || !spelled || match.index === undefined) return null;
 
-  const letters = spelled.replace(/[^A-Za-z]/g, "");
+  let letters = spelled.replace(/[^A-Za-z]/g, "");
+  // A normal continuation such as "G U R P R E E T I am ..." leaves the
+  // pronoun inside the spaced-letter run. It is not part of the visitor's
+  // name, so stop before it rather than corrupting the directly spelled value.
+  const following = text.slice(match.index + match[0].length).trimStart();
+  if (letters.endsWith("I") && /^[A-Za-z]{2,}/u.test(following)) {
+    letters = letters.slice(0, -1);
+  }
   if (letters.length < 2 || letters.length > 60) return null;
   return `${letters[0]?.toUpperCase()}${letters.slice(1).toLowerCase()}`;
 }
