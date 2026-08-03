@@ -559,6 +559,8 @@ describe("release governance", () => {
     expect(stagingIntakeSmoke).toContain("timeout: 60_000");
     expect(stagingIntakeSmoke).toContain("const terminalDebugApplied =");
     expect(stagingIntakeSmoke).toContain("terminalBody.applied === true");
+    expect(stagingIntakeSmoke).toContain('input[name="email"]:visible');
+    expect(stagingIntakeSmoke).toContain("input.getClientRects().length > 0");
     expect(voiceSessionRoute).toContain("verifyVoiceSmokeProof(");
     expect(voiceSessionRoute).toContain("{ synthetic: syntheticProbe }");
     expect(voiceDebugRoute).toContain("reviewClaims?.synthetic");
