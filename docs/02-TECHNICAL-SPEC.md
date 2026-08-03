@@ -256,11 +256,10 @@ Admin review and observability:
   configuration, and the governed staging/production materializations.
   Historical repository exposure means the password is treated as potentially
   known. The password is never valid bearer auth. It issues a thirty-minute,
-  viewer-only session with read access to the CRM dashboard, customer records,
-  email addresses, transcripts, voice details, and aggregate metrics. Every
-  mutation, follow-up-state change, evaluation run, maintenance action, and
-  privacy action requires a fresh login with the managed review token. The
-  strong token issues the configured interactive role for twelve hours and
+  full-access admin session for the complete CRM, customer records, workflow
+  mutations, voice follow-up, evaluations, maintenance, and privacy actions.
+  The strong token remains available for managed bearer/API access, issues the
+  configured interactive role for twelve hours, and
   remains the bearer and only signed-session key. The session signs actor, role,
   login method, and expiry, so provenance survives issuance and role changes do
   not silently elevate an existing cookie. Cookie mutations require same-origin

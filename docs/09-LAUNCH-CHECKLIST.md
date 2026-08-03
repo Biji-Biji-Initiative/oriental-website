@@ -48,8 +48,8 @@ MUST NOT be reported as complete.
       `ADMIN_REVIEW_PASSWORD_HMAC`, explicit `ADMIN_REVIEW_ROLE`, and
       `ADMIN_REVIEW_ACTOR` in both governed `/deploy/oriental-website`
       scopes; reconcile and read back Coolify; prove password login yields a
-      thirty-minute viewer session, permits customer and voice reads, rejects
-      every mutation, and is rejected as bearer auth.
+      thirty-minute full-access admin session, admits protected mutations after
+      same-origin validation, and is rejected as bearer auth.
 - [x] Sentry `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_ORG`, and
       `SENTRY_PROJECT=oriental-website` are present
 - [x] `OPS_ALERT_SLACK_CHANNEL_ID=C01AVSGACFN` targets `#tech-team-test`

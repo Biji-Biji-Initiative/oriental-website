@@ -67,7 +67,6 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
   if (!hasAdminPermission(auth.role, "dashboard.read", auth.principal)) {
     return <AdminLoginForm reason="forbidden" />;
   }
-  const passwordReadOnly = auth.credential === "password_session";
   const canRunEvals = hasAdminPermission(auth.role, "evals.run", auth.principal);
   const canUpdateLeads = hasAdminPermission(auth.role, "leads.update", auth.principal);
   const canFollowUpVoice = hasAdminPermission(auth.role, "voice.follow_up", auth.principal);
@@ -105,7 +104,6 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
 
   return (
     <AdminShell generatedAt={dashboard.data.generatedAt} palette={buildPaletteItems(dashboard.data)}>
-      {passwordReadOnly ? <PasswordReadOnlyNotice /> : null}
       <AdminSectionTabs activeView={view} data={dashboard.data} sessionsWithRealErrors={sessionsWithRealErrors} />
       {showToday ? <AdminCommandCenter data={dashboard.data} sessionsWithRealErrors={sessionsWithRealErrors} /> : null}
 
@@ -193,21 +191,6 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
         </DisclosureSection>
       ) : null}
     </AdminShell>
-  );
-}
-
-function PasswordReadOnlyNotice() {
-  return (
-    <Card className="border-sky-400/25 bg-sky-400/[0.06]" data-password-read-only>
-      <CardHeader>
-        <CardTitle>Password access · read only</CardTitle>
-        <CardDescription>
-          You can view customer records, email addresses, transcripts, voice details, and operational evidence. Workflow
-          updates, bulk actions, archive or restore, follow-up state, evaluations, and other mutations require signing
-          out and stepping up with the managed review token.
-        </CardDescription>
-      </CardHeader>
-    </Card>
   );
 }
 

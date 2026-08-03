@@ -113,7 +113,7 @@ docs/                     # handover specs — reference, not auto-synced to cod
 | Owner email env mapping | `lib/server/notifications.ts` + `OWNER_*` in `.env.local.example` |
 | Shared rate limits | `lib/server/rate-limit.ts`; production should log `rateLimitStore: "redis"` |
 | Structured route logs | `lib/server/logger.ts`; view in Coolify app logs |
-| Infisical/Coolify deployment env | `/deploy/oriental-website`; `COOLIFY_ORIENTAL_APPLICATION_UUID=mtrl2z6a7zvoyevxvufpntij`; the potentially known interactive password must be represented only as `ADMIN_REVIEW_PASSWORD_HMAC` keyed by the strong `ADMIN_REVIEW_TOKEN` and must yield a 30-minute viewer session with full CRM read access and no mutations |
+| Infisical/Coolify deployment env | `/deploy/oriental-website`; `COOLIFY_ORIENTAL_APPLICATION_UUID=mtrl2z6a7zvoyevxvufpntij`; the interactive admin password must be represented only as `ADMIN_REVIEW_PASSWORD_HMAC` keyed by the strong `ADMIN_REVIEW_TOKEN` and must yield a 30-minute full-access admin session while remaining invalid as bearer auth |
 | Convex tables / ingest | `convex/schema.ts`, `convex/leads.ts` |
 | API error shapes | Source route handlers and `lib/schemas.ts`; update `docs/06-API-CONTRACTS.md` in the same PR |
 | Styles / tokens | `app/globals.css` (`@theme`), component Tailwind classes |

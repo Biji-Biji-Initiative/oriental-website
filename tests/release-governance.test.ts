@@ -61,7 +61,7 @@ describe("release governance", () => {
     expect(analyticsOpsWorkflow).not.toContain("secrets.ADMIN_REVIEW_TOKEN");
   });
 
-  it("makes the read-only password lane mandatory and machine checked for releases", () => {
+  it("makes the full-access password admin lane mandatory and machine checked for releases", () => {
     expect(packageScripts.scripts["release:verify:admin"]).toBe("tsx scripts/verify-admin-release-proof.ts");
     expect(adminReleaseVerifier).toContain('E2E_ADMIN_RELEASE_PROOF: "1"');
     expect(adminReleaseVerifier).toContain('"--project=chromium"');
@@ -75,9 +75,9 @@ describe("release governance", () => {
     expect(adminReviewE2e).toContain('process.env.E2E_ADMIN_RELEASE_PROOF === "1"');
     expect(adminReviewE2e).toContain('reviewLogin.credential !== "review_bearer"');
     expect(adminReviewE2e).toContain('passwordLogin.credential !== "interactive_password"');
-    expect(adminReviewE2e).toContain('name: "Password access · read only"');
+    expect(adminReviewE2e).toContain('role: "admin"');
     expect(adminReviewE2e).toContain("expect(rawReview.status()).toBe(200)");
-    expect(adminReviewE2e).toContain("expect(mutation.status()).toBe(403)");
+    expect(adminReviewE2e).toContain("expect(mutationAdmission.status()).toBe(400)");
     expect(adminReviewE2e.match(/ @release"/gu)).toHaveLength(3);
     expect(releaseRunbook.match(/pnpm release:verify:admin/gu)).toHaveLength(2);
     expect(releaseRunbook).toContain("`skipped=0`");

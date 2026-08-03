@@ -216,12 +216,11 @@ human password whose domain-separated HMAC is stored in
 Coolify, and the running container, as proved by the governed configuration
 release. Historical repository exposure means the password is treated as
 potentially known. It is never accepted as bearer auth. A password login
-receives a signed, provenance-bound, viewer-only session for thirty minutes. It
-can read the CRM dashboard, customer records, email addresses, transcripts,
-voice evidence, and aggregate metrics. It cannot mutate leads, change follow-up
-state, run evals, or invoke maintenance/privacy operations; those actions
-require a fresh login with the managed review token. A strong review-token login
-receives the configured interactive role for twelve hours.
+receives a signed, provenance-bound, full-access admin session for thirty
+minutes. It can read and operate the CRM, including lead workflow, voice
+follow-up, evaluations, maintenance, and privacy actions. A strong review-token
+login remains available for managed bearer/API access and receives the
+configured interactive role for twelve hours.
 `ADMIN_REVIEW_TOKEN` remains the high-entropy bearer credential and the only
 session-signing key; rotate the password HMAC whenever that token rotates. The
 HTTP-only cookie signs the actor, role, login method, and expiry. Its default

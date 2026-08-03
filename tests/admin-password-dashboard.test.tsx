@@ -48,7 +48,7 @@ const metrics = {
   voiceSubmitRate: 83,
 };
 
-describe("read-only admin password dashboard", () => {
+describe("full-access admin password dashboard", () => {
   beforeEach(() => {
     process.env = {
       ...originalEnv,
@@ -86,19 +86,16 @@ describe("read-only admin password dashboard", () => {
     process.env = originalEnv;
   });
 
-  it("renders customer records and hides every mutation control", async () => {
+  it("renders customer records and exposes admin mutation controls", async () => {
     render(await SessionReviewPage({ searchParams: Promise.resolve({ view: "leads" }) }));
 
-    expect(screen.getByRole("heading", { name: "Password access · read only" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "Enquiry pipeline" })).toBeVisible();
     expect(screen.getAllByText("Aisha Rahman").length).toBeGreaterThan(0);
     expect(screen.getAllByText("aisha@example.test").length).toBeGreaterThan(0);
     expect(screen.queryByRole("heading", { name: "Aggregate overview" })).not.toBeInTheDocument();
-    expect(document.querySelector("[data-admin-workflow-form]")).toBeNull();
-    expect(screen.queryByLabelText("Select all visible enquiries")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Actions for/u })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Assign selected" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Evaluate this conversation" })).not.toBeInTheDocument();
+    expect(document.querySelector("[data-admin-workflow-form]")).not.toBeNull();
+    expect(screen.getByLabelText("Select all visible enquiries")).toBeVisible();
+    expect(screen.getAllByRole("button", { name: /Actions for/u }).length).toBeGreaterThan(0);
     expect(convex.getAdminAggregateMetrics).not.toHaveBeenCalled();
     expect(convex.getAdminLeadTable).toHaveBeenCalledTimes(1);
     expect(convex.getAdminReviewDashboard).toHaveBeenCalledTimes(1);

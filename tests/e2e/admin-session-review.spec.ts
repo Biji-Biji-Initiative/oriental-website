@@ -119,14 +119,11 @@ test.describe("admin session review console", () => {
     await expect(page.getByRole("heading", { name: "Enquiry CRM" })).toBeVisible();
   });
 
-  test("grants password sessions read-only customer data and still requires token step-up for mutations @release", async ({
+  test("grants password sessions complete admin access while rejecting password bearer auth @release", async ({
     context,
     page,
   }) => {
-    test.skip(
-      !adminReleaseProof && !adminPassword,
-      "Set E2E_ADMIN_SHARED_PASSWORD to prove the read-only password lane.",
-    );
+    test.skip(!adminReleaseProof && !adminPassword, "Set E2E_ADMIN_SHARED_PASSWORD to prove the password admin lane.");
     if (!adminPassword) return;
     await context.clearCookies();
     const loginStartedAt = Date.now();
@@ -145,7 +142,7 @@ test.describe("admin session review console", () => {
       secure: cookie?.secure,
     }).toEqual({ httpOnly: true, path: "/", sameSite: "Lax", secure: adminReleaseProof });
     const metadata = safeSessionCookieMetadata(cookie?.value);
-    expect(metadata).toMatchObject({ method: "password", partCount: 6, role: "viewer", version: "v3" });
+    expect(metadata).toMatchObject({ method: "password", partCount: 6, role: "admin", version: "v3" });
     expectSessionExpiry(metadata.expiresAtMs, cookie?.expires, loginStartedAt, loginFinishedAt, passwordSessionTtlMs);
 
     const passwordBearer = await fetch(new URL("/api/admin/metrics", adminOrigin), {
@@ -154,11 +151,11 @@ test.describe("admin session review console", () => {
     expect(passwordBearer.status).toBe(401);
 
     await page.goto("/admin/session-review");
-    await expect(page.getByRole("heading", { name: "Password access · read only" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Enquiry CRM" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Aggregate overview" })).toHaveCount(0);
-    await expect(page.locator("[data-admin-workflow-form]")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /Actions for/u })).toHaveCount(0);
+    await page.goto("/admin/session-review?view=leads");
+    await expect(page.locator("[data-admin-workflow-form]").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: /Actions for/u }).first()).toBeVisible();
 
     const rawReview = await context.request.get("/api/admin/review");
     expect(rawReview.status()).toBe(200);
@@ -178,11 +175,12 @@ test.describe("admin session review console", () => {
     );
     expect(rawVoice.status()).toBe(200);
 
-    const mutation = await context.request.patch("/api/admin/leads/private-lead", {
+    const mutationAdmission = await context.request.patch("/api/admin/leads/password-admin-proof", {
       data: { status: "archived" },
       headers: { origin: adminOrigin },
     });
-    expect(mutation.status()).toBe(403);
+    expect(mutationAdmission.status()).toBe(400);
+    await expect(mutationAdmission.json()).resolves.toMatchObject({ ok: false, error: "invalid_payload" });
   });
 
   test("keeps the live login limiter Redis-backed and stable across spoofed earlier hops @release", async () => {

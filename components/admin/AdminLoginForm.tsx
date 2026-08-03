@@ -106,8 +106,8 @@ export function AdminLoginForm({ reason }: { reason?: string }) {
             </div>
             <h1 className="mt-4 text-2xl font-bold tracking-tight text-slate-100">Session review</h1>
             <p className="mt-2 text-sm leading-6 text-slate-400">
-              Use the admin password for full read-only CRM access. The managed review token is required to update
-              workflows, run bulk actions, archive or restore records, mark follow-up state, or run evaluations.
+              Use the admin password to open the complete CRM and manage enquiries, voice follow-up, evaluations,
+              retention, and privacy actions.
             </p>
             {reason === "unconfigured" ? (
               <div className="mt-5 rounded-lg border border-rose-400/25 bg-rose-400/10 p-3 text-sm text-rose-300">
