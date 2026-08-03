@@ -29,6 +29,7 @@ const releasePreflight = readFileSync("scripts/release-preflight.ts", "utf8");
 const releaseVerifier = readFileSync("scripts/release-verify.ts", "utf8");
 const adminReleaseVerifier = readFileSync("scripts/verify-admin-release-proof.ts", "utf8");
 const adminReviewE2e = readFileSync("tests/e2e/admin-session-review.spec.ts", "utf8");
+const adminLoginRouteTests = readFileSync("tests/admin-login-route.test.ts", "utf8");
 const productionDeployer = readFileSync("scripts/deploy-coolify-production.ts", "utf8");
 const hostDeployer = readFileSync("scripts/deploy-coolify-host.sh", "utf8");
 const deadlineRunner = readFileSync("scripts/run-command-with-deadline.ts", "utf8");
@@ -65,14 +66,28 @@ describe("release governance", () => {
     expect(packageScripts.scripts["release:verify:admin"]).toBe("tsx scripts/verify-admin-release-proof.ts");
     expect(adminReleaseVerifier).toContain('E2E_ADMIN_RELEASE_PROOF: "1"');
     expect(adminReleaseVerifier).toContain('"--project=chromium"');
+    expect(adminReleaseVerifier).toContain('"--workers=1"');
     expect(adminReleaseVerifier).toContain('"--grep=@release"');
     expect(adminReleaseVerifier).toContain('"--reporter=json"');
+    expect(adminReleaseVerifier).toContain("PLAYWRIGHT_JSON_OUTPUT_FILE: reportPath");
+    expect(adminReleaseVerifier).toContain('mkdtempSync(join(tmpdir(), "oriental-admin-release-proof-"))');
+    expect(adminReleaseVerifier).toContain(
+      "const cleanupReportDirectory = () => rmSync(reportDirectory, { force: true, recursive: true })",
+    );
+    expect(adminReleaseVerifier).toContain('process.once("SIGINT", onInterrupt)');
+    expect(adminReleaseVerifier).toContain('process.once("SIGTERM", onTermination)');
+    expect(adminReleaseVerifier).toContain("failedTests=${failedTests.join");
+    expect(adminReleaseVerifier).toContain("signal=$" + '{result.signal ?? "unknown"}');
     expect(adminReleaseVerifier).toContain("expected !== requiredAdminReleaseProofs");
     expect(adminReleaseVerifier).toContain("skipped !== 0");
     expect(adminReleaseVerifier).toContain("unexpected !== 0");
     expect(adminReleaseVerifier).toContain("flaky !== 0");
     expect(adminReleaseVerifier).toContain("target: targetOrigin");
     expect(adminReviewE2e).toContain('process.env.E2E_ADMIN_RELEASE_PROOF === "1"');
+    expect(adminReviewE2e).toContain('"x-forwarded-for": `$' + "{spoofedEarlierHop}, 198.51.100.254`");
+    expect(adminReviewE2e).not.toContain("for (let attempt = 0; attempt < 8; attempt += 1)");
+    expect(adminLoginRouteTests).toContain("for (let attempt = 0; attempt < 8; attempt += 1)");
+    expect(adminLoginRouteTests).toContain("expect(blocked.status).toBe(429)");
     expect(adminReviewE2e).toContain('reviewLogin.credential !== "review_bearer"');
     expect(adminReviewE2e).toContain('passwordLogin.credential !== "interactive_password"');
     expect(adminReviewE2e).toContain('role: "admin"');

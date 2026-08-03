@@ -209,20 +209,6 @@ test.describe("admin session review console", () => {
     const parallelRemaining = parallel.map(assertRedisResponse).sort((left, right) => left - right);
     expect(parallelRemaining).toHaveLength(2);
     expect((parallelRemaining.at(1) ?? Number.NaN) - (parallelRemaining.at(0) ?? Number.NaN)).toBe(1);
-
-    let blocked: Response | null = null;
-    for (let attempt = 0; attempt < 8; attempt += 1) {
-      const response = await invalidLogin(`192.0.2.${20 + attempt}`);
-      assertRedisResponse(response);
-      if (response.status === 429) {
-        blocked = response;
-        break;
-      }
-      expect(response.status).toBe(401);
-    }
-    expect(blocked?.status).toBe(429);
-    expect(blocked?.headers.get("x-ratelimit-remaining")).toBe("0");
-    await expect(blocked?.json()).resolves.toEqual({ ok: false, error: "rate_limited" });
   });
 
   test("turns the default overview into an executive enquiry command center", async ({ page }, testInfo) => {
