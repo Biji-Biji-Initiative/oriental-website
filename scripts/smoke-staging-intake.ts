@@ -98,7 +98,8 @@ async function run() {
 
     const assistantTurnsBefore = await assistantTurnCount(page);
     await sendTyped(page, "My email is q a dot nebula at example dot test. Please capture it, but do not send.");
-    await page.getByLabel("Email").waitFor({ state: "visible" });
+    const emailInput = page.locator('input[name="email"]');
+    await emailInput.waitFor({ state: "visible" });
     await page.waitForFunction(
       (email) => (document.querySelector<HTMLInputElement>('input[name="email"]')?.value ?? "") === email,
       expectedEmail,
@@ -121,7 +122,7 @@ async function run() {
       { timeout: 60_000 },
     );
 
-    if ((await page.getByLabel("Email").inputValue()) !== expectedEmail) throw new Error("Captured email changed");
+    if ((await emailInput.inputValue()) !== expectedEmail) throw new Error("Captured email changed");
     if (attemptedLeadPosts !== 0) {
       throw new Error(`Probe attempted ${attemptedLeadPosts} blocked lead request(s)`);
     }
