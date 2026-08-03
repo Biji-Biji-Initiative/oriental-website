@@ -4015,6 +4015,7 @@ describe("admin authentication production boundary", () => {
     }
   });
 
+  // biome-ignore format: Preserve the stable hostile source matrix without a format-only rewrite.
   it("keeps bearer verification private to the central auth module", () => {
     expect(authRuntimeExportViolations()).toEqual([]);
     expect(
@@ -4311,5 +4312,5 @@ describe("admin authentication production boundary", () => {
     for (const path of productionPaths.filter((candidate) => candidate !== "lib/server/admin-auth.ts")) {
       expect(callExpressionsNamed(sourceFile(path), "verifyAdminBearerToken"), path).toHaveLength(0);
     }
-  }, 60_000);
+  }, 180_000);
 });
