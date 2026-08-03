@@ -16,8 +16,8 @@ type GovernedResolution = {
 };
 
 export const governedResolutions: GovernedResolution[] = [
-  { name: "brace-expansion", affected: "=5.0.7", patched: "5.0.8" },
-  { name: "fast-uri", affected: "=3.1.3", patched: "3.1.4" },
+  { name: "brace-expansion", affected: ">=4.0.0 <5.0.9", patched: "5.0.9" },
+  { name: "fast-uri", affected: ">=3.0.0 <3.1.5", patched: "3.1.5" },
   { name: "postcss", affected: "<8.5.18", patched: "8.5.23" },
   { name: "sharp", affected: "=0.34.5", patched: "0.35.3" },
 ];

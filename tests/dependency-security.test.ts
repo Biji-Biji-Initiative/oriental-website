@@ -60,8 +60,8 @@ ${snapshot}
 describe("production dependency security", () => {
   it("pins only the exact vulnerable transitive resolutions", () => {
     expect(manifest.pnpm?.overrides).toEqual({
-      "brace-expansion@5.0.7": "5.0.8",
-      "fast-uri@3.1.3": "3.1.4",
+      "brace-expansion@>=4.0.0 <5.0.9": "5.0.9",
+      "fast-uri@>=3.0.0 <3.1.5": "3.1.5",
       "postcss@<8.5.18": "8.5.23",
       "sharp@0.34.5": "0.35.3",
     });
@@ -194,7 +194,7 @@ snapshots: {}
   it("walks every production snapshot edge and excludes dev-only legacy ancestry", () => {
     const productionKeys = collectProductionSnapshotKeys(lockfile);
     expect(governedProductionProblems(lockfile)).toEqual([]);
-    expect(productionKeys.has("brace-expansion@5.0.8")).toBe(true);
+    expect(productionKeys.has("brace-expansion@5.0.9")).toBe(true);
     expect(productionKeys.has("brace-expansion@1.1.15")).toBe(false);
     for (const resolution of governedResolutions) {
       expect([...productionKeys].some((key) => key.startsWith(`${resolution.name}@${resolution.patched}`))).toBe(true);
@@ -202,8 +202,8 @@ snapshots: {}
   });
 
   it("pins every intended snapshot edge to its patched resolution", () => {
-    expect(snapshotDependencyReference(lockfile, "minimatch@10.2.5", "brace-expansion")).toBe("5.0.8");
-    expect(snapshotDependencyReference(lockfile, "ajv@8.20.0", "fast-uri")).toBe("3.1.4");
+    expect(snapshotDependencyReference(lockfile, "minimatch@10.2.5", "brace-expansion")).toBe("5.0.9");
+    expect(snapshotDependencyReference(lockfile, "ajv@8.20.0", "fast-uri")).toBe("3.1.5");
     const nextSnapshot = [...collectProductionSnapshotKeys(lockfile)].find((key) => key.startsWith("next@16.2.12("));
     expect(nextSnapshot).toBeDefined();
     expect(snapshotDependencyReference(lockfile, nextSnapshot as string, "postcss")).toBe("8.5.23");
