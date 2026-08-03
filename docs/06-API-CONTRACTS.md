@@ -449,23 +449,25 @@ proxy identity. It validates either `ADMIN_REVIEW_TOKEN` or the human password
 represented by the domain-separated `ADMIN_REVIEW_PASSWORD_HMAC`, then sets a
 principal-bound signed `oriental_admin` HTTP-only, SameSite=Lax cookie with
 `Path=/`. A password login signs `method=password`, forces role `viewer`, and
-expires after thirty minutes. It can access only the redacted aggregate metrics
-dashboard and logout. Customer records, email addresses, transcripts, voice
-details, and every mutation return `403 forbidden` until a fresh managed review
-token login. A strong review-token login signs `method=review`, retains
-the configured interactive role, and expires after twelve hours. The human
-password is never accepted as bearer auth and never signs sessions; historical
-repository exposure means it is treated as potentially known. Production
-cookies also set `Secure`. Successful login telemetry records only bounded
-actor, method, role, and expiry metadata, never the supplied credential.
+expires after thirty minutes. It can access the CRM dashboard, customer
+records, email addresses, transcripts, voice details, and aggregate metrics
+through read-only endpoints. Every mutation returns `403 forbidden` until a
+fresh managed review-token login. A strong review-token login signs
+`method=review`, retains the configured interactive role, and expires after
+twelve hours. The human password is never accepted as bearer auth and never
+signs sessions; historical repository exposure means it is treated as
+potentially known. Production cookies also set `Secure`. Successful login
+telemetry records only bounded actor, method, role, and expiry metadata, never
+the supplied credential.
 
 ### `GET /api/admin/review`
 
-Strong review-token bearer or review-session-cookie protected JSON endpoint
-returning recent `leads`, `voiceSessions`, `leadEvents`, aggregate metrics,
-analytics buckets, and queue slices for the internal operations console.
-Password-issued sessions receive `403 forbidden`; they use
-`GET /api/admin/metrics`, which returns only the PII-free `metrics` object.
+Review-token bearer, review-session cookie, or password-session cookie protected
+JSON endpoint returning recent `leads`, `voiceSessions`, `leadEvents`,
+aggregate metrics, analytics buckets, and queue slices for the internal
+operations console. Password-issued sessions are read-only: this endpoint and
+`GET /api/admin/metrics` succeed, while every state-changing route still
+returns `403 forbidden`.
 
 ### `PATCH /api/admin/leads/[leadId]`
 
@@ -552,11 +554,13 @@ Errors:
 | 409 | `conflict` | At least one revision is stale; none were changed. |
 | 503 | `convex_unconfigured` / `convex_failed` | Convex env is missing or the mutation failed. |
 
-### `PATCH /api/admin/voice-sessions/[reviewId]`
+### `GET|PATCH /api/admin/voice-sessions/[reviewId]`
 
-Interactive bearer-token or same-origin JSON admin-cookie protected mutation
-that marks a recoverable voice
-session as followed up (or moves it back to the queue). Sets or clears
+`GET` requires `voice.read` and is available to read-only password sessions
+for transcript and voice-session detail. `PATCH` requires `voice.follow_up`
+and remains forbidden to password sessions. The interactive review-token bearer
+or same-origin review-session cookie mutation marks a recoverable voice session
+as followed up (or moves it back to the queue), setting or clearing
 `followedUpAt` on the Convex `voiceSessions` row.
 
 ```ts

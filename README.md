@@ -212,18 +212,16 @@ During local testing, run `pnpm voice:debug` after a call to inspect the latest 
 The internal review surface lives at `/admin/session-review`. Its same-origin,
 rate-limited login accepts either the configured `ADMIN_REVIEW_TOKEN` or the
 human password whose domain-separated HMAC is stored in
-`ADMIN_REVIEW_PASSWORD_HMAC`. Plaintext must remain absent from source,
-Infisical, Coolify, and the running container; the launch checklist keeps that
-redacted live readback pending until the configuration release is performed.
-Historical repository exposure means the password is treated as potentially
-known. It is never accepted as bearer auth. A password
-login receives a signed, provenance-bound, viewer-only session for thirty
-minutes; it can read only the redacted aggregate metrics dashboard and can log
-out. It cannot read customer records, email addresses, transcripts, or voice
-evidence and cannot mutate leads, follow up, run evals, or invoke
-maintenance/privacy operations. Those data surfaces require a fresh login with
-the managed review token. A strong review-token login receives the configured
-interactive role for twelve hours.
+`ADMIN_REVIEW_PASSWORD_HMAC`. Plaintext remains absent from source, Infisical,
+Coolify, and the running container, as proved by the governed configuration
+release. Historical repository exposure means the password is treated as
+potentially known. It is never accepted as bearer auth. A password login
+receives a signed, provenance-bound, viewer-only session for thirty minutes. It
+can read the CRM dashboard, customer records, email addresses, transcripts,
+voice evidence, and aggregate metrics. It cannot mutate leads, change follow-up
+state, run evals, or invoke maintenance/privacy operations; those actions
+require a fresh login with the managed review token. A strong review-token login
+receives the configured interactive role for twelve hours.
 `ADMIN_REVIEW_TOKEN` remains the high-entropy bearer credential and the only
 session-signing key; rotate the password HMAC whenever that token rotates. The
 HTTP-only cookie signs the actor, role, login method, and expiry. Its default

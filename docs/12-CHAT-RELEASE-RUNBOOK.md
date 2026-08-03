@@ -50,14 +50,16 @@ cannot affect the runtime image.
   `ADMIN_REVIEW_TOKEN`; it is interactive-login-only, never a bearer or session
   signing credential, and historical repository exposure means it is treated as
   potentially known. Its signed session MUST prove method `password`, role
-  `viewer`, and a thirty-minute expiry; it MUST authorize only the PII-free
-  aggregate metrics endpoint/dashboard and logout. Customer records, email
-  addresses, transcripts, voice details, and mutations MUST return forbidden
-  until the operator signs out and logs in with the managed review token. The
-  review token retains the configured role and twelve-hour expiry. Production
-  validation MUST reject any password HMAC proving equality with the review,
-  ops, or privacy bearer credential. Rotate the HMAC with the token and deploy
-  both managed environments together.
+  `viewer`, and a thirty-minute expiry. It MUST authorize `dashboard.aggregate`,
+  `dashboard.read`, `leads.read`, `voice.read`, and logout only. The CRM
+  dashboard, customer records, email addresses, transcripts, and voice details
+  MUST be readable, while every mutation, follow-up-state change, evaluation,
+  maintenance action, and privacy action MUST return forbidden until the
+  operator signs out and logs in with the managed review token. The review token
+  retains the configured role and twelve-hour expiry. Production validation
+  MUST reject any password HMAC proving equality with the review, ops, or
+  privacy bearer credential. Rotate the HMAC with the token and deploy both
+  managed environments together.
 - The staging deployer MUST stream the complete native staging Infisical export
   over the encrypted fleet connection and atomically converge the host `.env`.
   The production deployer MUST reconcile and read back every approved runtime
@@ -450,9 +452,11 @@ include release docs before the first deployment.
      '
    ```
 
-9. Run the aggregate-only password lane against canonical staging. Enter the
-   human password through hidden terminal input; never place it in a command
-   argument, shell history, file, or managed environment. The command hard-fails
+9. Run the read-only password lane against canonical staging. Enter the human
+   password through hidden terminal input; never place it in a command argument,
+   shell history, file, or managed environment. The command proves customer and
+   voice reads succeed, password bearer auth fails, mutations remain forbidden,
+   and the cookie and limiter retain their governed properties. It hard-fails
    when the token, password HMAC, password, browser, or target is missing or
    invalid. Retain its JSON report and require `unexpected=0`, `flaky=0`, and
    `skipped=0`:

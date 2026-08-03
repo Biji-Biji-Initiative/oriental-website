@@ -177,13 +177,6 @@ export function verifyAdminRequest(request: Request): AdminAuthState {
 export function verifyAdminPermission(request: Request, permission: AdminPermission): AdminAuthState {
   const auth = verifyAdminRequest(request);
   if (!auth.ok) return auth;
-  if (
-    auth.credential === "password_session" &&
-    permission !== "dashboard.aggregate" &&
-    permission !== "session.logout"
-  ) {
-    return { ok: false, reason: "forbidden" };
-  }
   if (!hasAdminPermission(auth.role, permission, auth.principal)) return { ok: false, reason: "forbidden" };
   if (
     isSessionCredential(auth.credential) &&

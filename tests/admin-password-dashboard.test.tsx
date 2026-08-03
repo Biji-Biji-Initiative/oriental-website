@@ -5,6 +5,7 @@ import SessionReviewPage from "@/app/admin/session-review/page";
 import { GET as getMetrics } from "@/app/api/admin/metrics/route";
 import { GET as getRawReview } from "@/app/api/admin/review/route";
 import { adminCookieName, createAdminLoginSession, verifyAdminLoginCredential } from "@/lib/server/admin-auth";
+import adminDashboardFixture from "@/tests/fixtures/admin-dashboard.critical.json";
 
 const convex = vi.hoisted(() => ({
   getAdminAggregateMetrics: vi.fn(),
@@ -47,7 +48,7 @@ const metrics = {
   voiceSubmitRate: 83,
 };
 
-describe("aggregate-only admin password dashboard", () => {
+describe("read-only admin password dashboard", () => {
   beforeEach(() => {
     process.env = {
       ...originalEnv,
@@ -73,8 +74,11 @@ describe("aggregate-only admin password dashboard", () => {
         metrics,
       },
     });
-    convex.getAdminLeadTable.mockRejectedValue(new Error("password path touched raw lead table"));
-    convex.getAdminReviewDashboard.mockRejectedValue(new Error("password path touched broad dashboard"));
+    convex.getAdminLeadTable.mockRejectedValue(new Error("lead-table fallback fixture"));
+    convex.getAdminReviewDashboard.mockResolvedValue({
+      ok: true,
+      data: adminDashboardFixture,
+    });
   });
 
   afterEach(() => {
@@ -82,29 +86,41 @@ describe("aggregate-only admin password dashboard", () => {
     process.env = originalEnv;
   });
 
-  it("renders only aggregate totals and never fetches the raw lead table", async () => {
-    render(await SessionReviewPage({}));
+  it("renders customer records and hides every mutation control", async () => {
+    render(await SessionReviewPage({ searchParams: Promise.resolve({ view: "leads" }) }));
 
-    expect(screen.getByRole("heading", { name: "Aggregate overview" })).toBeVisible();
-    expect(screen.getByText("12")).toBeVisible();
-    expect(screen.queryByText("must-never-render")).not.toBeInTheDocument();
-    expect(screen.queryByText("What needs attention now")).not.toBeInTheDocument();
-    expect(convex.getAdminAggregateMetrics).toHaveBeenCalledTimes(1);
-    expect(convex.getAdminLeadTable).not.toHaveBeenCalled();
-    expect(convex.getAdminReviewDashboard).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { name: "Password access · read only" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Enquiry pipeline" })).toBeVisible();
+    expect(screen.getAllByText("Aisha Rahman").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("aisha@example.test").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("heading", { name: "Aggregate overview" })).not.toBeInTheDocument();
+    expect(document.querySelector("[data-admin-workflow-form]")).toBeNull();
+    expect(screen.queryByLabelText("Select all visible enquiries")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Actions for/u })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Assign selected" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Evaluate this conversation" })).not.toBeInTheDocument();
+    expect(convex.getAdminAggregateMetrics).not.toHaveBeenCalled();
+    expect(convex.getAdminLeadTable).toHaveBeenCalledTimes(1);
+    expect(convex.getAdminReviewDashboard).toHaveBeenCalledTimes(1);
   });
 
-  it("allows the aggregate API but forbids raw review data for the same password session", async () => {
+  it("allows aggregate compatibility and raw review reads for the same password session", async () => {
     const headers = { cookie: `${adminCookieName}=${nextHeaders.cookieValue}` };
     const aggregate = await getMetrics(new Request("http://localhost/api/admin/metrics", { headers }), undefined);
     expect(aggregate.status).toBe(200);
     await expect(aggregate.json()).resolves.toEqual({ ok: true, metrics });
-    expect(convex.getAdminAggregateMetrics).toHaveBeenCalledTimes(1);
-    expect(convex.getAdminLeadTable).not.toHaveBeenCalled();
-    expect(convex.getAdminReviewDashboard).not.toHaveBeenCalled();
 
     const raw = await getRawReview(new Request("http://localhost/api/admin/review", { headers }), undefined);
-    expect(raw.status).toBe(403);
-    await expect(raw.json()).resolves.toEqual({ ok: false, error: "forbidden" });
+    expect(raw.status).toBe(200);
+    const body = (await raw.json()) as {
+      ok: boolean;
+      leads: Array<{ email: string; leadId: string }>;
+      voiceSessions: Array<{ reviewId: string }>;
+    };
+    expect(body.ok).toBe(true);
+    expect(body.leads).toEqual(
+      expect.arrayContaining([expect.objectContaining({ email: "aisha@example.test", leadId: "lead-critical-1" })]),
+    );
+    expect(body.voiceSessions.length).toBeGreaterThan(0);
   });
 });

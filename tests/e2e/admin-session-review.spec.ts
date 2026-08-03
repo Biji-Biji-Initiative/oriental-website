@@ -119,13 +119,13 @@ test.describe("admin session review console", () => {
     await expect(page.getByRole("heading", { name: "Enquiry CRM" })).toBeVisible();
   });
 
-  test("keeps password login on aggregate metrics and requires token step-up for customer data @release", async ({
+  test("grants password sessions read-only customer data and still requires token step-up for mutations @release", async ({
     context,
     page,
   }) => {
     test.skip(
       !adminReleaseProof && !adminPassword,
-      "Set E2E_ADMIN_SHARED_PASSWORD to prove the aggregate-only password lane.",
+      "Set E2E_ADMIN_SHARED_PASSWORD to prove the read-only password lane.",
     );
     if (!adminPassword) return;
     await context.clearCookies();
@@ -154,14 +154,30 @@ test.describe("admin session review console", () => {
     expect(passwordBearer.status).toBe(401);
 
     await page.goto("/admin/session-review");
-    await expect(page.getByRole("heading", { name: "Aggregate overview" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "What needs attention now" })).toHaveCount(0);
-    await expect(page.getByText("Customer records", { exact: false })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Password access · read only" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Enquiry CRM" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Aggregate overview" })).toHaveCount(0);
+    await expect(page.locator("[data-admin-workflow-form]")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Actions for/u })).toHaveCount(0);
 
     const rawReview = await context.request.get("/api/admin/review");
-    expect(rawReview.status()).toBe(403);
-    const rawVoice = await context.request.get("/api/admin/voice-sessions/private-session");
-    expect(rawVoice.status()).toBe(403);
+    expect(rawReview.status()).toBe(200);
+    const rawReviewBody = (await rawReview.json()) as {
+      ok?: boolean;
+      leads?: Array<{ leadId?: string }>;
+      voiceSessions?: Array<{ reviewId?: string }>;
+    };
+    expect(rawReviewBody.ok).toBe(true);
+    expect(rawReviewBody.leads?.length).toBeGreaterThan(0);
+    expect(rawReviewBody.voiceSessions?.length).toBeGreaterThan(0);
+
+    const reviewId = rawReviewBody.voiceSessions?.find((session) => session.reviewId)?.reviewId;
+    expect(reviewId).toBeTruthy();
+    const rawVoice = await context.request.get(
+      `/api/admin/voice-sessions/${encodeURIComponent(reviewId ?? "missing-review-id")}`,
+    );
+    expect(rawVoice.status()).toBe(200);
+
     const mutation = await context.request.patch("/api/admin/leads/private-lead", {
       data: { status: "archived" },
       headers: { origin: adminOrigin },

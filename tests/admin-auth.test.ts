@@ -108,7 +108,23 @@ describe("admin auth helpers", () => {
       credential: "password_session",
     });
     for (const permission of ["dashboard.read", "leads.read", "voice.read"] as const) {
-      expect(verifyAdminPermission(request, permission)).toEqual({ ok: false, reason: "forbidden" });
+      expect(verifyAdminPermission(request, permission)).toMatchObject({
+        ok: true,
+        credential: "password_session",
+      });
+      expect(hasAdminPermission("viewer", permission, "password")).toBe(true);
+    }
+    for (const permission of [
+      "leads.update",
+      "leads.bulk_assign",
+      "leads.archive",
+      "leads.export",
+      "voice.follow_up",
+      "evals.run",
+      "ops.sla_check",
+      "ops.retention",
+      "privacy.delete",
+    ] as const) {
       expect(hasAdminPermission("viewer", permission, "password")).toBe(false);
     }
     expect(hasAdminPermission("viewer", "dashboard.aggregate", "password")).toBe(true);
