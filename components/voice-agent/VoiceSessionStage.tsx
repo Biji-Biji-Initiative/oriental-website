@@ -314,7 +314,7 @@ export function VoiceSessionStage({
             {showEmailError
               ? "Enter a valid email, such as name@example.com."
               : emailAttention
-                ? "Check this once or edit it here. Reka will keep the conversation moving—no spelling loop."
+                ? "Reka did not catch that address yet. Say it again naturally, including the domain."
                 : captured.email.trim()
                   ? "Email added · ready to send."
                   : "Say it naturally or type it here whenever you are ready."}

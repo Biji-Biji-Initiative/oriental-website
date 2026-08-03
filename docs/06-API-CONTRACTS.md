@@ -811,6 +811,10 @@ Route handlers emit structured JSON logs to stdout/stderr via
 hashed IP metadata where relevant, durations, rate-limit store, persistence
 status, and notification results. Sensitive keys are redacted by suffix.
 
-Current production review path is Coolify container logs, Sentry errors, Slack
-ops alerts, API return values, and `/admin/session-review`. Prometheus counters
-and PagerDuty alerts are still deferred.
+Coolify provides the live container tail. The configured Sentry project retains
+a PII-free structured copy of application events across container replacements;
+visitor text, contact details, identifiers, and transcript content are never
+sent in that copy. Current production review therefore combines retained Sentry
+events, Slack ops alerts, API return values, and the access-controlled
+`/admin/session-review` record for full conversation evidence. Prometheus
+counters and PagerDuty alerts are still deferred.

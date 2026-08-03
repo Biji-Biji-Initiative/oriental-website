@@ -24,6 +24,21 @@ type ScrubbableEvent = {
   user?: unknown;
 };
 
+type StructuredLog = {
+  schema: "oriental.application_log.v1";
+  ts: string;
+  level: "info" | "warn" | "error";
+  service: "oriental-website";
+  version: string;
+  event: string;
+  metadata: unknown;
+};
+
+const SAFE_LOG_EVENT = /^[a-z][a-z0-9_.-]{0,120}$/i;
+const SAFE_LOG_LEVELS = new Set<StructuredLog["level"]>(["info", "warn", "error"]);
+const SENSITIVE_LOG_KEY =
+  /(email|name|phone|address|message|transcript|content|body|input|output|token|secret|password|authorization|cookie|key|actor|user|id)$/i;
+
 /**
  * Sentry is operational telemetry, never a second store for enquiry content.
  * Keep only the request method and a query-free route URL; bodies, cookies,
@@ -31,6 +46,7 @@ type ScrubbableEvent = {
  */
 export function scrubSentryEvent<T extends object>(event: T): T {
   const scrubbed = event as ScrubbableEvent;
+  const structuredLog = readStructuredLog(scrubbed.extra);
   delete scrubbed.user;
   // Structured application logs remain the detailed diagnostic plane. Sentry
   // gets the fixed event name/stack/trace, never arbitrary extras or browser
@@ -41,6 +57,16 @@ export function scrubSentryEvent<T extends object>(event: T): T {
   delete scrubbed.logentry;
   delete scrubbed.message;
   delete scrubbed.tags;
+  if (structuredLog) {
+    scrubbed.extra = { structured_log: structuredLog };
+    scrubbed.message = `log:${structuredLog.event}`;
+    scrubbed.tags = {
+      service: structuredLog.service,
+      event: structuredLog.event,
+      level: structuredLog.level,
+      log_kind: "structured",
+    };
+  }
   if (scrubbed.exception?.values) {
     scrubbed.exception.values = scrubbed.exception.values.map((entry) => {
       const safe: Record<string, unknown> = {};
@@ -60,6 +86,50 @@ export function scrubSentryEvent<T extends object>(event: T): T {
   }
   if (scrubbed.spans) scrubbed.spans = scrubbed.spans.map(scrubSentrySpan);
   return event;
+}
+
+function readStructuredLog(value: unknown): StructuredLog | undefined {
+  if (!isRecord(value) || !isRecord(value.structuredLog)) return undefined;
+  const candidate = value.structuredLog;
+  if (
+    candidate.schema !== "oriental.application_log.v1" ||
+    typeof candidate.ts !== "string" ||
+    typeof candidate.version !== "string" ||
+    typeof candidate.event !== "string" ||
+    !SAFE_LOG_EVENT.test(candidate.event) ||
+    !SAFE_LOG_LEVELS.has(candidate.level as StructuredLog["level"])
+  ) {
+    return undefined;
+  }
+  return {
+    schema: "oriental.application_log.v1",
+    ts: candidate.ts.slice(0, 48),
+    level: candidate.level as StructuredLog["level"],
+    service: "oriental-website",
+    version: candidate.version.slice(0, 120),
+    event: candidate.event,
+    metadata: scrubStructuredMetadata(candidate.metadata),
+  };
+}
+
+function scrubStructuredMetadata(value: unknown, depth = 0): unknown {
+  if (value === null || typeof value === "number" || typeof value === "boolean") return value;
+  if (typeof value === "string") return "[redacted]";
+  if (depth >= 4) return "[redacted]";
+  if (Array.isArray(value)) return value.slice(0, 24).map((entry) => scrubStructuredMetadata(entry, depth + 1));
+  if (!isRecord(value)) return "[redacted]";
+  return Object.fromEntries(
+    Object.entries(value)
+      .slice(0, 48)
+      .map(([key, entry]) => [
+        key.slice(0, 80),
+        SENSITIVE_LOG_KEY.test(key) ? "[redacted]" : scrubStructuredMetadata(entry, depth + 1),
+      ]),
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 export function scrubSentrySpan<T extends ScrubbableSpan>(span: T): T {

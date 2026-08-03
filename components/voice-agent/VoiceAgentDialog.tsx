@@ -225,14 +225,6 @@ export function VoiceAgentDialog({
       } as const;
       trackIntakeEvent("intake_submit_attempt", analytics);
       try {
-        if (submissionMethod === "voice_command" && !isVoiceEmailConfirmed(leadState)) {
-          focusCapturedField("email", "route_blocked");
-          toast.error("Please check the highlighted email once.", {
-            description: "Edit it if needed, then press Send enquiry. Reka will not make you spell it out again.",
-          });
-          trackIntakeEvent("intake_submit_failure", { ...analytics, failure_class: "email_check_required" });
-          return { ok: false, error: "voice_email_unconfirmed" };
-        }
         const parsed = leadFormSchema.safeParse(leadState.captured);
         if (!parsed.success) {
           if (submissionMethod === "handoff_button") void formRef.current?.trigger();
@@ -329,7 +321,7 @@ export function VoiceAgentDialog({
         setSubmitting(false);
       }
     },
-    [currentReviewCredentials, focusCapturedField, nextSnapshotSequence],
+    [currentReviewCredentials, nextSnapshotSequence],
   );
 
   const handleClearFields = useCallback(() => {

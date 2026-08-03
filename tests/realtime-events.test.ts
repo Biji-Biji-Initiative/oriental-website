@@ -2397,7 +2397,7 @@ describe("reduceRealtimeServerEvent", () => {
         fields: [{ key: "message", mode: "replace" }],
         rejectedFields: [{ index: 1 }],
         detail: { error: "ungrounded_identity_capture", key: "email" },
-        retry: expect.stringContaining("visible email field"),
+        retry: expect.stringContaining("full email address naturally"),
       },
     });
   });
@@ -3370,7 +3370,7 @@ describe("reduceRealtimeServerEvent", () => {
       output: {
         ok: false,
         previousEmailInvalidated: true,
-        nextAction: expect.stringContaining("visible email field"),
+        nextAction: expect.stringContaining("full email naturally"),
       },
     });
 

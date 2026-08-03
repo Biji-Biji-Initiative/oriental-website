@@ -76,7 +76,7 @@ describe("VoiceSessionStage", () => {
     const email = screen.getByLabelText("Email to follow up");
     expect(email).toHaveValue("asha@example.com");
     expect(email).toHaveAttribute("aria-required", "true");
-    expect(screen.getByText(/no spelling loop/i)).toBeVisible();
+    expect(screen.getByText(/say it again naturally, including the domain/i)).toBeVisible();
     fireEvent.focus(email);
     expect(onEmailFocus).toHaveBeenCalledOnce();
     fireEvent.change(email, { target: { value: "asha+team@example.com" } });

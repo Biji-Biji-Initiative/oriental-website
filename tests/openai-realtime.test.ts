@@ -110,7 +110,7 @@ describe("createRealtimeClientSecret", () => {
     expect(result.email_capture_mode).toBe("adaptive");
     const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
     expect(body.session.instructions).toContain("without asking for a separate yes");
-    expect(body.session.instructions).toContain("ask the visitor to type it there");
+    expect(body.session.instructions).toContain("ask once for the full address naturally, including the domain");
     expect(body.session.instructions).not.toContain(
       "After a speech email is captured, read it back and use confirm_email",
     );
