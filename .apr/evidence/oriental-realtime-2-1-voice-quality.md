@@ -19,7 +19,9 @@
   intent. `useVoiceRuntime.ts` applies the existing reducer clear transition on
   completed speech when the model omits its required action, revokes browser
   memory through the normal callback, and reports PII-free tool timing without
-  emitting a fictitious provider function result.
+  emitting a fictitious provider function result. The client accepts that
+  transition only when the reducer emits its own successful `clear_fields`
+  result, rather than inferring success from selected state fields.
 - `scripts/lib/release-governance.ts`, session minting, health, examples, and
   operator documentation align both governed lanes to Realtime 2.1. The
   production deployer has a separately tested, opt-in previous-control health
@@ -35,6 +37,9 @@
 - Release/deployment/deadline suite: 43 tests passed. The deadline test now
   waits for its actual child startup instead of using a 300 ms race, while
   retaining its process-group kill assertion.
+- The clear fallback regression test first commits the spoken clear request,
+  then proves the reducer wipes every captured field and transcript and emits
+  the successful local clear result that authorizes browser-memory revocation.
 - `pnpm lint`, `pnpm typecheck`, and `git diff --check` passed locally.
 - PR CI is the exact-head gate: production dependency audit, lint, typecheck,
   complete unit suite, secret check, build, and performance all must pass before

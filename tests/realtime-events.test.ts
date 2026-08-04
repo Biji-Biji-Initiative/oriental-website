@@ -26,6 +26,42 @@ describe("reduceRealtimeServerEvent", () => {
     expect(isExplicitClearAllRequest("Do not clear the form.")).toBe(false);
   });
 
+  it("accepts a reducer-confirmed clear after the spoken command is in the transcript", () => {
+    const transcribed = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "clear-form-request",
+        transcript: "Please clear up the form.",
+      },
+      state({ captured: { ...emptyCapturedLead, name: "Gurpreet", email: "person@example.com" } }),
+    );
+    const cleared = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "clear_fields",
+              call_id: "local-clear-proof",
+              arguments: JSON.stringify({ scope: "all" }),
+            },
+          ],
+        },
+      },
+      transcribed.state,
+    );
+
+    expect(cleared.state.captured).toEqual(emptyCapturedLead);
+    expect(cleared.state.transcript).toEqual([]);
+    expect(cleared.commands).toContainEqual(
+      expect.objectContaining({
+        callId: "local-clear-proof",
+        output: expect.objectContaining({ ok: true, cleared: true }),
+      }),
+    );
+  });
+
   it("identifies tool-only response completions so timing waits for the spoken follow-up", () => {
     expect(
       responseHasFunctionCall({

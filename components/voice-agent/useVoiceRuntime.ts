@@ -269,6 +269,7 @@ export function useVoiceRuntime({
         // Do not fabricate a function result for OpenAI: that call ID does not
         // exist upstream. The normal context sync below tells the live model
         // the panel is now empty.
+        const localClearCallId = `local-clear-${eventStartedAt}`;
         const clearResult = reduceRealtimeServerEvent(
           {
             type: "response.done",
@@ -277,7 +278,7 @@ export function useVoiceRuntime({
                 {
                   type: "function_call",
                   name: "clear_fields",
-                  call_id: `local-clear-${eventStartedAt}`,
+                  call_id: localClearCallId,
                   arguments: JSON.stringify({ scope: "all" }),
                 },
               ],
@@ -285,7 +286,14 @@ export function useVoiceRuntime({
           },
           reduced.state,
         );
-        if (clearResult.state.captured.email === "" && clearResult.state.transcript.length === 0) {
+        const clearApplied = clearResult.commands.some(
+          (command) =>
+            command.type === "function_result" &&
+            command.callId === localClearCallId &&
+            command.output.ok === true &&
+            command.output.cleared === true,
+        );
+        if (clearApplied) {
           reduced = { state: clearResult.state, commands: reduced.commands };
           callbacksRef.current.onClearFields?.();
           setLocalHandoffContextVersion((version) => version + 1);
