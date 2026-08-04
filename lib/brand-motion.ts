@@ -1,5 +1,9 @@
-export const BRAND_MOTION_PREVIEW_HOST = "staging.oriental.mereka.io";
-export const BRAND_MOTION_PREVIEW_ENABLED = process.env.NEXT_PUBLIC_BRAND_MOTION_PREVIEW === "true";
+export const BRAND_MOTION_PRODUCTION_HOST = "oriental.mereka.io";
+export const BRAND_MOTION_STAGING_HOST = "staging.oriental.mereka.io";
+// The Mereka M is the approved public identity. A build can opt out only for
+// an emergency visual rollback; the old staging-preview switch is deliberately
+// ignored so it cannot silently restore the legacy orb in production.
+export const BRAND_MOTION_ENABLED = process.env.NEXT_PUBLIC_BRAND_MOTION_ENABLED !== "false";
 
 export const MEREKA_MARK_WIDTH = 427.76;
 export const MEREKA_MARK_HEIGHT = 342.13;
@@ -15,16 +19,17 @@ export const MEREKA_MARK_PATH =
 export const MEREKA_NEBULA_PARTICLE_COUNT = 2_100;
 export const MEREKA_TRACE_DURATION_MS = 2_600;
 
-export function isBrandMotionPreviewHost(hostname: string) {
+export function isBrandMotionHost(hostname: string) {
   const normalized = hostname.trim().toLowerCase().replace(/\.$/, "");
   return (
-    normalized === BRAND_MOTION_PREVIEW_HOST ||
+    normalized === BRAND_MOTION_PRODUCTION_HOST ||
+    normalized === BRAND_MOTION_STAGING_HOST ||
     normalized === "localhost" ||
     normalized === "127.0.0.1" ||
     normalized === "::1"
   );
 }
 
-export function isBrandMotionPreviewEnabled(buildFlag: boolean, hostname: string) {
-  return buildFlag && isBrandMotionPreviewHost(hostname);
+export function isBrandMotionEnabled(buildFlag: boolean, hostname: string) {
+  return buildFlag && isBrandMotionHost(hostname);
 }

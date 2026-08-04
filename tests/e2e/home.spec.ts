@@ -83,7 +83,7 @@ test("renders the Oriental microsite and opens the collaborative intake workspac
   await page.getByRole("button", { name: /Tell us why/i }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await expect(page.locator(".mereka-nebula")).toBeVisible();
-  await expect(page.getByText("Send your enquiry", { exact: true })).toBeVisible();
+  await expect(page.getByText("Talk with Reka", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Name")).toBeVisible();
   await page.getByRole("button", { name: "The spaces" }).click();
   await expect(page.getByText("Oriental note")).toBeVisible();

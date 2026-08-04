@@ -10,8 +10,9 @@ import {
 import { NebulaM, resolveMerekaMarkTarget } from "@/components/brand-motion/NebulaM";
 import { MerekaMiniMark } from "@/components/orb/MerekaMiniMark";
 import {
-  BRAND_MOTION_PREVIEW_HOST,
-  isBrandMotionPreviewEnabled,
+  BRAND_MOTION_PRODUCTION_HOST,
+  BRAND_MOTION_STAGING_HOST,
+  isBrandMotionEnabled,
   MEREKA_MARK_PATH,
   MEREKA_NEBULA_PARTICLE_COUNT,
   MEREKA_TRACE_DURATION_MS,
@@ -31,11 +32,11 @@ describe("Mereka brand motion", () => {
     expect(MEREKA_TRACE_DURATION_MS).toBe(2_600);
   });
 
-  it("requires both the build flag and an exact staging/local host for every motion preview", () => {
-    expect(isBrandMotionPreviewEnabled(true, BRAND_MOTION_PREVIEW_HOST)).toBe(true);
-    expect(isBrandMotionPreviewEnabled(false, BRAND_MOTION_PREVIEW_HOST)).toBe(false);
-    expect(isBrandMotionPreviewEnabled(true, "oriental.mereka.io")).toBe(false);
-    expect(isBrandMotionPreviewEnabled(false, "oriental.mereka.io")).toBe(false);
+  it("enables the M on both canonical public hosts and retains an emergency opt-out", () => {
+    expect(isBrandMotionEnabled(true, BRAND_MOTION_STAGING_HOST)).toBe(true);
+    expect(isBrandMotionEnabled(true, BRAND_MOTION_PRODUCTION_HOST)).toBe(true);
+    expect(isBrandMotionEnabled(false, BRAND_MOTION_PRODUCTION_HOST)).toBe(false);
+    expect(isBrandMotionEnabled(true, "preview.deploy.mereka.io")).toBe(false);
   });
 
   it("uses the canonical Mereka mark instead of the generic blue sphere", () => {
@@ -94,14 +95,21 @@ describe("Mereka brand motion", () => {
   });
 
   it("fails open when browser storage allows reads but rejects writes", () => {
-    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
-      throw new DOMException("Storage is unavailable", "QuotaExceededError");
+    const originalStorage = window.sessionStorage;
+    Object.defineProperty(window, "sessionStorage", {
+      configurable: true,
+      value: {
+        getItem: () => null,
+        setItem: () => {
+          throw new DOMException("Storage is unavailable", "QuotaExceededError");
+        },
+      },
     });
 
     render(<MerekaSiteLoader buildFlag />);
 
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
     expect(document.documentElement.style.overflow).toBe("");
-    setItem.mockRestore();
+    Object.defineProperty(window, "sessionStorage", { configurable: true, value: originalStorage });
   });
 });

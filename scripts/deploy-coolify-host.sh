@@ -97,10 +97,7 @@ prod_dir="/data/coolify/applications/${app_uuid}"
 staging_dir="/data/coolify/applications/oriental-staging"
 ga_measurement_id="${NEXT_PUBLIC_GA_MEASUREMENT_ID:-}"
 google_site_verification="${NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION:-}"
-brand_motion_preview="false"
-if [[ "$target" == "staging" ]]; then
-  brand_motion_preview="true"
-fi
+brand_motion_enabled="true"
 
 if [[ ! "$ga_measurement_id" =~ ^G-[A-Z0-9]+$ ]]; then
   echo "NEXT_PUBLIC_GA_MEASUREMENT_ID must be supplied by the managed application environment." >&2
@@ -186,10 +183,7 @@ voice_model_cell="$9"
 voice_picker_mode="${10}"
 ga_measurement_id="${11}"
 google_site_verification="${12}"
-brand_motion_preview="false"
-if [[ "$target" == "staging" ]]; then
-  brand_motion_preview="true"
-fi
+brand_motion_enabled="true"
 short="${sha:0:7}"
 mirror="${remote_cache_dir}/repo.git"
 worktrees="${remote_cache_dir}/worktrees"
@@ -347,11 +341,11 @@ then
   exit 1
 fi
 
-echo "building_image=${image} voice_model_cell=${voice_model_cell} voice_picker_mode=${voice_picker_mode} brand_motion_preview=${brand_motion_preview} analytics_configured=true search_verification_configured=true"
+echo "building_image=${image} voice_model_cell=${voice_model_cell} voice_picker_mode=${voice_picker_mode} brand_motion_enabled=${brand_motion_enabled} analytics_configured=true search_verification_configured=true"
 DOCKER_BUILDKIT=1 docker build \
   --build-arg "NEXT_PUBLIC_GA_MEASUREMENT_ID=${ga_measurement_id}" \
   --build-arg "NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION=${google_site_verification}" \
-  --build-arg "NEXT_PUBLIC_BRAND_MOTION_PREVIEW=${brand_motion_preview}" \
+  --build-arg "NEXT_PUBLIC_BRAND_MOTION_ENABLED=${brand_motion_enabled}" \
   --progress=plain \
   -t "$image" \
   "$workdir"
@@ -402,7 +396,7 @@ overrides = {
     "GIT_SHA": sha,
     "NEXT_PUBLIC_GA_MEASUREMENT_ID": ga_measurement_id,
     "NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION": google_site_verification,
-    "NEXT_PUBLIC_BRAND_MOTION_PREVIEW": "true" if target == "staging" else "false",
+    "NEXT_PUBLIC_BRAND_MOTION_ENABLED": "true",
 }
 if target == "staging":
     # This is the non-secret governed release cell. Infisical's staging

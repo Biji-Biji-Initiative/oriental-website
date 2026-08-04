@@ -145,7 +145,7 @@ export function NebulaM({ connectionStatus, levelsRef, turnPhase }: NebulaMProps
     setWebglReady(false);
     setFallback(false);
 
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)") ?? { matches: false };
     if (reducedMotion.matches || typeof Path2D === "undefined") {
       setFallback(true);
       return;

@@ -45,12 +45,10 @@ describe("Coolify host deploy image cells", () => {
     expect(deployScript).not.toContain("{20,256}");
   });
 
-  it("enables the brand-motion build cell only for staging and forces production off", () => {
-    expect(deployScript).toContain('brand_motion_preview="false"');
-    expect(deployScript).toContain('if [[ "$target" == "staging" ]]');
-    expect(deployScript).toContain('brand_motion_preview="true"');
-    expect(deployScript).toContain(`--build-arg "NEXT_PUBLIC_BRAND_MOTION_PREVIEW=\${brand_motion_preview}"`);
-    expect(deployScript).toContain('"NEXT_PUBLIC_BRAND_MOTION_PREVIEW": "true" if target == "staging" else "false"');
+  it("keeps the approved Mereka M enabled in both governed public deploy targets", () => {
+    expect(deployScript).toContain('brand_motion_enabled="true"');
+    expect(deployScript).toContain(`--build-arg "NEXT_PUBLIC_BRAND_MOTION_ENABLED=\${brand_motion_enabled}"`);
+    expect(deployScript).toContain('"NEXT_PUBLIC_BRAND_MOTION_ENABLED": "true"');
   });
 
   it("requires optimistic concurrency and a host lock for shared staging", () => {
@@ -187,7 +185,7 @@ printf '{"ok":true,"version":"%s"}\n' "$TEST_PREVIOUS_SHA"
     expect(deployScript).toContain('"VOICE_REASONING_CELL": "low"');
     expect(deployScript).toContain('"VOICE_EMAIL_CAPTURE_MODE": "adaptive"');
     expect(deployScript).toContain('"VOICE_VARIANT_PICKER": "true" if voice_picker_mode == "audition" else "false"');
-    expect(deployScript).toContain("NEXT_PUBLIC_BRAND_MOTION_PREVIEW");
+    expect(deployScript).toContain("NEXT_PUBLIC_BRAND_MOTION_ENABLED");
     expect(deployScript).toContain('backup_env="$target_dir/.env.deploy-backup-$' + '{timestamp}"');
     expect(deployScript).toContain('cp -p "$target_dir/.env" "$backup_env"');
     expect(deployScript).toContain("os.replace(temporary, path)");
@@ -227,7 +225,7 @@ printf '{"ok":true,"version":"%s"}\n' "$TEST_PREVIOUS_SHA"
       expect(env).toContain("VOICE_VARIANT_PICKER=false");
       expect(env).toContain("NEXT_PUBLIC_GA_MEASUREMENT_ID=G-ABC123DEF4");
       expect(env).toContain(`NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION=${"a".repeat(32)}`);
-      expect(env).toContain("NEXT_PUBLIC_BRAND_MOTION_PREVIEW=true");
+      expect(env).toContain("NEXT_PUBLIC_BRAND_MOTION_ENABLED=true");
       expect(env).toContain("UNRELATED=preserved");
       expect(statSync(resolve(directory, "docker-compose.yaml")).mode & 0o777).toBe(0o640);
       expect(statSync(resolve(directory, ".env")).mode & 0o777).toBe(0o600);

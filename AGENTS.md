@@ -214,10 +214,10 @@ clean candidate staging deployment with `--staging-model-cell candidate` and
 `--voice-picker-mode audition` staging option exposes the voice-register picker
 for human audition only; it is never model-promotion evidence. Production
 always rejects audition mode. The Mereka M nebula and public entrance loader
-are a staging-only preview gated by both `NEXT_PUBLIC_BRAND_MOTION_PREVIEW=true`
-at build time and the exact staging/local hostname. The reviewed production path
-must render the legacy orb and no Trace entrance even if one side of that gate
-is misconfigured; deploying it is outside the current staging-only release.
+are the approved public identity, enabled by default for the exact canonical
+staging, production, and local hosts. `NEXT_PUBLIC_BRAND_MOTION_ENABLED=false`
+is an emergency visual rollback only. The legacy orb is not a production
+fallback. Admin/API and reduced-motion loads continue to omit the entrance.
 The entrance treatment is non-interactive, never locks scrolling, appears at
 most once per tab, lasts no more than 700 ms, and is skipped for admin/API and
 reduced-motion loads; internal admin navigation must use the Next router.

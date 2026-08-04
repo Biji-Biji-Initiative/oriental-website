@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { VoiceSessionStage } from "@/components/voice-agent/VoiceSessionStage";
@@ -6,7 +6,7 @@ import { getSegment } from "@/lib/segments";
 import { emptyCapturedLead } from "@/lib/voice/realtime-events";
 
 describe("VoiceSessionStage", () => {
-  it("keeps the visual live caption hidden from assistive tech and before the primary action", () => {
+  it("keeps the visual live caption hidden from assistive tech and before the primary action", async () => {
     const { container } = render(
       <VoiceSessionStage
         activeTopicId={null}
@@ -34,9 +34,9 @@ describe("VoiceSessionStage", () => {
     const orb = container.querySelector<HTMLElement>("[data-voice-stage-orb]");
     if (!caption || !action || !composer || !orb) throw new Error("Listening stage is incomplete");
 
-    expect(orb).toHaveAttribute("data-renderer", "production-orb");
-    expect(orb.querySelector(".voice-orb__aurora")).toBeInTheDocument();
-    expect(orb.querySelector('[data-nebula-m="true"]')).not.toBeInTheDocument();
+    expect(orb).toHaveAttribute("data-renderer", "nebula-m");
+    expect(orb.querySelector(".voice-orb__aurora")).not.toBeInTheDocument();
+    await waitFor(() => expect(orb.querySelector(".mereka-nebula")).toBeInTheDocument());
     expect(caption).toHaveTextContent("A live answer that remains visible while Reka is speaking.");
     expect(caption).toHaveAttribute("aria-hidden", "true");
     expect(caption.compareDocumentPosition(action) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

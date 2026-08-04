@@ -35,11 +35,11 @@ cannot affect the runtime image.
   production MUST use the same source SHA. Shared staging may move afterward
   for another controlled experiment; its live SHA must never be inferred from
   production or a historical document. Image tags remain distinct for release
-  ownership. While the brand-motion preview is under staging approval, the
-  Mereka M nebula and non-blocking, once-per-tab Trace entrance require both
-  the public build flag and exact staging/local hostname. A production build
-  from the reviewed source retains the legacy orb and no Trace entrance.
-  Admin/API and reduced-motion loads omit the entrance treatment everywhere.
+  ownership. The approved Mereka M nebula and non-blocking, once-per-tab Trace
+  entrance require the exact canonical staging, production, or local hostname.
+  `NEXT_PUBLIC_BRAND_MOTION_ENABLED=false` is reserved for emergency visual
+  rollback; the production default is the M, never the legacy orb. Admin/API
+  and reduced-motion loads omit the entrance treatment everywhere.
 - `staging.oriental.mereka.io` and `oriental.mereka.io` are canonical. The
   `*.deploy.mereka.io` names MUST remain redirects only.
 - Cloudflare MUST remain authoritative DNS only; Coolify Traefik terminates TLS.
