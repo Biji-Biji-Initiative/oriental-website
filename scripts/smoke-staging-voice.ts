@@ -244,6 +244,7 @@ async function run() {
     const audioBeforeInterrupt = await remoteAudioState(page);
 
     const interruptionStartedAt = performance.now();
+    const assistantTurnsBeforeMessage = await assistantTranscriptCount(page);
     await page
       .getByLabel("Type a message to Reka")
       .fill(
@@ -257,6 +258,7 @@ async function run() {
     );
     await waitForTurn(page, "listening", "assistant_speaking", 60_000);
     await waitForRemoteAudio(page, 30_000);
+    await waitForAssistantTranscript(page, assistantTurnsBeforeMessage, 60_000);
     const interruptionRecoveryMs = performance.now() - interruptionStartedAt;
     const audioAfterInterrupt = await remoteAudioState(page);
 
@@ -558,6 +560,25 @@ async function waitForTurn(page: Page, status: string, turn?: string, timeout = 
       return orb?.dataset.status === expectedStatus && (!expectedTurn || orb.dataset.turn === expectedTurn);
     },
     { expectedStatus: status, expectedTurn: turn },
+    { timeout },
+  );
+}
+
+async function assistantTranscriptCount(page: Page) {
+  return page
+    .locator('[aria-label="Conversation transcript"] p')
+    .evaluateAll(
+      (entries) => entries.filter((entry) => entry.textContent?.trim().toLowerCase().startsWith("reka:")).length,
+    );
+}
+
+async function waitForAssistantTranscript(page: Page, previousCount: number, timeout: number) {
+  await page.waitForFunction(
+    (before) =>
+      [...document.querySelectorAll<HTMLElement>('[aria-label="Conversation transcript"] p')].filter((entry) =>
+        entry.textContent?.trim().toLowerCase().startsWith("reka:"),
+      ).length > before,
+    previousCount,
     { timeout },
   );
 }
