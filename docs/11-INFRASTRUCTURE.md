@@ -322,11 +322,11 @@ only.
 Current production floor:
 
 - Structured JSON logs from route handlers, visible in Coolify logs. Every
-  event is also retained as a PII-free structured event in Sentry, so its
-  operational history survives a Coolify container replacement. Free-form
-  visitor data, transcripts, contact details, and identifiers remain out of
-  that retained log copy; use the access-controlled session review record when
-  transcript evidence is needed.
+  event is also retained in the 30-day Convex application-log ledger and in a
+  PII-free Sentry summary, so operational history survives a Coolify container
+  replacement. Free-form visitor data, transcripts, contact details, and
+  identifiers remain out of those retained log copies; use the
+  access-controlled session review record when transcript evidence is needed.
 - Sentry Next.js SDK (`sentry.server.config.ts`, `sentry.edge.config.ts`,
   `instrumentation.ts`, `instrumentation-client.ts`) with project
   `oriental-website`.
@@ -364,7 +364,9 @@ temporary ngrok config, and redacts token-like output.
 Current runtime:
 
 - `/api/health` returns `version`, `uptime_s`, and `convex` config presence.
-- Coolify container logs retain stdout/stderr.
+- Coolify container logs provide the live stdout/stderr tail; Convex retains a
+  30-day PII-free structured application-log ledger across container
+  replacements.
 - Route handlers emit structured JSON logs through `lib/server/logger.ts`.
 - Important events include `voice_session.*`, `lead.*`, `newsletter.*`, and
   `rate_limit.redis_fallback`.

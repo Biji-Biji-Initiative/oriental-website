@@ -1,6 +1,9 @@
 export const VOICE_ABANDONED_RETENTION_DAYS = 30;
 export const VOICE_SUBMITTED_RETENTION_DAYS = 90;
 export const ARCHIVED_LEAD_RETENTION_DAYS = 730;
+// Operational log events are kept long enough to investigate a rollout or a
+// conversation failure, but never become an indefinite shadow CRM.
+export const APPLICATION_LOG_RETENTION_DAYS = 30;
 
 export const RETENTION_BATCH_LIMITS = {
   expiredVoiceSessions: 24,
@@ -9,6 +12,7 @@ export const RETENTION_BATCH_LIMITS = {
   relatedRecordsPerLead: 24,
   legacyVoiceSessions: 4,
   legacyLeads: 4,
+  applicationLogs: 200,
   privacyMatches: 100,
 } as const;
 
@@ -40,6 +44,10 @@ export function leadTranscriptRetentionExpiresAt(createdAt: number) {
 
 export function archivedLeadRetentionExpiresAt(archivedAt: number) {
   return archivedAt + daysToMs(ARCHIVED_LEAD_RETENTION_DAYS);
+}
+
+export function applicationLogRetentionExpiresAt(occurredAt: number) {
+  return occurredAt + daysToMs(APPLICATION_LOG_RETENTION_DAYS);
 }
 
 function daysToMs(days: number) {

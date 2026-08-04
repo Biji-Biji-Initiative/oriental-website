@@ -1,5 +1,7 @@
 import * as Sentry from "@sentry/nextjs";
+import { after } from "next/server";
 import { readEnv } from "@/lib/env";
+import { persistApplicationLog, type RetainedApplicationLog } from "@/lib/server/convex";
 
 type LogLevel = "info" | "warn" | "error";
 type LogMeta = Record<string, unknown>;
@@ -51,6 +53,7 @@ function logEvent(level: LogLevel, event: string, meta: LogMeta) {
       extra: { structuredLog: retainedStructuredLog(payload) },
     });
   }
+  scheduleApplicationLogRetention(retainedApplicationLogRecord(payload));
   const line = JSON.stringify(payload);
   if (level === "error") {
     console.error(line);
@@ -78,6 +81,74 @@ export function retainedStructuredLog(payload: LogMeta): LogMeta {
     event: typeof payload.event === "string" ? payload.event : "unknown",
     metadata: retainMetadata(payload),
   };
+}
+
+/**
+ * A durable copy of the exact structured application event. The payload uses
+ * the same PII-free representation sent to Sentry, then travels to Convex so
+ * a Coolify replacement cannot erase operational history. It is deliberately
+ * not a copy of transcripts or raw stdout: those can contain visitor data and
+ * have their own access-controlled conversation retention path.
+ */
+export function retainedApplicationLogRecord(payload: LogMeta, logId = crypto.randomUUID()): RetainedApplicationLog {
+  const retained = retainedStructuredLog(payload);
+  const occurredAt = Date.parse(String(retained.ts));
+  const rawPayload = JSON.stringify(retained);
+  const serialized =
+    rawPayload.length <= 16_000
+      ? rawPayload
+      : JSON.stringify({
+          schema: "oriental.application_log.v1",
+          ts: retained.ts,
+          level: retained.level,
+          service: "oriental-website",
+          version: retained.version,
+          event: retained.event,
+          metadata: { truncated: true },
+        });
+  return {
+    logId,
+    occurredAt: Number.isFinite(occurredAt) ? occurredAt : Date.now(),
+    level: retained.level === "warn" || retained.level === "error" ? retained.level : "info",
+    service: "oriental-website",
+    version: typeof retained.version === "string" ? retained.version : "unknown",
+    event: typeof retained.event === "string" ? retained.event : "unknown",
+    payload: serialized,
+  };
+}
+
+function scheduleApplicationLogRetention(record: RetainedApplicationLog) {
+  const persist = async () => {
+    try {
+      const result = await persistApplicationLog(record);
+      if (result.ok !== true) {
+        writeApplicationLogPersistenceFailure("reason" in result ? result.reason : "convex_rejected");
+      }
+    } catch {
+      writeApplicationLogPersistenceFailure("convex_failed");
+    }
+  };
+
+  // `after` keeps the Next.js request alive for this bounded, independent
+  // write without delaying visitor responses. The fallback is for direct
+  // server calls outside a request scope (including local diagnostics).
+  try {
+    after(persist);
+  } catch {
+    void persist();
+  }
+}
+
+function writeApplicationLogPersistenceFailure(reason: string) {
+  console.warn(
+    JSON.stringify({
+      ts: new Date().toISOString(),
+      level: "warn",
+      service: "oriental-website",
+      event: "application_log.persistence_failed",
+      reason,
+    }),
+  );
 }
 
 function sanitize(value: unknown): unknown {

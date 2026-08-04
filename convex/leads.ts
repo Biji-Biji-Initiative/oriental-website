@@ -4,6 +4,7 @@ import { summarizeAdminLeads } from "../lib/admin-lead-counts";
 import { ADMIN_ACTIVE_LEAD_STATUSES, ADMIN_LEAD_OWNERS, validateAdminLeadWorkflow } from "../lib/admin-workflow";
 import { boundTranscript, normalizeStoredEmail } from "../lib/data-payload";
 import {
+  applicationLogRetentionExpiresAt,
   archivedLeadRetentionExpiresAt,
   leadTranscriptRetentionExpiresAt,
   RETENTION_BATCH_LIMITS,
@@ -29,6 +30,17 @@ const transcriptValidator = v.array(
     text: v.string(),
   }),
 );
+
+const applicationLogLevelValidator = v.union(v.literal("info"), v.literal("warn"), v.literal("error"));
+const applicationLogValidator = v.object({
+  logId: v.string(),
+  occurredAt: v.number(),
+  level: applicationLogLevelValidator,
+  service: v.literal("oriental-website"),
+  version: v.string(),
+  event: v.string(),
+  payload: v.string(),
+});
 
 const entryPointValidator = v.union(
   v.literal("hero_primary"),
@@ -899,20 +911,86 @@ export const recordVoiceSession = mutationGeneric({
   },
 });
 
+/**
+ * Durable counterpart to the application stdout/stderr stream. `payload` is
+ * already produced by the server logger's PII-free retention serializer; this
+ * function still verifies its size and JSON shape so a leaked ingest secret
+ * cannot turn Convex into an unbounded arbitrary-log sink.
+ */
+export const recordApplicationLog = mutation({
+  args: { ingestSecret: v.string(), record: applicationLogValidator },
+  returns: v.object({ ok: v.boolean(), inserted: v.boolean() }),
+  handler: async (ctx, { ingestSecret, record }) => {
+    requireIngestSecret(ingestSecret);
+    if (
+      record.logId.length > 128 ||
+      record.event.length > 160 ||
+      record.version.length > 160 ||
+      record.payload.length > 16_384
+    ) {
+      throw new Error("invalid_application_log");
+    }
+    try {
+      const payload = JSON.parse(record.payload) as unknown;
+      if (!payload || typeof payload !== "object" || Array.isArray(payload)) throw new Error("invalid_application_log");
+    } catch {
+      throw new Error("invalid_application_log");
+    }
+
+    const existing = await ctx.db
+      .query("applicationLogs")
+      .withIndex("by_log_id", (query) => query.eq("logId", record.logId))
+      .unique();
+    if (existing) return { ok: true, inserted: false };
+
+    await ctx.db.insert("applicationLogs", {
+      ...record,
+      retentionExpiresAt: applicationLogRetentionExpiresAt(record.occurredAt),
+    });
+    return { ok: true, inserted: true };
+  },
+});
+
+export const adminApplicationLogs = queryGeneric({
+  args: { ingestSecret: v.string(), limit: v.optional(v.number()) },
+  handler: async (ctx, { ingestSecret, limit }) => {
+    requireIngestSecret(ingestSecret);
+    const take = Math.min(Math.max(Math.floor(limit ?? 100), 1), 200);
+    return await ctx.db.query("applicationLogs").withIndex("by_occurred_at").order("desc").take(take);
+  },
+});
+
 export const applyDataRetention = mutation({
   args: { ingestSecret: v.string(), now: v.number() },
   returns: v.object({
-    deleted: v.object({ archivedLeads: v.number(), leadEvents: v.number(), voiceSessions: v.number() }),
+    deleted: v.object({
+      applicationLogs: v.number(),
+      archivedLeads: v.number(),
+      leadEvents: v.number(),
+      voiceSessions: v.number(),
+    }),
     redacted: v.object({ leadTranscripts: v.number() }),
     hasMore: v.boolean(),
   }),
   handler: async (ctx, { ingestSecret, now }) => {
     requireIngestSecret(ingestSecret);
+    let applicationLogs = 0;
     let voiceSessions = 0;
     let archivedLeads = 0;
     let leadEvents = 0;
     let leadTranscripts = 0;
     let hasMore = false;
+
+    const expiredApplicationLogs = await ctx.db
+      .query("applicationLogs")
+      .withIndex("by_retention_expires_at", (query) => query.lte("retentionExpiresAt", now))
+      .order("asc")
+      .take(RETENTION_BATCH_LIMITS.applicationLogs + 1);
+    if (expiredApplicationLogs.length > RETENTION_BATCH_LIMITS.applicationLogs) hasMore = true;
+    for (const log of expiredApplicationLogs.slice(0, RETENTION_BATCH_LIMITS.applicationLogs)) {
+      await ctx.db.delete(log._id);
+      applicationLogs += 1;
+    }
 
     // Backfill only a handful of legacy documents per mutation. Queries used by
     // the live dashboard stay byte-safe while old near-limit documents are
@@ -1054,7 +1132,7 @@ export const applyDataRetention = mutation({
     }
 
     return {
-      deleted: { archivedLeads, leadEvents, voiceSessions },
+      deleted: { applicationLogs, archivedLeads, leadEvents, voiceSessions },
       redacted: { leadTranscripts },
       hasMore,
     };

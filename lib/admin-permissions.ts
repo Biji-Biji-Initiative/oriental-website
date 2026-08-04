@@ -13,6 +13,7 @@ export const ADMIN_PERMISSIONS = [
   "voice.read",
   "voice.follow_up",
   "evals.run",
+  "ops.logs.read",
   "ops.sla_check",
   "ops.retention",
   "privacy.delete",

@@ -9,6 +9,7 @@ import adminDashboardFixture from "@/tests/fixtures/admin-dashboard.critical.jso
 
 const convex = vi.hoisted(() => ({
   getAdminAggregateMetrics: vi.fn(),
+  getAdminApplicationLogs: vi.fn(),
   getAdminLeadTable: vi.fn(),
   getAdminReviewDashboard: vi.fn(),
 }));
@@ -65,6 +66,7 @@ describe("full-access admin password dashboard", () => {
     if (!login.ok) throw new Error(`Test password login failed: ${login.reason}`);
     nextHeaders.cookieValue = createAdminLoginSession(login, Date.now()).cookie;
     convex.getAdminAggregateMetrics.mockReset();
+    convex.getAdminApplicationLogs.mockReset();
     convex.getAdminLeadTable.mockReset();
     convex.getAdminReviewDashboard.mockReset();
     convex.getAdminAggregateMetrics.mockResolvedValue({
@@ -75,6 +77,7 @@ describe("full-access admin password dashboard", () => {
       },
     });
     convex.getAdminLeadTable.mockRejectedValue(new Error("lead-table fallback fixture"));
+    convex.getAdminApplicationLogs.mockResolvedValue({ ok: true, logs: [] });
     convex.getAdminReviewDashboard.mockResolvedValue({
       ok: true,
       data: adminDashboardFixture,
