@@ -1,0 +1,30 @@
+name: oriental-realtime-2-1-voice-quality
+description: Exact-tree ship review for the Realtime 2.1 voice-quality release
+
+documents:
+  readme: .apr/evidence/oriental-realtime-2-1-voice-quality.md
+  spec: .apr/specs/oriental-realtime-2-1-voice-quality.md
+  implementation: components/voice-agent/useVoiceRuntime.ts
+
+oracle:
+  model: "gpt-5.6-sol"
+
+rounds:
+  output_dir: .apr/rounds/oriental-realtime-2-1-voice-quality
+  impl_every_n: 1
+
+template: |
+  Review the exact Realtime 2.1 voice-quality release contract adversarially.
+  Verify that it preserves production control/candidate provenance, direct
+  clear-all safety, local-memory revocation, calm spoken behavior, visual
+  quality, and an explicit one-time release migration boundary. End with
+  exactly `VERDICT: MERGE FOR RELEASE` or `VERDICT: DO NOT MERGE`.
+
+template_with_impl: |
+  Review the attached implementation, evidence, and contract adversarially.
+  Trace the direct completed-transcription clear fallback through its existing
+  reducer and callback boundary. Treat a clear from negated or question-only
+  speech, a fabricated provider call/result, stale capture restoration, a
+  production candidate/picker leak, a visual safety regression, or an
+  unscoped prior-model release bypass as a blocker. End with exactly
+  `VERDICT: MERGE FOR RELEASE` or `VERDICT: DO NOT MERGE`.
