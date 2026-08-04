@@ -70,6 +70,9 @@ describe("release governance", () => {
     expect(adminReleaseVerifier).toContain('"--grep=@release"');
     expect(adminReleaseVerifier).toContain('"--reporter=json"');
     expect(adminReleaseVerifier).toContain("PLAYWRIGHT_JSON_OUTPUT_FILE: reportPath");
+    expect(adminReleaseVerifier).toContain("const nativePath = playwrightChromium.executablePath()");
+    expect(adminReleaseVerifier).toContain('if (process.platform === "linux")');
+    expect(adminReleaseVerifier).toContain("const serverlessPath = await chromium.executablePath()");
     expect(adminReleaseVerifier).toContain('mkdtempSync(join(tmpdir(), "oriental-admin-release-proof-"))');
     expect(adminReleaseVerifier).toContain(
       "const cleanupReportDirectory = () => rmSync(reportDirectory, { force: true, recursive: true })",

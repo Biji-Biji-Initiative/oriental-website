@@ -1,7 +1,8 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { chromium as playwrightChromium } from "@playwright/test";
 import chromium from "@sparticuz/chromium";
 import { validatedAdminReleaseOrigin } from "./lib/admin-release-proof";
 
@@ -38,6 +39,25 @@ function terminationReason(result: ReturnType<typeof spawnSync>) {
   return result.status === null ? `signal=${result.signal ?? "unknown"}` : `exit=${result.status}`;
 }
 
+async function releaseBrowserPath() {
+  const configuredPath = process.env.PLAYWRIGHT_CHROMIUM_PATH;
+  if (configuredPath) {
+    if (!existsSync(configuredPath)) throw new Error("Configured PLAYWRIGHT_CHROMIUM_PATH does not exist");
+    return configuredPath;
+  }
+
+  const nativePath = playwrightChromium.executablePath();
+  if (existsSync(nativePath)) return nativePath;
+
+  // @sparticuz/chromium distributes a Linux binary. It is the CI fallback,
+  // never the default for a developer macOS/Windows release proof.
+  if (process.platform === "linux") {
+    const serverlessPath = await chromium.executablePath();
+    if (existsSync(serverlessPath)) return serverlessPath;
+  }
+  throw new Error("Admin release proof needs an installed Playwright Chromium browser");
+}
+
 function unexpectedTestTitles(report: PlaywrightJsonReport) {
   const titles = new Set<string>();
   const visit = (suite: PlaywrightSuite) => {
@@ -58,7 +78,7 @@ async function main() {
   requiredEnvironment("ADMIN_REVIEW_PASSWORD_HMAC");
   requiredEnvironment("E2E_ADMIN_SHARED_PASSWORD");
 
-  const executablePath = process.env.PLAYWRIGHT_CHROMIUM_PATH ?? (await chromium.executablePath());
+  const executablePath = await releaseBrowserPath();
   const reportDirectory = mkdtempSync(join(tmpdir(), "oriental-admin-release-proof-"));
   const reportPath = join(reportDirectory, "playwright-report.json");
   const cleanupReportDirectory = () => rmSync(reportDirectory, { force: true, recursive: true });
