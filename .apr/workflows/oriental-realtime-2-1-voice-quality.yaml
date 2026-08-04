@@ -7,7 +7,7 @@ documents:
   implementation: components/voice-agent/useVoiceRuntime.ts
 
 oracle:
-  model: "gpt-5.6-sol"
+  model: "gemini-3.5-flash"
 
 rounds:
   output_dir: .apr/rounds/oriental-realtime-2-1-voice-quality
