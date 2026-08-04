@@ -206,12 +206,11 @@ on the same Coolify app host under
 `/data/coolify/applications/oriental-staging`. Staging images use the distinct
 `mtrl2z6a7zvoyevxvufpntij:staging-<sha>` tag while production uses
 `mtrl2z6a7zvoyevxvufpntij:<sha>`; the distinct tags isolate release ownership,
-while the approved Mereka M nebula and public entrance treatment are built only
-into the staging preview cell. Production builds force the public preview flag
-off, and the client additionally requires the exact staging/local hostname;
-a production build from this source retains the legacy orb and no Trace
-entrance. Deploying that fallback is outside the current staging-only release.
-The staging entrance treatment is
+while the approved Mereka M nebula and public entrance treatment are built into
+both canonical public cells. The client requires the exact staging, production,
+or local hostname, and `NEXT_PUBLIC_BRAND_MOTION_ENABLED=false` is reserved for
+an emergency visual rollback; production does not fall back to the legacy orb.
+The entrance treatment is
 non-interactive, never locks scrolling, runs once per tab for no more than 700
 ms, and is omitted on admin/API and reduced-motion loads. Staging is routed through the Coolify
 Traefik network with `coolify.managed=false`, so it is host-managed rather than

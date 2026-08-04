@@ -8,7 +8,7 @@ import { MiniOrb } from "@/components/orb/MiniOrb";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { Input } from "@/components/ui/input";
-import { BRAND_MOTION_PREVIEW_ENABLED, isBrandMotionPreviewEnabled } from "@/lib/brand-motion";
+import { BRAND_MOTION_ENABLED, isBrandMotionEnabled } from "@/lib/brand-motion";
 import { tourTopics } from "@/lib/content";
 import type { getSegment } from "@/lib/segments";
 import { cn } from "@/lib/utils";
@@ -101,10 +101,10 @@ export function VoiceSessionStage({
   const brandMotionLevelsRef = useRef({ user: 0, voice: 0 });
   const [draft, setDraft] = useState("");
   const showEmailError = emailTouched && emailValid === false;
-  const [brandMotionPreview, setBrandMotionPreview] = useState(false);
+  const [brandMotionEnabled, setBrandMotionEnabled] = useState(BRAND_MOTION_ENABLED);
   const micPermission = useMicrophonePermissionState();
   useEffect(() => {
-    setBrandMotionPreview(isBrandMotionPreviewEnabled(BRAND_MOTION_PREVIEW_ENABLED, window.location.hostname));
+    setBrandMotionEnabled(isBrandMotionEnabled(BRAND_MOTION_ENABLED, window.location.hostname));
   }, []);
   useVoiceAudioLevel(audioRef, orbRef, connectionStatus === "listening", {
     onLevel: (level) => {
@@ -179,15 +179,15 @@ export function VoiceSessionStage({
         <div
           className={cn(
             "voice-orb mt-8 grid size-44 place-items-center sm:size-56",
-            brandMotionPreview && "voice-orb--nebula",
+            brandMotionEnabled && "voice-orb--nebula",
           )}
-          data-renderer={brandMotionPreview ? "nebula-m" : "production-orb"}
+          data-renderer={brandMotionEnabled ? "nebula-m" : "legacy-orb"}
           data-status={connectionStatus}
           data-turn={turnPhase}
           data-voice-stage-orb
           ref={orbRef}
         >
-          {brandMotionPreview ? (
+          {brandMotionEnabled ? (
             <NebulaM connectionStatus={connectionStatus} levelsRef={brandMotionLevelsRef} turnPhase={turnPhase} />
           ) : (
             <>

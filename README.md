@@ -43,15 +43,13 @@ dedicated image build so staging-only client flags can differ safely, but Convex
 still use shared upstream accounts; environment attribution and Redis key namespacing prevent evidence and limiter
 collisions while dedicated staging services remain a separate infrastructure migration.
 
-The Mereka particle M and animated page-entrance loader are staging-only preview
-cells in this source. Its production path retains the legacy orb and no Trace
-entrance; deploying that fallback is outside the current staging-only release.
-Compact voice affordances still reuse the approved mark geometry.
+The Mereka particle M and animated page-entrance loader are the approved public
+identity on both canonical public hosts. Compact voice affordances reuse the
+same approved mark geometry; WebGL failure falls back to that mark.
 `scripts/deploy-coolify-host.sh --target staging --expected-current-sha <current-sha> <candidate-sha>`
-builds with `NEXT_PUBLIC_BRAND_MOTION_PREVIEW=true`; production builds force the
-flag to `false`. The UI also checks the staging hostname before enabling the
-loader. This prevents a staging-only entrance experiment from leaking into
-production or one staging workflow from silently overwriting another.
+builds with `NEXT_PUBLIC_BRAND_MOTION_ENABLED=true` for both canonical public
+targets. The UI still checks canonical staging, production, and local hostnames
+before enabling the treatment, and `false` is reserved for emergency rollback.
 
 Required production variables:
 

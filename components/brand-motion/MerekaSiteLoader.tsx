@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { BRAND_MOTION_PREVIEW_ENABLED, isBrandMotionPreviewEnabled } from "@/lib/brand-motion";
+import { BRAND_MOTION_ENABLED, isBrandMotionEnabled } from "@/lib/brand-motion";
 import { MerekaTraceSpinner } from "./MerekaTraceSpinner";
 
 export const MEREKA_LOADER_HOLD_MS = 450;
@@ -25,8 +25,8 @@ export function shouldShowMerekaSiteLoader(
   );
 }
 
-/** Staging-only, non-blocking, once-per-tab entrance treatment. */
-export function MerekaSiteLoader({ buildFlag = BRAND_MOTION_PREVIEW_ENABLED }: { buildFlag?: boolean } = {}) {
+/** Public, non-blocking, once-per-tab entrance treatment. */
+export function MerekaSiteLoader({ buildFlag = BRAND_MOTION_ENABLED }: { buildFlag?: boolean } = {}) {
   const [phase, setPhase] = useState<LoaderPhase>("hidden");
 
   useEffect(() => {
@@ -38,8 +38,8 @@ export function MerekaSiteLoader({ buildFlag = BRAND_MOTION_PREVIEW_ENABLED }: {
       return;
     }
     const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-    const brandMotionPreview = isBrandMotionPreviewEnabled(buildFlag, window.location.hostname);
-    if (!shouldShowMerekaSiteLoader(window.location.pathname, alreadySeen, reducedMotion, brandMotionPreview)) return;
+    const brandMotionEnabled = isBrandMotionEnabled(buildFlag, window.location.hostname);
+    if (!shouldShowMerekaSiteLoader(window.location.pathname, alreadySeen, reducedMotion, brandMotionEnabled)) return;
 
     try {
       window.sessionStorage.setItem(merekaLoaderSessionKey, "true");

@@ -72,10 +72,10 @@ dimension, and prove the exact staged commit before promotion.
   understanding before a model response.
 - Reduced-motion mode MUST suppress visual animation without disabling audio
   activity measurement.
-- The Mereka M nebula preview MUST render only on staging/local when both the
-  public build flag and exact hostname gate pass. The reviewed source's
-  production path MUST retain the legacy orb and no Trace entrance. Deploying
-  that fallback requires a separate production release decision.
+- The Mereka M nebula MUST render on the canonical staging, production, and
+  local hosts by default. `NEXT_PUBLIC_BRAND_MOTION_ENABLED=false` is an
+  emergency visual rollback only; the production default MUST never be the
+  legacy orb. The Trace entrance follows the same canonical-host gate.
   Missing WebGL or initialization failure MUST retain the canonical SVG
   fallback. The staging entrance treatment MUST be
   non-interactive, never lock scrolling, run at most once per tab for no more
