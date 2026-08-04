@@ -2247,6 +2247,16 @@ function hasAffirmativeClearAllIntent(state: VoiceRuntimeState) {
     latestUserAuthorityText(state),
     /\b(?:clear|delete|remove|erase|forget|wipe|start\s+over)\b/iu,
   );
+  return isExplicitClearAllRequest(text);
+}
+
+/**
+ * Recognise a direct visitor request to reset the handoff. This intentionally
+ * accepts only an unambiguous all-fields request; it is used as the client
+ * fallback when a Realtime model replies conversationally but omits the
+ * required clear_fields tool call.
+ */
+export function isExplicitClearAllRequest(text: string) {
   return isAffirmativeClearIntent(
     text,
     /\b(?:all(?:\s+(?:fields?|details?))?|everything|fields?|details?|form)\b/iu,
@@ -2257,7 +2267,7 @@ function hasAffirmativeClearAllIntent(state: VoiceRuntimeState) {
 function isAffirmativeClearIntent(text: string, object: RegExp, allowStartOver: boolean) {
   if (!text || (!object.test(text) && !(allowStartOver && /\bstart\s+over\b/iu.test(text)))) return false;
   const action = allowStartOver
-    ? "(?:clear|delete|remove|erase|forget|wipe|start\\s+over)"
+    ? "(?:clear(?:\\s+up)?|delete|remove|erase|forget|wipe|start\\s+over)"
     : "(?:clear|delete|remove|erase|forget)";
   const rejects =
     new RegExp(

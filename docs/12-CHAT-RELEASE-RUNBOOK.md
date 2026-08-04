@@ -225,8 +225,9 @@ infisical run \
 
 Managed-environment validation is the default. The clean staging candidate
 requires `baseline/candidate/low/adaptive` with `gpt-realtime-2.1`; production
-requires `baseline/control/low/adaptive` with `gpt-realtime-2`. Both clean
-candidate and production control require the QA picker off. A separately
+requires `baseline/control/low/adaptive` with `gpt-realtime-2.1`. Both clean
+candidate and production control require the QA picker off. The cell labels
+remain release provenance after the 2.1 promotion. A separately
 declared staging audition uses `--picker-mode audition`; it cannot be promotion
 evidence.
 `--allow-unmanaged` exists only

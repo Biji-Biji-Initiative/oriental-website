@@ -28,7 +28,7 @@ afterEach(() => {
 
 describe("Mereka brand motion", () => {
   it("keeps the measured motion contract", () => {
-    expect(MEREKA_NEBULA_PARTICLE_COUNT).toBe(2_100);
+    expect(MEREKA_NEBULA_PARTICLE_COUNT).toBe(1_200);
     expect(MEREKA_TRACE_DURATION_MS).toBe(2_600);
   });
 

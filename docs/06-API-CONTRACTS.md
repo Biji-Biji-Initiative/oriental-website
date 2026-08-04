@@ -274,12 +274,12 @@ type VoiceSessionResponse = {
   ok: true;
   client_secret: { value: string; expires_at: number };
   session_id: string;
-  model: string; // default "gpt-realtime-2"
+  model: string; // default "gpt-realtime-2.1"
   model_cell: "control" | "candidate";
   reasoning_cell: "low" | "minimal";
   email_capture_mode: "strict" | "adaptive";
   voice: string; // source fallback "marin"; production currently "coral"; a selected variant overrides this
-  speed: number; // source fallback 1.18; production currently 1.28; clamped to OpenAI's 0.25..1.5 range
+  speed: number; // source fallback and production 1.18; clamped to OpenAI's 0.25..1.5 range
   variant: string | null; // resolved voice variant id, or null when none selected
   runtime_profile: "baseline" | "instant-v1";
   input_policy: "baseline" | "fast" | "patient";
@@ -314,8 +314,8 @@ Server request:
 
 - `POST https://api.openai.com/v1/realtime/client_secrets`
 - `session.type = "realtime"`
-- `session.model = OPENAI_REALTIME_MODEL ?? "gpt-realtime-2"`
-- candidate model and reasoning combinations are independent controlled cells;
+- `session.model = OPENAI_REALTIME_MODEL ?? "gpt-realtime-2.1"`
+- model-cell and reasoning combinations are independent controlled cells;
   defaults remain `VOICE_MODEL_CELL=control` and `VOICE_REASONING_CELL=low`
 - governed staging and production use `VOICE_EMAIL_CAPTURE_MODE=adaptive`;
   `strict` is the exact-readback/explicit-confirmation rollback
@@ -329,8 +329,8 @@ Server request:
   `far_field` (desktop)
 - `session.audio.output.voice = OPENAI_REALTIME_VOICE ?? "marin"`
 - `session.audio.output.speed = OPENAI_REALTIME_SPEED ?? 1.18`
-- production Infisical/Coolify currently sets `OPENAI_REALTIME_VOICE=coral` and
-  `OPENAI_REALTIME_SPEED=1.28`
+- production Infisical/Coolify sets `OPENAI_REALTIME_VOICE=coral` and
+  `OPENAI_REALTIME_SPEED=1.18`
 - compact prompt under 7 KB and tools from `VOICE_TOOLS`, including partial-safe
   batched `capture_fields`, read-only `lookup_oriental`, and `wait_for_user`
 

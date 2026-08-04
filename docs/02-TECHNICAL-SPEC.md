@@ -13,7 +13,7 @@ Runtime truth for the production build:
 | UI primitives | shadcn/ui | Dialog, Tabs, Input, Textarea, Label, Button, Sonner. |
 | Fonts | `next/font/local` | Self-hosted Poppins and Fraunces files in `public/assets/fonts/`. |
 | Brand assets | Local public assets | Source notes in `docs/ASSET-SOURCES.md`. |
-| Voice | OpenAI Realtime | `gpt-realtime-2` control, `gpt-realtime-2.1` quality candidate, WebRTC, ephemeral client secrets. |
+| Voice | OpenAI Realtime | `gpt-realtime-2.1` in production control and canonical staging; staging retains a candidate cell label for release provenance, WebRTC, ephemeral client secrets. |
 | Data | Convex | `convex/schema.ts`, `convex/leads.ts`, `lib/server/convex.ts`. |
 | Email | SMTP or AWS SESv2 | SMTP preferred when configured; otherwise SESv2 by region. SMTP sends one message to all recipients in a single transaction. |
 | Slack | Bot token + channel id, webhook fallback | Lead mirror to `#tech-team-test` via `SLACK_CHANNEL_ID`; `SLACK_WEBHOOK_URL` is fallback-only. |
@@ -136,13 +136,13 @@ NEXT_PUBLIC_CONVEX_URL=
 CONVEX_URL=
 CONVEX_INGEST_SECRET=
 OPENAI_API_KEY=
-OPENAI_REALTIME_MODEL=gpt-realtime-2
+OPENAI_REALTIME_MODEL=gpt-realtime-2.1
 OPENAI_REALTIME_MODEL_CANDIDATE=gpt-realtime-2.1
 VOICE_MODEL_CELL=control
 VOICE_REASONING_CELL=low
 VOICE_EMAIL_CAPTURE_MODE=adaptive
 OPENAI_REALTIME_VOICE=coral
-OPENAI_REALTIME_SPEED=1.28
+OPENAI_REALTIME_SPEED=1.18
 VOICE_RUNTIME_PROFILE=baseline
 VOICE_VARIANT_PICKER=false
 VOICE_SESSION_DAILY_LIMIT=80
@@ -214,11 +214,11 @@ Session minting:
 
 Defaults:
 
-- model: `OPENAI_REALTIME_MODEL ?? "gpt-realtime-2"`
+- model: `OPENAI_REALTIME_MODEL ?? "gpt-realtime-2.1"`
 - source fallback voice: `OPENAI_REALTIME_VOICE ?? "marin"`
 - production voice: `coral` via Infisical/Coolify
 - source fallback speed: `OPENAI_REALTIME_SPEED ?? 1.18`
-- production speed: `1.28` via Infisical/Coolify
+- production speed: `1.18` via Infisical/Coolify
 - idle timeout: `20s` client timer
 - max session: `600s` typed server-resolved policy by default
 - tools: `set_partner_type`, partial-safe batched `capture_fields`, read-only

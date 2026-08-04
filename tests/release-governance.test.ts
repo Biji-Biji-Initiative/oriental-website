@@ -14,6 +14,7 @@ import {
   CONTROL_VOICE_CELL,
   governedVoiceCell,
   hasCloudflareEdgeHeaders,
+  PREVIOUS_CONTROL_VOICE_CELL,
   RELEASE_TARGETS,
   STAGING_CANDIDATE_AUDITION_VOICE_CELL,
   STAGING_CANDIDATE_VOICE_CELL,
@@ -211,7 +212,7 @@ describe("release governance", () => {
         ...process.env,
         VOICE_RUNTIME_PROFILE: "baseline",
         VOICE_MODEL_CELL: "control",
-        OPENAI_REALTIME_MODEL: "gpt-realtime-2",
+        OPENAI_REALTIME_MODEL: "gpt-realtime-2.1",
         VOICE_REASONING_CELL: "low",
         VOICE_EMAIL_CAPTURE_MODE: "adaptive",
         VOICE_VARIANT_PICKER: "false",
@@ -225,7 +226,7 @@ describe("release governance", () => {
         ...process.env,
         VOICE_RUNTIME_PROFILE: "baseline",
         VOICE_MODEL_CELL: "control",
-        OPENAI_REALTIME_MODEL: "gpt-realtime-2",
+        OPENAI_REALTIME_MODEL: "gpt-realtime-2.1",
         VOICE_REASONING_CELL: "low",
         VOICE_EMAIL_CAPTURE_MODE: "adaptive",
         VOICE_VARIANT_PICKER: "",
@@ -285,7 +286,7 @@ describe("release governance", () => {
     expect(productionDeployer).toContain(
       'readPublicHealth(RELEASE_TARGETS.staging.origin, args.sha, "staging candidate", STAGING_CANDIDATE_VOICE_CELL)',
     );
-    expect(productionDeployer).toContain('"current production",\n    CONTROL_VOICE_CELL');
+    expect(productionDeployer).toContain("await readCurrentProductionHealth(args)");
     expect(productionDeployer).toContain("await waitForHealthyProductionRelease(");
     expect(productionDeployer).toContain('"new production"');
     expect(productionDeployer).toContain(
@@ -607,7 +608,7 @@ describe("release governance", () => {
           voice: {
             runtime_profile: "baseline",
             model_cell: "control",
-            model: "gpt-realtime-2",
+            model: "gpt-realtime-2.1",
             reasoning_cell: "low",
             email_capture_mode: "adaptive",
             variant_picker: false,
@@ -665,7 +666,7 @@ describe("release governance", () => {
       voice: {
         runtime_profile: "baseline",
         model_cell: "control",
-        model: "gpt-realtime-2",
+        model: "gpt-realtime-2.1",
         reasoning_cell: "low",
         variant_picker: false,
       },
@@ -682,9 +683,9 @@ describe("release governance", () => {
         { allowMissingEmailCaptureMode: true },
       ),
     ).toEqual(["health voice email_capture_mode must be adaptive"]);
-    expect(productionDeployer).toContain(
-      '"current production",\n    CONTROL_VOICE_CELL,\n    { allowMissingEmailCaptureMode: true }',
-    );
+    expect(PREVIOUS_CONTROL_VOICE_CELL.model).toBe("gpt-realtime-2");
+    expect(productionDeployer).toContain("await readCurrentProductionHealth(args)");
+    expect(productionDeployer).toContain("--allow-previous-control-model");
   });
 
   it("rejects Cloudflare edge response markers", () => {

@@ -1,10 +1,17 @@
 export const CONTROL_VOICE_CELL = {
   runtimeProfile: "baseline",
   modelCell: "control",
-  model: "gpt-realtime-2",
+  model: "gpt-realtime-2.1",
   reasoningCell: "low",
   emailCaptureMode: "adaptive",
   variantPicker: false,
+} as const;
+
+// This exists only for an explicitly requested, one-time release migration.
+// Normal production checks must continue to require CONTROL_VOICE_CELL.
+export const PREVIOUS_CONTROL_VOICE_CELL = {
+  ...CONTROL_VOICE_CELL,
+  model: "gpt-realtime-2",
 } as const;
 
 export const STAGING_CANDIDATE_VOICE_CELL = {

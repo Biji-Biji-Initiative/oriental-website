@@ -32,7 +32,8 @@ describe("voice profile", () => {
 
   it("keeps the dialed-back register and drops the heavy-Manglish anchors", () => {
     const prompt = buildVoiceInstructions(VOICE_PROFILE);
-    expect(prompt).toContain("never caricatured");
+    expect(prompt).toContain("never caricatured or over-enthusiastic");
+    expect(prompt).toContain("clear up the form");
     expect(prompt).not.toContain("Hi hi");
     expect(prompt).not.toContain("Aiyo");
     expect(prompt).not.toContain("Settle lah");
