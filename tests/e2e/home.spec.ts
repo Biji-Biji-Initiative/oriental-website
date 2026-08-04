@@ -55,7 +55,7 @@ test.beforeEach(async ({ page }) => {
           id: "5a8c25b1-cd50-4e47-89bf-84947c805add",
           token: "review-token-that-is-long-enough-for-e2e",
         },
-        model: "gpt-realtime-2",
+        model: "gpt-realtime-2.1",
         voice: "marin",
         speed: 1.22,
         variant: "kl-polished",

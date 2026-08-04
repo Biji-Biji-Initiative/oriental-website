@@ -12,6 +12,7 @@ import {
   confirmedEmailVerification,
   emptyCapturedLead,
   isBenignVoiceError,
+  isExplicitClearAllRequest,
   isVoiceCaptureIntegrityIssue,
   type RealtimeClientCommand,
   type RealtimeServerEvent,
@@ -256,7 +257,47 @@ export function useVoiceRuntime({
       inputAttributionRef.current = inputAttribution.state;
       const previousErrorCount = stateRef.current.errors?.length ?? 0;
       const previous = stateRef.current;
-      const reduced = reduceRealtimeServerEvent(serverEvent, previous);
+      let reduced = reduceRealtimeServerEvent(serverEvent, previous);
+      const directClearRequest =
+        serverEvent.type === "conversation.item.input_audio_transcription.completed" &&
+        typeof serverEvent.transcript === "string" &&
+        isExplicitClearAllRequest(serverEvent.transcript);
+      if (directClearRequest) {
+        // A clear-all request is a direct, reversible visitor command. Execute
+        // the exact same state transition as clear_fields when the model has
+        // replied conversationally without issuing its required tool call.
+        // Do not fabricate a function result for OpenAI: that call ID does not
+        // exist upstream. The normal context sync below tells the live model
+        // the panel is now empty.
+        const clearResult = reduceRealtimeServerEvent(
+          {
+            type: "response.done",
+            response: {
+              output: [
+                {
+                  type: "function_call",
+                  name: "clear_fields",
+                  call_id: `local-clear-${eventStartedAt}`,
+                  arguments: JSON.stringify({ scope: "all" }),
+                },
+              ],
+            },
+          },
+          reduced.state,
+        );
+        if (clearResult.state.captured.email === "" && clearResult.state.transcript.length === 0) {
+          reduced = { state: clearResult.state, commands: reduced.commands };
+          callbacksRef.current.onClearFields?.();
+          setLocalHandoffContextVersion((version) => version + 1);
+          reportTool(
+            callbacksRef.current.onToolDuration,
+            "clear_fields",
+            eventStartedAt,
+            { ok: true, cleared: true },
+            true,
+          );
+        }
+      }
       reduced.state.fieldProvenance = recordCapturedChanges(
         previous.captured,
         reduced.state.captured,

@@ -77,10 +77,12 @@ const VERTEX_SHADER = `
     vec2 projected = position.xy * (2.22 / depth);
     gl_Position = vec4(projected, clamp(position.z / 3.2, -0.9, 0.9), 1.0);
 
-    float pulse = 0.82 + 0.18 * sin(uTime * 1.6 + aSeed * 32.0);
-    float depthScale = clamp(1.28 - position.z * 0.16, 0.72, 1.55);
-    float audioSpark = uVoice * (2.5 + max(0.0, voiceWave) * 2.2) + uUser * (2.8 + userWave * 1.8);
-    gl_PointSize = (1.1 + aSeed * 2.35 + audioSpark) * uDpr * depthScale * pulse;
+    float pulse = 0.9 + 0.1 * sin(uTime * 1.35 + aSeed * 32.0);
+    float depthScale = clamp(1.18 - position.z * 0.1, 0.82, 1.34);
+    // Audio should animate the M, not turn its individual pixels into large
+    // additive blobs. Keep the energy response below one physical pixel.
+    float audioSpark = uVoice * (0.34 + max(0.0, voiceWave) * 0.18) + uUser * (0.42 + userWave * 0.18);
+    gl_PointSize = (0.68 + aSeed * 1.05 + audioSpark) * uDpr * depthScale * pulse;
 
     vec3 deepBlue = vec3(0.17, 0.34, 0.62);
     vec3 horizon = vec3(0.79, 0.84, 0.93);
@@ -90,7 +92,7 @@ const VERTEX_SHADER = `
     vColor = mix(vColor, cyan, uUser * (0.52 + aSeed * 0.36));
     vColor = mix(vColor, voiceLight, uVoice * (0.32 + max(0.0, voiceWave) * 0.34));
     vEnergy = max(uVoice, uUser);
-    vAlpha = min(1.0, mix(0.52 + aSeed * 0.42, 0.72 + aSeed * 0.28, arrival) + vEnergy * 0.18);
+    vAlpha = min(0.72, mix(0.28 + aSeed * 0.24, 0.4 + aSeed * 0.2, arrival) + vEnergy * 0.08);
   }
 `;
 
@@ -105,9 +107,9 @@ const FRAGMENT_SHADER = `
     float distanceFromCenter = length(gl_PointCoord - vec2(0.5)) * 2.0;
     float core = smoothstep(0.72, 0.05, distanceFromCenter);
     float glow = smoothstep(1.0, 0.12, distanceFromCenter);
-    float alpha = (core * (0.72 + vEnergy * 0.18) + glow * (0.32 + vEnergy * 0.24)) * vAlpha;
+    float alpha = (core * (0.66 + vEnergy * 0.08) + glow * (0.12 + vEnergy * 0.1)) * vAlpha;
     if (alpha < 0.015) discard;
-    gl_FragColor = vec4(vColor * (0.92 + core * 0.38 + vEnergy * 0.22), alpha);
+    gl_FragColor = vec4(vColor * (0.78 + core * 0.18 + vEnergy * 0.1), alpha);
   }
 `;
 

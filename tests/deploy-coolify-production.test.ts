@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { restoreProductionRelease, waitForHealthyProductionRelease } from "../scripts/deploy-coolify-production";
+import {
+  parseProductionReleaseArgs,
+  restoreProductionRelease,
+  waitForHealthyProductionRelease,
+} from "../scripts/deploy-coolify-production";
 import { CONTROL_VOICE_CELL } from "../scripts/lib/release-governance";
 
 const applicationUuid = "oriental-app";
@@ -29,6 +33,22 @@ afterEach(() => {
 });
 
 describe("Coolify production rollback", () => {
+  it("requires an explicit flag before accepting a previous control model", () => {
+    const sha = "b".repeat(40);
+    expect(parseProductionReleaseArgs(["--sha", sha, "--expected-current-sha", previousSha])).toMatchObject({
+      allowPreviousControlModel: false,
+    });
+    expect(
+      parseProductionReleaseArgs([
+        "--sha",
+        sha,
+        "--expected-current-sha",
+        previousSha,
+        "--allow-previous-control-model",
+      ]),
+    ).toMatchObject({ allowPreviousControlModel: true });
+  });
+
   it("waits for control-plane and public health convergence after a finished deployment", async () => {
     let applicationReads = 0;
     let publicReads = 0;
@@ -49,7 +69,7 @@ describe("Coolify production rollback", () => {
             voice: {
               runtime_profile: "baseline",
               model_cell: "control",
-              model: "gpt-realtime-2",
+              model: "gpt-realtime-2.1",
               reasoning_cell: "low",
               email_capture_mode: "adaptive",
               variant_picker: false,
@@ -106,7 +126,7 @@ describe("Coolify production rollback", () => {
           voice: {
             runtime_profile: "baseline",
             model_cell: "control",
-            model: "gpt-realtime-2",
+            model: "gpt-realtime-2.1",
             reasoning_cell: "low",
             email_capture_mode: "adaptive",
             variant_picker: false,
@@ -199,7 +219,7 @@ describe("Coolify production rollback", () => {
           voice: {
             runtime_profile: "baseline",
             model_cell: "control",
-            model: "gpt-realtime-2",
+            model: "gpt-realtime-2.1",
             reasoning_cell: "low",
             email_capture_mode: "adaptive",
             variant_picker: false,

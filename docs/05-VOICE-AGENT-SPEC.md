@@ -144,9 +144,9 @@ claim a handoff succeeded before `route_to_team` returns success.
 
 | Parameter | Value |
 |---|---|
-| Model | `gpt-realtime-2` by default via `OPENAI_REALTIME_MODEL` |
+| Model | `gpt-realtime-2.1` by default via `OPENAI_REALTIME_MODEL` |
 | Voice | Source fallback is `marin`; production is currently `coral` via `OPENAI_REALTIME_VOICE` |
-| Speech speed | Source fallback is `1.18`; production is currently `1.28` via `OPENAI_REALTIME_SPEED`; clamped to OpenAI's supported `0.25` to `1.5` range |
+| Speech speed | Source fallback and production are `1.18` via `OPENAI_REALTIME_SPEED`; clamped to OpenAI's supported `0.25` to `1.5` range |
 | Input audio | Browser-default mic; page load imports the voice bundle and preconnects, but Realtime token minting happens only while permission is currently granted or after the visitor grants a first/expired one-time prompt. The app releases tracks on close. |
 | Session length cap | **10 minutes** by default from the typed policy in `lib/voice/session-policy.ts`; bounded override `VOICE_MAX_DURATION_MS` accepts 1–30 minutes. `/api/voice/session` returns the resolved value to the client. |
 | Turn detection | `baseline` uses semantic VAD `auto`. `instant-v1` uses `high` for normal turns, switches deterministically to `low` after Reka asks for an email, then returns to `high` on the next response. `VOICE_RUNTIME_PROFILE=baseline` is the rollback. |

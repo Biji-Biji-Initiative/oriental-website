@@ -23,7 +23,7 @@ Production microsite for **Oriental Building** partner intake at `oriental.merek
 | UI | Next.js 16 App Router, React 19, Tailwind v4, shadcn/ui (`components/ui/`) |
 | Content | `lib/content.ts` + section components in `components/site/` |
 | Leads | Convex (`convex/schema.ts`, `convex/leads.ts`) via `lib/server/convex.ts` |
-| Voice | OpenAI Realtime over WebRTC; production control is `gpt-realtime-2`, quality candidate is `gpt-realtime-2.1`, ephemeral tokens from `POST /api/voice/session` |
+| Voice | OpenAI Realtime over WebRTC; production control and canonical staging use `gpt-realtime-2.1`, with staging retaining its `candidate` label for release provenance; ephemeral tokens come from `POST /api/voice/session` |
 | Abuse | Optional Turnstile enforcement for form/newsletter posts + Redis-backed rate limits with memory fallback (`lib/server/rate-limit.ts`, re-exported by `security.ts`) |
 | Notify | AWS SES/SMTP + Slack Web API bot token, webhook fallback (`lib/server/notifications.ts`, `lib/server/smtp.ts`) |
 | Observability | Sentry Next.js SDK, structured JSON logs, Slack ops alerts, admin review dashboard |
@@ -226,10 +226,12 @@ browser controls. Client tuner code must fetch that runtime route and fail
 closed; query strings or local storage may hide an allowed picker but must
 never bypass a disabled environment.
 
-Realtime model changes are experiments, not string upgrades. Hold runtime,
-reasoning, voice, device, and scripted corpus constant while comparing
-`gpt-realtime-2` with `gpt-realtime-2.1`. `gpt-realtime-2.1-mini` is a separate
-speed/cost candidate and MUST NOT be combined with that first comparison.
+Realtime model changes are governed releases, not string upgrades. Both the
+production control and canonical staging candidate lanes resolve to
+`gpt-realtime-2.1`; the cell label is release provenance, not a model alias.
+Hold runtime, reasoning, voice, device, and scripted corpus constant for any
+future model change. `gpt-realtime-2.1-mini` is a separate speed/cost candidate
+and MUST NOT be combined with another experiment.
 
 ### APR review (required for release-sensitive changes)
 

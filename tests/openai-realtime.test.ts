@@ -8,7 +8,7 @@ describe("createRealtimeClientSecret", () => {
     process.env = {
       ...originalEnv,
       OPENAI_API_KEY: "sk-test",
-      OPENAI_REALTIME_MODEL: "gpt-realtime-2",
+      OPENAI_REALTIME_MODEL: "gpt-realtime-2.1",
       OPENAI_REALTIME_VOICE: "marin",
       OPENAI_REALTIME_SPEED: "1.12",
     };
@@ -33,7 +33,7 @@ describe("createRealtimeClientSecret", () => {
     expect(result).toEqual({
       client_secret: { value: "client-secret", expires_at: 123 },
       session_id: "sess_123",
-      model: "gpt-realtime-2",
+      model: "gpt-realtime-2.1",
       model_cell: "control",
       reasoning_cell: "low",
       voice: "marin",
@@ -59,7 +59,7 @@ describe("createRealtimeClientSecret", () => {
     expect(body.expires_after).toEqual({ anchor: "created_at", seconds: 300 });
     expect(body.session).toMatchObject({
       type: "realtime",
-      model: "gpt-realtime-2",
+      model: "gpt-realtime-2.1",
       output_modalities: ["audio"],
       reasoning: { effort: "low" },
       audio: {

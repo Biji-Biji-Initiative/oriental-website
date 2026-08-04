@@ -29,7 +29,7 @@ export async function createRealtimeClientSecret(
     // The public production hostname is authoritative. A stale candidate cell
     // in the managed environment must never select the preview model there.
     modelCell: deploymentEnvironment === "production" ? "control" : readEnv("VOICE_MODEL_CELL", "control"),
-    controlModel: readEnv("OPENAI_REALTIME_MODEL", "gpt-realtime-2") ?? "gpt-realtime-2",
+    controlModel: readEnv("OPENAI_REALTIME_MODEL", "gpt-realtime-2.1") ?? "gpt-realtime-2.1",
     candidateModel: readEnv("OPENAI_REALTIME_MODEL_CANDIDATE", "gpt-realtime-2.1") ?? "gpt-realtime-2.1",
     reasoningCell: readEnv("VOICE_REASONING_CELL", "low"),
   });

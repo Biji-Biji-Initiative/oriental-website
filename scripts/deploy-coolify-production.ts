@@ -27,6 +27,7 @@ import {
   CONTROL_VOICE_CELL,
   type GovernedVoiceCell,
   type HealthPayloadValidationOptions,
+  PREVIOUS_CONTROL_VOICE_CELL,
   RELEASE_TARGETS,
   STAGING_CANDIDATE_VOICE_CELL,
   validateHealthPayload,
@@ -38,6 +39,7 @@ const DEFAULT_API_URL = "https://app.coolify.io/api/v1/";
 const DEFAULT_APPLICATION_UUID = "mtrl2z6a7zvoyevxvufpntij";
 
 type Args = {
+  allowPreviousControlModel: boolean;
   sha: string;
   expectedCurrentSha: string;
   pollIntervalMs: number;
@@ -54,8 +56,9 @@ type CoolifyApplication = {
   uuid?: unknown;
 };
 
-function parseArgs(argv: string[]): Args {
+export function parseProductionReleaseArgs(argv: string[]): Args {
   const normalizedArgv = argv.filter((argument) => argument !== "--");
+  let allowPreviousControlModel = false;
   let sha = "";
   let expectedCurrentSha = "";
   let pollIntervalMs = 5_000;
@@ -63,7 +66,9 @@ function parseArgs(argv: string[]): Args {
   for (let index = 0; index < normalizedArgv.length; index += 1) {
     const flag = normalizedArgv[index];
     const value = normalizedArgv[index + 1];
-    if (flag === "--sha") {
+    if (flag === "--allow-previous-control-model") {
+      allowPreviousControlModel = true;
+    } else if (flag === "--sha") {
       sha = value ?? "";
       index += 1;
     } else if (flag === "--expected-current-sha") {
@@ -77,7 +82,7 @@ function parseArgs(argv: string[]): Args {
       index += 1;
     } else if (flag === "--help") {
       process.stdout.write(
-        "Usage: pnpm release:deploy:production -- --sha <40-char-sha> --expected-current-sha <40-char-sha>\n",
+        "Usage: pnpm release:deploy:production -- --sha <40-char-sha> --expected-current-sha <40-char-sha> [--allow-previous-control-model]\n",
       );
       process.exit(0);
     } else {
@@ -96,7 +101,7 @@ function parseArgs(argv: string[]): Args {
     failures.push("timeout must be an integer from 60000 to 1800000 ms");
   }
   if (failures.length > 0) throw new Error(failures.join("; "));
-  return { sha, expectedCurrentSha, pollIntervalMs, timeoutMs };
+  return { allowPreviousControlModel, sha, expectedCurrentSha, pollIntervalMs, timeoutMs };
 }
 
 function requireEnv(name: string): string {
@@ -137,6 +142,38 @@ async function readPublicHealth(
   const payload: unknown = await response.json();
   const failures = validateHealthPayload(payload, expectedSha, expectedVoiceCell, validationOptions);
   if (failures.length > 0) throw new Error(`${label} health: ${failures.join("; ")}`);
+}
+
+async function readCurrentProductionHealth(args: Args) {
+  const validationOptions = { allowMissingEmailCaptureMode: true };
+  try {
+    await readPublicHealth(
+      RELEASE_TARGETS.production.origin,
+      args.expectedCurrentSha,
+      "current production",
+      CONTROL_VOICE_CELL,
+      validationOptions,
+    );
+    return;
+  } catch (controlError) {
+    if (!args.allowPreviousControlModel) throw controlError;
+    try {
+      await readPublicHealth(
+        RELEASE_TARGETS.production.origin,
+        args.expectedCurrentSha,
+        "current production previous-control migration",
+        PREVIOUS_CONTROL_VOICE_CELL,
+        validationOptions,
+      );
+    } catch (previousControlError) {
+      throw new Error(
+        `current production did not match the required control model or the explicitly allowed previous control model: ${errorMessage(controlError)}; previous control: ${errorMessage(previousControlError)}`,
+      );
+    }
+    process.stderr.write(
+      "release-deploy: explicitly accepting the previous control model for this one-time migration\n",
+    );
+  }
 }
 
 export async function waitForHealthyProductionRelease(
@@ -301,7 +338,7 @@ async function waitForDeployment(
 }
 
 async function main() {
-  const args = parseArgs(process.argv.slice(2));
+  const args = parseProductionReleaseArgs(process.argv.slice(2));
   const voiceCellFailures = validateManagedVoiceCell(process.env, CONTROL_VOICE_CELL);
   if (voiceCellFailures.length > 0) {
     throw new Error(`production voice cell: ${voiceCellFailures.join("; ")}`);
@@ -318,13 +355,7 @@ async function main() {
 
   assertFrozenMainCommit(args.sha);
   await readPublicHealth(RELEASE_TARGETS.staging.origin, args.sha, "staging candidate", STAGING_CANDIDATE_VOICE_CELL);
-  await readPublicHealth(
-    RELEASE_TARGETS.production.origin,
-    args.expectedCurrentSha,
-    "current production",
-    CONTROL_VOICE_CELL,
-    { allowMissingEmailCaptureMode: true },
-  );
+  await readCurrentProductionHealth(args);
 
   const assertCurrentProduction = async () => {
     const current = await coolifyRequest<CoolifyApplication>(baseUrl, token, `applications/${applicationUuid}`);

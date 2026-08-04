@@ -3,6 +3,7 @@ import {
   appendTypedUserMessage,
   emptyCapturedLead,
   isBenignVoiceError,
+  isExplicitClearAllRequest,
   reduceRealtimeServerEvent,
   responseHasFunctionCall,
   type VoiceRuntimeState,
@@ -18,6 +19,13 @@ function state(overrides: Partial<VoiceRuntimeState> = {}): VoiceRuntimeState {
 }
 
 describe("reduceRealtimeServerEvent", () => {
+  it("recognises direct all-field clears, including the spoken 'clear up the form' phrasing", () => {
+    expect(isExplicitClearAllRequest("Clear up the form.")).toBe(true);
+    expect(isExplicitClearAllRequest("Please clear everything now.")).toBe(true);
+    expect(isExplicitClearAllRequest("Should I clear the form?")).toBe(false);
+    expect(isExplicitClearAllRequest("Do not clear the form.")).toBe(false);
+  });
+
   it("identifies tool-only response completions so timing waits for the spoken follow-up", () => {
     expect(
       responseHasFunctionCall({

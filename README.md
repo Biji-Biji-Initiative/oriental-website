@@ -2,7 +2,7 @@
 
 > **Coding agents:** start at [`AGENTS.md`](./AGENTS.md) — canonical repo map, conventions, and guardrails. Included in-session via `CLAUDE.md`.
 
-Next.js 16 microsite for the Oriental Building partner-intake launch. The site translates the prototype handoff into a production app with React 19, Tailwind CSS 4, shadcn/ui, Convex lead storage, SES/Slack notifications, and an OpenAI Realtime voice intake flow using `gpt-realtime-2`.
+Next.js 16 microsite for the Oriental Building partner-intake launch. The site translates the prototype handoff into a production app with React 19, Tailwind CSS 4, shadcn/ui, Convex lead storage, SES/Slack notifications, and an OpenAI Realtime voice intake flow using `gpt-realtime-2.1`.
 
 ## Stack
 
@@ -58,13 +58,13 @@ NEXT_PUBLIC_CONVEX_URL=
 CONVEX_URL=
 CONVEX_INGEST_SECRET=
 OPENAI_API_KEY=
-OPENAI_REALTIME_MODEL=gpt-realtime-2
+OPENAI_REALTIME_MODEL=gpt-realtime-2.1
 OPENAI_REALTIME_MODEL_CANDIDATE=gpt-realtime-2.1
 VOICE_MODEL_CELL=control # candidate is an explicit measured release cell
 VOICE_REASONING_CELL=low # minimal is the independent reasoning cell
 VOICE_EMAIL_CAPTURE_MODE=adaptive # strict restores exact readback + explicit confirmation
 OPENAI_REALTIME_VOICE=coral
-OPENAI_REALTIME_SPEED=1.28
+OPENAI_REALTIME_SPEED=1.18
 VOICE_RUNTIME_PROFILE=baseline # rollback-safe default; instant-v1 enables adaptive semantic VAD
 VOICE_SESSION_DAILY_LIMIT=80 # governed integer from 1 to 10000
 VOICE_MAX_DURATION_MS=600000
@@ -173,15 +173,13 @@ Capture-method provenance is a bounded client report protected by signed voice
 session linkage; it is diagnostic evidence, not an independent server
 observation and never qualifies a model/runtime promotion by itself.
 
-Production currently resolves the control cell to `gpt-realtime-2`. The first
-quality candidate is [`gpt-realtime-2.1`](https://developers.openai.com/api/docs/models/gpt-realtime-2.1),
-which OpenAI documents as improving alphanumeric recognition, silence/noise
-handling, and interruption behaviour—all directly relevant to names, email
-dictation, endpointing, and barge-in. The separate
+Production and canonical staging both resolve to [`gpt-realtime-2.1`](https://developers.openai.com/api/docs/models/gpt-realtime-2.1).
+Staging retains its `candidate` model-cell label as release provenance, while
+production remains the `control` cell; neither label changes the selected 2.1
+model. The separate
 [`gpt-realtime-2.1-mini`](https://developers.openai.com/api/docs/models/gpt-realtime-2.1-mini)
-is a faster, lower-cost distilled candidate. Evaluate `2.1` against the current
-control first; do not introduce mini until that single-dimension comparison is
-resolved.
+is a faster, lower-cost distilled candidate and must be evaluated in its own
+staging cell before any promotion.
 
 The latest reviewed corpus (2026-07-16) stitches the newest 100 call rows into
 72 conversations, all on `baseline` / `control` / `low`: 61 legacy, 7 local,
@@ -193,7 +191,7 @@ conversations. The promotion gate is therefore `insufficient_data`. This is
 operational failure evidence, not proof that voice feels instant, multilingual,
 or culturally authentic.
 
-Voice rendering is controlled by environment as well as prompt. `OPENAI_REALTIME_VOICE` must be one of the supported Realtime built-in voices, and `OPENAI_REALTIME_SPEED` is clamped to OpenAI's supported `0.25` to `1.5` range. Source fallback is `marin` at `1.18`; production is currently configured to `coral` at `1.28` so Reka speaks faster and more brightly. Human listening QA still decides whether this is Malaysian enough. Input transcription defaults to `gpt-4o-transcribe` and can be switched (for example to `gpt-realtime-whisper`) with the optional `OPENAI_REALTIME_TRANSCRIPTION_MODEL` variable without a code change.
+Voice rendering is controlled by environment as well as prompt. `OPENAI_REALTIME_VOICE` must be one of the supported Realtime built-in voices, and `OPENAI_REALTIME_SPEED` is clamped to OpenAI's supported `0.25` to `1.5` range. The source speed fallback is `1.18`; production uses `coral` at `1.18` for a relaxed, grounded delivery. Human listening QA still decides whether this is Malaysian enough. Input transcription defaults to `gpt-4o-transcribe` and can be switched (for example to `gpt-realtime-whisper`) with the optional `OPENAI_REALTIME_TRANSCRIPTION_MODEL` variable without a code change.
 
 Server route handlers emit structured JSON logs with `service`, `version`,
 `event`, `requestId`, hashed IP metadata, durations, rate-limit store, and
