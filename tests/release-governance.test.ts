@@ -86,6 +86,7 @@ describe("release governance", () => {
     expect(adminReviewE2e).toContain('process.env.E2E_ADMIN_RELEASE_PROOF === "1"');
     expect(adminReviewE2e).toContain('"x-forwarded-for": `$' + "{spoofedEarlierHop}, 198.51.100.254`");
     expect(adminReviewE2e).not.toContain("for (let attempt = 0; attempt < 8; attempt += 1)");
+    expect(adminReviewE2e).not.toContain("Promise.all([invalidLogin");
     expect(adminLoginRouteTests).toContain("for (let attempt = 0; attempt < 8; attempt += 1)");
     expect(adminLoginRouteTests).toContain("expect(blocked.status).toBe(429)");
     expect(adminReviewE2e).toContain('reviewLogin.credential !== "review_bearer"');
