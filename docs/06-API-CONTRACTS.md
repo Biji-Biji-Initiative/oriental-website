@@ -675,16 +675,16 @@ Errors mirror the other admin routes (`400 invalid_request`, `401/403`, `503 con
 
 Bearer-only maintenance action using the distinct `OPS_AUTOMATION_TOKEN`
 permission `ops.retention`. It applies fixed code-owned windows—30 days for
-unsubmitted voice diagnostics, 90 days for submitted voice diagnostics, and
-90 days for transcript content copied onto submitted leads, then 730 days after
-archival for the remaining lead record plus workflow events. Callers cannot weaken
-or override these windows. Each call is write-bounded and returns PII-free
-aggregate counts.
+unsubmitted voice diagnostics and retained application-log records, 90 days for
+submitted voice diagnostics and transcript content copied onto submitted leads,
+then 730 days after archival for the remaining lead record plus workflow events.
+Callers cannot weaken or override these windows. Each call is write-bounded and
+returns PII-free aggregate counts.
 
 ```ts
 type AdminRetentionResponse = {
   ok: true;
-  deleted: { archivedLeads: number; leadEvents: number; voiceSessions: number };
+  deleted: { applicationLogs: number; archivedLeads: number; leadEvents: number; voiceSessions: number };
   redacted: { leadTranscripts: number };
   hasMore: boolean;
 };
@@ -692,6 +692,15 @@ type AdminRetentionResponse = {
 
 The nightly GitHub Actions job repeats up to ten batches. A remaining backlog
 fails the job rather than silently presenting an incomplete sweep as success.
+
+### `GET /api/admin/logs?limit=100`
+
+Full-password-session-only operational-log review using permission
+`ops.logs.read`. It returns the newest 1–200 PII-free structured records from
+the durable Convex ledger, ordered newest first. Automation bearer credentials,
+review bearer credentials, and lower-privilege interactive sessions receive
+`403`. This is a no-store diagnostic read; it cannot retrieve voice transcripts
+or customer content.
 
 ### `DELETE /api/admin/privacy`
 
@@ -811,10 +820,16 @@ Route handlers emit structured JSON logs to stdout/stderr via
 hashed IP metadata where relevant, durations, rate-limit store, persistence
 status, and notification results. Sensitive keys are redacted by suffix.
 
-Coolify provides the live container tail. The configured Sentry project retains
-a PII-free structured copy of application events across container replacements;
-visitor text, contact details, identifiers, and transcript content are never
-sent in that copy. Current production review therefore combines retained Sentry
-events, Slack ops alerts, API return values, and the access-controlled
-`/admin/session-review` record for full conversation evidence. Prometheus
-counters and PagerDuty alerts are still deferred.
+Coolify provides the live container tail, but it is not the retained source of
+truth. Every structured application event is also serialized to the Convex
+`applicationLogs` ledger and retained for 30 days, independently of container
+replacement. This retained record preserves event identity, timing, numeric and
+boolean diagnostics, request correlation ids, and redacted structured metadata;
+it never stores visitor text, contact details, credentials, or free-form
+provider messages. The full password-backed administrative session can inspect
+the latest retained records at `GET /api/admin/logs` or
+`/admin/session-review?view=audit#application-logs`; automation and lower
+privilege sessions cannot read them. The configured Sentry project remains an
+independent PII-free summary/alert plane. Conversation text remains solely in
+the access-controlled voice-session review record under its own retention
+window. Prometheus counters and PagerDuty alerts are still deferred.

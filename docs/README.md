@@ -50,7 +50,10 @@ disagree on intent, this doc wins.
 - **Database** — Convex for launch lead and lead-event persistence.
 - **Email** — AWS SES/SMTP fallback (transactional). Slack mirror to `#tech-team-test` through bot-token delivery for smoke testing, webhook fallback only.
 - **Rate limiting** — Redis-backed shared limiter in production, memory fallback only for local/degraded mode.
-- **Observability** — structured JSON route logs in Coolify, Sentry project `oriental-website`, Slack ops alerts to `#tech-team-test`, and token-gated `/admin/session-review`.
+- **Observability** — live structured JSON route logs in Coolify plus a
+  30-day Convex retained application-log ledger, Sentry project
+  `oriental-website`, Slack ops alerts to `#tech-team-test`, and
+  password-admin-gated `/admin/session-review`.
 - **3D** — Not installed in the current runtime; `MerekaMiniMark` is the canonical SVG mark. Prototype R3F notes are reference-only.
 - **No auth** on the public site. Internal CRM is a separate workstream.
 

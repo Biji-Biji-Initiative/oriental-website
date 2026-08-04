@@ -13,6 +13,16 @@ import type {
 import type { NotificationResult, StoredLead } from "@/lib/server/notifications";
 import { isVoiceAvailabilityFailure } from "@/lib/voice/realtime-call-failure";
 
+export type RetainedApplicationLog = {
+  logId: string;
+  occurredAt: number;
+  level: "info" | "warn" | "error";
+  service: "oriental-website";
+  version: string;
+  event: string;
+  payload: string;
+};
+
 export async function persistLead(lead: StoredLead) {
   const convexUrl = readEnv("CONVEX_URL") ?? readEnv("NEXT_PUBLIC_CONVEX_URL");
   const ingestSecret = readEnv("CONVEX_INGEST_SECRET");
@@ -166,6 +176,32 @@ export async function persistVoiceReviewSnapshot(input: VoiceReviewSnapshotReque
     }
     throw error;
   }
+}
+
+/**
+ * Persist the server logger's already-scrubbed record to the same durable data
+ * plane used for voice-session evidence. This intentionally has no fallback
+ * that writes visitor content to a third party: Sentry remains an independent
+ * PII-free summary plane when Convex is unavailable.
+ */
+export async function persistApplicationLog(record: RetainedApplicationLog) {
+  const client = createConvexClient();
+  if (!client) return { ok: false as const, reason: "convex_unconfigured" };
+  return await client.client.mutation(api.leads.recordApplicationLog, {
+    ingestSecret: client.ingestSecret,
+    record,
+  });
+}
+
+export async function getAdminApplicationLogs(limit = 100) {
+  const client = createConvexClient();
+  if (!client) return { ok: false as const, reason: "convex_unconfigured" };
+  const take = Math.min(Math.max(Math.floor(limit), 1), 200);
+  const logs = await client.client.query(api.leads.adminApplicationLogs, {
+    ingestSecret: client.ingestSecret,
+    limit: take,
+  });
+  return { ok: true as const, logs };
 }
 
 function isConvexForwardFieldValidationError(error: unknown) {

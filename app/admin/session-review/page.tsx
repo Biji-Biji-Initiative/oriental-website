@@ -27,7 +27,7 @@ import {
 } from "@/lib/admin-workflow";
 import { getSegment } from "@/lib/segments";
 import { adminCookieName, verifyAdminSessionCookie } from "@/lib/server/admin-auth";
-import { getAdminLeadTable, getAdminReviewDashboard } from "@/lib/server/convex";
+import { getAdminApplicationLogs, getAdminLeadTable, getAdminReviewDashboard } from "@/lib/server/convex";
 import { isBenignVoiceError, type VoiceRuntimeError } from "@/lib/voice/realtime-events";
 import { publicLeadUtm } from "@/lib/voice/submission-evidence";
 import { collapseConversations } from "@/lib/voice-conversation-grouping";
@@ -41,6 +41,8 @@ export const metadata: Metadata = {
 
 type DashboardResult = Awaited<ReturnType<typeof getAdminReviewDashboard>>;
 type DashboardData = Extract<DashboardResult, { ok: true }>["data"];
+type ApplicationLogsResult = Awaited<ReturnType<typeof getAdminApplicationLogs>>;
+type ApplicationLogRow = Extract<ApplicationLogsResult, { ok: true }>["logs"][number];
 type LeadRow = DashboardData["leads"][number];
 type VoiceSessionRow = DashboardData["voiceSessions"][number];
 type LeadEventRow = DashboardData["leadEvents"][number];
@@ -70,10 +72,14 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
   const canRunEvals = hasAdminPermission(auth.role, "evals.run", auth.principal);
   const canUpdateLeads = hasAdminPermission(auth.role, "leads.update", auth.principal);
   const canFollowUpVoice = hasAdminPermission(auth.role, "voice.follow_up", auth.principal);
+  const canReadApplicationLogs = hasAdminPermission(auth.role, "ops.logs.read", auth.principal);
 
-  const [dashboard, leadTable] = await Promise.all([
+  const [dashboard, leadTable, applicationLogs] = await Promise.all([
     getAdminReviewDashboard(100).catch(() => ({ ok: false as const, reason: "convex_failed" })),
     getAdminLeadTable(500).catch(() => ({ ok: false as const, reason: "convex_failed" })),
+    canReadApplicationLogs
+      ? getAdminApplicationLogs(100).catch(() => ({ ok: false as const, reason: "convex_failed" }))
+      : Promise.resolve({ ok: false as const, reason: "forbidden" }),
   ]);
   if (!dashboard.ok) {
     return (
@@ -188,6 +194,7 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
             <AnalyticsPanel data={dashboard.data} />
             <EventsPanel events={dashboard.data.leadEvents} leads={dashboard.data.leads} />
           </section>
+          <ApplicationLogsPanel result={applicationLogs} />
         </DisclosureSection>
       ) : null}
     </AdminShell>
@@ -2038,6 +2045,70 @@ function EventsPanel({ events, leads }: { events: LeadEventRow[]; leads: LeadRow
         ) : null}
       </CardContent>
     </Card>
+  );
+}
+
+function ApplicationLogsPanel({ result }: { result: ApplicationLogsResult }) {
+  if (!result.ok) {
+    return (
+      <Card className="border-white/10 bg-white/[0.04]" id="application-logs">
+        <CardHeader>
+          <CardTitle>Retained application logs</CardTitle>
+          <CardDescription>
+            Durable operational events are available only to the full administrative session. Conversation text remains
+            in its separate review record.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <EmptyState
+            label={result.reason === "forbidden" ? "This session cannot read retained logs." : "Log store unavailable."}
+          />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="border-white/10 bg-white/[0.04]" id="application-logs">
+      <CardHeader>
+        <CardTitle>Retained application logs</CardTitle>
+        <CardDescription>
+          The latest {result.logs.length} structured events are retained in Convex for 30 days, independently of
+          container replacement. Free-form visitor content and credentials are redacted before persistence.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        {result.logs.length === 0 ? <EmptyState label="No retained application events yet." /> : null}
+        {result.logs.map((log) => (
+          <ApplicationLogRow key={log.logId} log={log} />
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ApplicationLogRow({ log }: { log: ApplicationLogRow }) {
+  let formattedPayload = log.payload;
+  try {
+    formattedPayload = JSON.stringify(JSON.parse(log.payload), null, 2);
+  } catch {
+    // The server-side write contract rejects malformed payloads. Retain a safe
+    // fallback so historical data can still be inspected if that contract ever
+    // changes during a future migration.
+  }
+  return (
+    <details className="rounded-lg border border-white/10 bg-white/[0.03]" suppressHydrationWarning>
+      <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 px-3 py-2 marker:hidden">
+        <span className="font-mono text-xs font-semibold text-slate-200">{log.event}</span>
+        <span className="flex items-center gap-2 text-[11px] text-slate-500">
+          <Badge tone={log.level === "error" ? "red" : log.level === "warn" ? "amber" : "blue"}>{log.level}</Badge>
+          {formatDate(log.occurredAt)}
+        </span>
+      </summary>
+      <pre className="max-h-96 overflow-auto border-t border-white/10 p-3 text-xs leading-5 text-slate-400">
+        {formattedPayload}
+      </pre>
+    </details>
   );
 }
 

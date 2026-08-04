@@ -213,6 +213,7 @@ job and a bounded `leads.applyDataRetention` mutation:
 - submitted voice-session diagnostics are deleted after 90 days;
 - transcript content copied onto a lead is stripped after 90 days;
 - archived leads and their workflow events are deleted after 730 days;
+- PII-free structured application-log records are deleted after 30 days;
 - PII-free aggregate analytics can be retained beyond the source-record window.
 
 Each API call deletes a bounded batch and reports `hasMore`; the workflow calls
@@ -224,6 +225,11 @@ copies have been removed and manual email/legacy-copy cleanup has been
 confirmed. It returns counts only and writes a contact-free audit record keyed
 by the operator's request UUID.
 
+The `applicationLogs` ledger is a bounded operational history, not a second
+conversation store: it retains source-generated structured events with
+free-form strings redacted and has no visitor-content index. Its latest records
+are readable only through the full administrative session, and the existing
+bounded retention mutation removes them through the indexed expiry field.
 IP-derived abuse identities are not persisted in Convex. Add richer CRM export
 only once a downstream owner and its own retention contract exist.
 

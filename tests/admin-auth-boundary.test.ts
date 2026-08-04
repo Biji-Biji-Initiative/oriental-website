@@ -38,6 +38,7 @@ const canonicalAdminRoutePermissions = {
   "app/api/admin/leads/archive/route.ts": { POST: "leads.archive" },
   "app/api/admin/leads/bulk/route.ts": { POST: "leads.bulk_assign" },
   [adminLoginRoute]: { POST: "login" },
+  "app/api/admin/logs/route.ts": { GET: "ops.logs.read" },
   "app/api/admin/logout/route.ts": { POST: "session.logout" },
   "app/api/admin/metrics/route.ts": { GET: "dashboard.aggregate" },
   "app/api/admin/privacy/route.ts": { DELETE: "privacy.delete" },
