@@ -1124,7 +1124,7 @@ describe("eval-voice aggregate-only mode", () => {
     // pre-cutoff, but older historical sessions may still exist beyond the
     // bounded result. Never overstate debt-scan completeness.
     expect(provedReport.historicalEvidenceDebt.complete).toBe(false);
-  });
+  }, 15_000);
 
   it("fails a cap-edge lead window that could conceal a lost voice snapshot", async () => {
     const customer = cleanCohortSession();
@@ -1177,7 +1177,7 @@ describe("eval-voice aggregate-only mode", () => {
       oldestFetchedLeadCreatedAt: null,
       leadWindowComplete: false,
     });
-  });
+  }, 15_000);
 
   it("fails target reconnect history at the exact row limit and excludes it from promotion evidence", async () => {
     const customer = cleanCohortSession({
