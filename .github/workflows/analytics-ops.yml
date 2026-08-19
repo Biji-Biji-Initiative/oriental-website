@@ -15,7 +15,7 @@ jobs:
   nightly-evals:
     # Runs on the nightly cron and on manual dispatch; skipped on the hourly tick.
     if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 21 * * *'
-    runs-on: ubuntu-latest
+    runs-on: mereka-k8s-runners
     timeout-minutes: 10
     steps:
       - name: Score recent voice sessions with the LLM judge
@@ -31,7 +31,7 @@ jobs:
 
   nightly-retention:
     if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 21 * * *'
-    runs-on: ubuntu-latest
+    runs-on: mereka-k8s-runners
     timeout-minutes: 10
     steps:
       - name: Delete records that exceeded the published retention windows
@@ -52,7 +52,7 @@ jobs:
 
   sla-check:
     if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 * * * *'
-    runs-on: ubuntu-latest
+    runs-on: mereka-k8s-runners
     timeout-minutes: 5
     steps:
       - name: Sweep lead ownership SLA
