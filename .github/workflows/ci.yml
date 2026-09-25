@@ -1,5 +1,10 @@
 name: CI
 
+# This job serves pull_request, so it executes PR-authored source. It must not
+# move to a credentialed self-hosted lane (arc-standard carries cluster/secret
+# authority). Its destination is the ADR-047 fastlane untrusted PR sandbox on
+# Obad, which is built but not yet activated; until then this stays hosted
+# deliberately, not by oversight.
 on:
   pull_request:
   push:
