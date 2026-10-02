@@ -4,10 +4,10 @@ description: Final completion audit for the Oriental Instant Voice Architecture 
 documents:
   readme: AGENTS.md
   spec: .apr/specs/oriental-voice-instant-plan.md
-  implementation: docs/13-VOICE-INSTANT-RELEASE-SPEC.md
+  implementation: .apr/evidence/pre-production-closure.md
 
 oracle:
-  model: "5.2 Thinking"
+  model: "gpt-5.6-sol"
 
 rounds:
   output_dir: .apr/rounds/oriental-voice-instant
@@ -30,12 +30,16 @@ template: |
   remaining steps, if any.
 
 template_with_impl: |
+  This is the canonical recovery pass after the prior remote browser session
+  disconnected without returning any audit content.
+
   Perform a strict final completion audit of the attached Oriental Instant
   Voice Architecture plan against the attached implemented release contract and
   repository guide. Do not redesign the product or add speculative scope. For
-  this canonical pass, use the release contract generated at commit d085cac as
-  the implementation evidence baseline. For
-  every required PR and additional experiment, classify it as complete,
+  this canonical pass, use the post-merge pre-production evidence as the
+  operational implementation baseline and the plan's embedded release-contract
+  evidence as the product contract. For every required PR and additional
+  experiment, classify it as complete,
   partial, not started, intentionally deferred by the plan's own evidence gate,
   or blocked. Cite concrete file/test/operational evidence for every conclusion.
 
@@ -44,5 +48,9 @@ template_with_impl: |
   Treat a conditional "consider" item as properly completed only when the
   implementation or an explicit evidence-gated decision satisfies the original
   condition. Report any contradiction, untested claim, unsafe metric name,
-  missing rollback, or documentation drift. End with the smallest defensible
-  remaining steps, if any.
+  missing rollback, or documentation drift. Specifically look for source-chat
+  feedback omitted by round 1: returning-visitor startup latency, session-route
+  topology, controlled Manglish/Bahasa Melayu/correction evaluation, and quality
+  costs. Decide whether safe-default production web deployment is defensible
+  without enabling the evidence-gated instant-v1 candidate. End with the
+  smallest defensible remaining steps, if any.
