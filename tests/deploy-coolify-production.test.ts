@@ -108,7 +108,7 @@ describe("Coolify production rollback", () => {
       if (url.endsWith(`/applications/${applicationUuid}`)) {
         return jsonResponse(application(deployRequests > 1));
       }
-      if (url.includes(`/deploy?uuid=${applicationUuid}`)) {
+      if (url.includes(`/deploy?uuid=${applicationUuid}`) && init?.method === "POST") {
         deployRequests += 1;
         if (deployRequests === 1) throw new TypeError("response lost after enqueue");
         return jsonResponse({
@@ -161,7 +161,7 @@ describe("Coolify production rollback", () => {
       const url = String(input);
       if (url.endsWith(`/applications/${applicationUuid}`) && init?.method === "PATCH") return jsonResponse(undefined);
       if (url.endsWith(`/applications/${applicationUuid}`)) return jsonResponse(application(true));
-      if (url.includes(`/deploy?uuid=${applicationUuid}`)) {
+      if (url.includes(`/deploy?uuid=${applicationUuid}`) && init?.method === "POST") {
         return jsonResponse({
           deployments: [{ resource_uuid: applicationUuid, deployment_uuid: "rollback-deployment" }],
         });
@@ -190,7 +190,7 @@ describe("Coolify production rollback", () => {
         return jsonResponse(undefined);
       }
       if (url.endsWith(`/applications/${applicationUuid}`)) return jsonResponse(application(true));
-      if (url.includes(`/deploy?uuid=${applicationUuid}`)) {
+      if (url.includes(`/deploy?uuid=${applicationUuid}`) && init?.method === "POST") {
         deployRequests += 1;
         return jsonResponse({
           deployments: [

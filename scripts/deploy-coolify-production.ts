@@ -397,6 +397,7 @@ async function main() {
       baseUrl,
       token,
       `deploy?uuid=${encodeURIComponent(applicationUuid)}&force=false`,
+      { method: "POST" },
     );
     deploymentUuid = deploymentUuidFromDeployResponse(started, applicationUuid);
     deployment = await waitForDeployment(baseUrl, token, deploymentUuid, args.sha, args.pollIntervalMs, args.timeoutMs);
@@ -488,6 +489,7 @@ async function startRollbackDeployment(baseUrl: string, token: string, applicati
         baseUrl,
         token,
         `deploy?uuid=${encodeURIComponent(applicationUuid)}&force=false`,
+        { method: "POST" },
       );
       return deploymentUuidFromDeployResponse(started, applicationUuid);
     } catch (error) {
