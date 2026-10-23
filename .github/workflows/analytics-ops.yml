@@ -16,6 +16,11 @@ jobs:
     # Runs on the nightly cron and on manual dispatch; skipped on the hourly tick.
     if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 21 * * *'
     runs-on: mereka-k8s-runners
+    # One of each at a time: a tick that finds the previous one still running
+    # or queued replaces the older pending run instead of stacking behind it.
+    concurrency:
+      group: oriental-nightly-evals
+      cancel-in-progress: false
     timeout-minutes: 10
     steps:
       - name: Score recent voice sessions with the LLM judge
@@ -32,6 +37,11 @@ jobs:
   nightly-retention:
     if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 21 * * *'
     runs-on: mereka-k8s-runners
+    # One of each at a time: a tick that finds the previous one still running
+    # or queued replaces the older pending run instead of stacking behind it.
+    concurrency:
+      group: oriental-nightly-retention
+      cancel-in-progress: false
     timeout-minutes: 10
     steps:
       - name: Delete records that exceeded the published retention windows
@@ -53,6 +63,11 @@ jobs:
   sla-check:
     if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 * * * *'
     runs-on: mereka-k8s-runners
+    # One of each at a time: a tick that finds the previous one still running
+    # or queued replaces the older pending run instead of stacking behind it.
+    concurrency:
+      group: oriental-sla-check
+      cancel-in-progress: false
     timeout-minutes: 5
     steps:
       - name: Sweep lead ownership SLA
