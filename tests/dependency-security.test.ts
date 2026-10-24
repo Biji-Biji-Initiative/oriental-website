@@ -60,10 +60,10 @@ ${snapshot}
 describe("production dependency security", () => {
   it("pins only the exact vulnerable transitive resolutions", () => {
     expect(manifest.pnpm?.overrides).toEqual({
-      "brace-expansion@>=4.0.0 <5.0.9": "5.0.9",
-      "fast-uri@>=3.0.0 <3.1.5": "3.1.5",
-      "postcss@<8.5.18": "8.5.23",
-      "sharp@0.34.5": "0.35.3",
+      "brace-expansion@>=4.0.0 <5.0.12": "5.0.12",
+      "fast-uri@>=3.0.0 <3.1.9": "3.1.9",
+      "postcss@<8.5.18": "8.5.31",
+      "sharp@0.34.5": "0.35.5",
     });
   });
 
@@ -194,27 +194,27 @@ snapshots: {}
   it("walks every production snapshot edge and excludes dev-only legacy ancestry", () => {
     const productionKeys = collectProductionSnapshotKeys(lockfile);
     expect(governedProductionProblems(lockfile)).toEqual([]);
-    expect(productionKeys.has("brace-expansion@5.0.9")).toBe(true);
-    expect(productionKeys.has("brace-expansion@1.1.15")).toBe(false);
+    expect(productionKeys.has("brace-expansion@5.0.12")).toBe(true);
+    expect(productionKeys.has("brace-expansion@1.1.21")).toBe(false);
     for (const resolution of governedResolutions) {
       expect([...productionKeys].some((key) => key.startsWith(`${resolution.name}@${resolution.patched}`))).toBe(true);
     }
   });
 
   it("pins every intended snapshot edge to its patched resolution", () => {
-    expect(snapshotDependencyReference(lockfile, "minimatch@10.2.5", "brace-expansion")).toBe("5.0.9");
-    expect(snapshotDependencyReference(lockfile, "ajv@8.20.0", "fast-uri")).toBe("3.1.5");
-    const nextSnapshot = [...collectProductionSnapshotKeys(lockfile)].find((key) => key.startsWith("next@16.2.12("));
+    expect(snapshotDependencyReference(lockfile, "minimatch@10.2.5", "brace-expansion")).toBe("5.0.12");
+    expect(snapshotDependencyReference(lockfile, "ajv@8.20.0", "fast-uri")).toBe("3.1.9");
+    const nextSnapshot = [...collectProductionSnapshotKeys(lockfile)].find((key) => key.startsWith("next@16.4.3("));
     expect(nextSnapshot).toBeDefined();
     expect(snapshotDependencyReference(lockfile, nextSnapshot as string, "postcss")).toBe("8.5.23");
-    expect(snapshotDependencyReference(lockfile, nextSnapshot as string, "sharp")).toMatch(/^0\.35\.3(?:\(|$)/u);
+    expect(snapshotDependencyReference(lockfile, nextSnapshot as string, "sharp")).toMatch(/^0\.35\.5(?:\(|$)/u);
   });
 
   it("keeps a patched, reproducible machine-readable production audit required in CI", () => {
     expect(manifest.packageManager).toBe("pnpm@10.34.5");
-    expect(manifest.devDependencies?.yaml).toBe("2.9.0");
+    expect(manifest.devDependencies?.yaml).toBe("2.9.1");
     expect(manifest.devDependencies?.semver).toBe("7.8.5");
-    expect(manifest.devDependencies?.["@types/semver"]).toBe("7.7.1");
+    expect(manifest.devDependencies?.["@types/semver"]).toBe("7.8.0");
     expect(manifest.scripts?.["audit:prod"]).toBe("pnpm audit --prod --audit-level=high --json");
     expect(ciWorkflow).toContain("version: 10.34.5");
     expect(ciWorkflow).toContain("pnpm --version");

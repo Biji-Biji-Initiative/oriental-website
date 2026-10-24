@@ -352,7 +352,7 @@ describe("release governance", () => {
 
   it("uses the documented Coolify deployment trigger and validates its response identity", () => {
     expect(productionDeployer).toMatch(
-      /const started = await coolifyRequest<unknown>\(\s*baseUrl,\s*token,\s*`deploy\?uuid=\$\{encodeURIComponent\(applicationUuid\)\}&force=false`,\s*\);/,
+      /const started = await coolifyRequest<unknown>\(\s*baseUrl,\s*token,\s*`deploy\?uuid=\$\{encodeURIComponent\(applicationUuid\)\}&force=false`,\s*\{ method: "POST" \},\s*\);/,
     );
     expect(productionDeployer).toContain("deploymentUuidFromDeployResponse(started, applicationUuid)");
     expect(productionDeployer).not.toContain("/start?");
