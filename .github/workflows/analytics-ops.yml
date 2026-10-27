@@ -26,7 +26,7 @@ jobs:
       - name: Score recent voice sessions with the LLM judge
         run: |
           set -euo pipefail
-          response=$(curl -sS -X POST "https://oriental.mereka.io/api/admin/evals" \
+          response=$(curl -sS --connect-timeout 10 --max-time 60 -X POST "https://oriental.mereka.io/api/admin/evals" \
             -H "Authorization: Bearer ${{ secrets.OPS_AUTOMATION_TOKEN }}" \
             -H "Content-Type: application/json" \
             -d '{"limit":12}')
@@ -47,8 +47,8 @@ jobs:
       - name: Delete records that exceeded the published retention windows
         run: |
           set -euo pipefail
-          for attempt in $(seq 1 10); do
-            response=$(curl -sS -X POST "https://oriental.mereka.io/api/admin/retention" \
+          for _ in $(seq 1 10); do
+            response=$(curl -sS --connect-timeout 10 --max-time 60 -X POST "https://oriental.mereka.io/api/admin/retention" \
               -H "Authorization: Bearer ${{ secrets.OPS_AUTOMATION_TOKEN }}" \
               -H "Content-Type: application/json" \
               -d '{}')
@@ -73,7 +73,7 @@ jobs:
       - name: Sweep lead ownership SLA
         run: |
           set -euo pipefail
-          response=$(curl -sS -X POST "https://oriental.mereka.io/api/admin/sla-check" \
+          response=$(curl -sS --connect-timeout 10 --max-time 60 -X POST "https://oriental.mereka.io/api/admin/sla-check" \
             -H "Authorization: Bearer ${{ secrets.OPS_AUTOMATION_TOKEN }}" \
             -H "Content-Type: application/json" \
             -d '{"maxUnownedHours":4}')
