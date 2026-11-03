@@ -225,14 +225,6 @@ export function VoiceAgentDialog({
       } as const;
       trackIntakeEvent("intake_submit_attempt", analytics);
       try {
-        if (submissionMethod === "voice_command" && !isVoiceEmailConfirmed(leadState)) {
-          focusCapturedField("email", "route_blocked");
-          toast.error("Please check the highlighted email once.", {
-            description: "Edit it if needed, then press Send enquiry. Reka will not make you spell it out again.",
-          });
-          trackIntakeEvent("intake_submit_failure", { ...analytics, failure_class: "email_check_required" });
-          return { ok: false, error: "voice_email_unconfirmed" };
-        }
         const parsed = leadFormSchema.safeParse(leadState.captured);
         if (!parsed.success) {
           if (submissionMethod === "handoff_button") void formRef.current?.trigger();
@@ -329,7 +321,7 @@ export function VoiceAgentDialog({
         setSubmitting(false);
       }
     },
-    [currentReviewCredentials, focusCapturedField, nextSnapshotSequence],
+    [currentReviewCredentials, nextSnapshotSequence],
   );
 
   const handleClearFields = useCallback(() => {
@@ -346,7 +338,7 @@ export function VoiceAgentDialog({
     onCaptureNeedsAttention: (key) => focusCapturedField(key),
     onClearFields: handleClearFields,
   });
-  const { segment, captured, emailVerification, transcript, stateRef } = runtime;
+  const { segment, captured, emailVerification, localHandoffContextVersion, transcript, stateRef } = runtime;
   const emailValid = leadFormSchema.shape.email.safeParse(captured.email).success;
   const handoffReady = emailValid;
   const markEmailEditorFocused = useCallback(() => {
@@ -658,10 +650,11 @@ export function VoiceAgentDialog({
       segment: stateRef.current.segment,
       captured: stateRef.current.captured,
       emailVerification: stateRef.current.emailVerification,
+      emailCaptureMode: stateRef.current.emailCaptureMode,
     };
     const resumedTranscript = stateRef.current.transcript.slice(-12);
     const knownVisitor = current.captured.name.trim().length > 0 || current.captured.org.trim().length > 0;
-    lastSyncedHandoffRef.current = handoffSyncKey(current);
+    lastSyncedHandoffRef.current = `${handoffSyncKey(current)}:${localHandoffContextVersion}`;
     sendClientEvents([
       serializeHandoffContext(current, undefined, resumedTranscript.length > 0 ? { resumedTranscript } : {}),
       serializeResponseCreate(
@@ -669,7 +662,7 @@ export function VoiceAgentDialog({
       ),
     ]);
     openedVoiceTurnRef.current = true;
-  }, [connectionStatus, sendClientEvents, stateRef]);
+  }, [connectionStatus, localHandoffContextVersion, sendClientEvents, stateRef]);
 
   const handleSendText = useCallback(
     (text: string) => {
@@ -683,15 +676,20 @@ export function VoiceAgentDialog({
 
   useEffect(() => {
     if (connectionStatus !== "listening" || !openedVoiceTurnRef.current) return;
-    const current = { segment, captured, emailVerification };
-    const key = handoffSyncKey(current);
+    const current = {
+      segment: stateRef.current.segment,
+      captured: stateRef.current.captured,
+      emailVerification: stateRef.current.emailVerification,
+      emailCaptureMode: stateRef.current.emailCaptureMode,
+    };
+    const key = `${handoffSyncKey(current)}:${localHandoffContextVersion}`;
     if (key === lastSyncedHandoffRef.current) return;
     const timeout = window.setTimeout(() => {
       lastSyncedHandoffRef.current = key;
       sendClientEvents(serializeHandoffContext(current));
     }, 450);
     return () => window.clearTimeout(timeout);
-  }, [captured, connectionStatus, emailVerification, segment, sendClientEvents]);
+  }, [connectionStatus, localHandoffContextVersion, sendClientEvents, stateRef]);
 
   const postReviewSnapshot = useCallback(
     (
@@ -994,11 +992,14 @@ export function VoiceAgentDialog({
   );
 }
 
-function handoffSyncKey(state: Pick<VoiceRuntimeState, "segment" | "captured" | "emailVerification">) {
+function handoffSyncKey(
+  state: Pick<VoiceRuntimeState, "segment" | "captured" | "emailVerification" | "emailCaptureMode">,
+) {
   return JSON.stringify({
     segment: state.segment,
     captured: state.captured,
     emailVerification: state.emailVerification,
+    emailCaptureMode: state.emailCaptureMode,
   });
 }
 

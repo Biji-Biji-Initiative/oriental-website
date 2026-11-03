@@ -3,6 +3,7 @@ import {
   appendTypedUserMessage,
   emptyCapturedLead,
   isBenignVoiceError,
+  isExplicitClearAllRequest,
   reduceRealtimeServerEvent,
   responseHasFunctionCall,
   type VoiceRuntimeState,
@@ -18,6 +19,49 @@ function state(overrides: Partial<VoiceRuntimeState> = {}): VoiceRuntimeState {
 }
 
 describe("reduceRealtimeServerEvent", () => {
+  it("recognises direct all-field clears, including the spoken 'clear up the form' phrasing", () => {
+    expect(isExplicitClearAllRequest("Clear up the form.")).toBe(true);
+    expect(isExplicitClearAllRequest("Please clear everything now.")).toBe(true);
+    expect(isExplicitClearAllRequest("Should I clear the form?")).toBe(false);
+    expect(isExplicitClearAllRequest("Do not clear the form.")).toBe(false);
+  });
+
+  it("accepts a reducer-confirmed clear after the spoken command is in the transcript", () => {
+    const transcribed = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "clear-form-request",
+        transcript: "Please clear up the form.",
+      },
+      state({ captured: { ...emptyCapturedLead, name: "Gurpreet", email: "person@example.com" } }),
+    );
+    const cleared = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "clear_fields",
+              call_id: "local-clear-proof",
+              arguments: JSON.stringify({ scope: "all" }),
+            },
+          ],
+        },
+      },
+      transcribed.state,
+    );
+
+    expect(cleared.state.captured).toEqual(emptyCapturedLead);
+    expect(cleared.state.transcript).toEqual([]);
+    expect(cleared.commands).toContainEqual(
+      expect.objectContaining({
+        callId: "local-clear-proof",
+        output: expect.objectContaining({ ok: true, cleared: true }),
+      }),
+    );
+  });
+
   it("identifies tool-only response completions so timing waits for the spoken follow-up", () => {
     expect(
       responseHasFunctionCall({
@@ -33,8 +77,23 @@ describe("reduceRealtimeServerEvent", () => {
     expect(typed.captured.email).toBe("asha@example.com");
     expect(typed.emailVerification).toEqual({ value: "asha@example.com", source: "typed", status: "confirmed" });
 
+    const spelled = appendTypedUserMessage(state(), "My email is q a dot nebula at example dot test.");
+    expect(spelled.captured.email).toBe("qa.nebula@example.test");
+    expect(spelled.emailVerification).toEqual({
+      value: "qa.nebula@example.test",
+      source: "typed",
+      status: "confirmed",
+    });
+
     const example = appendTypedUserMessage(state(), "The website uses team@example.com as an example.");
     expect(example.captured.email).toBe("");
+  });
+
+  it("preserves an explicitly spelled name when the visitor continues speaking", () => {
+    const result = appendTypedUserMessage(state(), "My name is G U R P R E E T I am from Mereka.");
+
+    expect(result.captured.name).toBe("Gurpreet");
+    expect(result.captured.email).toBe("");
   });
 
   it("replaces an existing email when the visitor explicitly supplies a new one", () => {
@@ -939,6 +998,58 @@ describe("reduceRealtimeServerEvent", () => {
       capture.state,
     );
     expect(routed.commands).toEqual([{ type: "submit_voice", callId: "call_adaptive_route", segment: "technology" }]);
+  });
+
+  it("keeps an exact adaptive speech email when a later model tool call only approximates it", () => {
+    const committed = reduceRealtimeServerEvent(
+      { type: "input_audio_buffer.committed", item_id: "audio_exact_franz", email_capture_mode: "adaptive" },
+      state(),
+    );
+    const spoken = reduceRealtimeServerEvent(
+      {
+        type: "conversation.item.input_audio_transcription.completed",
+        email_capture_mode: "adaptive",
+        item_id: "audio_exact_franz",
+        transcript: "My email is franz at germany dot my.",
+      },
+      committed.state,
+    );
+
+    expect(spoken.state.emailVerification).toMatchObject({
+      value: "franz@germany.my",
+      source: "speech",
+      status: "confirmed",
+      confidence: "high",
+    });
+
+    const modelCapture = reduceRealtimeServerEvent(
+      {
+        type: "response.done",
+        email_capture_mode: "adaptive",
+        response: {
+          output: [
+            {
+              type: "function_call",
+              name: "capture_field",
+              call_id: "call_model_email_typo",
+              arguments: JSON.stringify({
+                key: "email",
+                value: "frans@germany.my",
+                evidence: "frans at germany dot my",
+              }),
+            },
+          ],
+        },
+      },
+      spoken.state,
+    );
+
+    expect(modelCapture.state.captured.email).toBe("franz@germany.my");
+    expect(modelCapture.state.emailVerification).toMatchObject({ status: "confirmed", confidence: "high" });
+    expect(modelCapture.commands[0]).toMatchObject({
+      createResponse: false,
+      output: { ok: false, error: "stale_response", key: "email" },
+    });
   });
 
   it("keeps an address with spoken number words pending until digit intent is explicit", () => {
@@ -2397,7 +2508,7 @@ describe("reduceRealtimeServerEvent", () => {
         fields: [{ key: "message", mode: "replace" }],
         rejectedFields: [{ index: 1 }],
         detail: { error: "ungrounded_identity_capture", key: "email" },
-        retry: expect.stringContaining("visible email field"),
+        retry: expect.stringContaining("full email address naturally"),
       },
     });
   });
@@ -3370,7 +3481,7 @@ describe("reduceRealtimeServerEvent", () => {
       output: {
         ok: false,
         previousEmailInvalidated: true,
-        nextAction: expect.stringContaining("visible email field"),
+        nextAction: expect.stringContaining("full email naturally"),
       },
     });
 

@@ -119,6 +119,23 @@ export default defineSchema({
     ),
     createdAt: v.number(),
   }).index("by_lead", ["leadId"]),
+  // This is the durable, PII-free application-log plane. The payload is a
+  // bounded JSON representation of the structured log record; visitor text,
+  // contact details, credentials, and free-form provider messages are removed
+  // before it can reach this table.
+  applicationLogs: defineTable({
+    logId: v.string(),
+    occurredAt: v.number(),
+    level: v.union(v.literal("info"), v.literal("warn"), v.literal("error")),
+    service: v.literal("oriental-website"),
+    version: v.string(),
+    event: v.string(),
+    payload: v.string(),
+    retentionExpiresAt: v.number(),
+  })
+    .index("by_log_id", ["logId"])
+    .index("by_occurred_at", ["occurredAt"])
+    .index("by_retention_expires_at", ["retentionExpiresAt"]),
   privacyEvents: defineTable({
     requestId: v.string(),
     reason: v.string(),

@@ -83,6 +83,14 @@ const VIEW_ITEMS: AdminPaletteItem[] = [
     group: "Jump to",
     keywords: "accounts organizations owners workload",
   },
+  {
+    id: "jump-application-logs",
+    label: "Retained application logs",
+    hint: "Cross-container operational history",
+    href: "/admin/session-review?view=audit#application-logs",
+    group: "Jump to",
+    keywords: "logs errors deployment runtime retained container history",
+  },
 ];
 
 function scoreItem(item: AdminPaletteItem, query: string) {

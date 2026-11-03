@@ -274,12 +274,12 @@ type VoiceSessionResponse = {
   ok: true;
   client_secret: { value: string; expires_at: number };
   session_id: string;
-  model: string; // default "gpt-realtime-2"
+  model: string; // default "gpt-realtime-2.1"
   model_cell: "control" | "candidate";
   reasoning_cell: "low" | "minimal";
   email_capture_mode: "strict" | "adaptive";
   voice: string; // source fallback "marin"; production currently "coral"; a selected variant overrides this
-  speed: number; // source fallback 1.18; production currently 1.28; clamped to OpenAI's 0.25..1.5 range
+  speed: number; // source fallback and production 1.18; clamped to OpenAI's 0.25..1.5 range
   variant: string | null; // resolved voice variant id, or null when none selected
   runtime_profile: "baseline" | "instant-v1";
   input_policy: "baseline" | "fast" | "patient";
@@ -314,8 +314,8 @@ Server request:
 
 - `POST https://api.openai.com/v1/realtime/client_secrets`
 - `session.type = "realtime"`
-- `session.model = OPENAI_REALTIME_MODEL ?? "gpt-realtime-2"`
-- candidate model and reasoning combinations are independent controlled cells;
+- `session.model = OPENAI_REALTIME_MODEL ?? "gpt-realtime-2.1"`
+- model-cell and reasoning combinations are independent controlled cells;
   defaults remain `VOICE_MODEL_CELL=control` and `VOICE_REASONING_CELL=low`
 - governed staging and production use `VOICE_EMAIL_CAPTURE_MODE=adaptive`;
   `strict` is the exact-readback/explicit-confirmation rollback
@@ -329,8 +329,8 @@ Server request:
   `far_field` (desktop)
 - `session.audio.output.voice = OPENAI_REALTIME_VOICE ?? "marin"`
 - `session.audio.output.speed = OPENAI_REALTIME_SPEED ?? 1.18`
-- production Infisical/Coolify currently sets `OPENAI_REALTIME_VOICE=coral` and
-  `OPENAI_REALTIME_SPEED=1.28`
+- production Infisical/Coolify sets `OPENAI_REALTIME_VOICE=coral` and
+  `OPENAI_REALTIME_SPEED=1.18`
 - compact prompt under 7 KB and tools from `VOICE_TOOLS`, including partial-safe
   batched `capture_fields`, read-only `lookup_oriental`, and `wait_for_user`
 
@@ -448,24 +448,24 @@ Accepts only a same-origin JSON request and rate-limits attempts by trusted
 proxy identity. It validates either `ADMIN_REVIEW_TOKEN` or the human password
 represented by the domain-separated `ADMIN_REVIEW_PASSWORD_HMAC`, then sets a
 principal-bound signed `oriental_admin` HTTP-only, SameSite=Lax cookie with
-`Path=/`. A password login signs `method=password`, forces role `viewer`, and
-expires after thirty minutes. It can access only the redacted aggregate metrics
-dashboard and logout. Customer records, email addresses, transcripts, voice
-details, and every mutation return `403 forbidden` until a fresh managed review
-token login. A strong review-token login signs `method=review`, retains
-the configured interactive role, and expires after twelve hours. The human
-password is never accepted as bearer auth and never signs sessions; historical
-repository exposure means it is treated as potentially known. Production
-cookies also set `Secure`. Successful login telemetry records only bounded
-actor, method, role, and expiry metadata, never the supplied credential.
+`Path=/`. A password login signs `method=password`, forces role `admin`, and
+expires after thirty minutes. It can access and operate the complete CRM,
+including workflow, voice follow-up, evaluation, maintenance, and privacy
+actions. A strong review-token login signs
+`method=review`, retains the configured interactive role, and expires after
+twelve hours. The human password is never accepted as bearer auth and never
+signs sessions; historical repository exposure means it is treated as
+potentially known. Production cookies also set `Secure`. Successful login
+telemetry records only bounded actor, method, role, and expiry metadata, never
+the supplied credential.
 
 ### `GET /api/admin/review`
 
-Strong review-token bearer or review-session-cookie protected JSON endpoint
-returning recent `leads`, `voiceSessions`, `leadEvents`, aggregate metrics,
-analytics buckets, and queue slices for the internal operations console.
-Password-issued sessions receive `403 forbidden`; they use
-`GET /api/admin/metrics`, which returns only the PII-free `metrics` object.
+Review-token bearer, review-session cookie, or password-session cookie protected
+JSON endpoint returning recent `leads`, `voiceSessions`, `leadEvents`,
+aggregate metrics, analytics buckets, and queue slices for the internal
+operations console. Password-issued admin sessions can also call the
+state-changing routes when cookie requests satisfy same-origin JSON checks.
 
 ### `PATCH /api/admin/leads/[leadId]`
 
@@ -552,11 +552,13 @@ Errors:
 | 409 | `conflict` | At least one revision is stale; none were changed. |
 | 503 | `convex_unconfigured` / `convex_failed` | Convex env is missing or the mutation failed. |
 
-### `PATCH /api/admin/voice-sessions/[reviewId]`
+### `GET|PATCH /api/admin/voice-sessions/[reviewId]`
 
-Interactive bearer-token or same-origin JSON admin-cookie protected mutation
-that marks a recoverable voice
-session as followed up (or moves it back to the queue). Sets or clears
+`GET` requires `voice.read` and is available to password admin sessions for
+transcript and voice-session detail. `PATCH` requires `voice.follow_up`; a
+same-origin password-session or review-session cookie, or interactive
+review-token bearer, can mark a recoverable voice session
+as followed up (or moves it back to the queue), setting or clearing
 `followedUpAt` on the Convex `voiceSessions` row.
 
 ```ts
@@ -637,8 +639,9 @@ Errors:
 
 Bearer-only sweep using the distinct `OPS_AUTOMATION_TOKEN` permission
 `ops.sla_check`, meant for an hourly cron (`.github/workflows/analytics-ops.yml`).
-The route can post to the ops Slack channel, so the read-only viewer role cannot
-run it. A dedicated Convex query reads oldest-first through active-status,
+The route can post to the ops Slack channel. The password admin session can run
+it through a same-origin JSON request; scheduled execution still uses the
+dedicated bearer. A Convex query reads oldest-first through active-status,
 unowned-owner, and failed-notification indexes rather than reusing the recent
 dashboard window. It returns aggregate counts only—no lead IDs, contact fields,
 or transcript content—and posts one throttled ops Slack alert when breached.
@@ -672,16 +675,16 @@ Errors mirror the other admin routes (`400 invalid_request`, `401/403`, `503 con
 
 Bearer-only maintenance action using the distinct `OPS_AUTOMATION_TOKEN`
 permission `ops.retention`. It applies fixed code-owned windows—30 days for
-unsubmitted voice diagnostics, 90 days for submitted voice diagnostics, and
-90 days for transcript content copied onto submitted leads, then 730 days after
-archival for the remaining lead record plus workflow events. Callers cannot weaken
-or override these windows. Each call is write-bounded and returns PII-free
-aggregate counts.
+unsubmitted voice diagnostics and retained application-log records, 90 days for
+submitted voice diagnostics and transcript content copied onto submitted leads,
+then 730 days after archival for the remaining lead record plus workflow events.
+Callers cannot weaken or override these windows. Each call is write-bounded and
+returns PII-free aggregate counts.
 
 ```ts
 type AdminRetentionResponse = {
   ok: true;
-  deleted: { archivedLeads: number; leadEvents: number; voiceSessions: number };
+  deleted: { applicationLogs: number; archivedLeads: number; leadEvents: number; voiceSessions: number };
   redacted: { leadTranscripts: number };
   hasMore: boolean;
 };
@@ -689,6 +692,15 @@ type AdminRetentionResponse = {
 
 The nightly GitHub Actions job repeats up to ten batches. A remaining backlog
 fails the job rather than silently presenting an incomplete sweep as success.
+
+### `GET /api/admin/logs?limit=100`
+
+Full-password-session-only operational-log review using permission
+`ops.logs.read`. It returns the newest 1–200 PII-free structured records from
+the durable Convex ledger, ordered newest first. Automation bearer credentials,
+review bearer credentials, and lower-privilege interactive sessions receive
+`403`. This is a no-store diagnostic read; it cannot retrieve voice transcripts
+or customer content.
 
 ### `DELETE /api/admin/privacy`
 
@@ -808,6 +820,16 @@ Route handlers emit structured JSON logs to stdout/stderr via
 hashed IP metadata where relevant, durations, rate-limit store, persistence
 status, and notification results. Sensitive keys are redacted by suffix.
 
-Current production review path is Coolify container logs, Sentry errors, Slack
-ops alerts, API return values, and `/admin/session-review`. Prometheus counters
-and PagerDuty alerts are still deferred.
+Coolify provides the live container tail, but it is not the retained source of
+truth. Every structured application event is also serialized to the Convex
+`applicationLogs` ledger and retained for 30 days, independently of container
+replacement. This retained record preserves event identity, timing, numeric and
+boolean diagnostics, request correlation ids, and redacted structured metadata;
+it never stores visitor text, contact details, credentials, or free-form
+provider messages. The full password-backed administrative session can inspect
+the latest retained records at `GET /api/admin/logs` or
+`/admin/session-review?view=audit#application-logs`; automation and lower
+privilege sessions cannot read them. The configured Sentry project remains an
+independent PII-free summary/alert plane. Conversation text remains solely in
+the access-controlled voice-session review record under its own retention
+window. Prometheus counters and PagerDuty alerts are still deferred.

@@ -30,7 +30,7 @@ describe("Sentry privacy boundary", () => {
         query_string: "email=visitor%40example.com",
         url: "https://oriental.mereka.io/api/leads?email=visitor%40example.com#private",
       },
-    });
+    } as Record<string, unknown>);
 
     expect(event.user).toBeUndefined();
     expect(event.extra).toBeUndefined();
@@ -77,5 +77,41 @@ describe("Sentry privacy boundary", () => {
 
     expect(event.request).toEqual({ method: "GET" });
     expect(JSON.stringify(event)).not.toContain("visitor@example.com");
+  });
+
+  it("keeps only PII-free structured application logs for cross-container retention", () => {
+    const event = scrubSentryEvent({
+      extra: {
+        structuredLog: {
+          schema: "oriental.application_log.v1",
+          ts: "2026-08-03T00:00:00.000Z",
+          level: "warn",
+          service: "oriental-website",
+          version: "abc123",
+          event: "voice_review.session_errors",
+          metadata: {
+            email: "visitor@example.com",
+            transcript: "private words",
+            errorCode: "voice_capture_rejected_email",
+            count: 2,
+          },
+        },
+      },
+    } as Record<string, unknown>);
+
+    expect(event.message).toBe("log:voice_review.session_errors");
+    expect(event.tags).toMatchObject({ log_kind: "structured", event: "voice_review.session_errors" });
+    expect(event.extra).toEqual({
+      structured_log: expect.objectContaining({
+        metadata: {
+          email: "[redacted]",
+          transcript: "[redacted]",
+          errorCode: "[redacted]",
+          count: 2,
+        },
+      }),
+    });
+    expect(JSON.stringify(event)).not.toContain("visitor@example.com");
+    expect(JSON.stringify(event)).not.toContain("private words");
   });
 });

@@ -72,13 +72,14 @@ export function HandoffPanel({
     >
       <div className="flex items-center justify-between gap-3">
         <div>
-          <div className="text-xs uppercase tracking-[0.16em] text-white/48">Send your enquiry</div>
+          <div className="text-xs uppercase tracking-[0.16em] text-white/48">Talk with Reka</div>
           <p className="mt-2 text-sm leading-5 text-white/58">
-            Email is the only required detail. Everything else is optional.
+            Just speak naturally. Reka captures details as you talk; editing is optional, and email is only needed when
+            you are ready to send.
           </p>
         </div>
         <Chip active={ready} className="py-1">
-          {ready ? "Ready" : "Email needed"}
+          {ready ? "Ready to send" : "Talk first"}
         </Chip>
       </div>
 
@@ -133,8 +134,8 @@ export function HandoffPanel({
                 </FormControl>
                 {emailNeedsConfirmation ? (
                   <FormDescription aria-live="polite" className="text-xs leading-5 text-[#f2d38a]">
-                    Please check this address once. Edit it here if anything looks wrong—Reka will not ask you to spell
-                    it out.
+                    Keep talking if you like. Check or edit this only when you are ready to send—Reka will not ask you
+                    to spell it out.
                   </FormDescription>
                 ) : emailIsConfirmed && emailVerification?.source === "speech" ? (
                   <FormDescription aria-live="polite" className="text-xs leading-5 text-mk-horizon">
@@ -151,7 +152,13 @@ export function HandoffPanel({
             type="submit"
           >
             {submitted ? <CheckIcon data-icon="inline-start" /> : <SendIcon data-icon="inline-start" />}
-            {submitted ? `Sent to ${sentTo}` : submitting ? "Sending..." : ready ? "Send enquiry" : "Add email to send"}
+            {submitted
+              ? `Sent to ${sentTo}`
+              : submitting
+                ? "Sending..."
+                : ready
+                  ? "Send enquiry"
+                  : "Email needed to send"}
           </Button>
           <FormField
             control={form.control}

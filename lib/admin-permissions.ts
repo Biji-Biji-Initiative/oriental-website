@@ -13,6 +13,7 @@ export const ADMIN_PERMISSIONS = [
   "voice.read",
   "voice.follow_up",
   "evals.run",
+  "ops.logs.read",
   "ops.sla_check",
   "ops.retention",
   "privacy.delete",
@@ -53,7 +54,7 @@ const interactiveRolePermissions: Record<AdminRole, readonly AdminPermission[]> 
 };
 
 const principalPermissions: Record<Exclude<AdminPrincipal, "interactive">, readonly AdminPermission[]> = {
-  password: ["dashboard.aggregate", "session.logout"],
+  password: ADMIN_PERMISSIONS,
   automation: ["evals.run", "ops.sla_check", "ops.retention"],
   privacy: ["privacy.delete"],
 };

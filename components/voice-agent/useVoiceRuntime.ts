@@ -12,6 +12,7 @@ import {
   confirmedEmailVerification,
   emptyCapturedLead,
   isBenignVoiceError,
+  isExplicitClearAllRequest,
   isVoiceCaptureIntegrityIssue,
   type RealtimeClientCommand,
   type RealtimeServerEvent,
@@ -55,6 +56,10 @@ export function useVoiceRuntime({
   const [emailVerification, setEmailVerification] = useState<VoiceEmailVerification | undefined>(
     confirmedEmailVerification(prefillEmail ?? "", "prefill"),
   );
+  // Only deliberate form edits need a context refresh. Re-sending model-owned
+  // tool captures as synthetic user messages creates duplicate replies and
+  // makes Reka react to the form instead of the person speaking.
+  const [localHandoffContextVersion, setLocalHandoffContextVersion] = useState(0);
   const [transcript, setTranscript] = useState<VoiceTranscriptEntry[]>([]);
   const [assistantDraft, setAssistantDraft] = useState("");
   const initialCaptured = { ...emptyCapturedLead, email: prefillEmail ?? "" };
@@ -155,6 +160,7 @@ export function useVoiceRuntime({
     };
     setCaptured(nextCaptured);
     if (key === "email") setEmailVerification(nextEmailVerification);
+    setLocalHandoffContextVersion((version) => version + 1);
   }, []);
 
   const beginCapturedEdit = useCallback((key: keyof CapturedLead) => {
@@ -181,6 +187,7 @@ export function useVoiceRuntime({
         : stateRef.current.activeResponseSupersededByUserInput,
     };
     setSegment(nextSegment);
+    setLocalHandoffContextVersion((version) => version + 1);
   }, []);
 
   const appendUserText = useCallback((text: string) => {
@@ -250,7 +257,55 @@ export function useVoiceRuntime({
       inputAttributionRef.current = inputAttribution.state;
       const previousErrorCount = stateRef.current.errors?.length ?? 0;
       const previous = stateRef.current;
-      const reduced = reduceRealtimeServerEvent(serverEvent, previous);
+      let reduced = reduceRealtimeServerEvent(serverEvent, previous);
+      const directClearRequest =
+        serverEvent.type === "conversation.item.input_audio_transcription.completed" &&
+        typeof serverEvent.transcript === "string" &&
+        isExplicitClearAllRequest(serverEvent.transcript);
+      if (directClearRequest) {
+        // A clear-all request is a direct, reversible visitor command. Execute
+        // the exact same state transition as clear_fields when the model has
+        // replied conversationally without issuing its required tool call.
+        // Do not fabricate a function result for OpenAI: that call ID does not
+        // exist upstream. The normal context sync below tells the live model
+        // the panel is now empty.
+        const localClearCallId = `local-clear-${eventStartedAt}`;
+        const clearResult = reduceRealtimeServerEvent(
+          {
+            type: "response.done",
+            response: {
+              output: [
+                {
+                  type: "function_call",
+                  name: "clear_fields",
+                  call_id: localClearCallId,
+                  arguments: JSON.stringify({ scope: "all" }),
+                },
+              ],
+            },
+          },
+          reduced.state,
+        );
+        const clearApplied = clearResult.commands.some(
+          (command) =>
+            command.type === "function_result" &&
+            command.callId === localClearCallId &&
+            command.output.ok === true &&
+            command.output.cleared === true,
+        );
+        if (clearApplied) {
+          reduced = { state: clearResult.state, commands: reduced.commands };
+          callbacksRef.current.onClearFields?.();
+          setLocalHandoffContextVersion((version) => version + 1);
+          reportTool(
+            callbacksRef.current.onToolDuration,
+            "clear_fields",
+            eventStartedAt,
+            { ok: true, cleared: true },
+            true,
+          );
+        }
+      }
       reduced.state.fieldProvenance = recordCapturedChanges(
         previous.captured,
         reduced.state.captured,
@@ -297,22 +352,24 @@ export function useVoiceRuntime({
           ) {
             ungroundedRejectionsRef.current += 1;
             if (rejectedKey === "email" || ungroundedRejectionsRef.current >= 2) {
-              toast.warning(rejectedKey === "email" ? "Please type the email once." : "Reka didn't catch one detail.", {
-                description:
-                  rejectedKey === "email"
-                    ? "The email field is highlighted. Reka can keep discussing your idea while you edit it."
-                    : "Say it once more, or type it straight into the handoff panel.",
-                id: voiceToastIds.captureWarning,
-              });
-              callbacksRef.current.onCaptureNeedsAttention?.(rejectedKey);
+              toast.warning(
+                rejectedKey === "email" ? "Reka didn't catch that email yet." : "Reka didn't catch one detail.",
+                {
+                  description:
+                    rejectedKey === "email"
+                      ? "Say the full address once more, including the domain. Reka will keep listening."
+                      : "Say it once more, or type it straight into the handoff panel.",
+                  id: voiceToastIds.captureWarning,
+                },
+              );
+              if (rejectedKey !== "email") callbacksRef.current.onCaptureNeedsAttention?.(rejectedKey);
             }
           }
           if (command.output.error === "unconfirmed_required_fields") {
-            toast.message("Please confirm the email Reka read back.", {
-              description: "Say yes if it is exact, or edit the highlighted email field.",
+            toast.message("Reka needs one spoken email correction.", {
+              description: "Say the full address naturally, including the domain. Reka will keep listening.",
               id: voiceToastIds.captureWarning,
             });
-            callbacksRef.current.onCaptureNeedsAttention?.("email");
           }
           if (toolName === "clear_fields" && command.output.cleared === true) {
             callbacksRef.current.onClearFields?.();
@@ -340,6 +397,7 @@ export function useVoiceRuntime({
     emailVerification,
     endCapturedEdit,
     handleRealtimeEvent,
+    localHandoffContextVersion,
     reset,
     segment,
     setSegment: updateSegment,

@@ -72,10 +72,10 @@ dimension, and prove the exact staged commit before promotion.
   understanding before a model response.
 - Reduced-motion mode MUST suppress visual animation without disabling audio
   activity measurement.
-- The Mereka M nebula preview MUST render only on staging/local when both the
-  public build flag and exact hostname gate pass. The reviewed source's
-  production path MUST retain the legacy orb and no Trace entrance. Deploying
-  that fallback requires a separate production release decision.
+- The Mereka M nebula MUST render on the canonical staging, production, and
+  local hosts by default. `NEXT_PUBLIC_BRAND_MOTION_ENABLED=false` is an
+  emergency visual rollback only; the production default MUST never be the
+  legacy orb. The Trace entrance follows the same canonical-host gate.
   Missing WebGL or initialization failure MUST retain the canonical SVG
   fallback. The staging entrance treatment MUST be
   non-interactive, never lock scrolling, run at most once per tab for no more
@@ -114,11 +114,9 @@ dimension, and prove the exact staged commit before promotion.
   start or mid-utterance drop.
 - New snapshots MUST persist server-resolved deployment environment and device
   class so staging smokes cannot be mistaken for production evidence.
-- Control MUST remain `gpt-realtime-2`/`low` unless an explicit cell is selected.
-- The first model-only candidate MUST be `gpt-realtime-2.1`, holding runtime,
-  reasoning, voice, device, network class, and corpus constant. Its documented
-  alphanumeric, silence/noise, and interruption improvements match Oriental's
-  capture and barge-in risks.
+- Production control and canonical staging MUST resolve to `gpt-realtime-2.1`/`low`.
+  Staging's `candidate` label remains release provenance after promotion, not a
+  different model selection.
 - `gpt-realtime-2.1-mini` MAY be evaluated later as a separate speed/cost cell;
   it MUST NOT be combined with the first `gpt-realtime-2.1` quality comparison.
 - At most one of runtime profile, model cell, and reasoning cell MAY differ
@@ -314,8 +312,8 @@ an unperformed listening result is never a pass.
    lead while staging shares the production data plane.
 4. Keep `VOICE_RUNTIME_PROFILE=baseline`, `VOICE_MODEL_CELL=candidate`,
    `VOICE_REASONING_CELL=low`, and `VOICE_EMAIL_CAPTURE_MODE=adaptive` on the
-   declared staging trial, resolving to `gpt-realtime-2.1`. Production remains
-   frozen at `baseline/control/gpt-realtime-2/low/adaptive` and picker off.
+   declared staging lane, resolving to `gpt-realtime-2.1`. Production resolves
+   to `baseline/control/gpt-realtime-2.1/low/adaptive` and picker off.
 5. Roll back email friction independently with `VOICE_EMAIL_CAPTURE_MODE=strict`.
    Roll back endpointing with `VOICE_RUNTIME_PROFILE=baseline`; roll back model
    or reasoning independently with their control env values. Roll back the

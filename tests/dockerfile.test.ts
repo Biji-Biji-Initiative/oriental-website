@@ -16,7 +16,7 @@ describe("production Docker image", () => {
     expect(dockerfile).toContain("ENV NEXT_PUBLIC_GA_MEASUREMENT_ID=$NEXT_PUBLIC_GA_MEASUREMENT_ID");
     expect(dockerfile).toContain('ARG NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION=""');
     expect(dockerfile).toContain("ENV NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION=$NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION");
-    expect(dockerfile).toContain('ARG NEXT_PUBLIC_BRAND_MOTION_PREVIEW="false"');
-    expect(dockerfile).toContain("ENV NEXT_PUBLIC_BRAND_MOTION_PREVIEW=$NEXT_PUBLIC_BRAND_MOTION_PREVIEW");
+    expect(dockerfile).toContain('ARG NEXT_PUBLIC_BRAND_MOTION_ENABLED="true"');
+    expect(dockerfile).toContain("ENV NEXT_PUBLIC_BRAND_MOTION_ENABLED=$NEXT_PUBLIC_BRAND_MOTION_ENABLED");
   });
 });

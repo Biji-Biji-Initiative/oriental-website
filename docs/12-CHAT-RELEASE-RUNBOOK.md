@@ -35,11 +35,11 @@ cannot affect the runtime image.
   production MUST use the same source SHA. Shared staging may move afterward
   for another controlled experiment; its live SHA must never be inferred from
   production or a historical document. Image tags remain distinct for release
-  ownership. While the brand-motion preview is under staging approval, the
-  Mereka M nebula and non-blocking, once-per-tab Trace entrance require both
-  the public build flag and exact staging/local hostname. A production build
-  from the reviewed source retains the legacy orb and no Trace entrance.
-  Admin/API and reduced-motion loads omit the entrance treatment everywhere.
+  ownership. The approved Mereka M nebula and non-blocking, once-per-tab Trace
+  entrance require the exact canonical staging, production, or local hostname.
+  `NEXT_PUBLIC_BRAND_MOTION_ENABLED=false` is reserved for emergency visual
+  rollback; the production default is the M, never the legacy orb. Admin/API
+  and reduced-motion loads omit the entrance treatment everywhere.
 - `staging.oriental.mereka.io` and `oriental.mereka.io` are canonical. The
   `*.deploy.mereka.io` names MUST remain redirects only.
 - Cloudflare MUST remain authoritative DNS only; Coolify Traefik terminates TLS.
@@ -50,14 +50,15 @@ cannot affect the runtime image.
   `ADMIN_REVIEW_TOKEN`; it is interactive-login-only, never a bearer or session
   signing credential, and historical repository exposure means it is treated as
   potentially known. Its signed session MUST prove method `password`, role
-  `viewer`, and a thirty-minute expiry; it MUST authorize only the PII-free
-  aggregate metrics endpoint/dashboard and logout. Customer records, email
-  addresses, transcripts, voice details, and mutations MUST return forbidden
-  until the operator signs out and logs in with the managed review token. The
-  review token retains the configured role and twelve-hour expiry. Production
-  validation MUST reject any password HMAC proving equality with the review,
-  ops, or privacy bearer credential. Rotate the HMAC with the token and deploy
-  both managed environments together.
+  `admin`, and a thirty-minute expiry. It MUST authorize the complete admin
+  permission registry, including CRM reads and mutations, voice follow-up,
+  evaluations, maintenance, and privacy actions. Same-origin JSON checks remain
+  mandatory for cookie-authenticated mutations. The review token remains
+  available for managed bearer/API access and retains the configured role and
+  twelve-hour expiry. Production validation
+  MUST reject any password HMAC proving equality with the review, ops, or
+  privacy bearer credential. Rotate the HMAC with the token and deploy both
+  managed environments together.
 - The staging deployer MUST stream the complete native staging Infisical export
   over the encrypted fleet connection and atomically converge the host `.env`.
   The production deployer MUST reconcile and read back every approved runtime
@@ -224,8 +225,9 @@ infisical run \
 
 Managed-environment validation is the default. The clean staging candidate
 requires `baseline/candidate/low/adaptive` with `gpt-realtime-2.1`; production
-requires `baseline/control/low/adaptive` with `gpt-realtime-2`. Both clean
-candidate and production control require the QA picker off. A separately
+requires `baseline/control/low/adaptive` with `gpt-realtime-2.1`. Both clean
+candidate and production control require the QA picker off. The cell labels
+remain release provenance after the 2.1 promotion. A separately
 declared staging audition uses `--picker-mode audition`; it cannot be promotion
 evidence.
 `--allow-unmanaged` exists only
@@ -450,6 +452,30 @@ include release docs before the first deployment.
      '
    ```
 
+9. Run the full-access password admin lane against canonical staging. Enter the human
+   password through hidden terminal input; never place it in a command argument,
+   shell history, file, or managed environment. The command proves customer and
+   voice reads succeed, password bearer auth fails, protected mutation admission
+   succeeds without changing a real record, and the cookie and limiter retain
+   their governed properties. It hard-fails
+   when the token, password HMAC, password, browser, or target is missing or
+   invalid. Retain its JSON report and require `unexpected=0`, `flaky=0`, and
+   `skipped=0`:
+
+   ```bash
+   IFS= read -r -s -p "Admin password: " E2E_ADMIN_SHARED_PASSWORD
+   printf "\n"
+   export E2E_ADMIN_SHARED_PASSWORD
+   infisical run \
+     --domain https://secrets.mereka.io \
+     --projectId 6bfac905-9bb1-449e-8be8-f25f9634802b \
+     --env staging \
+     --path /deploy/oriental-website \
+     -- env PLAYWRIGHT_BASE_URL=https://staging.oriental.mereka.io \
+       pnpm release:verify:admin
+   unset E2E_ADMIN_SHARED_PASSWORD
+   ```
+
 Do not submit a staging lead casually: staging still shares production Convex,
 OpenAI, Redis, and notification accounts.
 
@@ -532,7 +558,12 @@ write, retention call, or other production mutation is allowed.
    `https://oriental.mereka.io/api/admin/review` with the production
    `ADMIN_REVIEW_TOKEN` exactly as in staging. This independently proves the
    production routes, credentials, and Convex reads.
-7. Manually dispatch `.github/workflows/analytics-ops.yml` from merged `main`
+7. Run `pnpm release:verify:admin` against
+   `https://oriental.mereka.io` inside the production application scope, using
+   the same hidden ephemeral password-input pattern as staging. Require the
+   retained JSON report to show nonzero expected tests and exactly zero skipped,
+   flaky, and unexpected tests.
+8. Manually dispatch `.github/workflows/analytics-ops.yml` from merged `main`
    and require every job to pass. This is the release proof for the separately
    stored GitHub `OPS_AUTOMATION_TOKEN`; Infisical/Coolify parity cannot prove a
    GitHub Actions secret:
@@ -544,7 +575,7 @@ write, retention call, or other production mutation is allowed.
    gh run watch "$run_id" --exit-status
    ```
 
-8. For voice releases, rerun the dry evaluator and report `insufficient_data`
+9. For voice releases, rerun the dry evaluator and report `insufficient_data`
    honestly when its minimum evidence gate is not met.
 
 ## Failure handling

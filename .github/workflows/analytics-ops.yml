@@ -4,8 +4,8 @@ on:
   schedule:
     # Nightly voice evals at 05:00 MYT (21:00 UTC).
     - cron: "0 21 * * *"
-    # Hourly lead-SLA sweep.
-    - cron: "0 * * * *"
+    # Hourly lead-SLA sweep, off the :00 herd. Jobs are short API calls (no checkout/build), so they run on the light pool.
+    - cron: "17 * * * *"
   workflow_dispatch: {}
 
 permissions:
@@ -15,13 +15,18 @@ jobs:
   nightly-evals:
     # Runs on the nightly cron and on manual dispatch; skipped on the hourly tick.
     if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 21 * * *'
-    runs-on: ubuntu-latest
+    runs-on: mereka-k8s-light
+    # One of each at a time: a tick that finds the previous one still running
+    # or queued replaces the older pending run instead of stacking behind it.
+    concurrency:
+      group: oriental-nightly-evals
+      cancel-in-progress: false
     timeout-minutes: 10
     steps:
       - name: Score recent voice sessions with the LLM judge
         run: |
           set -euo pipefail
-          response=$(curl -sS -X POST "https://oriental.mereka.io/api/admin/evals" \
+          response=$(curl -sS --connect-timeout 10 --max-time 60 -X POST "https://oriental.mereka.io/api/admin/evals" \
             -H "Authorization: Bearer ${{ secrets.OPS_AUTOMATION_TOKEN }}" \
             -H "Content-Type: application/json" \
             -d '{"limit":12}')
@@ -31,14 +36,19 @@ jobs:
 
   nightly-retention:
     if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 21 * * *'
-    runs-on: ubuntu-latest
+    runs-on: mereka-k8s-light
+    # One of each at a time: a tick that finds the previous one still running
+    # or queued replaces the older pending run instead of stacking behind it.
+    concurrency:
+      group: oriental-nightly-retention
+      cancel-in-progress: false
     timeout-minutes: 10
     steps:
       - name: Delete records that exceeded the published retention windows
         run: |
           set -euo pipefail
-          for attempt in $(seq 1 10); do
-            response=$(curl -sS -X POST "https://oriental.mereka.io/api/admin/retention" \
+          for _ in $(seq 1 10); do
+            response=$(curl -sS --connect-timeout 10 --max-time 60 -X POST "https://oriental.mereka.io/api/admin/retention" \
               -H "Authorization: Bearer ${{ secrets.OPS_AUTOMATION_TOKEN }}" \
               -H "Content-Type: application/json" \
               -d '{}')
@@ -51,14 +61,19 @@ jobs:
           exit 1
 
   sla-check:
-    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 * * * *'
-    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '17 * * * *'
+    runs-on: mereka-k8s-light
+    # One of each at a time: a tick that finds the previous one still running
+    # or queued replaces the older pending run instead of stacking behind it.
+    concurrency:
+      group: oriental-sla-check
+      cancel-in-progress: false
     timeout-minutes: 5
     steps:
       - name: Sweep lead ownership SLA
         run: |
           set -euo pipefail
-          response=$(curl -sS -X POST "https://oriental.mereka.io/api/admin/sla-check" \
+          response=$(curl -sS --connect-timeout 10 --max-time 60 -X POST "https://oriental.mereka.io/api/admin/sla-check" \
             -H "Authorization: Bearer ${{ secrets.OPS_AUTOMATION_TOKEN }}" \
             -H "Content-Type: application/json" \
             -d '{"maxUnownedHours":4}')

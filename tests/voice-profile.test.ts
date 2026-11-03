@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { openingVoiceInstruction } from "@/components/voice-agent/voice-dialog-copy";
-import { buildVoiceInstructions, VOICE_PROFILE, VOICE_TOOLS } from "@/lib/voice/profile";
+import { buildVoiceInstructions, VOICE_PROFILE, VOICE_TOOLS, voiceToolsForEmailCaptureMode } from "@/lib/voice/profile";
 
 describe("voice profile", () => {
   it("builds a compact reflex prompt with facts behind a read-only tool", () => {
@@ -17,10 +17,13 @@ describe("voice profile", () => {
     expect(prompt).not.toMatch(/\bcapture_field\b/);
     expect(prompt).toContain("lookup_oriental");
     expect(prompt).toContain("call route_to_team immediately");
+    expect(prompt).toContain("The visitor controls the agenda");
+    expect(prompt).toContain("never by itself triggers a question for more details");
+    expect(prompt).not.toContain("You are not a tour narrator or a general chatbot");
     expect(prompt).toContain("or I can send it now");
     expect(prompt).toContain("Do not wait for optional fields");
     expect(prompt).toContain("call end_call");
-    expect(prompt).toContain("A valid email is the only hard blocker");
+    expect(prompt).toContain("A valid email enables a send");
     expect(prompt).not.toContain("# Website Knowledge Base");
     expect(prompt).not.toContain("Type A: 250–300 sq ft");
     expect(prompt.length).toBeLessThan(7_000);
@@ -29,7 +32,8 @@ describe("voice profile", () => {
 
   it("keeps the dialed-back register and drops the heavy-Manglish anchors", () => {
     const prompt = buildVoiceInstructions(VOICE_PROFILE);
-    expect(prompt).toContain("never caricatured");
+    expect(prompt).toContain("never caricatured or over-enthusiastic");
+    expect(prompt).toContain("clear up the form");
     expect(prompt).not.toContain("Hi hi");
     expect(prompt).not.toContain("Aiyo");
     expect(prompt).not.toContain("Settle lah");
@@ -49,7 +53,9 @@ describe("voice profile", () => {
 
     expect(strict).toContain("read it back and use confirm_email");
     expect(adaptive).toContain("without asking for a separate yes");
-    expect(adaptive).toContain("ask the visitor to type it there");
+    expect(adaptive).toContain("ask once for the full address naturally, including the domain");
+    expect(adaptive).toContain("Adaptive mode has no confirm_email tool");
+    expect(adaptive).not.toContain("ask the visitor to type it there");
     expect(adaptive).not.toContain("read it back and use confirm_email");
     expect(JSON.stringify(VOICE_PROFILE)).not.toContain("Always confirm a speech-captured email");
     expect(JSON.stringify(VOICE_PROFILE)).not.toContain("read it back once and confirm it before routing");
@@ -68,5 +74,10 @@ describe("voice profile", () => {
       "wait_for_user",
       "end_call",
     ]);
+  });
+
+  it("does not expose the strict confirmation tool to adaptive sessions", () => {
+    expect(voiceToolsForEmailCaptureMode("adaptive").map((tool) => tool.name)).not.toContain("confirm_email");
+    expect(voiceToolsForEmailCaptureMode("strict").map((tool) => tool.name)).toContain("confirm_email");
   });
 });

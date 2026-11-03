@@ -38,6 +38,8 @@ type CrmFilters = {
 
 type EnquiryCrmWorkspaceProps = {
   allLeads: LeadRow[];
+  canRunEvals: boolean;
+  canUpdateLeads: boolean;
   events: LeadEventRow[];
   filters: CrmFilters;
   generatedAt: number;
@@ -50,6 +52,8 @@ type EnquiryCrmWorkspaceProps = {
 
 export function EnquiryCrmWorkspace({
   allLeads,
+  canRunEvals,
+  canUpdateLeads,
   events,
   filters,
   generatedAt,
@@ -116,6 +120,7 @@ export function EnquiryCrmWorkspace({
       <AdminEnquiryDataTable
         generatedAt={generatedAt}
         initialStatusScope={filters.status || "active"}
+        readOnly={!canUpdateLeads}
         rows={ordered.map((lead) => ({
           ...lead,
           // This object crosses the server/client component boundary. Strip
@@ -129,6 +134,8 @@ export function EnquiryCrmWorkspace({
 
       {selected ? (
         <CrmRecord
+          canRunEvals={canRunEvals}
+          canUpdateLeads={canUpdateLeads}
           events={events.filter((event) => event.leadId === selected.leadId)}
           filters={filters}
           generatedAt={generatedAt}
@@ -371,6 +378,8 @@ function CrmIntelligencePanel({
 }
 
 function CrmRecord({
+  canRunEvals,
+  canUpdateLeads,
   events,
   filters,
   generatedAt,
@@ -379,6 +388,8 @@ function CrmRecord({
   view,
   voiceSession,
 }: {
+  canRunEvals: boolean;
+  canUpdateLeads: boolean;
   events: LeadEventRow[];
   filters: CrmFilters;
   generatedAt: number;
@@ -484,7 +495,7 @@ function CrmRecord({
             </section>
           ) : null}
 
-          <InteractionEvidence lead={lead} voiceSession={voiceSession} />
+          <InteractionEvidence canRunEvals={canRunEvals} lead={lead} voiceSession={voiceSession} />
 
           {lead.transcript.length > 0 ? (
             <details className="rounded-xl border border-white/10 bg-white/[0.04]" suppressHydrationWarning>
@@ -545,17 +556,23 @@ function CrmRecord({
                 Due {formatDate(lead.nextActionAt)} · {sla.label}
               </p>
             ) : null}
-            <AdminLeadWorkflowForm
-              compact
-              leadId={lead.leadId}
-              initialNextActionAt={lead.nextActionAt}
-              initialNextActionNote={lead.nextActionNote}
-              initialOwner={lead.owner}
-              initialOutcomeReason={lead.outcomeReason}
-              initialPriority={priority}
-              initialRevision={lead.workflowRevision}
-              initialStatus={status}
-            />
+            {canUpdateLeads ? (
+              <AdminLeadWorkflowForm
+                compact
+                leadId={lead.leadId}
+                initialNextActionAt={lead.nextActionAt}
+                initialNextActionNote={lead.nextActionNote}
+                initialOwner={lead.owner}
+                initialOutcomeReason={lead.outcomeReason}
+                initialPriority={priority}
+                initialRevision={lead.workflowRevision}
+                initialStatus={status}
+              />
+            ) : (
+              <p className="mt-3 rounded-lg border border-white/10 bg-white/[0.03] p-3 text-xs leading-5 text-slate-400">
+                Workflow editing requires review-token step-up.
+              </p>
+            )}
           </section>
 
           <DeliveryPanel lead={lead} />
@@ -616,7 +633,15 @@ function CrmRecord({
   );
 }
 
-function InteractionEvidence({ lead, voiceSession }: { lead: LeadRow; voiceSession?: VoiceSessionRow }) {
+function InteractionEvidence({
+  canRunEvals,
+  lead,
+  voiceSession,
+}: {
+  canRunEvals: boolean;
+  lead: LeadRow;
+  voiceSession?: VoiceSessionRow;
+}) {
   if (lead.source !== "voice") return null;
   const evaluation = voiceSession?.eval;
   if (!evaluation) {
@@ -629,7 +654,7 @@ function InteractionEvidence({ lead, voiceSession }: { lead: LeadRow; voiceSessi
         <p className="mt-2 text-sm leading-6 text-amber-200/75">
           The enquiry is safely stored. A 1–5 evaluation has not been persisted for this interaction yet.
         </p>
-        {lead.voiceReviewId ? (
+        {lead.voiceReviewId && canRunEvals ? (
           <div className="mt-3">
             <AdminRunEvalsButton compact reviewIds={[lead.voiceReviewId]}>
               Evaluate this conversation

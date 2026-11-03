@@ -2,7 +2,7 @@
 
 > **Coding agents:** start at [`AGENTS.md`](./AGENTS.md) — canonical repo map, conventions, and guardrails. Included in-session via `CLAUDE.md`.
 
-Next.js 16 microsite for the Oriental Building partner-intake launch. The site translates the prototype handoff into a production app with React 19, Tailwind CSS 4, shadcn/ui, Convex lead storage, SES/Slack notifications, and an OpenAI Realtime voice intake flow using `gpt-realtime-2`.
+Next.js 16 microsite for the Oriental Building partner-intake launch. The site translates the prototype handoff into a production app with React 19, Tailwind CSS 4, shadcn/ui, Convex lead storage, SES/Slack notifications, and an OpenAI Realtime voice intake flow using `gpt-realtime-2.1`.
 
 ## Stack
 
@@ -43,15 +43,13 @@ dedicated image build so staging-only client flags can differ safely, but Convex
 still use shared upstream accounts; environment attribution and Redis key namespacing prevent evidence and limiter
 collisions while dedicated staging services remain a separate infrastructure migration.
 
-The Mereka particle M and animated page-entrance loader are staging-only preview
-cells in this source. Its production path retains the legacy orb and no Trace
-entrance; deploying that fallback is outside the current staging-only release.
-Compact voice affordances still reuse the approved mark geometry.
+The Mereka particle M and animated page-entrance loader are the approved public
+identity on both canonical public hosts. Compact voice affordances reuse the
+same approved mark geometry; WebGL failure falls back to that mark.
 `scripts/deploy-coolify-host.sh --target staging --expected-current-sha <current-sha> <candidate-sha>`
-builds with `NEXT_PUBLIC_BRAND_MOTION_PREVIEW=true`; production builds force the
-flag to `false`. The UI also checks the staging hostname before enabling the
-loader. This prevents a staging-only entrance experiment from leaking into
-production or one staging workflow from silently overwriting another.
+builds with `NEXT_PUBLIC_BRAND_MOTION_ENABLED=true` for both canonical public
+targets. The UI still checks canonical staging, production, and local hostnames
+before enabling the treatment, and `false` is reserved for emergency rollback.
 
 Required production variables:
 
@@ -60,13 +58,13 @@ NEXT_PUBLIC_CONVEX_URL=
 CONVEX_URL=
 CONVEX_INGEST_SECRET=
 OPENAI_API_KEY=
-OPENAI_REALTIME_MODEL=gpt-realtime-2
+OPENAI_REALTIME_MODEL=gpt-realtime-2.1
 OPENAI_REALTIME_MODEL_CANDIDATE=gpt-realtime-2.1
 VOICE_MODEL_CELL=control # candidate is an explicit measured release cell
 VOICE_REASONING_CELL=low # minimal is the independent reasoning cell
 VOICE_EMAIL_CAPTURE_MODE=adaptive # strict restores exact readback + explicit confirmation
 OPENAI_REALTIME_VOICE=coral
-OPENAI_REALTIME_SPEED=1.28
+OPENAI_REALTIME_SPEED=1.18
 VOICE_RUNTIME_PROFILE=baseline # rollback-safe default; instant-v1 enables adaptive semantic VAD
 VOICE_SESSION_DAILY_LIMIT=80 # governed integer from 1 to 10000
 VOICE_MAX_DURATION_MS=600000
@@ -175,15 +173,13 @@ Capture-method provenance is a bounded client report protected by signed voice
 session linkage; it is diagnostic evidence, not an independent server
 observation and never qualifies a model/runtime promotion by itself.
 
-Production currently resolves the control cell to `gpt-realtime-2`. The first
-quality candidate is [`gpt-realtime-2.1`](https://developers.openai.com/api/docs/models/gpt-realtime-2.1),
-which OpenAI documents as improving alphanumeric recognition, silence/noise
-handling, and interruption behaviour—all directly relevant to names, email
-dictation, endpointing, and barge-in. The separate
+Production and canonical staging both resolve to [`gpt-realtime-2.1`](https://developers.openai.com/api/docs/models/gpt-realtime-2.1).
+Staging retains its `candidate` model-cell label as release provenance, while
+production remains the `control` cell; neither label changes the selected 2.1
+model. The separate
 [`gpt-realtime-2.1-mini`](https://developers.openai.com/api/docs/models/gpt-realtime-2.1-mini)
-is a faster, lower-cost distilled candidate. Evaluate `2.1` against the current
-control first; do not introduce mini until that single-dimension comparison is
-resolved.
+is a faster, lower-cost distilled candidate and must be evaluated in its own
+staging cell before any promotion.
 
 The latest reviewed corpus (2026-07-16) stitches the newest 100 call rows into
 72 conversations, all on `baseline` / `control` / `low`: 61 legacy, 7 local,
@@ -195,13 +191,18 @@ conversations. The promotion gate is therefore `insufficient_data`. This is
 operational failure evidence, not proof that voice feels instant, multilingual,
 or culturally authentic.
 
-Voice rendering is controlled by environment as well as prompt. `OPENAI_REALTIME_VOICE` must be one of the supported Realtime built-in voices, and `OPENAI_REALTIME_SPEED` is clamped to OpenAI's supported `0.25` to `1.5` range. Source fallback is `marin` at `1.18`; production is currently configured to `coral` at `1.28` so Reka speaks faster and more brightly. Human listening QA still decides whether this is Malaysian enough. Input transcription defaults to `gpt-4o-transcribe` and can be switched (for example to `gpt-realtime-whisper`) with the optional `OPENAI_REALTIME_TRANSCRIPTION_MODEL` variable without a code change.
+Voice rendering is controlled by environment as well as prompt. `OPENAI_REALTIME_VOICE` must be one of the supported Realtime built-in voices, and `OPENAI_REALTIME_SPEED` is clamped to OpenAI's supported `0.25` to `1.5` range. The source speed fallback is `1.18`; production uses `coral` at `1.18` for a relaxed, grounded delivery. Human listening QA still decides whether this is Malaysian enough. Input transcription defaults to `gpt-4o-transcribe` and can be switched (for example to `gpt-realtime-whisper`) with the optional `OPENAI_REALTIME_TRANSCRIPTION_MODEL` variable without a code change.
 
 Server route handlers emit structured JSON logs with `service`, `version`,
 `event`, `requestId`, hashed IP metadata, durations, rate-limit store, and
 notification results. `/api/voice/session` also emits `Server-Timing` for parse,
-rate-limit, OpenAI mint, and total duration. Use Coolify logs plus
-`pnpm voice:debug` locally when reviewing failed voice conversations.
+rate-limit, OpenAI mint, and total duration. Coolify remains the live-tail
+plane; Convex retains the same PII-free structured events for 30 days across
+container replacements, and Sentry remains an independent summary/alert plane.
+The full password-backed admin session can inspect that ledger in Activity &
+audit. Use the access-controlled voice-session review record for transcript
+evidence and `pnpm voice:debug` locally when reviewing failed voice
+conversations.
 
 Segment-specific routing and opener copy live in `lib/segments.ts`. Realtime event handling is isolated in `lib/voice/realtime-events.ts`, outbound client event serialization is in `lib/voice/client-events.ts`, and browser microphone/WebRTC lifetime is in `components/voice-agent/useRealtimeVoiceSession.ts`. Behavior changes should get focused tests in `tests/realtime-events.test.ts`, `tests/realtime-client-events.test.ts`, or `tests/openai-realtime.test.ts` before deployment.
 
@@ -212,18 +213,15 @@ During local testing, run `pnpm voice:debug` after a call to inspect the latest 
 The internal review surface lives at `/admin/session-review`. Its same-origin,
 rate-limited login accepts either the configured `ADMIN_REVIEW_TOKEN` or the
 human password whose domain-separated HMAC is stored in
-`ADMIN_REVIEW_PASSWORD_HMAC`. Plaintext must remain absent from source,
-Infisical, Coolify, and the running container; the launch checklist keeps that
-redacted live readback pending until the configuration release is performed.
-Historical repository exposure means the password is treated as potentially
-known. It is never accepted as bearer auth. A password
-login receives a signed, provenance-bound, viewer-only session for thirty
-minutes; it can read only the redacted aggregate metrics dashboard and can log
-out. It cannot read customer records, email addresses, transcripts, or voice
-evidence and cannot mutate leads, follow up, run evals, or invoke
-maintenance/privacy operations. Those data surfaces require a fresh login with
-the managed review token. A strong review-token login receives the configured
-interactive role for twelve hours.
+`ADMIN_REVIEW_PASSWORD_HMAC`. Plaintext remains absent from source, Infisical,
+Coolify, and the running container, as proved by the governed configuration
+release. Historical repository exposure means the password is treated as
+potentially known. It is never accepted as bearer auth. A password login
+receives a signed, provenance-bound, full-access admin session for thirty
+minutes. It can read and operate the CRM, including lead workflow, voice
+follow-up, evaluations, maintenance, and privacy actions. A strong review-token
+login remains available for managed bearer/API access and receives the
+configured interactive role for twelve hours.
 `ADMIN_REVIEW_TOKEN` remains the high-entropy bearer credential and the only
 session-signing key; rotate the password HMAC whenever that token rotates. The
 HTTP-only cookie signs the actor, role, login method, and expiry. Its default

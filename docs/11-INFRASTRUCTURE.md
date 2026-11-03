@@ -154,11 +154,11 @@ configuration release. Historical repository exposure means the password is
 treated as potentially known. The
 same-origin, rate-limited login accepts that password or `ADMIN_REVIEW_TOKEN`,
 but only the high-entropy token is valid bearer auth or signs sessions. Password
-login produces a signed viewer-only session for thirty minutes that can access
-only redacted aggregate metrics and logout. Customer records, email addresses,
-transcripts, voice details, and every mutation require a fresh managed review
-token login. Review-token login produces the configured interactive role for
-twelve hours. The cookie
+login produces a signed full-access admin session for thirty minutes that can
+read and operate the complete CRM, including workflow mutations, voice
+follow-up, evaluations, maintenance, and privacy actions. Review-token login
+remains available for managed bearer/API access and produces the configured
+interactive role for twelve hours. The cookie
 signs login method, actor, role, and expiry, and successful login telemetry
 records that bounded provenance. `ADMIN_REVIEW_ROLE` and `ADMIN_REVIEW_ACTOR`
 define the strong-token interactive principal. `OPS_AUTOMATION_TOKEN` is
@@ -206,12 +206,11 @@ on the same Coolify app host under
 `/data/coolify/applications/oriental-staging`. Staging images use the distinct
 `mtrl2z6a7zvoyevxvufpntij:staging-<sha>` tag while production uses
 `mtrl2z6a7zvoyevxvufpntij:<sha>`; the distinct tags isolate release ownership,
-while the approved Mereka M nebula and public entrance treatment are built only
-into the staging preview cell. Production builds force the public preview flag
-off, and the client additionally requires the exact staging/local hostname;
-a production build from this source retains the legacy orb and no Trace
-entrance. Deploying that fallback is outside the current staging-only release.
-The staging entrance treatment is
+while the approved Mereka M nebula and public entrance treatment are built into
+both canonical public cells. The client requires the exact staging, production,
+or local hostname, and `NEXT_PUBLIC_BRAND_MOTION_ENABLED=false` is reserved for
+an emergency visual rollback; production does not fall back to the legacy orb.
+The entrance treatment is
 non-interactive, never locks scrolling, runs once per tab for no more than 700
 ms, and is omitted on admin/API and reduced-motion loads. Staging is routed through the Coolify
 Traefik network with `coolify.managed=false`, so it is host-managed rather than
@@ -322,7 +321,12 @@ only.
 
 Current production floor:
 
-- Structured JSON logs from route handlers, visible in Coolify logs.
+- Structured JSON logs from route handlers, visible in Coolify logs. Every
+  event is also retained in the 30-day Convex application-log ledger and in a
+  PII-free Sentry summary, so operational history survives a Coolify container
+  replacement. Free-form visitor data, transcripts, contact details, and
+  identifiers remain out of those retained log copies; use the
+  access-controlled session review record when transcript evidence is needed.
 - Sentry Next.js SDK (`sentry.server.config.ts`, `sentry.edge.config.ts`,
   `instrumentation.ts`, `instrumentation-client.ts`) with project
   `oriental-website`.
@@ -360,7 +364,9 @@ temporary ngrok config, and redacts token-like output.
 Current runtime:
 
 - `/api/health` returns `version`, `uptime_s`, and `convex` config presence.
-- Coolify container logs retain stdout/stderr.
+- Coolify container logs provide the live stdout/stderr tail; Convex retains a
+  30-day PII-free structured application-log ledger across container
+  replacements.
 - Route handlers emit structured JSON logs through `lib/server/logger.ts`.
 - Important events include `voice_session.*`, `lead.*`, `newsletter.*`, and
   `rate_limit.redis_fallback`.

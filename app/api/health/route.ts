@@ -11,7 +11,7 @@ const startedAt = Date.now();
 export async function GET() {
   const experiments = resolveVoiceExperimentConfig({
     modelCell: readEnv("VOICE_MODEL_CELL", "control"),
-    controlModel: readEnv("OPENAI_REALTIME_MODEL", "gpt-realtime-2") ?? "gpt-realtime-2",
+    controlModel: readEnv("OPENAI_REALTIME_MODEL", "gpt-realtime-2.1") ?? "gpt-realtime-2.1",
     candidateModel: readEnv("OPENAI_REALTIME_MODEL_CANDIDATE", "gpt-realtime-2.1") ?? "gpt-realtime-2.1",
     reasoningCell: readEnv("VOICE_REASONING_CELL", "low"),
   });

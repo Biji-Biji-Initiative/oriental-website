@@ -244,6 +244,7 @@ async function run() {
     const audioBeforeInterrupt = await remoteAudioState(page);
 
     const interruptionStartedAt = performance.now();
+    const assistantTurnsBeforeMessage = await assistantTranscriptCount(page);
     await page
       .getByLabel("Type a message to Reka")
       .fill(
@@ -257,6 +258,7 @@ async function run() {
     );
     await waitForTurn(page, "listening", "assistant_speaking", 60_000);
     await waitForRemoteAudio(page, 30_000);
+    await waitForAssistantTranscript(page, assistantTurnsBeforeMessage, 60_000);
     const interruptionRecoveryMs = performance.now() - interruptionStartedAt;
     const audioAfterInterrupt = await remoteAudioState(page);
 
@@ -562,6 +564,25 @@ async function waitForTurn(page: Page, status: string, turn?: string, timeout = 
   );
 }
 
+async function assistantTranscriptCount(page: Page) {
+  return page
+    .locator('[aria-label="Conversation transcript"] p')
+    .evaluateAll(
+      (entries) => entries.filter((entry) => entry.textContent?.trim().toLowerCase().startsWith("reka:")).length,
+    );
+}
+
+async function waitForAssistantTranscript(page: Page, previousCount: number, timeout: number) {
+  await page.waitForFunction(
+    (before) =>
+      [...document.querySelectorAll<HTMLElement>('[aria-label="Conversation transcript"] p')].filter((entry) =>
+        entry.textContent?.trim().toLowerCase().startsWith("reka:"),
+      ).length > before,
+    previousCount,
+    { timeout },
+  );
+}
+
 async function waitForRemoteAudio(page: Page, timeout: number) {
   await page.waitForFunction(
     () => {
@@ -588,25 +609,19 @@ async function remoteAudioState(page: Page) {
 }
 
 async function sampleCssLevelPeak(page: Page, property: string, durationMs: number) {
-  return page.locator(".voice-orb").evaluate(
-    (orb, options) =>
-      new Promise<number>((resolve) => {
-        const startedAt = performance.now();
-        let peak = 0;
-        const sample = () => {
-          const rawValue = getComputedStyle(orb).getPropertyValue(options.property);
-          const level = Number.parseFloat(rawValue);
-          if (Number.isFinite(level)) peak = Math.max(peak, level);
-          if (performance.now() - startedAt >= options.durationMs) {
-            resolve(peak);
-            return;
-          }
-          requestAnimationFrame(sample);
-        };
-        sample();
-      }),
-    { property, durationMs },
-  );
+  const orb = page.locator(".voice-orb");
+  const startedAt = performance.now();
+  let peak = 0;
+  while (performance.now() - startedAt < durationMs) {
+    const rawValue = await orb.evaluate(
+      (node, cssProperty) => getComputedStyle(node).getPropertyValue(cssProperty),
+      property,
+    );
+    const level = Number.parseFloat(rawValue);
+    if (Number.isFinite(level)) peak = Math.max(peak, level);
+    await new Promise((resolve) => setTimeout(resolve, 16));
+  }
+  return peak;
 }
 
 function sanitizeDiagnostic(message: string) {

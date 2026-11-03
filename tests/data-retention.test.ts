@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+  APPLICATION_LOG_RETENTION_DAYS,
   ARCHIVED_LEAD_RETENTION_DAYS,
   retentionCutoffs,
   VOICE_ABANDONED_RETENTION_DAYS,
@@ -17,9 +18,12 @@ describe("data retention policy", () => {
       submittedVoiceBefore: now - VOICE_SUBMITTED_RETENTION_DAYS * day,
       archivedLeadBefore: now - ARCHIVED_LEAD_RETENTION_DAYS * day,
     });
-    expect([VOICE_ABANDONED_RETENTION_DAYS, VOICE_SUBMITTED_RETENTION_DAYS, ARCHIVED_LEAD_RETENTION_DAYS]).toEqual([
-      30, 90, 730,
-    ]);
+    expect([
+      APPLICATION_LOG_RETENTION_DAYS,
+      VOICE_ABANDONED_RETENTION_DAYS,
+      VOICE_SUBMITTED_RETENTION_DAYS,
+      ARCHIVED_LEAD_RETENTION_DAYS,
+    ]).toEqual([30, 30, 90, 730]);
   });
 
   it("keeps scheduled and subject deletion bounded on indexed records", () => {
@@ -40,6 +44,8 @@ describe("data retention policy", () => {
     expect(schema).toContain('.index("by_lead_updated_at", ["leadId", "updatedAt"])');
     expect(schema).toContain('.index("by_captured_email_normalized", ["capturedEmailNormalized"])');
     expect(schema).toContain('.index("by_email_normalized", ["emailNormalized"])');
+    expect(schema).toContain('.index("by_retention_expires_at", ["retentionExpiresAt"])');
+    expect(scheduled).toContain("RETENTION_BATCH_LIMITS.applicationLogs + 1");
     expect(scheduled).toContain("RETENTION_BATCH_LIMITS.expiredVoiceSessions + 1");
     expect(scheduled).toContain("RETENTION_BATCH_LIMITS.legacyVoiceSessions + 1");
     expect(scheduled).toContain("RETENTION_BATCH_LIMITS.expiredLeadTranscripts + 1");

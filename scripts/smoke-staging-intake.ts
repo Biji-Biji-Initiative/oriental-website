@@ -6,7 +6,6 @@ import { createVoiceSmokeProof, VOICE_SMOKE_PROOF_HEADER } from "../lib/server/v
 const stagingOrigin = "https://staging.oriental.mereka.io";
 const expectedEmail = "qa.nebula@example.test";
 const pendingCopy = "Reka heard this address. Say yes after the exact read-back, or edit it here to confirm it.";
-const capturedCopy = "Captured from your voice · edit anytime.";
 const smokeSigningSecret = requireSmokeSigningSecret();
 
 function requireSmokeSigningSecret() {
@@ -98,18 +97,20 @@ async function run() {
 
     const assistantTurnsBefore = await assistantTurnCount(page);
     await sendTyped(page, "My email is q a dot nebula at example dot test. Please capture it, but do not send.");
-    await page.getByLabel("Email").waitFor({ state: "visible" });
+    const emailInput = page.locator('input[name="email"]:visible');
+    await emailInput.waitFor({ state: "visible" });
     await page.waitForFunction(
-      (email) => (document.querySelector<HTMLInputElement>('input[name="email"]')?.value ?? "") === email,
+      (email) =>
+        [...document.querySelectorAll<HTMLInputElement>('input[name="email"]')].some(
+          (input) => input.getClientRects().length > 0 && input.value === email,
+        ),
       expectedEmail,
       { timeout: 45_000 },
     );
-    const capturedHint = page.getByText(capturedCopy, { exact: true });
-    await capturedHint.waitFor({ state: "visible", timeout: 10_000 });
-    const captureField = await capturedHint.evaluate(
-      (hint) => hint.closest('[data-slot="form-item"]')?.querySelector("label")?.textContent?.trim() ?? "",
+    const captureField = await emailInput.evaluate(
+      (input) => input.closest('[data-slot="form-item"]')?.querySelector("label")?.textContent?.trim() ?? "",
     );
-    if (captureField !== "Email") throw new Error(`Capture hint appeared under ${captureField || "no field"}`);
+    if (captureField !== "Email") throw new Error(`Captured email appeared under ${captureField || "no field"}`);
     await page.getByText(pendingCopy, { exact: true }).waitFor({ state: "hidden", timeout: 10_000 });
 
     await page.waitForFunction(
@@ -121,7 +122,7 @@ async function run() {
       { timeout: 60_000 },
     );
 
-    if ((await page.getByLabel("Email").inputValue()) !== expectedEmail) throw new Error("Captured email changed");
+    if ((await emailInput.inputValue()) !== expectedEmail) throw new Error("Captured email changed");
     if (attemptedLeadPosts !== 0) {
       throw new Error(`Probe attempted ${attemptedLeadPosts} blocked lead request(s)`);
     }

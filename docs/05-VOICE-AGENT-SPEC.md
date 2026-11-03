@@ -144,9 +144,9 @@ claim a handoff succeeded before `route_to_team` returns success.
 
 | Parameter | Value |
 |---|---|
-| Model | `gpt-realtime-2` by default via `OPENAI_REALTIME_MODEL` |
+| Model | `gpt-realtime-2.1` by default via `OPENAI_REALTIME_MODEL` |
 | Voice | Source fallback is `marin`; production is currently `coral` via `OPENAI_REALTIME_VOICE` |
-| Speech speed | Source fallback is `1.18`; production is currently `1.28` via `OPENAI_REALTIME_SPEED`; clamped to OpenAI's supported `0.25` to `1.5` range |
+| Speech speed | Source fallback and production are `1.18` via `OPENAI_REALTIME_SPEED`; clamped to OpenAI's supported `0.25` to `1.5` range |
 | Input audio | Browser-default mic; page load imports the voice bundle and preconnects, but Realtime token minting happens only while permission is currently granted or after the visitor grants a first/expired one-time prompt. The app releases tracks on close. |
 | Session length cap | **10 minutes** by default from the typed policy in `lib/voice/session-policy.ts`; bounded override `VOICE_MAX_DURATION_MS` accepts 1–30 minutes. `/api/voice/session` returns the resolved value to the client. |
 | Turn detection | `baseline` uses semantic VAD `auto`. `instant-v1` uses `high` for normal turns, switches deterministically to `low` after Reka asks for an email, then returns to `high` on the next response. `VOICE_RUNTIME_PROFILE=baseline` is the rollback. |
@@ -157,12 +157,12 @@ claim a handoff succeeded before `route_to_team` returns success.
 | Reconnects | When a session starts with an existing transcript, the last turns are sent as context and Reka resumes instead of repeating the opener |
 | Modalities | Audio output with text events and tool-call events on the data channel; typed user messages are sent as `input_text` conversation items |
 
-The voice-reactive Mereka M nebula is a staging-only visual preview. It needs
-both `NEXT_PUBLIC_BRAND_MOTION_PREVIEW=true` at build time and the exact
-staging/local hostname; the reviewed production path keeps the legacy orb. The
-Trace M entrance uses the same gate and is absent from a production build of
-this source. WebGL failure and reduced motion retain the canonical static mark
-without affecting audio measurement.
+The voice-reactive Mereka M nebula is the approved public voice identity. It is
+enabled by default for the exact canonical staging, production, and local
+hostnames; `NEXT_PUBLIC_BRAND_MOTION_ENABLED=false` is reserved for emergency
+visual rollback. The non-blocking Trace M entrance uses the same gate. WebGL
+failure and reduced motion retain the canonical static mark without affecting
+audio measurement.
 
 ## 7. Auth & token mint
 
@@ -198,7 +198,7 @@ See [`06-API-CONTRACTS.md`](./06-API-CONTRACTS.md) §`/api/voice/session`.
 | WebRTC ICE fails | Same — handoff form remains editable. |
 | `/api/voice/session` returns 429 | Handoff form remains editable + toast: "Voice limit reached for today." |
 | OpenAI Realtime call returns 429 | Reuse the current mint/offer for one retry after 300–700 ms jitter while showing `Reconnecting`; if it is still busy, preserve the editable handoff and show transient capacity guidance. Never mislabel it as the visitor's daily limit. |
-| OpenAI Realtime returns 5xx | Same. Track in Coolify logs until a dedicated observability stack is added. |
+| OpenAI Realtime returns 5xx | Same. Track the live Coolify tail and the retained PII-free Sentry structured event; use the access-controlled session review for conversation evidence. |
 | User goes idle in voice mode | Reka says a one-sentence goodbye ~6 s before the cutoff, then voice tears down after 20 seconds of inactivity. The form and captured fields remain visible. |
 | Conversation reaches max duration | Voice waits for a natural speech stop, gives the configured goodbye grace, and tears down at the server-resolved cap (10 minutes by default). The form remains visible and reconnecting resumes with recent context. |
 | Benign realtime protocol errors (e.g. cancel races) | Recorded in the session error log with codes, never surfaced as user toasts. Non-benign errors show one deduplicated toast. |

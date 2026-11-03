@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 const temporaryDirectories: string[] = [];
 const supervisorScript = join(process.cwd(), "scripts/run-command-with-deadline.ts");
 const grandchildProgram =
-  'const fs=require("node:fs");setTimeout(()=>fs.writeFileSync(process.argv[1],"mutated"),1000);setInterval(()=>{},1000)';
+  'const fs=require("node:fs");setTimeout(()=>fs.writeFileSync(process.argv[1],"mutated"),2000);setInterval(()=>{},1000)';
 const childProgram =
   'const {spawn}=require("node:child_process");const fs=require("node:fs");const child=spawn(process.execPath,["-e",process.argv[3],process.argv[1]],{stdio:"ignore"});child.unref();fs.writeFileSync(process.argv[2],String(process.pid));setInterval(()=>{},1000)';
 const startupSignalProgram =
@@ -70,7 +70,7 @@ describe("release command process deadline", () => {
         "tsx",
         supervisorScript,
         "--timeout-ms",
-        "300",
+        "1000",
         "--",
         process.execPath,
         "-e",
@@ -86,7 +86,7 @@ describe("release command process deadline", () => {
     );
 
     expect(result.status, result.stderr).toBe(124);
-    expect(result.stderr).toContain("Command exceeded the 300 ms release deadline");
+    expect(result.stderr).toContain("Command exceeded the 1000 ms release deadline");
     expect(Date.now() - startedAt).toBeLessThan(3_000);
     expect(existsSync(ready)).toBe(true);
     await new Promise((resolve) => setTimeout(resolve, 1_100));

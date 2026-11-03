@@ -1,0 +1,10 @@
+**Findings**
+
+*   **Confirmation & Typing Gate:** The release successfully transforms the adaptive flow into a conversational aid. The `confirm_email` tool is explicitly removed for adaptive sessions in `voiceToolsForEmailCaptureMode`, and `client-events` alongside `profile` correctly mark pending addresses as optional context rather than blocking requests (.apr/evidence/oriental-adaptive-conversation-recovery.md:21-26).
+*   **Direct Speech Preservation:** High-confidence voice captures are now protected from being overwritten by small, same-length model spelling typos via `realtime-events` (.apr/evidence/oriental-adaptive-conversation-recovery.md:27-29).
+*   **Self-looping:** Resolved. `useVoiceRuntime` now differentiates tool-driven reducer updates from deliberate local edits, preventing tool updates from triggering synthetic handoff context back to the assistant (.apr/evidence/oriental-adaptive-conversation-recovery.md:17-20).
+*   **Safeguards & Validation:** Strict-mode confirmation behavior is preserved for strict sessions (.apr/evidence/oriental-adaptive-conversation-recovery.md:24-26). The pre-existing input rejections and submission validation are maintained outside the narrow grounded-ASR exception (.apr/evidence/oriental-adaptive-conversation-recovery.md:28-29; .apr/specs/oriental-adaptive-conversation-recovery.md:38-40).
+*   **Privacy & Dependencies:** The record contains no PII, customer transcript, or contact data (.apr/evidence/oriental-adaptive-conversation-recovery.md:8-9). Production dependency vulnerabilities (`fast-uri` and `brace-expansion`) are pinned and verified with a clean `pnpm audit` (.apr/evidence/oriental-adaptive-conversation-recovery.md:6-8, 36-37).
+*   **Production Cell Isolation:** Deployment boundaries are respected. There are no model promotions or unauthorized runtime mutations. Staging gate promotion relies strictly on the exact merged SHA, maintaining the operational fallback (.apr/evidence/oriental-adaptive-conversation-recovery.md:50-53; .apr/specs/oriental-adaptive-conversation-recovery.md:56-59). No blockers were detected.
+
+VERDICT: SHIP SAFE DEFAULTS

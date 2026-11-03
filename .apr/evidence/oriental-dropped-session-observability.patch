@@ -658,10 +658,10 @@ index 501be1b..1cf99c9 100644
    const applicationUuid = process.env.COOLIFY_ORIENTAL_APPLICATION_UUID?.trim() || DEFAULT_APPLICATION_UUID;
 diff --git a/scripts/run-command-with-deadline.ts b/scripts/run-command-with-deadline.ts
 new file mode 100644
-index 0000000..5224887
+index 0000000..043a987
 --- /dev/null
 +++ b/scripts/run-command-with-deadline.ts
-@@ -0,0 +1,106 @@
+@@ -0,0 +1,152 @@
 +import { spawn } from "node:child_process";
 +
 +const args = process.argv.slice(2);
@@ -686,39 +686,51 @@ index 0000000..5224887
 +}
 +
 +const detached = process.platform !== "win32";
-+const child = spawn(command, commandArgs, {
-+  detached,
-+  env: process.env,
-+  stdio: "inherit",
-+});
-+let childExited = false;
-+let terminationIssued = false;
 +type CancellationSignal = "SIGHUP" | "SIGINT" | "SIGTERM";
-+let terminationReason: "deadline" | CancellationSignal | null = null;
-+
-+function terminateChildGroup() {
-+  if (childExited || terminationIssued) return;
-+  terminationIssued = true;
-+  if (detached && child.pid) {
-+    try {
-+      process.kill(-child.pid, "SIGKILL");
-+      return;
-+    } catch {
-+      // Fall through to the direct-child kill when no process group exists.
-+    }
-+  }
-+  child.kill("SIGKILL");
-+}
++type TerminationReason = "deadline" | CancellationSignal;
 +
 +const cancellationExitCodes: Record<CancellationSignal, number> = {
 +  SIGHUP: 129,
 +  SIGINT: 130,
 +  SIGTERM: 143,
 +};
++const processGroupSettleMs = 1_000;
++let child: ReturnType<typeof spawn> | null = null;
++let childGroupPid: number | null = null;
++let leaderExited = false;
++let finished = false;
++let terminationIssued = false;
++let terminationReason: TerminationReason | null = null;
++let deadline: ReturnType<typeof setTimeout> | null = null;
++
++function processGroupExists() {
++  if (!detached || childGroupPid === null) return false;
++  try {
++    process.kill(-childGroupPid, 0);
++    return true;
++  } catch (error) {
++    return (error as NodeJS.ErrnoException).code !== "ESRCH";
++  }
++}
++
++function terminateChildGroup() {
++  if (terminationIssued || (!child && childGroupPid === null)) return;
++  terminationIssued = true;
++  if (childGroupPid !== null) {
++    try {
++      process.kill(-childGroupPid, "SIGKILL");
++      return;
++    } catch {
++      // Fall through to the direct-child kill when no process group exists.
++    }
++  }
++  if (child && !leaderExited) child.kill("SIGKILL");
++}
++
 +const cancellationHandlers = new Map<CancellationSignal, () => void>();
 +for (const signal of Object.keys(cancellationExitCodes) as CancellationSignal[]) {
 +  const handler = () => {
-+    if (childExited || terminationReason) return;
++    if (finished || terminationReason) return;
 +    terminationReason = signal;
 +    process.stderr.write(`Release command cancelled by ${signal}; terminating its process group.\n`);
 +    terminateChildGroup();
@@ -730,22 +742,48 @@ index 0000000..5224887
 +const supervisorExitHandler = () => terminateChildGroup();
 +process.once("exit", supervisorExitHandler);
 +
-+const deadline = setTimeout(() => {
-+  if (childExited || terminationReason) return;
++function finish(exitCode: number) {
++  if (finished) return;
++  finished = true;
++  if (deadline) clearTimeout(deadline);
++  process.removeListener("exit", supervisorExitHandler);
++  for (const [signal, handler] of cancellationHandlers) process.removeListener(signal, handler);
++  process.exitCode = exitCode;
++}
++
++function delay(milliseconds: number) {
++  return new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
++}
++
++async function settleProcessGroupAfterLeaderExit() {
++  if (!processGroupExists()) return false;
++  process.stderr.write("Release command leader exited while descendants remained; terminating its process group.\n");
++  terminateChildGroup();
++  const settleDeadline = Date.now() + processGroupSettleMs;
++  while (processGroupExists() && Date.now() < settleDeadline) await delay(20);
++  if (processGroupExists()) {
++    process.stderr.write(
++      `Release command process group remained after ${processGroupSettleMs} ms kill-settle interval.\n`,
++    );
++  }
++  return true;
++}
++
++child = spawn(command, commandArgs, {
++  detached,
++  env: process.env,
++  stdio: "inherit",
++});
++childGroupPid = detached && child.pid ? child.pid : null;
++if (terminationReason) terminateChildGroup();
++
++deadline = setTimeout(() => {
++  if (finished || terminationReason) return;
 +  terminationReason = "deadline";
 +  process.stderr.write(`Command exceeded the ${timeoutMs} ms release deadline.\n`);
 +  terminateChildGroup();
 +}, timeoutMs);
 +deadline.unref();
-+
-+function finish(exitCode: number) {
-+  if (childExited) return;
-+  childExited = true;
-+  clearTimeout(deadline);
-+  process.removeListener("exit", supervisorExitHandler);
-+  for (const [signal, handler] of cancellationHandlers) process.removeListener(signal, handler);
-+  process.exitCode = exitCode;
-+}
 +
 +child.once("error", (error) => {
 +  process.stderr.write(`Failed to start release command: ${error.message}\n`);
@@ -753,20 +791,28 @@ index 0000000..5224887
 +});
 +
 +child.once("exit", (code, signal) => {
-+  if (terminationReason === "deadline") {
-+    finish(124);
-+    return;
-+  }
-+  if (terminationReason) {
-+    finish(cancellationExitCodes[terminationReason]);
-+    return;
-+  }
-+  if (signal) {
-+    process.stderr.write(`Release command ended from signal ${signal}.\n`);
-+    finish(1);
-+    return;
-+  }
-+  finish(code ?? 1);
++  leaderExited = true;
++  void (async () => {
++    const descendantsSurvivedLeader = await settleProcessGroupAfterLeaderExit();
++    if (terminationReason === "deadline") {
++      finish(124);
++      return;
++    }
++    if (terminationReason) {
++      finish(cancellationExitCodes[terminationReason]);
++      return;
++    }
++    if (descendantsSurvivedLeader) {
++      finish(1);
++      return;
++    }
++    if (signal) {
++      process.stderr.write(`Release command ended from signal ${signal}.\n`);
++      finish(1);
++      return;
++    }
++    finish(code ?? 1);
++  })();
 +});
 diff --git a/scripts/verify-orphan-sweep.ts b/scripts/verify-orphan-sweep.ts
 new file mode 100644
@@ -1089,7 +1135,7 @@ index c8810a5..2724f0f 100644
    beforeEach(() => {
      process.env = {
 diff --git a/tests/deploy-coolify-host.test.ts b/tests/deploy-coolify-host.test.ts
-index 7fe7eb2..40cbdd6 100644
+index 7fe7eb2..d57a714 100644
 --- a/tests/deploy-coolify-host.test.ts
 +++ b/tests/deploy-coolify-host.test.ts
 @@ -56,6 +56,15 @@ describe("Coolify host deploy image cells", () => {
@@ -1108,12 +1154,21 @@ index 7fe7eb2..40cbdd6 100644
    it("restores host ownership and recreates the previous service after any post-mutation failure", () => {
      expect(deployScript).toContain("deployment_mutated=true");
      expect(deployScript).toContain("trap on_exit EXIT");
+@@ -165,7 +174,7 @@ printf '{"ok":true,"version":"%s"}\n' "$TEST_PREVIOUS_SHA"
+     } finally {
+       rmSync(root, { recursive: true, force: true });
+     }
+-  });
++  }, 15_000);
+ 
+   it("atomically materializes the selected governed non-secret voice cell for staging", () => {
+     expect(deployScript).toContain('if target == "staging":');
 diff --git a/tests/release-command-deadline.test.ts b/tests/release-command-deadline.test.ts
 new file mode 100644
-index 0000000..2a2ba26
+index 0000000..5fcf7da
 --- /dev/null
 +++ b/tests/release-command-deadline.test.ts
-@@ -0,0 +1,156 @@
+@@ -0,0 +1,260 @@
 +import { spawn, spawnSync } from "node:child_process";
 +import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 +import { tmpdir } from "node:os";
@@ -1126,6 +1181,10 @@ index 0000000..2a2ba26
 +  'const fs=require("node:fs");setTimeout(()=>fs.writeFileSync(process.argv[1],"mutated"),1000);setInterval(()=>{},1000)';
 +const childProgram =
 +  'const {spawn}=require("node:child_process");const fs=require("node:fs");const child=spawn(process.execPath,["-e",process.argv[3],process.argv[1]],{stdio:"ignore"});child.unref();fs.writeFileSync(process.argv[2],String(process.pid));setInterval(()=>{},1000)';
++const startupSignalProgram =
++  'const {spawn}=require("node:child_process");const fs=require("node:fs");const child=spawn(process.execPath,["-e",process.argv[3],process.argv[1]],{stdio:"ignore"});child.unref();process.kill(process.ppid,process.argv[4]);fs.writeFileSync(process.argv[2],String(process.pid));setInterval(()=>{},1000)';
++const exitingLeaderProgram =
++  'const {spawn}=require("node:child_process");const fs=require("node:fs");const child=spawn(process.execPath,["-e",process.argv[3],process.argv[1]],{stdio:"ignore"});child.unref();fs.writeFileSync(process.argv[2],String(process.pid))';
 +
 +function waitForPath(path: string, timeoutMs: number) {
 +  return new Promise<void>((resolve, reject) => {
@@ -1269,9 +1328,109 @@ index 0000000..2a2ba26
 +      }
 +    },
 +  );
++
++  it.each([
++    ["SIGHUP", 129],
++    ["SIGINT", 130],
++    ["SIGTERM", 143],
++  ] as const)("arms %s cancellation before spawning the detached command", async (signal, expectedCode) => {
++    if (process.platform === "win32") return;
++    const directory = mkdtempSync(join(tmpdir(), `oriental-release-startup-${signal.toLowerCase()}-`));
++    temporaryDirectories.push(directory);
++    const marker = join(directory, "external-mutation");
++    const ready = join(directory, "leader-started");
++    const supervisor = spawn(
++      process.execPath,
++      [
++        "--import",
++        "tsx",
++        supervisorScript,
++        "--timeout-ms",
++        "5000",
++        "--",
++        process.execPath,
++        "-e",
++        startupSignalProgram,
++        marker,
++        ready,
++        grandchildProgram,
++        signal,
++      ],
++      { stdio: ["ignore", "ignore", "pipe"] },
++    );
++    let stderr = "";
++    supervisor.stderr?.setEncoding("utf8");
++    supervisor.stderr?.on("data", (chunk: string) => {
++      stderr += chunk;
++    });
++
++    try {
++      await expect(waitForExit(supervisor, 3_000)).resolves.toEqual({ code: expectedCode, signal: null });
++      expect(stderr).toContain(`Release command cancelled by ${signal}`);
++      await new Promise((resolve) => setTimeout(resolve, 1_100));
++      expect(existsSync(marker)).toBe(false);
++    } finally {
++      if (existsSync(ready)) {
++        const childGroupPid = Number(readFileSync(ready, "utf8"));
++        if (Number.isInteger(childGroupPid) && childGroupPid > 1) {
++          try {
++            process.kill(-childGroupPid, "SIGKILL");
++          } catch {
++            // The detached child group already exited.
++          }
++        }
++      }
++    }
++  });
++
++  it.skipIf(process.platform === "win32")(
++    "rejects a zero-exiting leader and kills its surviving same-group grandchild",
++    async () => {
++      const directory = mkdtempSync(join(tmpdir(), "oriental-release-leader-exit-"));
++      temporaryDirectories.push(directory);
++      const marker = join(directory, "external-mutation");
++      const ready = join(directory, "leader-started");
++      try {
++        const result = spawnSync(
++          process.execPath,
++          [
++            "--import",
++            "tsx",
++            supervisorScript,
++            "--timeout-ms",
++            "5000",
++            "--",
++            process.execPath,
++            "-e",
++            exitingLeaderProgram,
++            marker,
++            ready,
++            grandchildProgram,
++          ],
++          { encoding: "utf8", timeout: 5_000 },
++        );
++
++        expect(result.status, result.stderr).toBe(1);
++        expect(result.stderr).toContain("Release command leader exited while descendants remained");
++        await new Promise((resolve) => setTimeout(resolve, 1_100));
++        expect(existsSync(marker)).toBe(false);
++      } finally {
++        if (existsSync(ready)) {
++          const childGroupPid = Number(readFileSync(ready, "utf8"));
++          if (Number.isInteger(childGroupPid) && childGroupPid > 1) {
++            try {
++              process.kill(-childGroupPid, "SIGKILL");
++            } catch {
++              // The detached child group already exited.
++            }
++          }
++        }
++      }
++    },
++  );
 +});
 diff --git a/tests/release-governance.test.ts b/tests/release-governance.test.ts
-index fb0d892..989cbdc 100644
+index fb0d892..3526e0f 100644
 --- a/tests/release-governance.test.ts
 +++ b/tests/release-governance.test.ts
 @@ -27,6 +27,10 @@ const sha = "bb8e2673e5f129f342fba78f3eb653a54de8763b";
@@ -1285,7 +1444,7 @@ index fb0d892..989cbdc 100644
  const stagingVoiceSmoke = readFileSync("scripts/smoke-staging-voice.ts", "utf8");
  const stagingIntakeSmoke = readFileSync("scripts/smoke-staging-intake.ts", "utf8");
  const leadsRoute = readFileSync("app/api/leads/route.ts", "utf8");
-@@ -224,6 +228,27 @@ describe("release governance", () => {
+@@ -224,6 +228,32 @@ describe("release governance", () => {
      );
    });
  
@@ -1302,7 +1461,12 @@ index fb0d892..989cbdc 100644
 +    expect(productionDeployer).toContain('execFileSync("pnpm", ["release:verify:orphan-sweep"], {');
 +    expect(productionDeployer).toContain("timeout: 20_000");
 +    expect(productionDeployer).toContain('killSignal: "SIGKILL"');
-+    expect(deadlineRunner).toContain('process.kill(-child.pid, "SIGKILL")');
++    expect(deadlineRunner).toContain('process.kill(-childGroupPid, "SIGKILL")');
++    expect(deadlineRunner).toContain("process.kill(-childGroupPid, 0)");
++    expect(deadlineRunner).toContain("Release command leader exited while descendants remained");
++    expect(deadlineRunner.indexOf("process.on(signal, handler)")).toBeLessThan(
++      deadlineRunner.indexOf("child = spawn(command, commandArgs"),
++    );
 +    expect(lifecycleBackfill).toContain("RPC_DEADLINE_MS = 30_000");
 +    expect(orphanVerifier).toContain("QUERY_DEADLINE_MS = 5_000");
 +    expect(hostDeployer.indexOf("pnpm release:verify:orphan-sweep")).toBeLessThan(

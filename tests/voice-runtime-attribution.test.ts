@@ -77,6 +77,60 @@ describe("voice runtime input attribution", () => {
     ).toMatchObject({ method: "form", editCount: 2, correctionCount: 1 });
   });
 
+  it("refreshes handoff context only for local edits, not assistant field tools", () => {
+    const channel = { readyState: "open", send: vi.fn() } as unknown as RTCDataChannel;
+    const { result } = renderHook(() =>
+      useVoiceRuntime({
+        initialSegment: "other",
+        submitLead: vi.fn(async () => ({ submitted: true })),
+        onEndVoice: vi.fn(),
+        onToolDuration: vi.fn(),
+      }),
+    );
+
+    act(() => {
+      result.current.handleRealtimeEvent(
+        { type: "input_audio_buffer.committed", item_id: "audio_model_capture" },
+        channel,
+      );
+      result.current.handleRealtimeEvent(
+        {
+          type: "conversation.item.input_audio_transcription.completed",
+          item_id: "audio_model_capture",
+          transcript: "My name is Alice.",
+        },
+        channel,
+      );
+      result.current.handleRealtimeEvent({ type: "response.created" }, channel);
+      result.current.handleRealtimeEvent(
+        {
+          type: "response.done",
+          response: {
+            output: [
+              {
+                type: "function_call",
+                name: "capture_fields",
+                call_id: "call_model_name",
+                arguments: JSON.stringify({ fields: [{ key: "name", value: "Alice", evidence: "Alice" }] }),
+              },
+            ],
+          },
+        },
+        channel,
+      );
+    });
+
+    expect(result.current.captured.name).toBe("Alice");
+    expect(result.current.localHandoffContextVersion).toBe(0);
+
+    act(() => {
+      result.current.updateCaptured("name", "Alice Lim");
+      result.current.setSegment("education");
+    });
+
+    expect(result.current.localHandoffContextVersion).toBe(2);
+  });
+
   it("revokes browser handoff memory only after an accepted current clear-all", () => {
     const onClearFields = vi.fn();
     const channel = { readyState: "open", send: vi.fn() } as unknown as RTCDataChannel;

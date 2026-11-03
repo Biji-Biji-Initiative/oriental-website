@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { validatedAdminReleaseOrigin } from "../scripts/lib/admin-release-proof";
 import {
   MANAGED_APPLICATION_ENVIRONMENT_KEYS,
   type ManagedApplicationEnvironmentKey,
@@ -13,6 +14,7 @@ import {
   CONTROL_VOICE_CELL,
   governedVoiceCell,
   hasCloudflareEdgeHeaders,
+  PREVIOUS_CONTROL_VOICE_CELL,
   RELEASE_TARGETS,
   STAGING_CANDIDATE_AUDITION_VOICE_CELL,
   STAGING_CANDIDATE_VOICE_CELL,
@@ -26,6 +28,9 @@ import { releaseTestEnv } from "../scripts/lib/release-test-env";
 const sha = "bb8e2673e5f129f342fba78f3eb653a54de8763b";
 const releasePreflight = readFileSync("scripts/release-preflight.ts", "utf8");
 const releaseVerifier = readFileSync("scripts/release-verify.ts", "utf8");
+const adminReleaseVerifier = readFileSync("scripts/verify-admin-release-proof.ts", "utf8");
+const adminReviewE2e = readFileSync("tests/e2e/admin-session-review.spec.ts", "utf8");
+const adminLoginRouteTests = readFileSync("tests/admin-login-route.test.ts", "utf8");
 const productionDeployer = readFileSync("scripts/deploy-coolify-production.ts", "utf8");
 const hostDeployer = readFileSync("scripts/deploy-coolify-host.sh", "utf8");
 const deadlineRunner = readFileSync("scripts/run-command-with-deadline.ts", "utf8");
@@ -57,6 +62,66 @@ describe("release governance", () => {
     expect(analyticsOpsWorkflow).toContain("secrets.OPS_AUTOMATION_TOKEN");
     expect(analyticsOpsWorkflow).not.toContain("secrets.ADMIN_REVIEW_TOKEN");
   });
+
+  it("makes the full-access password admin lane mandatory and machine checked for releases", () => {
+    expect(packageScripts.scripts["release:verify:admin"]).toBe("tsx scripts/verify-admin-release-proof.ts");
+    expect(adminReleaseVerifier).toContain('E2E_ADMIN_RELEASE_PROOF: "1"');
+    expect(adminReleaseVerifier).toContain('"--project=chromium"');
+    expect(adminReleaseVerifier).toContain('"--workers=1"');
+    expect(adminReleaseVerifier).toContain('"--grep=@release"');
+    expect(adminReleaseVerifier).toContain('"--reporter=json"');
+    expect(adminReleaseVerifier).toContain("PLAYWRIGHT_JSON_OUTPUT_FILE: reportPath");
+    expect(adminReleaseVerifier).toContain("const nativePath = playwrightChromium.executablePath()");
+    expect(adminReleaseVerifier).toContain('if (process.platform === "linux")');
+    expect(adminReleaseVerifier).toContain("const serverlessPath = await chromium.executablePath()");
+    expect(adminReleaseVerifier).toContain('mkdtempSync(join(tmpdir(), "oriental-admin-release-proof-"))');
+    expect(adminReleaseVerifier).toContain(
+      "const cleanupReportDirectory = () => rmSync(reportDirectory, { force: true, recursive: true })",
+    );
+    expect(adminReleaseVerifier).toContain('process.once("SIGINT", onInterrupt)');
+    expect(adminReleaseVerifier).toContain('process.once("SIGTERM", onTermination)');
+    expect(adminReleaseVerifier).toContain("failedTests=${failedTests.join");
+    expect(adminReleaseVerifier).toContain("signal=$" + '{result.signal ?? "unknown"}');
+    expect(adminReleaseVerifier).toContain("expected !== requiredAdminReleaseProofs");
+    expect(adminReleaseVerifier).toContain("skipped !== 0");
+    expect(adminReleaseVerifier).toContain("unexpected !== 0");
+    expect(adminReleaseVerifier).toContain("flaky !== 0");
+    expect(adminReleaseVerifier).toContain("target: targetOrigin");
+    expect(adminReviewE2e).toContain('process.env.E2E_ADMIN_RELEASE_PROOF === "1"');
+    expect(adminReviewE2e).toContain('"x-forwarded-for": `$' + "{spoofedEarlierHop}, 198.51.100.254`");
+    expect(adminReviewE2e).not.toContain("for (let attempt = 0; attempt < 8; attempt += 1)");
+    expect(adminReviewE2e).not.toContain("Promise.all([invalidLogin");
+    expect(adminLoginRouteTests).toContain("for (let attempt = 0; attempt < 8; attempt += 1)");
+    expect(adminLoginRouteTests).toContain("expect(blocked.status).toBe(429)");
+    expect(adminReviewE2e).toContain('reviewLogin.credential !== "review_bearer"');
+    expect(adminReviewE2e).toContain('passwordLogin.credential !== "interactive_password"');
+    expect(adminReviewE2e).toContain('role: "admin"');
+    expect(adminReviewE2e).toContain("expect(rawReview.status()).toBe(200)");
+    expect(adminReviewE2e).toContain("expect(mutationAdmission.status()).toBe(400)");
+    expect(adminReviewE2e.match(/ @release"/gu)).toHaveLength(3);
+    expect(releaseRunbook.match(/pnpm release:verify:admin/gu)).toHaveLength(2);
+    expect(releaseRunbook).toContain("`skipped=0`");
+  });
+
+  it("accepts only exact canonical root origins for the live admin proof", () => {
+    expect(validatedAdminReleaseOrigin("https://staging.oriental.mereka.io")).toBe(
+      "https://staging.oriental.mereka.io",
+    );
+    expect(validatedAdminReleaseOrigin("https://oriental.mereka.io/")).toBe("https://oriental.mereka.io");
+    for (const target of [
+      "http://staging.oriental.mereka.io",
+      "https://staging.oriental.mereka.io:8443",
+      "https://oriental.mereka.io:9443",
+      "https://user@oriental.mereka.io",
+      "https://oriental.mereka.io/admin",
+      "https://oriental.mereka.io/?shadow=true",
+      "https://oriental.mereka.io/#shadow",
+      "https://oriental.deploy.mereka.io",
+    ]) {
+      expect(() => validatedAdminReleaseOrigin(target), target).toThrow("exact canonical HTTPS Oriental origin");
+    }
+  });
+
   it("pins canonical and compatibility-only hostnames", () => {
     expect(RELEASE_TARGETS.production).toEqual({
       origin: "https://oriental.mereka.io",
@@ -147,7 +212,7 @@ describe("release governance", () => {
         ...process.env,
         VOICE_RUNTIME_PROFILE: "baseline",
         VOICE_MODEL_CELL: "control",
-        OPENAI_REALTIME_MODEL: "gpt-realtime-2",
+        OPENAI_REALTIME_MODEL: "gpt-realtime-2.1",
         VOICE_REASONING_CELL: "low",
         VOICE_EMAIL_CAPTURE_MODE: "adaptive",
         VOICE_VARIANT_PICKER: "false",
@@ -161,7 +226,7 @@ describe("release governance", () => {
         ...process.env,
         VOICE_RUNTIME_PROFILE: "baseline",
         VOICE_MODEL_CELL: "control",
-        OPENAI_REALTIME_MODEL: "gpt-realtime-2",
+        OPENAI_REALTIME_MODEL: "gpt-realtime-2.1",
         VOICE_REASONING_CELL: "low",
         VOICE_EMAIL_CAPTURE_MODE: "adaptive",
         VOICE_VARIANT_PICKER: "",
@@ -221,7 +286,7 @@ describe("release governance", () => {
     expect(productionDeployer).toContain(
       'readPublicHealth(RELEASE_TARGETS.staging.origin, args.sha, "staging candidate", STAGING_CANDIDATE_VOICE_CELL)',
     );
-    expect(productionDeployer).toContain('"current production",\n    CONTROL_VOICE_CELL');
+    expect(productionDeployer).toContain("await readCurrentProductionHealth(args)");
     expect(productionDeployer).toContain("await waitForHealthyProductionRelease(");
     expect(productionDeployer).toContain('"new production"');
     expect(productionDeployer).toContain(
@@ -287,7 +352,7 @@ describe("release governance", () => {
 
   it("uses the documented Coolify deployment trigger and validates its response identity", () => {
     expect(productionDeployer).toMatch(
-      /const started = await coolifyRequest<unknown>\(\s*baseUrl,\s*token,\s*`deploy\?uuid=\$\{encodeURIComponent\(applicationUuid\)\}&force=false`,\s*\);/,
+      /const started = await coolifyRequest<unknown>\(\s*baseUrl,\s*token,\s*`deploy\?uuid=\$\{encodeURIComponent\(applicationUuid\)\}&force=false`,\s*\{ method: "POST" \},\s*\);/,
     );
     expect(productionDeployer).toContain("deploymentUuidFromDeployResponse(started, applicationUuid)");
     expect(productionDeployer).not.toContain("/start?");
@@ -514,6 +579,8 @@ describe("release governance", () => {
     expect(stagingIntakeSmoke).toContain("timeout: 60_000");
     expect(stagingIntakeSmoke).toContain("const terminalDebugApplied =");
     expect(stagingIntakeSmoke).toContain("terminalBody.applied === true");
+    expect(stagingIntakeSmoke).toContain('input[name="email"]:visible');
+    expect(stagingIntakeSmoke).toContain("input.getClientRects().length > 0");
     expect(voiceSessionRoute).toContain("verifyVoiceSmokeProof(");
     expect(voiceSessionRoute).toContain("{ synthetic: syntheticProbe }");
     expect(voiceDebugRoute).toContain("reviewClaims?.synthetic");
@@ -541,7 +608,7 @@ describe("release governance", () => {
           voice: {
             runtime_profile: "baseline",
             model_cell: "control",
-            model: "gpt-realtime-2",
+            model: "gpt-realtime-2.1",
             reasoning_cell: "low",
             email_capture_mode: "adaptive",
             variant_picker: false,
@@ -599,7 +666,7 @@ describe("release governance", () => {
       voice: {
         runtime_profile: "baseline",
         model_cell: "control",
-        model: "gpt-realtime-2",
+        model: "gpt-realtime-2.1",
         reasoning_cell: "low",
         variant_picker: false,
       },
@@ -616,9 +683,9 @@ describe("release governance", () => {
         { allowMissingEmailCaptureMode: true },
       ),
     ).toEqual(["health voice email_capture_mode must be adaptive"]);
-    expect(productionDeployer).toContain(
-      '"current production",\n    CONTROL_VOICE_CELL,\n    { allowMissingEmailCaptureMode: true }',
-    );
+    expect(PREVIOUS_CONTROL_VOICE_CELL.model).toBe("gpt-realtime-2");
+    expect(productionDeployer).toContain("await readCurrentProductionHealth(args)");
+    expect(productionDeployer).toContain("--allow-previous-control-model");
   });
 
   it("rejects Cloudflare edge response markers", () => {

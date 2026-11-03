@@ -1,0 +1,39 @@
+name: oriental-adaptive-conversation-recovery
+description: Adversarial release review for the adaptive voice conversation recovery
+
+documents:
+  readme: .apr/evidence/oriental-adaptive-conversation-recovery.md
+  spec: .apr/specs/oriental-adaptive-conversation-recovery.md
+  implementation: components/voice-agent/VoiceAgentDialog.tsx
+
+oracle:
+  model: "gpt-5.6-sol"
+
+rounds:
+  output_dir: .apr/rounds/oriental-adaptive-conversation-recovery
+  impl_every_n: 1
+
+template: |
+  Review this runtime release adversarially against its specification. Focus on
+  whether the server-selected adaptive email-capture mode can be lost in browser
+  handoff serialization; whether any pending-email path can still interrupt a
+  visitor's stated project with typing, repetition, or confirmation theatre;
+  whether adaptive accidentally retains a strict confirmation tool; whether a
+  narrow ASR typo guard could accept ungrounded identity data; and whether form
+  updates can cause self-amplifying synthetic user contexts. Preserve the
+  existing voice-submission, privacy, authentication, and strict-mode security
+  boundaries. Treat unsupported test claims, dependency-advisory regressions,
+  PII in evidence, model/cell promotion, or production mutation as blockers.
+  End with exactly `VERDICT: SHIP SAFE DEFAULTS` or `VERDICT: DO NOT SHIP`.
+
+template_with_impl: |
+  Trace the attached implementation and evidence against the adaptive
+  conversation recovery specification. Identify any path that can turn an
+  adaptive session into a strict email gate, erase a clear direct spoken
+  address with a near-identical model spelling, compel typing or a separate
+  confirmation before discussing the visitor's idea, or cause the assistant to
+  answer its own tool-driven form update. Confirm that strict-mode safeguards
+  and server-side submission validation remain intact. Treat unsupported
+  evidence, PII leakage, stale dependency patches, model/cell promotion, or
+  production mutation as blockers. End with exactly
+  `VERDICT: SHIP SAFE DEFAULTS` or `VERDICT: DO NOT SHIP`.

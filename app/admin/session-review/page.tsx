@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { type CrmSort, crmSortLabels, normalizeCrmSort } from "@/lib/admin-crm";
 import { summarizeAdminLeads } from "@/lib/admin-lead-counts";
+import { hasAdminPermission } from "@/lib/admin-permissions";
 import {
   adminLeadPriorityLabels,
   adminLeadStatusLabels,
@@ -26,12 +27,7 @@ import {
 } from "@/lib/admin-workflow";
 import { getSegment } from "@/lib/segments";
 import { adminCookieName, verifyAdminSessionCookie } from "@/lib/server/admin-auth";
-import {
-  type AdminAggregateMetricsData,
-  getAdminAggregateMetrics,
-  getAdminLeadTable,
-  getAdminReviewDashboard,
-} from "@/lib/server/convex";
+import { getAdminApplicationLogs, getAdminLeadTable, getAdminReviewDashboard } from "@/lib/server/convex";
 import { isBenignVoiceError, type VoiceRuntimeError } from "@/lib/voice/realtime-events";
 import { publicLeadUtm } from "@/lib/voice/submission-evidence";
 import { collapseConversations } from "@/lib/voice-conversation-grouping";
@@ -45,7 +41,8 @@ export const metadata: Metadata = {
 
 type DashboardResult = Awaited<ReturnType<typeof getAdminReviewDashboard>>;
 type DashboardData = Extract<DashboardResult, { ok: true }>["data"];
-type DashboardMetrics = AdminAggregateMetricsData["metrics"];
+type ApplicationLogsResult = Awaited<ReturnType<typeof getAdminApplicationLogs>>;
+type ApplicationLogRow = Extract<ApplicationLogsResult, { ok: true }>["logs"][number];
 type LeadRow = DashboardData["leads"][number];
 type VoiceSessionRow = DashboardData["voiceSessions"][number];
 type LeadEventRow = DashboardData["leadEvents"][number];
@@ -69,27 +66,20 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
   const cookieStore = await cookies();
   const auth = verifyAdminSessionCookie(cookieStore.get(adminCookieName)?.value);
   if (!auth.ok) return <AdminLoginForm reason={auth.reason} />;
-  if (auth.credential === "password_session") {
-    const aggregate = await getAdminAggregateMetrics(100).catch(() => ({
-      ok: false as const,
-      reason: "convex_failed",
-    }));
-    if (!aggregate.ok) {
-      return (
-        <AdminShell>
-          <StatusPanel
-            title="Dashboard unavailable"
-            detail={`Aggregate review metrics could not be loaded: ${aggregate.reason}`}
-          />
-        </AdminShell>
-      );
-    }
-    return <PasswordAggregateDashboard generatedAt={aggregate.data.generatedAt} metrics={aggregate.data.metrics} />;
+  if (!hasAdminPermission(auth.role, "dashboard.read", auth.principal)) {
+    return <AdminLoginForm reason="forbidden" />;
   }
+  const canRunEvals = hasAdminPermission(auth.role, "evals.run", auth.principal);
+  const canUpdateLeads = hasAdminPermission(auth.role, "leads.update", auth.principal);
+  const canFollowUpVoice = hasAdminPermission(auth.role, "voice.follow_up", auth.principal);
+  const canReadApplicationLogs = hasAdminPermission(auth.role, "ops.logs.read", auth.principal);
 
-  const [dashboard, leadTable] = await Promise.all([
+  const [dashboard, leadTable, applicationLogs] = await Promise.all([
     getAdminReviewDashboard(100).catch(() => ({ ok: false as const, reason: "convex_failed" })),
     getAdminLeadTable(500).catch(() => ({ ok: false as const, reason: "convex_failed" })),
+    canReadApplicationLogs
+      ? getAdminApplicationLogs(100).catch(() => ({ ok: false as const, reason: "convex_failed" }))
+      : Promise.resolve({ ok: false as const, reason: "forbidden" }),
   ]);
   if (!dashboard.ok) {
     return (
@@ -136,6 +126,8 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
           />
           <EnquiryCrmWorkspace
             allLeads={allLeads}
+            canRunEvals={canRunEvals}
+            canUpdateLeads={canUpdateLeads}
             events={dashboard.data.leadEvents}
             filters={filters}
             generatedAt={dashboard.data.generatedAt}
@@ -172,6 +164,7 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
 
       {view === "voice" ? (
         <RecoverableVoicePanel
+          canFollowUp={canFollowUpVoice}
           filterActive={filterActive}
           query={filters.q}
           sessions={filteredVoiceSessions}
@@ -201,45 +194,9 @@ export default async function SessionReviewPage({ searchParams }: { searchParams
             <AnalyticsPanel data={dashboard.data} />
             <EventsPanel events={dashboard.data.leadEvents} leads={dashboard.data.leads} />
           </section>
+          <ApplicationLogsPanel result={applicationLogs} />
         </DisclosureSection>
       ) : null}
-    </AdminShell>
-  );
-}
-
-function PasswordAggregateDashboard({ generatedAt, metrics }: { generatedAt: number; metrics: DashboardMetrics }) {
-  const items = [
-    { label: "Recent enquiries", value: metrics.recentLeads },
-    { label: "Active enquiries", value: metrics.activeLeads },
-    { label: "Qualified enquiries", value: metrics.qualifiedLeads },
-    { label: "Urgent enquiries", value: metrics.urgentLeads },
-    { label: "Notification delivery", value: `${metrics.notificationDeliveryRate}%` },
-    { label: "Voice submit rate", value: `${metrics.voiceSubmitRate}%` },
-    { label: "Reviewed voice sessions", value: metrics.reviewedSessions },
-    { label: "Sessions with errors", value: metrics.sessionsWithErrors },
-  ];
-
-  return (
-    <AdminShell generatedAt={generatedAt}>
-      <Card>
-        <CardHeader>
-          <CardTitle>Aggregate overview</CardTitle>
-          <CardDescription>
-            This password session shows redacted operational totals only. Customer records, email addresses,
-            transcripts, voice details, and mutations require signing out and stepping up with the managed review token.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <section aria-label="Aggregate admin metrics" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {items.map((item) => (
-              <div className="rounded-xl border border-white/10 bg-white/[0.04] p-4" key={item.label}>
-                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{item.label}</p>
-                <p className="mt-3 text-2xl font-bold tabular-nums text-slate-100">{item.value}</p>
-              </div>
-            ))}
-          </section>
-        </CardContent>
-      </Card>
     </AdminShell>
   );
 }
@@ -2091,6 +2048,70 @@ function EventsPanel({ events, leads }: { events: LeadEventRow[]; leads: LeadRow
   );
 }
 
+function ApplicationLogsPanel({ result }: { result: ApplicationLogsResult }) {
+  if (!result.ok) {
+    return (
+      <Card className="border-white/10 bg-white/[0.04]" id="application-logs">
+        <CardHeader>
+          <CardTitle>Retained application logs</CardTitle>
+          <CardDescription>
+            Durable operational events are available only to the full administrative session. Conversation text remains
+            in its separate review record.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <EmptyState
+            label={result.reason === "forbidden" ? "This session cannot read retained logs." : "Log store unavailable."}
+          />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="border-white/10 bg-white/[0.04]" id="application-logs">
+      <CardHeader>
+        <CardTitle>Retained application logs</CardTitle>
+        <CardDescription>
+          The latest {result.logs.length} structured events are retained in Convex for 30 days, independently of
+          container replacement. Free-form visitor content and credentials are redacted before persistence.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        {result.logs.length === 0 ? <EmptyState label="No retained application events yet." /> : null}
+        {result.logs.map((log) => (
+          <ApplicationLogRow key={log.logId} log={log} />
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ApplicationLogRow({ log }: { log: ApplicationLogRow }) {
+  let formattedPayload = log.payload;
+  try {
+    formattedPayload = JSON.stringify(JSON.parse(log.payload), null, 2);
+  } catch {
+    // The server-side write contract rejects malformed payloads. Retain a safe
+    // fallback so historical data can still be inspected if that contract ever
+    // changes during a future migration.
+  }
+  return (
+    <details className="rounded-lg border border-white/10 bg-white/[0.03]" suppressHydrationWarning>
+      <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 px-3 py-2 marker:hidden">
+        <span className="font-mono text-xs font-semibold text-slate-200">{log.event}</span>
+        <span className="flex items-center gap-2 text-[11px] text-slate-500">
+          <Badge tone={log.level === "error" ? "red" : log.level === "warn" ? "amber" : "blue"}>{log.level}</Badge>
+          {formatDate(log.occurredAt)}
+        </span>
+      </summary>
+      <pre className="max-h-96 overflow-auto border-t border-white/10 p-3 text-xs leading-5 text-slate-400">
+        {formattedPayload}
+      </pre>
+    </details>
+  );
+}
+
 function EventRow({ event, leadName }: { event: LeadEventRow; leadName?: string }) {
   return (
     <article className="rounded-lg border border-white/10 bg-white/[0.04] p-3">
@@ -2471,11 +2492,13 @@ function _ActionQueuePanel({ data, sessionsWithRealErrors }: { data: DashboardDa
 
 function RecoverableVoicePanel({
   sessions,
+  canFollowUp,
   filterActive,
   query,
   totalRecoverable,
 }: {
   sessions: VoiceSessionRow[];
+  canFollowUp: boolean;
   filterActive: boolean;
   query: string;
   totalRecoverable: number;
@@ -2537,9 +2560,11 @@ function RecoverableVoicePanel({
                 >
                   Follow up by email
                 </a>
-                <AdminVoiceFollowUpButton markAs={true} reviewId={session.reviewId}>
-                  Mark followed up
-                </AdminVoiceFollowUpButton>
+                {canFollowUp ? (
+                  <AdminVoiceFollowUpButton markAs={true} reviewId={session.reviewId}>
+                    Mark followed up
+                  </AdminVoiceFollowUpButton>
+                ) : null}
               </div>
             </article>
           );
@@ -2572,9 +2597,11 @@ function RecoverableVoicePanel({
                     >
                       Email
                     </a>
-                    <AdminVoiceFollowUpButton markAs={true} reviewId={session.reviewId}>
-                      Done
-                    </AdminVoiceFollowUpButton>
+                    {canFollowUp ? (
+                      <AdminVoiceFollowUpButton markAs={true} reviewId={session.reviewId}>
+                        Done
+                      </AdminVoiceFollowUpButton>
+                    ) : null}
                   </div>
                 </div>
               ))}
@@ -2591,9 +2618,11 @@ function RecoverableVoicePanel({
                     {session.captured.name || "Unnamed visitor"} · {session.captured.email}
                     {session.followedUpAt ? ` · ${formatDate(session.followedUpAt)}` : ""}
                   </span>
-                  <AdminVoiceFollowUpButton markAs={false} reviewId={session.reviewId} variant="ghost">
-                    Undo
-                  </AdminVoiceFollowUpButton>
+                  {canFollowUp ? (
+                    <AdminVoiceFollowUpButton markAs={false} reviewId={session.reviewId} variant="ghost">
+                      Undo
+                    </AdminVoiceFollowUpButton>
+                  ) : null}
                 </div>
               ))}
             </div>

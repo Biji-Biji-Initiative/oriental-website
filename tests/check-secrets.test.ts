@@ -8,7 +8,7 @@ const baseEnv: NodeJS.ProcessEnv = {
   INFISICAL_TOKEN: "test-only",
   NODE_ENV: "test",
   OPENAI_API_KEY: "test-only",
-  OPENAI_REALTIME_MODEL: "gpt-realtime-2",
+  OPENAI_REALTIME_MODEL: "gpt-realtime-2.1",
   CONVEX_URL: "https://example.convex.cloud",
   NEXT_PUBLIC_CONVEX_URL: "https://example.convex.cloud",
   CONVEX_INGEST_SECRET: "test-only",

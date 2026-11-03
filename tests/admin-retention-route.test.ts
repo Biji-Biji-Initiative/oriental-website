@@ -26,7 +26,7 @@ describe("admin retention route", () => {
   it("runs the fixed retention policy and returns aggregate deletion counts", async () => {
     retentionMock.mockResolvedValue({
       ok: true,
-      deleted: { archivedLeads: 2, leadEvents: 4, voiceSessions: 8 },
+      deleted: { applicationLogs: 12, archivedLeads: 2, leadEvents: 4, voiceSessions: 8 },
       redacted: { leadTranscripts: 3 },
       hasMore: true,
     });
@@ -36,7 +36,7 @@ describe("admin retention route", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
       ok: true,
-      deleted: { archivedLeads: 2, leadEvents: 4, voiceSessions: 8 },
+      deleted: { applicationLogs: 12, archivedLeads: 2, leadEvents: 4, voiceSessions: 8 },
       redacted: { leadTranscripts: 3 },
       hasMore: true,
     });

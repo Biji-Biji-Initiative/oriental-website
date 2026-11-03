@@ -288,7 +288,7 @@ describe("POST /api/voice/session", () => {
   it("forces the control model cell on the production hostname", async () => {
     process.env.APP_ENV = "staging";
     process.env.VOICE_MODEL_CELL = "candidate";
-    process.env.OPENAI_REALTIME_MODEL = "gpt-realtime-2";
+    process.env.OPENAI_REALTIME_MODEL = "gpt-realtime-2.1";
     process.env.OPENAI_REALTIME_MODEL_CANDIDATE = "gpt-realtime-2.1";
     const fetchMock = mockOpenAiFetch();
     vi.stubGlobal("fetch", fetchMock);
@@ -300,7 +300,7 @@ describe("POST /api/voice/session", () => {
     expect(await json(response)).toMatchObject({
       ok: true,
       deployment_environment: "production",
-      model: "gpt-realtime-2",
+      model: "gpt-realtime-2.1",
       model_cell: "control",
     });
   });

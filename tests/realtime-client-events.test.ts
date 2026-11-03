@@ -115,6 +115,25 @@ describe("serializeRealtimeCommand", () => {
     expect(body).not.toContain("Never route an unconfirmed email");
   });
 
+  it("does not let a pending adaptive email derail the conversation", () => {
+    const event = serializeHandoffContext({
+      segment: "technology",
+      captured: { name: "", email: "frans@germany.my", org: "", phone: "", website: "", message: "" },
+      emailCaptureMode: "adaptive",
+      emailVerification: {
+        value: "frans@germany.my",
+        source: "speech",
+        status: "pending",
+        confidence: "medium",
+      },
+    });
+
+    const body = JSON.stringify(event);
+    expect(body).toContain("Email verification: pending optional spoken recheck");
+    expect(body).toContain("pending adaptive email is not a conversation blocker");
+    expect(body).toContain("do not direct the visitor to type");
+  });
+
   it("serializes a typed visitor message as a user conversation item", () => {
     expect(serializeUserText("My email is mei@example.com", nextEventId(["evt_text"]))).toEqual({
       type: "conversation.item.create",

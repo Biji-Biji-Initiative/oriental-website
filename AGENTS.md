@@ -23,7 +23,7 @@ Production microsite for **Oriental Building** partner intake at `oriental.merek
 | UI | Next.js 16 App Router, React 19, Tailwind v4, shadcn/ui (`components/ui/`) |
 | Content | `lib/content.ts` + section components in `components/site/` |
 | Leads | Convex (`convex/schema.ts`, `convex/leads.ts`) via `lib/server/convex.ts` |
-| Voice | OpenAI Realtime over WebRTC; production control is `gpt-realtime-2`, quality candidate is `gpt-realtime-2.1`, ephemeral tokens from `POST /api/voice/session` |
+| Voice | OpenAI Realtime over WebRTC; production control and canonical staging use `gpt-realtime-2.1`, with staging retaining its `candidate` label for release provenance; ephemeral tokens come from `POST /api/voice/session` |
 | Abuse | Optional Turnstile enforcement for form/newsletter posts + Redis-backed rate limits with memory fallback (`lib/server/rate-limit.ts`, re-exported by `security.ts`) |
 | Notify | AWS SES/SMTP + Slack Web API bot token, webhook fallback (`lib/server/notifications.ts`, `lib/server/smtp.ts`) |
 | Observability | Sentry Next.js SDK, structured JSON logs, Slack ops alerts, admin review dashboard |
@@ -113,7 +113,7 @@ docs/                     # handover specs — reference, not auto-synced to cod
 | Owner email env mapping | `lib/server/notifications.ts` + `OWNER_*` in `.env.local.example` |
 | Shared rate limits | `lib/server/rate-limit.ts`; production should log `rateLimitStore: "redis"` |
 | Structured route logs | `lib/server/logger.ts`; view in Coolify app logs |
-| Infisical/Coolify deployment env | `/deploy/oriental-website`; `COOLIFY_ORIENTAL_APPLICATION_UUID=mtrl2z6a7zvoyevxvufpntij`; the potentially known interactive password must be represented only as `ADMIN_REVIEW_PASSWORD_HMAC` keyed by the strong `ADMIN_REVIEW_TOKEN` and must yield a 30-minute viewer session; live source, Infisical, Coolify, and container absence of plaintext remains pending the launch-checklist readback |
+| Infisical/Coolify deployment env | `/deploy/oriental-website`; `COOLIFY_ORIENTAL_APPLICATION_UUID=mtrl2z6a7zvoyevxvufpntij`; the interactive admin password must be represented only as `ADMIN_REVIEW_PASSWORD_HMAC` keyed by the strong `ADMIN_REVIEW_TOKEN` and must yield a 30-minute full-access admin session while remaining invalid as bearer auth |
 | Convex tables / ingest | `convex/schema.ts`, `convex/leads.ts` |
 | API error shapes | Source route handlers and `lib/schemas.ts`; update `docs/06-API-CONTRACTS.md` in the same PR |
 | Styles / tokens | `app/globals.css` (`@theme`), component Tailwind classes |
@@ -214,10 +214,10 @@ clean candidate staging deployment with `--staging-model-cell candidate` and
 `--voice-picker-mode audition` staging option exposes the voice-register picker
 for human audition only; it is never model-promotion evidence. Production
 always rejects audition mode. The Mereka M nebula and public entrance loader
-are a staging-only preview gated by both `NEXT_PUBLIC_BRAND_MOTION_PREVIEW=true`
-at build time and the exact staging/local hostname. The reviewed production path
-must render the legacy orb and no Trace entrance even if one side of that gate
-is misconfigured; deploying it is outside the current staging-only release.
+are the approved public identity, enabled by default for the exact canonical
+staging, production, and local hosts. `NEXT_PUBLIC_BRAND_MOTION_ENABLED=false`
+is an emergency visual rollback only. The legacy orb is not a production
+fallback. Admin/API and reduced-motion loads continue to omit the entrance.
 The entrance treatment is non-interactive, never locks scrolling, appears at
 most once per tab, lasts no more than 700 ms, and is skipped for admin/API and
 reduced-motion loads; internal admin navigation must use the Next router.
@@ -226,10 +226,12 @@ browser controls. Client tuner code must fetch that runtime route and fail
 closed; query strings or local storage may hide an allowed picker but must
 never bypass a disabled environment.
 
-Realtime model changes are experiments, not string upgrades. Hold runtime,
-reasoning, voice, device, and scripted corpus constant while comparing
-`gpt-realtime-2` with `gpt-realtime-2.1`. `gpt-realtime-2.1-mini` is a separate
-speed/cost candidate and MUST NOT be combined with that first comparison.
+Realtime model changes are governed releases, not string upgrades. Both the
+production control and canonical staging candidate lanes resolve to
+`gpt-realtime-2.1`; the cell label is release provenance, not a model alias.
+Hold runtime, reasoning, voice, device, and scripted corpus constant for any
+future model change. `gpt-realtime-2.1-mini` is a separate speed/cost candidate
+and MUST NOT be combined with another experiment.
 
 ### APR review (required for release-sensitive changes)
 
